@@ -1,0 +1,138 @@
+/* Tailwind CSS Input - will be compiled to tailwind.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom component classes */
+@layer components {
+  /* Card with hover effect */
+  .app-card {
+    @apply bg-app-bg-panel rounded-lg border border-app-border transition-all duration-200;
+  }
+  
+  .app-card-hover {
+    @apply app-card hover:shadow-lg hover:scale-[1.02] hover:border-app-accent cursor-pointer;
+  }
+  
+  /* Button styles */
+  .app-btn {
+    @apply px-4 py-2 rounded-md font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-app-accent focus:ring-offset-2 focus:ring-offset-app-bg-primary;
+  }
+  
+  .app-btn-primary {
+    @apply app-btn bg-app-accent text-white hover:bg-opacity-90 active:scale-95;
+  }
+  
+  .app-btn-secondary {
+    @apply app-btn bg-app-bg-hover text-app-text-primary hover:bg-app-bg-secondary;
+  }
+  
+  /* Input styles */
+  .app-input {
+    @apply w-full px-3 py-2 bg-app-bg-primary border border-app-border rounded-md text-app-text-primary placeholder-app-text-muted focus:outline-none focus:border-app-accent focus:ring-1 focus:ring-app-accent transition-colors;
+  }
+  
+  /* Stat card */
+  .stat-card {
+    @apply app-card p-4 flex flex-col;
+  }
+  
+  .stat-card-value {
+    @apply text-2xl font-bold text-app-text-primary;
+  }
+  
+  .stat-card-label {
+    @apply text-sm text-app-text-secondary mt-1;
+  }
+  
+  /* Navigation */
+  .nav-item {
+    @apply flex items-center gap-3 px-4 py-2 text-app-text-secondary hover:bg-app-bg-hover hover:text-app-text-primary transition-colors rounded-md mx-2;
+  }
+  
+  .nav-item-active {
+    @apply nav-item bg-app-bg-hover text-app-accent border-l-2 border-app-accent;
+  }
+  
+  /* Table styles */
+  .app-table {
+    @apply w-full border-collapse;
+  }
+  
+  .app-table th {
+    @apply px-4 py-3 text-left text-sm font-semibold text-app-text-secondary bg-app-bg-secondary border-b border-app-border;
+  }
+  
+  .app-table td {
+    @apply px-4 py-3 text-sm text-app-text-primary border-b border-app-border;
+  }
+  
+  .app-table tr:hover td {
+    @apply bg-app-bg-hover;
+  }
+  
+  /* Modal backdrop */
+  .modal-backdrop {
+    @apply fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm z-40;
+  }
+  
+  .modal-content {
+    @apply fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-app-bg-panel rounded-lg shadow-2xl z-50 animate-scale-in;
+  }
+  
+  /* Skeleton loader */
+  .skeleton {
+    @apply bg-app-bg-hover animate-pulse rounded;
+  }
+}
+
+/* Custom utilities */
+@layer utilities {
+  /* Text shadow for better readability */
+  .text-shadow {
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+  
+  /* Scrollbar styling */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #37373d #1e1e1e;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: #1e1e1e;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: #37373d;
+    border-radius: 4px;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: #4d4d52;
+  }
+  
+  /* Hide scrollbar but allow scrolling */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+  
+  /* Gradient backgrounds */
+  .gradient-primary {
+    background: linear-gradient(135deg, #007acc 0%, #005999 100%);
+  }
+  
+  .gradient-card {
+    background: linear-gradient(180deg, #2d2d30 0%, #252526 100%);
+  }
+}
