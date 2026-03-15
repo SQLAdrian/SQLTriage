@@ -18,7 +18,7 @@ namespace SqlHealthAssessment.Data
 
         public AutoRefreshService(Microsoft.Extensions.Configuration.IConfiguration config)
         {
-            var seconds = int.TryParse(config["RefreshIntervalSeconds"], out var s) ? s : 5;
+            var seconds = int.TryParse(config["RefreshIntervalSeconds"], out var s) ? s : 15;
             _intervalMs = seconds * 1000;
         }
 

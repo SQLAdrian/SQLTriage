@@ -60,13 +60,49 @@ namespace SqlHealthAssessment.Data
 
         /// <summary>
         /// Updates the in-memory configuration, saves to disk, and notifies subscribers of the change.
+        /// Throws <see cref="SqlSafetyException"/> if the new configuration contains any blocked SQL patterns.
         /// </summary>
         public void UpdateConfig(DashboardConfigRoot newConfig)
         {
+            var violations = CollectSafetyViolations(newConfig);
+            if (violations.Count > 0)
+            {
+                throw new SqlSafetyException(
+                    $"Dashboard configuration rejected: {violations.Count} unsafe query(s) detected. First: {violations[0]}",
+                    "dashboard-config",
+                    violations[0]);
+            }
             _config = newConfig;
             RebuildQueryCache(_config);
             Save();
             NotifyChanged();
+        }
+
+        /// <summary>
+        /// Scans all panel and support queries in the configuration for blocked SQL patterns.
+        /// Returns a list of violation descriptions; empty if the configuration is safe.
+        /// </summary>
+        private static List<string> CollectSafetyViolations(DashboardConfigRoot config)
+        {
+            var violations = new List<string>();
+            foreach (var dashboard in config.Dashboards ?? new List<DashboardDefinition>())
+            {
+                foreach (var panel in dashboard.Panels ?? new List<PanelDefinition>())
+                {
+                    if (string.IsNullOrEmpty(panel.Id) || panel.Query == null) continue;
+                    var result = SqlSafetyValidator.Validate(panel.Query.SqlServer);
+                    if (!result.IsSafe)
+                        violations.Add($"Panel '{panel.Id}': {result.Reason}");
+                }
+            }
+            foreach (var kvp in config.SupportQueries ?? new Dictionary<string, QueryPair>())
+            {
+                if (kvp.Value == null) continue;
+                var result = SqlSafetyValidator.Validate(kvp.Value.SqlServer);
+                if (!result.IsSafe)
+                    violations.Add($"Support query '{kvp.Key}': {result.Reason}");
+            }
+            return violations;
         }
 
         public DashboardConfigService()
@@ -212,6 +248,19 @@ namespace SqlHealthAssessment.Data
         }
 
         /// <summary>
+        /// Logs a debug warning if the given SQL text contains a blocked pattern.
+        /// Used during cache rebuild so violations are visible at load/hot-reload time.
+        /// </summary>
+        private static void WarnIfUnsafe(string queryId, string? sql)
+        {
+            if (string.IsNullOrWhiteSpace(sql)) return;
+            var result = SqlSafetyValidator.Validate(sql);
+            if (!result.IsSafe)
+                System.Diagnostics.Debug.WriteLine(
+                    $"[DashboardConfigService] SECURITY WARNING — query '{queryId}' blocked: {result.Reason}");
+        }
+
+        /// <summary>
         /// Builds the O(1) query lookup cache from panel definitions and support queries.
         /// Called once on load and after each save/reset.
         /// </summary>
@@ -227,9 +276,9 @@ namespace SqlHealthAssessment.Data
                 {
                     if (!string.IsNullOrEmpty(panel.Id))
                     {
-                        // ... existing code
                         cache[panel.Id] = panel.Query;
                         typeCache[panel.Id] = panel.PanelType;
+                        WarnIfUnsafe(panel.Id, panel.Query?.SqlServer);
                     }
                 }
             }
@@ -238,6 +287,7 @@ namespace SqlHealthAssessment.Data
             foreach (var kvp in config.SupportQueries)
             {
                 cache[kvp.Key] = kvp.Value;
+                WarnIfUnsafe(kvp.Key, kvp.Value?.SqlServer);
             }
 
             _queryCache = cache;

@@ -24,7 +24,7 @@ namespace SqlHealthAssessment
             DispatcherUnhandledException += OnDispatcherUnhandledException;
             TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
 
-            // Configure Serilog
+            // Configure Serilog - Single consolidated log file
             Log.Logger = new LoggerConfiguration()
                 .MinimumLevel.Information()
                 .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
@@ -33,7 +33,7 @@ namespace SqlHealthAssessment
                 .Enrich.WithProperty("User", Environment.UserName)
                 .Enrich.WithProperty("Machine", Environment.MachineName)
                 .WriteTo.File(
-                    path: "logs/app-.log",
+                    path: "logs/app.log",
                     rollingInterval: RollingInterval.Day,
                     retainedFileCountLimit: 30,
                     outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
@@ -104,6 +104,13 @@ namespace SqlHealthAssessment
             services.AddSingleton<SqlConnectionPoolService>();
             services.AddSingleton<StartupService>();
             services.AddSingleton<Data.Services.PrintService>();
+            services.AddSingleton<Data.Services.SqlAssessmentService>();
+            services.AddSingleton<Data.Services.XEventService>();
+            services.AddSingleton<Data.Services.SchemaCompareService>();
+            services.AddSingleton<Data.Services.DependencyWalkerService>();
+            services.AddSingleton<Data.Services.AdminAuthService>();
+            services.AddSingleton<Data.Services.ReportService>();
+            services.AddSingleton<Data.Services.RdlReportService>();
 
             // Local log service for debug logging
             var maxLogSize = configuration.GetValue<long>("LogMaxFileSizeBytes", 5 * 1024 * 1024);

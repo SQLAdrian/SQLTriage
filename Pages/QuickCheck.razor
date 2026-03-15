@@ -91,7 +91,7 @@
                         }
                         else
                         {
-                            <span>🔍 Run Full Check</span>
+                            <span><i class="fa-solid fa-magnifying-glass"></i> Run Full Check</span>
                         }
                     </button>
 
@@ -102,7 +102,14 @@
                     }
 
                     <button class="btn btn-secondary" @onclick="ImportChecks" disabled="@IsImporting">
-                        @(IsImporting ? "Importing..." : "📥 Import Checks")
+                        @if (IsImporting)
+                        {
+                            <span>Importing...</span>
+                        }
+                        else
+                        {
+                            <span><i class="fa-solid fa-download"></i> Import Checks</span>
+                        }
                     </button>
                 </div>
             </div>
@@ -168,7 +175,7 @@
                     </div>
                     <div class="summary-card total @(SelectedFilter == "all" ? "active-filter" : "")"
                          @onclick='() => SetFilterFromCard("all")'>
-                        <span class="summary-icon">📋</span>
+                        <span class="summary-icon"><i class="fa-solid fa-clipboard-list"></i></span>
                         <span class="summary-count">@Results.Count</span>
                         <span class="summary-label">Total</span>
                     </div>

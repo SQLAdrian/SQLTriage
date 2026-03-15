@@ -13,10 +13,13 @@ namespace SqlHealthAssessment.Data
     /// </summary>
     public static class CredentialProtector
     {
-        // Optional additional entropy for DPAPI - makes it harder to decrypt even for the same user
-        // if the attacker doesn't know this value
+        // Fixed app-specific entropy for DPAPI. Must be stable across restarts so that
+        // passwords encrypted in one session can be decrypted in the next.
+        // DPAPI already binds to the Windows user profile; this adds a secondary app-specific
+        // factor so data protected by this app cannot be trivially decrypted by other processes
+        // running as the same user without knowledge of this value.
         private static readonly byte[] AdditionalEntropy =
-            Encoding.UTF8.GetBytes("SqlHealthAssessment.SqlWatch.v1");
+            Encoding.UTF8.GetBytes("SqlHealthAssessment.LiveMonitor.v1");
 
         /// <summary>
         /// Encrypts a plaintext string using DPAPI (CurrentUser scope).
@@ -50,6 +53,7 @@ namespace SqlHealthAssessment.Data
         /// <summary>
         /// Decrypts a DPAPI-encrypted string. If the input is not prefixed with "enc:",
         /// it is treated as a legacy plaintext value and returned as-is (for migration).
+        /// WARNING: This now logs a warning for security awareness.
         /// </summary>
         /// <param name="encryptedText">The encrypted string (prefixed with "enc:") or legacy plaintext.</param>
         /// <returns>The decrypted plaintext string.</returns>
@@ -60,7 +64,13 @@ namespace SqlHealthAssessment.Data
 
             // If not prefixed with "enc:", treat as legacy plaintext (migration support)
             if (!encryptedText.StartsWith("enc:", StringComparison.Ordinal))
+            {
+                // Log warning about legacy plaintext - in production, this should trigger re-encryption
+                System.Diagnostics.Debug.WriteLine(
+                    "[Security] WARNING: Legacy plaintext credential detected. " +
+                    "Consider re-encrypting to ensure proper security.");
                 return encryptedText;
+            }
 
             try
             {

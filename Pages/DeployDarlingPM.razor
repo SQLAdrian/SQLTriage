@@ -5,8 +5,10 @@
 @using System.Diagnostics
 @using SqlHealthAssessment.Data.Services
 @inject ServerConnectionManager ConnectionManager
+@inject AdminAuthService AdminAuth
 @implements IDisposable
 
+<AdminGuard>
 <div class="pm-deploy-page">
     <h2>Deploy Darling Performance Monitor</h2>
 
@@ -120,16 +122,23 @@
         </button>
         <button class="btn btn-success" @onclick="Install"
                 disabled="@(_busy || !_connectionTested || (!_upgradeOnly && _sqlFileCount == 0))">
-            @(_installing ? "Installing..." : "🚀 Install")
+            @if (_installing)
+            {
+                <span>Installing...</span>
+            }
+            else
+            {
+                <span><i class="fa-solid fa-rocket"></i> Install</span>
+            }
         </button>
         <button class="btn btn-secondary" @onclick="RunTroubleshoot"
                 disabled="@(_busy || !_troubleshootEnabled)">
-            🔍 Troubleshoot
+            <i class="fa-solid fa-magnifying-glass"></i> Troubleshoot
         </button>
         @if (_reportPath != null)
         {
             <button class="btn btn-secondary" @onclick="OpenReport">
-                📄 View Report
+                <i class="fa-solid fa-file"></i> View Report
             </button>
         }
     </div>
@@ -154,6 +163,7 @@
         </div>
     }
 </div>
+</AdminGuard>
 
 @code {
     // ── state ──────────────────────────────────────────────────────

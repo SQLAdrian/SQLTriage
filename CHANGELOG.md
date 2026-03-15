@@ -7,6 +7,32 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.78.6] — 2026-03-13
+
+**Build 282.** Post-release feature expansion and query plan overhaul.
+
+### Added
+- **Live Index Health dashboard** (`liveindexes`) — missing index count stat card, high-impact missing indexes grid, indexes with >30% fragmentation, unused index candidates
+- **Backup Health dashboard** (`backuphealth`) — databases without a full backup in 7 days, databases without a log backup in 1 hour, last full backup per database, recent backup history grid
+- **Live Query Stats dashboard** (`livequerystats`) — plan cache hit ratio, plan count, top queries by CPU / logical reads / duration
+- **Live Jobs dashboard** (`livejobs`) — currently running jobs count, failed jobs in last 24 hours, running job detail grid, failure history, all-jobs status grid
+- **Live TempDB dashboard** (`livetempdb`) — used MB stat card, version store MB, long-running transaction count, per-file usage, top session consumers, long-transaction detail
+- **Locking Waits % stat card** added to Live Wait Stats dashboard — `LCK%` waits as a percentage of total waits, with 10% / 30% colour thresholds
+- **Vulnerability Assessment page** — dedicated page for SQL Server security assessment results
+- **Query Plan V2 detail pane** — replaces CSS-only tooltip; single shared `position:absolute` pane per canvas at `top:8px; right:8px`; hover-interactable; full object path (database.schema.table), `EstimateExecutions`, individual cost components, predicate text, and warnings
+- **Query Plan V2 — root node shows 100%** — the leftmost operator always displays 100.0% cumulative cost regardless of floating-point rounding
+- **Query Plan V2 — Copy button** — `fa-solid fa-copy` button in the pane header copies the node details to the clipboard; icon flips to `fa-check` for 1.8 s on success
+- **Query Plan V2 — fade on exit** — pane fades out over 1.5 s after the cursor leaves the node; hovering over the pane cancels the fade and restores full opacity
+- **Query Plan V2 — extended XML fields** — `EstimateExecutions`, `ObjectDb`, `ObjectSchema`, and `Predicate` extracted by `ExecutionPlanParser` and surfaced in the detail pane
+- **Performance Monitor — execution plan viewer** — `query_plan_xml` column in the Expensive Queries grid now shows the plan-badge icon and opens the Query Plan V2 viewer on click (extends `DynamicPanel` candidate-column detection to `query_plan_xml`, `query_plan`, `plan_xml`)
+- **Cancellable dashboard loads** — `DynamicDashboard` now uses a `CancellationTokenSource` pattern (`StartLoad()` / `CancelLoad()`); switching servers or triggering a refresh cancels any in-flight queries
+- **Cancel button in loading bar** — `fa-solid fa-xmark` button in the dashboard loading indicator allows the user to abort the current load
+
+### Fixed
+- `SessionDataService` — broken brace structure left by a partial refactor caused `CS1501` / `CS1513` compile errors; replaced with a clean ternary connection-factory pattern
+
+---
+
 ## [1.0.0] — 2026-02-24
 
 **First public production release.** Build 104.

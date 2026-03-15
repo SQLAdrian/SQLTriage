@@ -11,7 +11,7 @@
 @inject DiagnosticScriptRunner ScriptRunner
 
 <div class="bulk-edit-page">
-    <h2 style="margin-bottom: 20px;">📝 Edit Audit Scripts</h2>
+    <h2 style="margin-bottom: 20px;"><i class="fa-solid fa-file-pen"></i> Edit Audit Scripts</h2>
 
     <!-- Status Message -->
     @if (!string.IsNullOrEmpty(StatusMessage))
@@ -47,7 +47,14 @@
                 <input id="searchFilter" class="form-input" type="text" @bind="SearchText" placeholder="Search scripts..." />
             </div>
             <button class="btn btn-primary" @onclick="LoadScripts" disabled="@IsLoading">
-                @(IsLoading ? "Loading..." : "🔍 Load Scripts")
+                @if (IsLoading)
+                {
+                    <span>Loading...</span>
+                }
+                else
+                {
+                    <span><i class="fa-solid fa-magnifying-glass"></i> Load Scripts</span>
+                }
             </button>
         </div>
     </div>
@@ -59,7 +66,7 @@
         </span>
         <div class="selection-buttons">
             <button class="btn btn-sm" @onclick="SaveAll" disabled="@IsSaving">
-                💾 Save All Changes
+                <i class="fa-solid fa-floppy-disk"></i> Save All Changes
             </button>
         </div>
     </div>
@@ -178,7 +185,7 @@
             <div class="modal-footer">
                 <button class="btn btn-secondary" @onclick="CloseModal">Cancel</button>
                 <button class="btn btn-primary" @onclick="SaveScript" disabled="@IsSaving">
-                    💾 Save
+                    <i class="fa-solid fa-floppy-disk"></i> Save
                 </button>
             </div>
         </div>

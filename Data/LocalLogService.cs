@@ -7,7 +7,7 @@ namespace SqlHealthAssessment.Data
 {
     /// <summary>
     /// Simple file-based logging service for debugging purposes.
-    /// Logs are written to logs/SqlHealthAssessment-{date}.log with automatic file rotation.
+    /// Logs are written to logs/SqlHealthAssessment.log with size-based rotation.
     /// </summary>
     public class LocalLogService : IDisposable
     {
@@ -24,7 +24,8 @@ namespace SqlHealthAssessment.Data
             _logDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs");
             Directory.CreateDirectory(_logDirectory);
             
-            var logFileName = $"SqlHealthAssessment-{DateTime.Now:yyyy-MM-dd}.log";
+            // Single consolidated log file
+            var logFileName = "SqlHealthAssessment.log";
             _logFilePath = Path.Combine(_logDirectory, logFileName);
             
             InitializeWriter();

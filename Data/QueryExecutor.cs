@@ -251,7 +251,7 @@ namespace SqlHealthAssessment.Data
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[QueryExecutor] SQLWATCH instance discovery error: {ex.Message}");
+                // Debug.WriteLine removed - use _auditLog?.LogQueryExecution() for proper logging
             }
             return results;
         }

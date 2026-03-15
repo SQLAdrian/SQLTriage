@@ -1,0 +1,449 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/xevents"
+
+@using SqlHealthAssessment.Data
+@using SqlHealthAssessment.Data.Models
+@using SqlHealthAssessment.Data.Services
+@using Microsoft.Extensions.Logging
+@inject ServerConnectionManager ConnectionManager
+@inject XEventService XEventSvc
+@inject ILogger<XEvents> Logger
+@inject IJSRuntime JSRuntime
+
+<PageTitle>XEvent / Profiler - SQLHealthAssessment</PageTitle>
+
+<div class="xevents-page">
+    <div class="page-header">
+        <div>
+            <h2><i class="fa-solid fa-list-check"></i> Extended Events / Profiler</h2>
+            <p class="page-description">
+                Manage Extended Events sessions and live monitoring.
+            </p>
+        </div>
+    </div>
+
+    <!-- Server Selection -->
+    <div class="server-selection-section">
+        <div class="section-header">
+            <h3>Select Target Server</h3>
+        </div>
+        
+        <div class="server-selection-controls">
+            <div class="server-scope-toggle">
+                <button class="scope-btn @(RunAllServers ? "active" : "")" @onclick="() => RunAllServers = true">
+                    All Enabled Servers
+                </button>
+                <button class="scope-btn @(!RunAllServers ? "active" : "")" @onclick="() => RunAllServers = false">
+                    Select Server
+                </button>
+            </div>
+
+            @if (!RunAllServers)
+            {
+                <select @bind="SelectedConnectionId" @bind:after="OnServerSelected" class="server-select">
+                    <option value="">-- Select a server connection --</option>
+                    @foreach (var conn in Connections)
+                    {
+                        <option value="@conn.Id">
+                            @conn.ServerNames (@conn.AuthenticationDisplay)
+                            @(conn.Environment != null ? $"[{conn.Environment}]" : "")
+                            @(!conn.IsEnabled ? " [DISABLED]" : "")
+                        </option>
+                    }
+                </select>
+            }
+            
+            @if (SelectedServerNames.Any())
+            {
+                <div class="selected-servers">
+                    @foreach (var server in SelectedServerNames)
+                    {
+                        <span class="server-chip">@server</span>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Tab Navigation -->
+    <div class="tabs-container">
+        <div class="tabs">
+            <button class="tab-btn @(ActiveTab == "sessions" ? "active" : "")" @onclick='() => ActiveTab = "sessions"'>
+                <i class="fa-solid fa-list"></i> Sessions
+            </button>
+            <button class="tab-btn @(ActiveTab == "create" ? "active" : "")" @onclick='() => ActiveTab = "create"'>
+                <i class="fa-solid fa-plus"></i> Create Session
+            </button>
+            <button class="tab-btn @(ActiveTab == "templates" ? "active" : "")" @onclick='() => ActiveTab = "templates"'>
+                <i class="fa-solid fa-file-code"></i> Templates
+            </button>
+            <button class="tab-btn @(ActiveTab == "live" ? "active" : "")" @onclick='() => ActiveTab = "live"'>
+                <i class="fa-solid fa-bolt"></i> Live Monitor
+            </button>
+        </div>
+
+        <!-- Sessions Tab -->
+        @if (ActiveTab == "sessions")
+        {
+            <div class="tab-content">
+                <div class="action-row">
+                    <button class="btn btn-primary" @onclick="LoadSessions" disabled="@string.IsNullOrEmpty(SelectedConnectionId)">
+                        <i class="fa-solid fa-refresh"></i> Refresh Sessions
+                    </button>
+                </div>
+
+                @if (IsLoading)
+                {
+                    <div class="loading">
+                        <p>Loading sessions...</p>
+                    </div>
+                }
+                else if (Sessions.Any())
+                {
+                    <div class="sessions-grid">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Session Name</th>
+                                    <th>Status</th>
+                                    <th>Created</th>
+                                    <th>Events Emitted</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var session in Sessions)
+                                {
+                                    <tr>
+                                        <td><strong>@session.Name</strong></td>
+                                        <td>
+                                            <span class="status-badge @(session.IsEnabled ? "active" : "inactive")">
+                                                @(session.IsEnabled ? "Running" : "Stopped")
+                                            </span>
+                                        </td>
+                                        <td>@session.CreateTime.ToString("yyyy-MM-dd HH:mm")</td>
+                                        <td>@session.TotalEventsEmitted.ToString("N0")</td>
+                                        <td>
+                                            <div class="action-buttons">
+                                                @if (session.IsEnabled)
+                                                {
+                                                    <button class="btn btn-sm btn-warning" @onclick="() => StopSession(session.Name)">
+                                                        Stop
+                                                    </button>
+                                                }
+                                                else
+                                                {
+                                                    <button class="btn btn-sm btn-success" @onclick="() => StartSession(session.Name)">
+                                                        Start
+                                                    </button>
+                                                }
+                                                <button class="btn btn-sm btn-danger" @onclick="() => DropSession(session.Name)">
+                                                    Drop
+                                                    </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                else
+                {
+                    <div class="empty-state">
+                        <p>No XEvent sessions found. Create a new session or use a template.</p>
+                    </div>
+                }
+            </div>
+        }
+
+        <!-- Create Session Tab -->
+        @if (ActiveTab == "create")
+        {
+            <div class="tab-content">
+                <div class="create-form">
+                    <div class="form-group">
+                        <label>Session Name</label>
+                        <input type="text" @bind="NewSessionName" placeholder="My_XEvent_Session" class="form-control" />
+                    </div>
+                    
+                    <div class="action-row">
+                        <button class="btn btn-primary" @onclick="CreateSession" disabled="@string.IsNullOrEmpty(SelectedConnectionId) || string.IsNullOrEmpty(NewSessionName)">
+                            <i class="fa-solid fa-plus"></i> Create Session
+                        </button>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(CreateMessage))
+                    {
+                        <div class="message-box @(CreateMessage.StartsWith("Error") ? "error" : "success")">
+                            @CreateMessage
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        <!-- Templates Tab -->
+        @if (ActiveTab == "templates")
+        {
+            <div class="tab-content">
+                <div class="templates-grid">
+                    @foreach (var template in Templates)
+                    {
+                        <div class="template-card">
+                            <div class="template-header">
+                                <h4>@template.Name</h4>
+                            </div>
+                            <p class="template-desc">@template.Description</p>
+                            <div class="template-events">
+                                <strong>Events:</strong>
+                                <ul>
+                                    @foreach (var evt in template.Events)
+                                    {
+                                        <li>@evt</li>
+                                    }
+                                </ul>
+                            </div>
+                            <div class="template-actions">
+                                <button class="btn btn-primary btn-sm" @onclick="() => UseTemplate(template)">
+                                    Use Template
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        <!-- Live Monitor Tab -->
+        @if (ActiveTab == "live")
+        {
+            <div class="tab-content">
+                <div class="empty-state">
+                    <p>Live monitoring requires a running session. Start a session and capture events.</p>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .xevents-page { padding: 20px; }
+    .xevents-page h2 { margin-bottom: 8px; }
+    .page-description { color: #666; margin-bottom: 20px; }
+    .server-selection-section { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+    .section-header h3 { margin: 0 0 16px 0; font-size: 16px; }
+    .server-selection-controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+    .server-scope-toggle { display: flex; }
+    .scope-btn { padding: 8px 16px; border: 1px solid #ddd; background: #fff; cursor: pointer; }
+    .scope-btn:first-child { border-radius: 4px 0 0 4px; }
+    .scope-btn:last-child { border-radius: 0 4px 4px 0; }
+    .scope-btn.active { background: #007bff; color: #fff; border-color: #007bff; }
+    .server-select { padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; min-width: 250px; }
+    .selected-servers { display: flex; gap: 8px; flex-wrap: wrap; }
+    .server-chip { background: #e9ecef; padding: 4px 12px; border-radius: 16px; font-size: 14px; }
+    .tabs-container { background: #fff; border-radius: 8px; overflow: hidden; }
+    .tabs { display: flex; border-bottom: 1px solid #ddd; background: #f8f9fa; }
+    .tab-btn { padding: 12px 24px; border: none; background: transparent; cursor: pointer; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+    .tab-btn:hover { background: #e9ecef; }
+    .tab-btn.active { background: #fff; border-bottom: 2px solid #007bff; }
+    .tab-content { padding: 20px; }
+    .create-form { max-width: 600px; }
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; margin-bottom: 6px; font-weight: 600; }
+    .form-control { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; }
+    .btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+    .btn-primary { background: #007bff; color: #fff; }
+    .btn-primary:hover { background: #0056b3; }
+    .btn-primary:disabled { background: #ccc; cursor: not-allowed; }
+    .btn-sm { padding: 4px 8px; font-size: 12px; }
+    .btn-success { background: #28a745; color: #fff; }
+    .btn-warning { background: #ffc107; color: #000; }
+    .btn-danger { background: #dc3545; color: #fff; }
+    .action-row { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+    .data-table { width: 100%; border-collapse: collapse; }
+    .data-table th, .data-table td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
+    .data-table th { background: #f8f9fa; font-weight: 600; }
+    .status-badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+    .status-badge.active { background: #d4edda; color: #155724; }
+    .status-badge.inactive { background: #f8d7da; color: #721c24; }
+    .action-buttons { display: flex; gap: 6px; }
+    .templates-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
+    .template-card { border: 1px solid #ddd; border-radius: 8px; padding: 16px; background: #fff; }
+    .template-card h4 { margin: 0 0 8px 0; }
+    .template-desc { color: #666; margin-bottom: 12px; }
+    .template-events ul { margin: 8px 0; padding-left: 20px; }
+    .template-actions { margin-top: 12px; }
+    .message-box { padding: 12px; border-radius: 4px; margin-top: 16px; }
+    .message-box.success { background: #d4edda; color: #155724; }
+    .message-box.error { background: #f8d7da; color: #721c24; }
+    .empty-state { text-align: center; padding: 40px; color: #666; }
+    .loading { text-align: center; padding: 40px; color: #666; }
+</style>
+
+@code {
+    private List<ServerConnection> Connections = new();
+    private string? SelectedConnectionId;
+    private bool RunAllServers = true;
+    private string ActiveTab = "sessions";
+    private bool IsLoading;
+    private string? CreateMessage;
+    
+    private List<XEventSession> Sessions = new();
+    private List<XEventTemplate> Templates = new();
+    private string NewSessionName = "";
+
+    protected override void OnInitialized()
+    {
+        Connections = ConnectionManager.GetConnections().ToList();
+        Templates = XEventSvc.GetTemplates();
+        
+        var firstEnabled = Connections.FirstOrDefault(c => c.IsEnabled);
+        if (firstEnabled != null)
+        {
+            SelectedConnectionId = firstEnabled.Id;
+            _ = OnServerSelected();
+        }
+    }
+
+    private List<string> SelectedServerNames
+    {
+        get
+        {
+            if (RunAllServers)
+                return Connections.Where(c => c.IsEnabled).SelectMany(c => c.GetServerList()).ToList();
+            if (!string.IsNullOrEmpty(SelectedConnectionId))
+            {
+                var conn = Connections.FirstOrDefault(c => c.Id == SelectedConnectionId);
+                return conn?.GetServerList().ToList() ?? new List<string>();
+            }
+            return new List<string>();
+        }
+    }
+
+    private async Task OnServerSelected()
+    {
+        if (!string.IsNullOrEmpty(SelectedConnectionId))
+        {
+            await LoadSessions();
+        }
+    }
+
+    private async Task LoadSessions()
+    {
+        if (string.IsNullOrEmpty(SelectedConnectionId)) return;
+        
+        IsLoading = true;
+        try
+        {
+            var conn = ConnectionManager.GetConnection(SelectedConnectionId);
+            if (conn != null)
+            {
+                var serverName = conn.ServerNames.Split(',').First().Trim();
+                var connString = conn.GetConnectionString(serverName, "master");
+                Sessions = await XEventSvc.GetSessionsAsync(connString);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading sessions");
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private async Task CreateSession()
+    {
+        if (string.IsNullOrEmpty(SelectedConnectionId) || string.IsNullOrEmpty(NewSessionName)) return;
+        
+        CreateMessage = "";
+        try
+        {
+            var conn = ConnectionManager.GetConnection(SelectedConnectionId);
+            if (conn != null)
+            {
+                var serverName = conn.ServerNames.Split(',').First().Trim();
+                var connString = conn.GetConnectionString(serverName, "master");
+                CreateMessage = await XEventSvc.CreateSessionAsync(connString, NewSessionName, "sql_statement_start", "");
+                await LoadSessions();
+                NewSessionName = "";
+            }
+        }
+        catch (Exception ex)
+        {
+            CreateMessage = $"Error: {ex.Message}";
+            Logger.LogError(ex, "Error creating session");
+        }
+    }
+
+    private async Task StartSession(string sessionName)
+    {
+        if (string.IsNullOrEmpty(SelectedConnectionId)) return;
+        
+        try
+        {
+            var conn = ConnectionManager.GetConnection(SelectedConnectionId);
+            if (conn != null)
+            {
+                var serverName = conn.ServerNames.Split(',').First().Trim();
+                var connString = conn.GetConnectionString(serverName, "master");
+                await XEventSvc.StartSessionAsync(connString, sessionName);
+                await LoadSessions();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error starting session {SessionName}", sessionName);
+        }
+    }
+
+    private async Task StopSession(string sessionName)
+    {
+        if (string.IsNullOrEmpty(SelectedConnectionId)) return;
+        
+        try
+        {
+            var conn = ConnectionManager.GetConnection(SelectedConnectionId);
+            if (conn != null)
+            {
+                var serverName = conn.ServerNames.Split(',').First().Trim();
+                var connString = conn.GetConnectionString(serverName, "master");
+                await XEventSvc.StopSessionAsync(connString, sessionName);
+                await LoadSessions();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error stopping session {SessionName}", sessionName);
+        }
+    }
+
+    private async Task DropSession(string sessionName)
+    {
+        if (string.IsNullOrEmpty(SelectedConnectionId)) return;
+        
+        try
+        {
+            var conn = ConnectionManager.GetConnection(SelectedConnectionId);
+            if (conn != null)
+            {
+                var serverName = conn.ServerNames.Split(',').First().Trim();
+                var connString = conn.GetConnectionString(serverName, "master");
+                await XEventSvc.DropSessionAsync(connString, sessionName);
+                await LoadSessions();
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error dropping session {SessionName}", sessionName);
+        }
+    }
+
+    private void UseTemplate(XEventTemplate template)
+    {
+        NewSessionName = template.Name.Replace(" ", "_");
+        ActiveTab = "create";
+    }
+}

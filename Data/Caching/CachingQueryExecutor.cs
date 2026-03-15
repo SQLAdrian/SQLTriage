@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using SqlHealthAssessment.Data.Models;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace SqlHealthAssessment.Data.Caching
 {
@@ -32,6 +33,8 @@ namespace SqlHealthAssessment.Data.Caching
         private readonly DashboardConfigService _configService;
         private readonly TimeSpan _evictionThreshold;
         private readonly SemaphoreSlim _invalidationLock = new(1, 1);
+        private readonly ILogger<CachingQueryExecutor> _logger;
+        private readonly long _memoryThresholdBytes;
 
         /// <summary>
         /// True when the most recent SQL Server query failed and we are serving stale cached data.
@@ -48,15 +51,35 @@ namespace SqlHealthAssessment.Data.Caching
             liveQueriesCacheStore cache,
             CacheStateTracker stateTracker,
             DashboardConfigService configService,
-            IConfiguration configuration)
+            IConfiguration configuration,
+            ILogger<CachingQueryExecutor> logger)
         {
             _inner = inner ?? throw new ArgumentNullException(nameof(inner));
             _cache = cache ?? throw new ArgumentNullException(nameof(cache));
             _stateTracker = stateTracker ?? throw new ArgumentNullException(nameof(stateTracker));
             _configService = configService ?? throw new ArgumentNullException(nameof(configService));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
             var hours = configuration.GetValue<int>("CacheEvictionHours", 24);
             _evictionThreshold = TimeSpan.FromHours(hours);
+            
+            // Memory threshold: default 75% of MaxCacheSizeBytes, or 50MB minimum
+            var maxCacheBytes = configuration.GetValue<long>("MaxCacheSizeBytes", 104857600);
+            _memoryThresholdBytes = Math.Max(maxCacheBytes / 10, 50 * 1024 * 1024); // 10% or 50MB
+        }
+
+        /// <summary>
+        /// Checks if memory pressure is high and evicts stale data proactively
+        /// </summary>
+        private async Task CheckMemoryPressureAsync()
+        {
+            var workingSet = GC.GetTotalMemory(false);
+            if (workingSet > _memoryThresholdBytes)
+            {
+                _logger.LogWarning("Memory pressure detected ({WorkingSet:N0} bytes). Triggering aggressive cache eviction.", workingSet);
+                await _cache.EvictOlderThanAsync(TimeSpan.FromMinutes(30)); // Keep last 30 minutes only
+                GC.Collect(2, GCCollectionMode.Aggressive, true);
+            }
         }
 
         // ──────────────────────── Refresh Cycle Preparation ─────────────
@@ -72,6 +95,9 @@ namespace SqlHealthAssessment.Data.Caching
             await _invalidationLock.WaitAsync();
             try
             {
+                // Check memory pressure before refresh cycle
+                await CheckMemoryPressureAsync();
+                
                 if (_stateTracker.RequiresFullReload(dashboardId, timeRangeMinutes, selectedInstance, timezoneOffsetHours))
                 {
                     await _cache.InvalidateAllAsync();

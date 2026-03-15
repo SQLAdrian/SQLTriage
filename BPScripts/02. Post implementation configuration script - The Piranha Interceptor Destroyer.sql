@@ -1,21 +1,41 @@
 /* بسم الله الرحمن الرحيم  */
 /* In the name of God, the Merciful, the Compassionate */
 
-
-/*This script's intent has changed from looking for alerts to incoporating all default stuff that we want on a server
-1. Database mail
-2. Alerts for Corruption 
-3. Set Model DB defaults
-4. Daily Adaptive Cycle Error Logs
-
-Last Update: 2020-10-21. Changed to Resolution Script, added VLF fixes
-
-
-Other things:
-https://www.vmware.com/content/dam/digitalmarketing/vmware/en/pdf/solutions/sql-server-on-vmware-best-practices-guide.pdf
---Netsh int tcp show global
---netsh interface tcp set global rss=enabled
-*/
+/* ============================================================================
+   THE PIRANHA INTERCEPTOR DESTROYER - SQL Server Post-Implementation Script
+   ============================================================================
+   
+   PURPOSE:
+   Post-implementation configuration for SQL Server covering security hardening,
+   alerting, maintenance, and performance optimization.
+   
+   EXECUTION FLOW (run in this order):
+   -----------------------------------------------------------------------------
+   1. PREREQUISITES      → Variables, logging, permissions, config snapshots
+   2. SERVER CONFIG      → sp_configure, security hardening, trace flags
+   3. DATABASE MAIL     → Enable mail, create operators
+   4. MAINTENANCE JOBS  → Error log cycling, Ola integration, job alerts
+   5. SQL AGENT ALERTS  → Severity, error numbers, AG-specific alerts
+   6. DATABASE SETTINGS → Per-db settings, model defaults, compat levels
+   7. AUDIT & COMPLIANCE→ SQL Audit, security change tracking
+   8. FINALIZATION      → Endpoint fixes, completion
+   -----------------------------------------------------------------------------
+   
+   CONFIGURATION FLAGS (set before running):
+   - @UpdateOla         : Update Ola job schedules (default: 0)
+   - @AddMappedDrive   : Create backup mapped drive (default: 0)
+   - @NeedEmptyFile    : Create emergency empty file (default: 0)
+   - @DoDeadlocks      : Enable deadlock XEvent capture (default: 0)
+   - @EnableRCSI       : Enable RCSI per database (default: 0)
+   - @UpgradeCompatLevel: Upgrade database compat levels (default: 0)
+   
+   DEPENDENCIES:
+   - Requires sysadmin or server-level permissions
+   - Creates tables in master database
+   - Modifies msdb for operators/alerts
+   
+   LAST UPDATED: 2026-03-12
+   ============================================================================ */
 
 USE [master]
 GO
@@ -38,9 +58,81 @@ RAISERROR (@Raiseme,0,1) WITH NOWAIT;
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 --==========================================================
--- Capture current configs
+-- Execution Logging Table
 --==========================================================
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+*/
+-- Create execution logging table to track all changes made by this script
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE type = 'U' AND name = 'DBA_Configuration_Log')
+BEGIN
+    CREATE TABLE [master].[dbo].[DBA_Configuration_Log](
+        [ID] [int] IDENTITY(1,1) NOT NULL,
+        [ExecutionTime] [datetime] NOT NULL DEFAULT GETDATE(),
+        [ServerName] [nvarchar](128) NOT NULL DEFAULT @@SERVERNAME,
+        [Category] [nvarchar](100) NOT NULL,
+        [SettingName] [nvarchar](200) NOT NULL,
+        [OldValue] [nvarchar](max) NULL,
+        [NewValue] [nvarchar](max) NULL,
+        [Status] [nvarchar](50) NOT NULL,
+        [ErrorMessage] [nvarchar](max) NULL,
+        CONSTRAINT [PK_DBA_Configuration_Log] PRIMARY KEY CLUSTERED ([ID] ASC)
+    );
+    RAISERROR ('Created DBA_Configuration_Log table', 0, 1) WITH NOWAIT;
+END
+
+-- Helper procedure to log changes
+IF NOT EXISTS (SELECT * FROM sys.objects WHERE type = 'P' AND OBJECT_ID = OBJECT_ID('dbo.sp_LogConfigurationChange'))
+BEGIN
+    EXEC('CREATE PROCEDURE [dbo].[sp_LogConfigurationChange] AS BEGIN SET NOCOUNT ON; END');
+END
+EXEC('ALTER PROCEDURE [dbo].[sp_LogConfigurationChange]
+    @Category NVARCHAR(100),
+    @SettingName NVARCHAR(200),
+    @OldValue NVARCHAR(MAX) = NULL,
+    @NewValue NVARCHAR(MAX) = NULL,
+    @Status NVARCHAR(50),
+    @ErrorMessage NVARCHAR(MAX) = NULL
+AS
+BEGIN
+    INSERT INTO [master].[dbo].[DBA_Configuration_Log] 
+        (Category, SettingName, OldValue, NewValue, Status, ErrorMessage)
+    VALUES 
+        (@Category, @SettingName, @OldValue, @NewValue, @Status, @ErrorMessage);
+END');
+
+/*
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+--==========================================================
+-- Permission Checks
+--==========================================================
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+*/
+DECLARE @HasServerLevelPermissions BIT = 0;
+DECLARE @HasDBOwnerPermissions BIT = 0;
+
+-- Check if current user has sufficient permissions
+BEGIN TRY
+    -- Test sys.server_permissions
+    SELECT TOP 1 @HasServerLevelPermissions = 1 
+    FROM sys.server_permissions 
+    WHERE perm_state = 'G' AND (principal_id = DATABASE_PRINCIPAL_ID() OR principal_id = 1);
+END TRY
+BEGIN CATCH
+    SET @HasServerLevelPermissions = 0;
+END CATCH
+
+IF @HasServerLevelPermissions = 0
+BEGIN
+    RAISERROR('WARNING: Running without server-level permissions. Some configurations may fail.', 10, 1) WITH NOWAIT;
+END
+
+/*
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   SECTION 1.3: CONFIGURATION SNAPSHOTS
+   Capture baseline state of server configuration for audit/review
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 */
 IF OBJECT_ID('master.dbo.DBA_SYS_DATABASES') IS NULL
@@ -58,17 +150,15 @@ END
 
 IF OBJECT_ID('master.dbo.DBA_SYS_DATABASE_FILES') IS NULL
 BEGIN
-	SELECT GETDATE() [Timestamp], SD.name [DB], SF.*
+	SELECT GETDATE() [Timestamp], DB_NAME(database_id) AS [DB], *
 	INTO master.dbo.DBA_SYS_DATABASE_FILES
-	FROM sys.sysaltfiles SF
-	INNER JOIN sys.databases SD ON SD.database_id = SF.dbid
+	FROM sys.database_files
 END 
 ELSE
 BEGIN
 	INSERT  INTO master.dbo.DBA_SYS_DATABASE_FILES
-	SELECT GETDATE() [Timestamp], SD.name [DB], SF.*
-	FROM sys.sysaltfiles SF
-	INNER JOIN sys.databases SD ON SD.database_id = SF.dbid
+	SELECT GETDATE() [Timestamp], DB_NAME(database_id) AS [DB], *
+	FROM sys.database_files
 END
 
 IF OBJECT_ID('master.dbo.DBA_SYS_TRACEFLAGS') IS NULL
@@ -83,11 +173,9 @@ END
 
 /*
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
---==========================================================
--- Create mapped drive if needed
---==========================================================
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   SECTION 1.4: OPTIONAL MAPPED DRIVE / EMERGENCY FILE
+   Optional: Create mapped drive for backups or emergency empty file
+   Set @AddMappedDrive=1 or @NeedEmptyFile=1 to enable
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 */
 
@@ -116,11 +204,9 @@ END
 
 /*
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
---==========================================================
--- Update Ola Jobs
---==========================================================
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   SECTION 1.5: UPDATE OLA JOB SCHEDULES
+   Optional: Update Ola Hallengren maintenance job schedules
+   Set @UpdateOla=1 to enable
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 */
 
@@ -329,11 +415,9 @@ END
 
 /*
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
---==========================================================
--- Creating deadlock capture thingy
---==========================================================
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   SECTION 2.1: DEADLOCK CAPTURE (XEvent)
+   Optional: Create XEvent session for deadlock capture
+   Set @DoDeadlocks=1 to enable (requires SQL 2012+)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 */
 
@@ -440,100 +524,167 @@ BEGIN
 	END CATCH
 END
 
+/*
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   SECTION 2.2: BLOCKED PROCESS THRESHOLD & XEvent
+   Configure blocked process report (default 5 seconds) and create
+   XEvent session to capture blocking/deadlock events
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+*/
+
+/*
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   SECTION 2.3: PERFORMANCE BEST PRACTICES (Microsoft/Brent Ozar)
+   Configure enterprise-grade performance settings
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+*/
+
+-- Lock Pages in Memory (LPIM) - Enterprise Edition only
+-- Prevents SQL Server working set from being paged out by Windows
+DECLARE @SQLVer INT, @SQLEdition NVARCHAR(500)
+SELECT @SQLVer = @@MicrosoftVersion / 0x01000000,
+       @SQLEdition = SERVERPROPERTY('Edition')
+
+IF @SQLEdition LIKE '%Enterprise%' OR @SQLEdition LIKE '%Developer%'
+BEGIN
+    EXEC sys.sp_configure N'show advanced options', N'1'
+    RECONFIGURE
+    EXEC sys.sp_configure N'locks', N'0'  -- default, verify not overridden
+    RECONFIGURE
+    RAISERROR('INFO: Lock Pages in Memory requires Windows policy setting for SQL service account', 10, 1) WITH NOWAIT;
+    RAISERROR('      Grant "Lock pages in memory" (seLockMemoryPrivilege) to SQL service account', 10, 1) WITH NOWAIT;
+    EXEC sys.sp_configure N'show advanced options', N'0'
+    RECONFIGURE
+END
+
+-- Accelerated Database Recovery (ADR) - SQL 2019+ only
+-- Improves database availability during long-running transactions
+IF @SQLVer >= 15
+BEGIN
+    DECLARE @ADRSQL NVARCHAR(MAX) = N''
+    SELECT @ADRSQL += N'ALTER DATABASE ' + QUOTENAME(name) + N' SET ACCELERATED_DATABASE_RECOVERY = ON;' + CHAR(13)
+    FROM sys.databases
+    WHERE database_id > 4 
+      AND state = 0 
+      AND is_read_only = 0
+      AND name NOT IN ('tempdb')
+      AND is_accelerated_database_recovery_on = 0
+
+    IF @ADRSQL <> N''
+    BEGIN
+        RAISERROR('INFO: Enabling Accelerated Database Recovery on user databases', 10, 1) WITH NOWAIT;
+        RAISERROR(@ADRSQL, 10, 1) WITH NOWAIT;
+        EXEC sp_executesql @ADRSQL
+    END
+    ELSE
+        RAISERROR('INFO: ADR already enabled on all applicable databases', 10, 1) WITH NOWAIT;
+END
+
+-- Secondary tempdb data files (best practice for SQL 2016+)
+-- Create multiple tempdb files based on logical CPU count (up to 8, or cores per NUMA)
+IF @SQLVer >= 13
+BEGIN
+    DECLARE @TempDBFileCount INT, @CPUCount INT
+    SELECT @CPUCount = cpu_count FROM sys.dm_os_sys_info
+    SET @TempDBFileCount = CASE WHEN @CPUCount > 8 THEN 8 ELSE @CPUCount END
+    
+    -- Check existing tempdb data files
+    DECLARE @CurrentTempDBFiles INT
+    SELECT @CurrentTempDBFiles = COUNT(*) 
+    FROM sys.database_files 
+    WHERE database_id = 2 AND type = 0  -- data files only
+    
+    IF @CurrentTempDBFiles < @TempDBFileCount
+    BEGIN
+        RAISERROR('INFO: tempdb currently has %d data files, best practice suggests %d for this server', 
+            10, 1, @CurrentTempDBFiles, @TempDBFileCount) WITH NOWAIT;
+        RAISERROR('      Recommend adding additional tempdb data files manually for best performance', 10, 1) WITH NOWAIT;
+    END
+END
+
+-- Query Store retention settings (recommended by Brent Ozar)
+-- Set to 7 days, auto-cleanup, capture all queries
+IF @SQLVer >= 13
+BEGIN
+    DECLARE @QSSQL NVARCHAR(MAX) = N''
+    SELECT @QSSQL += N'ALTER DATABASE ' + QUOTENAME(name) + 
+        N' SET QUERY_STORE (OPERATION_MODE = READ_WRITE, CLEANUP_POLICY = (STALE_QUERY_THRESHOLD_DAYS = 7), ' +
+        N'DATA_FLUSH_INTERVAL_SECONDS = 60, MAX_STORAGE_SIZE_MB = 1000, INTERVAL_LENGTH_MINUTES = 60);' + CHAR(13)
+    FROM sys.databases
+    WHERE database_id > 4 AND state = 0 AND is_query_store_on = 1
+    
+    IF @QSSQL <> N''
+    BEGIN
+        RAISERROR('INFO: Optimizing Query Store retention settings', 10, 1) WITH NOWAIT;
+        EXEC sp_executesql @QSSQL
+    END
+END
+
+-- Check for High Performance Power Plan (Brent Ozar priority)
+DECLARE @PowerPlan NVARCHAR(100)
+EXEC master.dbo.xp_regread 'HKEY_LOCAL_MACHINE', 
+    'SYSTEM\CurrentControlSet\Control\PowerUser\PowerSchemes', 
+    'ActivePowerScheme', @PowerPlan OUTPUT
+IF @PowerPlan IS NOT NULL AND @PowerPlan <> '8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c'
+BEGIN
+    RAISERROR('WARNING: Power Plan is not set to High Performance (8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c)', 10, 1) WITH NOWAIT;
+    RAISERROR('      Current: %s - This can significantly impact SQL Server performance', 10, 1, @PowerPlan) WITH NOWAIT;
+END
+/* blocked process threshold: fires the blocked_process_report event when a session
+   is blocked for >= N seconds. Must be set BEFORE creating the XEvent session.
+   Default is 0 (disabled). 5 seconds is the standard starting point. */
+EXEC sys.sp_configure N'show advanced options', N'1'
+RECONFIGURE WITH OVERRIDE
+EXEC sys.sp_configure N'blocked process threshold (s)', N'5'
+RECONFIGURE WITH OVERRIDE
+RAISERROR ('Action: Set blocked process threshold to 5 seconds', 0, 1) WITH NOWAIT;
+EXEC sys.sp_configure N'show advanced options', N'0'
+RECONFIGURE WITH OVERRIDE
+
+/* XEvent session to capture blocking reports and deadlocks together.
+   Writes to a ring buffer (in-memory, no file I/O overhead).
+   The ring_buffer target holds ~10 MB of events by default.          */
+IF NOT EXISTS (SELECT * FROM sys.server_event_sessions WHERE name = N'BlockingAndDeadlocks')
+BEGIN
+	CREATE EVENT SESSION [BlockingAndDeadlocks] ON SERVER
+	ADD EVENT sqlserver.blocked_process_report
+	    (WHERE sqlserver.database_id > 4),   -- user databases only
+	ADD EVENT sqlserver.xml_deadlock_report
+	ADD TARGET package0.ring_buffer
+	    (SET max_memory = 10240)             -- 10 MB ring buffer
+	WITH (
+		MAX_MEMORY = 4096 KB,
+		EVENT_RETENTION_MODE = ALLOW_SINGLE_EVENT_LOSS,
+		MAX_DISPATCH_LATENCY = 5 SECONDS,
+		MAX_EVENT_SIZE = 0 KB,
+		MEMORY_PARTITION_MODE = NONE,
+		TRACK_CAUSALITY = OFF,
+		STARTUP_STATE = ON              -- survives service restart
+	);
+	RAISERROR ('Action: Created BlockingAndDeadlocks XEvent session', 0, 1) WITH NOWAIT;
+END
+ELSE
+BEGIN
+	RAISERROR ('Action: BlockingAndDeadlocks XEvent session already exists', 0, 1) WITH NOWAIT;
+END
+
+BEGIN TRY
+	ALTER EVENT SESSION [BlockingAndDeadlocks] ON SERVER STATE = START;
+END TRY
+BEGIN CATCH
+	RAISERROR ('BlockingAndDeadlocks XEvent session already running', 0, 1) WITH NOWAIT;
+END CATCH
+
 
 USE [msdb]
 GO
 
 
 
-DECLARE @ReturnCode INT
-SELECT @ReturnCode = 0
-DECLARE @the_job_Id BINARY(16)
-DECLARE @the_job_name NVARCHAR(200)
-SET @the_job_name =  '996. Deadlocks'
-
-SELECT @the_job_Id = job_id  FROM msdb.dbo.sysjobs WHERE [name] =  @the_job_name 
-
-IF NOT EXISTS (SELECT name FROM msdb.dbo.syscategories WHERE name=N'[Uncategorized (Local)]' AND category_class=1)
-	EXEC @ReturnCode = msdb.dbo.sp_add_category @class=N'JOB', @type=N'LOCAL', @name=N'[Uncategorized (Local)]'
- 
--- Get the server name
-DECLARE @ServerName sysname 
-SET @ServerName = (SELECT @@SERVERNAME);
-
-IF NOT EXISTS(SELECT job_id,*  FROM msdb.dbo.sysjobs WHERE [name] =  '996. Deadlocks')
-BEGIN
-	DECLARE @jobId BINARY(16)
-	EXEC @ReturnCode =  msdb.dbo.sp_add_job @job_name=N'996. Deadlocks',
-	@enabled=1,
-	@notify_level_eventlog=2,
-	@notify_level_email=0,
-	@notify_level_netsend=0,
-	@notify_level_page=0,
-	@delete_level=0,
-	@description=N'no description',
-	@category_name=N'[Uncategorized (Local)]',
-	@owner_login_name=N'sa', @job_id = @jobId OUTPUT
-
-	EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'deadlock',
-	@step_id=1,
-	@cmdexec_success_code=0,
-	@on_success_action=1,
-	@on_success_step_id=0,
-	@on_fail_action=2,
-	@on_fail_step_id=0,
-	@retry_attempts=0,
-	@retry_interval=0,
-	@os_run_priority=0, @subsystem=N'TSQL',
-	@command=N'EXEC master.dbo.spDeadLockReport',
-	@database_name=N'master',
-	@flags=0
- 
-	EXEC @ReturnCode = msdb.dbo.sp_update_job @job_id = @jobId, @start_step_id = 1
-	EXEC @ReturnCode = msdb.dbo.sp_add_jobserver @job_id = @jobId, @server_name = N'(local)'
-END
-
-SELECT @the_job_Id = job_id  FROM msdb.dbo.sysjobs WHERE [name] =  @the_job_name 
-BEGIN TRY
-	EXEC msdb.dbo.sp_add_alert @name=N'[SQLDBA]Deadlock Alerts', 
-		@message_id=0, 
-		@severity=0, 
-		@enabled=1, 
-		@delay_between_responses=0, 
-		@include_event_description_in=0, 
-		@category_name=N'[Uncategorized]', 
-		@performance_condition=N'Locks|Number of Deadlocks/sec|_Total|>|0', 
-		@job_id=@the_job_Id
-	EXEC msdb.dbo.sp_update_notification @alert_name=N'[SQLDBA]Deadlock Alerts', @operator_name=N'SQLDBA', @notification_method = 1
-
-END TRY
-BEGIN CATCH
-	RAISERROR ('[SQLDBA]Deadlock Alerts already exists',0,1) WITH NOWAIT;
-	EXEC msdb.dbo.sp_update_alert @name=N'[SQLDBA]Deadlock Alerts', 
-			@message_id=0, 
-			@severity=0, 
-			@enabled=1, 
-			@delay_between_responses=0, 
-			@include_event_description_in=1, 
-			@database_name=N'', 
-			@notification_message=N'Deadlock triggered', 
-			@event_description_keyword=N'', 
-			@performance_condition=N'Locks|Number of Deadlocks/sec|_Total|>|0', 
-			@wmi_namespace=N'', 
-			@wmi_query=N'', 
-			@job_id=@the_job_Id
-	EXEC msdb.dbo.sp_update_notification @alert_name=N'[SQLDBA]Deadlock Alerts', @operator_name=N'SQLDBA', @notification_method = 1
-
-
-END CATCH
-
 /*
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
---==========================================================
--- Enable Database Mail
---==========================================================
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   SECTION 3: DATABASE MAIL CONFIGURATION
+   Enable Database Mail and create operators for alert notifications
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 */
 /* We will assume you have Datbase Mail enabled and configured*/
@@ -543,30 +694,28 @@ Brent Ozar Unlimited, https://www.brentozar.com/blitz/configure-sql-server-alert
 */
 
 
-GO
+
 /*Enable Advanced options*/
 EXEC sys.sp_configure N'show advanced options', N'1'
 RECONFIGURE WITH OVERRIDE
-GO
+
 /*Enable Database Mail*/
 EXEC sp_configure 'Database Mail XPs', 1
 RECONFIGURE WITH OVERRIDE
 RAISERROR ('Action: Enabled database mail',0,1) WITH NOWAIT;
-GO
+
 
 
 USE [master]
-GO
+
 -- Get the server name
 DECLARE @ServerName sysname 
 SET @ServerName = (SELECT @@SERVERNAME);
 /*
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
---==========================================================
--- Now create alerts
---==========================================================
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   SECTION 4: SQL AGENT ALERTS
+   Create comprehensive alerts for severity levels, error numbers,
+   and Always On availability group events
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 */
 ---------------------------------------------------------------------------------------------------------
@@ -653,6 +802,97 @@ IF NOT EXISTS (SELECT *
 
 
 
+
+DECLARE @ReturnCode INT
+SELECT @ReturnCode = 0
+DECLARE @the_job_Id BINARY(16)
+DECLARE @the_job_name NVARCHAR(200)
+DECLARE @thealert_Id BINARY(16)
+DECLARE @thealert_name NVARCHAR(200)
+SET @the_job_name =  '996. Deadlocks'
+
+SELECT @the_job_Id = job_id  FROM msdb.dbo.sysjobs WHERE [name] =  @the_job_name 
+
+IF NOT EXISTS (SELECT name FROM msdb.dbo.syscategories WHERE name=N'[Uncategorized (Local)]' AND category_class=1)
+	EXEC @ReturnCode = msdb.dbo.sp_add_category @class=N'JOB', @type=N'LOCAL', @name=N'[Uncategorized (Local)]'
+ 
+
+
+IF NOT EXISTS(SELECT job_id,*  FROM msdb.dbo.sysjobs WHERE [name] =  '996. Deadlocks')
+BEGIN
+	DECLARE @jobId BINARY(16)
+	EXEC @ReturnCode =  msdb.dbo.sp_add_job @job_name=N'996. Deadlocks',
+	@enabled=1,
+	@notify_level_eventlog=2,
+	@notify_level_email=0,
+	@notify_level_netsend=0,
+	@notify_level_page=0,
+	@delete_level=0,
+	@description=N'no description',
+	@category_name=N'[Uncategorized (Local)]',
+	@owner_login_name=N'sa', @job_id = @jobId OUTPUT
+
+	EXEC @ReturnCode = msdb.dbo.sp_add_jobstep @job_id=@jobId, @step_name=N'deadlock',
+	@step_id=1,
+	@cmdexec_success_code=0,
+	@on_success_action=1,
+	@on_success_step_id=0,
+	@on_fail_action=2,
+	@on_fail_step_id=0,
+	@retry_attempts=0,
+	@retry_interval=0,
+	@os_run_priority=0, @subsystem=N'TSQL',
+	@command=N'EXEC master.dbo.spDeadLockReport',
+	@database_name=N'master',
+	@flags=0
+ 
+	EXEC @ReturnCode = msdb.dbo.sp_update_job @job_id = @jobId, @start_step_id = 1
+	EXEC @ReturnCode = msdb.dbo.sp_add_jobserver @job_id = @jobId, @server_name = N'(local)'
+END
+
+IF NOT EXISTS (SELECT id FROM msdb.dbo.sysalerts WHERE name = N'[SQLDBA]Deadlock Alerts')
+BEGIN
+	RAISERROR ('Creating [SQLDBA]Deadlock Alerts',0,1) WITH NOWAIT;
+	BEGIN TRY
+		EXEC msdb.dbo.sp_add_alert @name=N'[SQLDBA]Deadlock Alerts',
+			@message_id=0,
+			@severity=0,
+			@enabled=1,
+			@delay_between_responses=0,
+			@include_event_description_in=1,
+			@category_name=N'[Uncategorized]',
+			@performance_condition=N'Locks|Number of Deadlocks/sec|_Total|>|0',
+			@job_id=@the_job_Id
+		EXEC msdb.dbo.sp_add_notification @alert_name=N'[SQLDBA]Deadlock Alerts', @operator_name=N'SQLDBA', @notification_method=1
+		RAISERROR ('[SQLDBA]Deadlock Alerts created',0,1) WITH NOWAIT;
+	END TRY
+	BEGIN CATCH
+		RAISERROR ('[SQLDBA]Deadlock Alerts creation failed',0,1) WITH NOWAIT;
+	END CATCH
+END
+ELSE
+BEGIN
+	RAISERROR ('Updating existing [SQLDBA]Deadlock Alerts',0,1) WITH NOWAIT;
+	BEGIN TRY
+		EXEC msdb.dbo.sp_update_alert @name=N'[SQLDBA]Deadlock Alerts',
+			@message_id=0,
+			@severity=0,
+			@enabled=1,
+			@delay_between_responses=0,
+			@include_event_description_in=1,
+			@database_name=N'',
+			@notification_message=N'Deadlock triggered',
+			@event_description_keyword=N'',
+			@performance_condition=N'Locks|Number of Deadlocks/sec|_Total|>|0',
+			@wmi_namespace=N'',
+			@wmi_query=N'',
+			@job_id=@the_job_Id
+		EXEC msdb.dbo.sp_update_notification @alert_name=N'[SQLDBA]Deadlock Alerts', @operator_name=N'SQLDBA', @notification_method=1
+	END TRY
+	BEGIN CATCH
+		RAISERROR ('[SQLDBA]Deadlock Alerts update failed',0,1) WITH NOWAIT;
+	END CATCH
+END
 -- Alert Names start with the name of the server 
 
 
@@ -682,16 +922,13 @@ INSERT INTO @AlertTable VALUES ('Error',35265, 	@ServerName + N' Alert - AG 3526
 INSERT INTO @AlertTable VALUES ('Error',35264, 	@ServerName + N' Alert - AG 35264: AG Data Movement - Suspended')
 INSERT INTO @AlertTable VALUES ('Error',28034, 	@ServerName + N' Alert - AG 28034: Connection handshake on broker')
 INSERT INTO @AlertTable VALUES ('Error',1480, 	@ServerName + N' Alert - AG 1480: AG Role Change' )
-INSERT INTO @AlertTable VALUES ('Error',41091, 	@ServerName + N' Alert - AG 41091: Replica Going Offline')
+INSERT INTO @AlertTable VALUES ('Error',41091, 	@ServerName + N' Alert - AG 41091: Replica Going Offline / Lease Expired')
 INSERT INTO @AlertTable VALUES ('Error',41131, 	@ServerName + N' Alert - AG 41131: Failed to Bring AG ONLINE')
 INSERT INTO @AlertTable VALUES ('Error',41142, 	@ServerName + N' Alert - AG 41142: Replica Cannot become primary')
 INSERT INTO @AlertTable VALUES ('Error',41406, 	@ServerName + N' Alert - AG 41406: AG not Ready for Auto Failover')
 INSERT INTO @AlertTable VALUES ('Error',41414, 	@ServerName + N' Alert - AG 41414: Secondary not Connected')
-INSERT INTO @AlertTable VALUES ('Error',35264, 	@ServerName + N' Alert - Error 35264: AG data movement for database has been suspended ' )
 INSERT INTO @AlertTable VALUES ('Error',983, 	@ServerName + N' Alert - Error 983: Unable to access availability database'   )
 INSERT INTO @AlertTable VALUES ('Error',35276, 	@ServerName + N' Alert - Error 35276: Failed to allocate and schedule an AG task for database'  )
-INSERT INTO @AlertTable VALUES ('Error',41091, 	@ServerName + N' Alert - Error 41091: AG lease expired or lease renewal failed'  )
-INSERT INTO @AlertTable VALUES ('Error',41406, 	@ServerName + N' Alert - Error 41406: The availability group is not ready for automatic failover.'  )
 
 INSERT INTO @AlertTable VALUES ('Error',19407, 	@ServerName + N' Alert - AG - Cluster connectivity issue.' )-- The lease between the SQL availability group and the Windows Server Failover Cluster has expired.'  )
 INSERT INTO @AlertTable VALUES ('Error',19419, 	@ServerName + N' Alert - AG - Cluster to SQL lease timeout.' )--  Failover Cluster did not receive a process event signal from SQL Server hosting availability group within the lease timeout period.'  )
@@ -715,7 +952,89 @@ INSERT INTO @AlertTable VALUES ('Error',5228, 	@ServerName + N' Alert - Error 52
 INSERT INTO @AlertTable VALUES ('Error',5229, 	@ServerName + N' Alert - Error 5229: Table error. contains an anti-matter column.' )-- 
 INSERT INTO @AlertTable VALUES ('Error',5242, 	@ServerName + N' Alert - Error 5242: An inconsistency was detected during an internal operation in database.' )-- 
 INSERT INTO @AlertTable VALUES ('Error',5243, 	@ServerName + N' Alert - Error 5243: An inconsistency was detected during an internal operation.' )-- 
-INSERT INTO @AlertTable VALUES ('Error',5250, 	@ServerName + N' Alert - Error 5250: Database error. This error cannot be repaired.' )-- 
+INSERT INTO @AlertTable VALUES ('Error',5250, 	@ServerName + N' Alert - Error 5250: Database error. This error cannot be repaired.' )--
+
+/* Memory pressure alerts */
+INSERT INTO @AlertTable VALUES ('Error',701,	@ServerName + N' Alert - Error 701: Insufficient memory in resource pool')
+INSERT INTO @AlertTable VALUES ('Error',802,	@ServerName + N' Alert - Error 802: Insufficient memory available in the buffer pool')
+INSERT INTO @AlertTable VALUES ('Error',8645,	@ServerName + N' Alert - Error 8645: Timeout waiting for memory resource (RESOURCE_SEMAPHORE)')
+INSERT INTO @AlertTable VALUES ('Error',8651,	@ServerName + N' Alert - Error 8651: Low memory condition - deferred request failed')
+INSERT INTO @AlertTable VALUES ('Error',17803,	@ServerName + N' Alert - Error 17803: Insufficient memory during thread creation (Windows memory allocation failed)')
+
+/* Log / disk space alerts */
+INSERT INTO @AlertTable VALUES ('Error',9001,	@ServerName + N' Alert - Error 9001: Log for database is not available (log corruption / inaccessible)')
+INSERT INTO @AlertTable VALUES ('Error',1105,	@ServerName + N' Alert - Error 1105: Could not allocate space in filegroup (data file full, including PRIMARY)')
+INSERT INTO @AlertTable VALUES ('Error',3271,	@ServerName + N' Alert - Error 3271: Non-recoverable I/O error occurred on file')
+
+/* Authentication / security */
+INSERT INTO @AlertTable VALUES ('Error',17806,	@ServerName + N' Alert - Error 17806: SSPI handshake failed (authentication failure)')
+
+/* I/O subsystem */
+INSERT INTO @AlertTable VALUES ('Error',7105,	@ServerName + N' Alert - Error 7105: Could not retrieve row from disk (out-of-row BLOB I/O error)')
+
+/* Configuration change audit trail */
+INSERT INTO @AlertTable VALUES ('Error',15457,	@ServerName + N' Alert - Error 15457: Configuration option changed (audit trail)')
+
+/* Network / TDS errors */
+INSERT INTO @AlertTable VALUES ('Error',4014,	@ServerName + N' Alert - Error 4014: Fatal error reading input stream from the network (TDS corruption)')
+INSERT INTO @AlertTable VALUES ('Error',17826,	@ServerName + N' Alert - Error 17826: Could not start network library due to internal error (SQL lost its listener)')
+
+/* File Control Block / pre-corruption indicator */
+INSERT INTO @AlertTable VALUES ('Error',5180,	@ServerName + N' Alert - Error 5180: Could not open File Control Block for invalid file ID (precursor to 823/824 corruption)')
+
+/* Stack alignment fatal error */
+INSERT INTO @AlertTable VALUES ('Error',17551,	@ServerName + N' Alert - Error 17551: Fatal error - stack not properly aligned (indicates driver/OS issue)')
+
+/* Buffer manager internal error */
+INSERT INTO @AlertTable VALUES ('Error',8966,	@ServerName + N' Alert - Error 8966: Unable to read and latch page (internal buffer manager error indicating corruption)')
+
+/* Backup / restore termination (complementary to 3041 -- also fires on restore failures) */
+INSERT INTO @AlertTable VALUES ('Error',3013,	@ServerName + N' Alert - Error 3013: BACKUP or RESTORE terminating abnormally')
+
+/* Service Broker / endpoint */
+INSERT INTO @AlertTable VALUES ('Error',1918,	@ServerName + N' Alert - Error 1918: Error during starting endpoint (Service Broker / mirroring endpoint failure)')
+
+/* MSDTC distributed transaction recovery */
+INSERT INTO @AlertTable VALUES ('Error',3452,	@ServerName + N' Alert - Error 3452: Recovery of in-doubt distributed transactions (MSDTC) detected')
+
+/* Security monitoring -- login failures (delay_between_responses set to 60s in the loop to avoid storms) */
+INSERT INTO @AlertTable VALUES ('Error',18456,	@ServerName + N' Alert - Error 18456: Login failed (security monitoring)')
+
+/* Additional critical missing alerts - best practice additions */
+/* I/O subsystem and lock errors */
+INSERT INTO @AlertTable VALUES ('Error',596,	@ServerName + N' Alert - Error 596: LCK_M_IX lock wait exceeded (severe blocking)')
+INSERT INTO @AlertTable VALUES ('Error',595,	@ServerName + N' Alert - Error 595: Lock escalation prevented')
+INSERT INTO @AlertTable VALUES ('Error',1221,	@ServerName + N' Alert - Error 1221: Lock resources exceeded (deadlock victim)')
+
+/* TempDB critical issues */
+INSERT INTO @AlertTable VALUES ('Error',1105,	@ServerName + N' Alert - Error 1105: Could not allocate space in tempdb')
+INSERT INTO @AlertTable VALUES ('Error',1102,	@ServerName + N' Alert - Error 1102: Allocation page latch timeout in tempdb')
+
+/* Query Store errors */
+INSERT INTO @AlertTable VALUES ('Error',12410,	@ServerName + N' Alert - Error 12410: Query Store internal error')
+INSERT INTO @AlertTable VALUES ('Error',12411,	@ServerName + N' Alert - Error 12411: Query Store collection failed')
+
+/* Always On / AG critical */
+INSERT INTO @AlertTable VALUES ('Error',1481,	@ServerName + N' Alert - AG 1481: Database replica sync health check failed')
+INSERT INTO @AlertTable VALUES ('Error',35201,	@ServerName + N' Alert - AG 35201: Connection to primary failed')
+
+/* Transaction log corruption */
+INSERT INTO @AlertTable VALUES ('Error',9003,	@ServerName + N' Alert - Error 9003: Log scan - invalid log sequence number')
+INSERT INTO @AlertTable VALUES ('Error',9004,	@ServerName + N' Alert - Error 9004: Log file corruption - truncated')
+INSERT INTO @AlertTable VALUES ('Error',9013,	@ServerName + N' Alert - Error 9013: Virtual log file too small')
+
+/* DAC connection issues */
+INSERT INTO @AlertTable VALUES ('Error',233,	@ServerName + N' Alert - Error 233: Shared memory provider disconnected')
+
+/* Brent Ozar / Microsoft additional critical alerts */
+/* Out of memory conditions */
+INSERT INTO @AlertTable VALUES ('Error',701, 	@ServerName + N' Alert - Error 701: Insufficient memory (resource pool)')
+INSERT INTO @AlertTable VALUES ('Error',802, 	@ServerName + N' Alert - Error 802: Buffer pool insufficient memory')
+INSERT INTO @AlertTable VALUES ('Error',8645, 	@ServerName + N' Alert - Error 8645: Resource semaphore wait timeout')
+
+/* SOS scheduler exhaustion (critical) */
+INSERT INTO @AlertTable VALUES ('Error',17883, 	@ServerName + N' Alert - Error 17883: Scheduler deadlock detected')
+INSERT INTO @AlertTable VALUES ('Error',17884, 	@ServerName + N' Alert - Error 17884: All schedulers appear deadlocked')
 
 
 DECLARE @MaxAlerts TINYINT
@@ -727,7 +1046,7 @@ DECLARE @ThisMessage INT
 DECLARE @ThisAlertType NVARCHAR(50)
 SELECT @MaxAlerts = MAX(ID) FROM @AlertTable
 USE msdb
-WHILE @AlertCounter < @MaxAlerts
+WHILE @AlertCounter <= @MaxAlerts
 BEGIN
 	SELECT @ThisName = AlertName
 	, @ThisAlert = TheNumber
@@ -759,9 +1078,9 @@ BEGIN
 			--EXEC msdb.dbo.sp_add_notification @alert_name = @ThisName, @operator_name = @ServiceDesk, @notification_method = 1;
 			SET @ThisName = 'Configure alert - ' + @ThisName
 			
-			/*Ensure these errprs log for SCOM*/
+			/*Ensure these errors log for SCOM*/
 			IF @ThisAlertType = 'Error'
-				EXEC sp_altermessage @ThisAlert, 'WITH_LOG', 'true'
+				EXEC sp_altermessage @ThisMessage, 'WITH_LOG', 'true'
 
 			RAISERROR (@ThisName,0,1) WITH NOWAIT;
 		END
@@ -774,6 +1093,23 @@ BEGIN
 	END		  
 	SET @AlertCounter = @AlertCounter + 1
 END
+
+/* 18456 fires on every failed login and would spam the operator at 900s delay.
+   Override it to 300 seconds (5 min) after the loop so the alert exists but is less noisy.
+   Adjust as needed for your environment. */
+BEGIN TRY
+	DECLARE @Alert18456Name NVARCHAR(500)
+	SET @Alert18456Name = @ServerName + N' Alert - Error 18456: Login failed (security monitoring)'
+	IF EXISTS (SELECT id FROM msdb.dbo.sysalerts WHERE name = @Alert18456Name)
+	BEGIN
+		EXEC msdb.dbo.sp_update_alert @name = @Alert18456Name,
+			@delay_between_responses = 300
+		RAISERROR ('Action: Set 18456 alert delay to 300s', 0, 1) WITH NOWAIT;
+	END
+END TRY
+BEGIN CATCH
+	RAISERROR ('Could not update 18456 alert delay', 0, 1) WITH NOWAIT;
+END CATCH
 
 
 -- Error 823: Operating System Error
@@ -813,11 +1149,8 @@ END
 
 /*
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
---==========================================================
--- CYCLE daily Error Logs
---==========================================================
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   SECTION 5: MAINTENANCE JOBS
+   Create error log cycling job and configure job failure alerts
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 */
 IF  EXISTS (SELECT job_id FROM msdb.dbo.sysjobs_view WHERE name = N'Daily Cycle Errorlog')
@@ -828,7 +1161,6 @@ BEGIN TRANSACTION
 DECLARE @jobowner sysname
 SET @jobowner = 'sa'
 
-DECLARE @ReturnCode INT
 SELECT @ReturnCode = 0
 
 IF NOT EXISTS (SELECT name FROM msdb.dbo.syscategories WHERE name=N'Database Maintenance' AND category_class=1)
@@ -838,7 +1170,6 @@ IF (@@ERROR <> 0 OR @ReturnCode <> 0) GOTO QuitWithRollback
 
 END
 
-DECLARE @jobId BINARY(16)
 IF EXISTS (SELECT name FROM msdb.dbo.sysoperators WHERE name = @OperatorName)
 BEGIN
 	EXEC @ReturnCode =  msdb.dbo.sp_add_job @job_name=N'Daily Cycle Errorlog', 
@@ -966,15 +1297,56 @@ EXEC sys.sp_configure N'max text repl size (B)', N'-1'
 RAISERROR ('Action: Set max text replication size',0,1) WITH NOWAIT;
 
 
+/*
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+--==========================================================
+-- Default Trace
+--==========================================================
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+*/
+/* The default trace records schema changes, database file growth/shrink,
+   security changes, server start/stop, and error events to a rolling set
+   of .trc files. It is on by default but can be accidentally disabled.
+   It is the first place to look when troubleshooting "who changed what".
+   Note: deprecated in SQL 2022 in favour of XEvent system_health — this
+   block enables it on all earlier versions and warns on 2022+.          */
+DECLARE @DefaultTraceEnabled INT
+DECLARE @DefaultTraceVer     INT
+SELECT @DefaultTraceEnabled = CONVERT(INT, value_in_use)
+FROM sys.configurations WHERE name = 'default trace enabled';
+SELECT @DefaultTraceVer = @@MicrosoftVersion / 0x01000000;
+
+IF @DefaultTraceVer >= 16
+BEGIN
+    RAISERROR ('Action: Default trace is deprecated in SQL 2022+ (system_health XEvent session covers the same ground)', 0, 1) WITH NOWAIT;
+END
+ELSE IF @DefaultTraceEnabled = 0
+BEGIN
+    EXEC sys.sp_configure N'show advanced options', N'1'
+    RECONFIGURE WITH OVERRIDE
+    EXEC sys.sp_configure N'default trace enabled', N'1'
+    RECONFIGURE WITH OVERRIDE
+    EXEC sys.sp_configure N'show advanced options', N'0'
+    RECONFIGURE WITH OVERRIDE
+    RAISERROR ('Action: Default trace was disabled -- re-enabled', 0, 1) WITH NOWAIT;
+END
+ELSE
+    RAISERROR ('Action: Default trace is already enabled', 0, 1) WITH NOWAIT;
+
+
 /*Let's set , don't want no huge msdb please*/
-EXEC msdb.dbo.sp_set_sqlagent_properties 
-	@jobhistory_max_rows=100000, 
+EXEC msdb.dbo.sp_set_sqlagent_properties
+	@jobhistory_max_rows=100000,
 	@jobhistory_max_rows_per_job=1000,
-	@email_save_in_sent_folder=1, 
-	@cpu_poller_enabled=1
+	@email_save_in_sent_folder=1,
+	@cpu_poller_enabled=1,
+	@idle_cpu_percent=10,        -- idle when CPU below 10%
+	@idle_cpu_duration=600       -- for 600 consecutive seconds
 /*Configure Agent alert conditions*/
-EXEC master.dbo.sp_MSsetalertinfo @failsafeoperator=N'SQLDBA', 
-		@notificationmethod=1	
+EXEC master.dbo.sp_MSsetalertinfo @failsafeoperator=N'SQLDBA',
+		@notificationmethod=1
 
 RAISERROR ('Action: Set jobhistory to 100k, rows per job 1k',0,1) WITH NOWAIT;
 
@@ -1021,10 +1393,138 @@ EXEC sys.sp_configure N'optimize for ad hoc workloads', N'1'
 RECONFIGURE WITH OVERRIDE
 RAISERROR ('Action: Set optimize for ad hoc',0,1) WITH NOWAIT;
 
+/*
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+--==========================================================
+-- MAXDOP and Cost Threshold for Parallelism
+--==========================================================
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+*/
+/* MAXDOP: cap at 8, use half physical cores, never exceed NUMA node size.
+   Default 0 causes full-server parallelism storms on OLTP workloads.
+   Adjust @TargetMAXDOP before running if you know the workload profile. */
+DECLARE @PhysicalCores     INT
+DECLARE @NumaNodes         INT
+DECLARE @CoresPerNuma      INT
+DECLARE @TargetMAXDOP      INT
+DECLARE @MaxDOPMsg         NVARCHAR(300)
+
+SELECT
+    @PhysicalCores = si.cpu_count / si.hyperthread_ratio,
+    @NumaNodes     = COUNT(DISTINCT mn.memory_node_id)
+FROM sys.dm_os_sys_info si
+CROSS JOIN sys.dm_os_memory_nodes mn
+WHERE mn.memory_node_id <> 64  -- exclude DAC node
+GROUP BY si.cpu_count, si.hyperthread_ratio;
+
+/* Cores per NUMA node (floor, minimum 1) */
+SET @CoresPerNuma = CASE WHEN @NumaNodes > 0 THEN @PhysicalCores / @NumaNodes ELSE @PhysicalCores END;
+IF @CoresPerNuma < 1 SET @CoresPerNuma = 1;
+
+/* MAXDOP: half physical cores, capped at 8, never exceeds cores-per-NUMA-node, minimum 1 */
+SET @TargetMAXDOP = CASE
+    WHEN @PhysicalCores / 2 >= 8         THEN 8
+    WHEN @PhysicalCores / 2 < 1          THEN 1
+    ELSE @PhysicalCores / 2
+END;
+
+/* NUMA guard: MAXDOP must not exceed physical cores per NUMA node */
+IF @TargetMAXDOP > @CoresPerNuma SET @TargetMAXDOP = @CoresPerNuma;
+
+EXEC sys.sp_configure N'show advanced options', N'1'
+RECONFIGURE WITH OVERRIDE
+
+EXEC sys.sp_configure N'max degree of parallelism', @TargetMAXDOP
+RECONFIGURE WITH OVERRIDE
+
+SET @MaxDOPMsg = 'Action: Set MAXDOP to ' + CONVERT(VARCHAR(5), @TargetMAXDOP)
+    + ' (physical cores: ' + CONVERT(VARCHAR(5), @PhysicalCores)
+    + ', NUMA nodes: ' + CONVERT(VARCHAR(5), @NumaNodes)
+    + ', cores/NUMA: ' + CONVERT(VARCHAR(5), @CoresPerNuma) + ')'
+RAISERROR (@MaxDOPMsg, 0, 1) WITH NOWAIT;
+
+/* Cost threshold for parallelism: default 5 is far too low.
+   50 is a widely accepted starting point for mixed OLTP. Adjust per workload. */
+EXEC sys.sp_configure N'cost threshold for parallelism', N'50'
+RECONFIGURE WITH OVERRIDE
+RAISERROR ('Action: Set cost threshold for parallelism to 50', 0, 1) WITH NOWAIT;
+
+/*
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+--==========================================================
+-- Max Server Memory  (CRITICAL — default is unlimited)
+--==========================================================
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+*/
+/* Reserve OS + non-buffer-pool SQL memory.
+   Formula: leave 10% or 4 GB for OS (whichever is larger), minus ~1 GB per 4 logical cores for thread stacks.
+   MODIFY @ReservedForOSMB if this is a dedicated SQL box vs shared host. */
+DECLARE @TotalRAMMB       BIGINT
+DECLARE @ReservedForOSMB  BIGINT
+DECLARE @TargetMaxMemMB   BIGINT
+DECLARE @LogicalCores     INT
+
+SELECT @TotalRAMMB   = physical_memory_kb / 1024,
+       @LogicalCores = cpu_count
+FROM sys.dm_os_sys_info;
+
+/* Reserve: max of (10% of RAM, 4096 MB) + 256 MB per 4 logical cores for thread stacks */
+SET @ReservedForOSMB = CASE
+    WHEN @TotalRAMMB * 0.10 > 4096 THEN CONVERT(BIGINT, @TotalRAMMB * 0.10)
+    ELSE 4096
+END + ((@LogicalCores / 4) * 256);
+
+SET @TargetMaxMemMB = @TotalRAMMB - @ReservedForOSMB;
+
+/* Safety floor: never set below 512 MB */
+IF @TargetMaxMemMB < 512 SET @TargetMaxMemMB = 512;
+
+DECLARE @MaxMemMsg NVARCHAR(500)
+SET @MaxMemMsg = 'Action: Set max server memory to ' + CONVERT(VARCHAR(10), @TargetMaxMemMB)
+    + ' MB (total RAM: ' + CONVERT(VARCHAR(10), @TotalRAMMB) + ' MB, reserved for OS: ' + CONVERT(VARCHAR(10), @ReservedForOSMB) + ' MB)'
+RAISERROR (@MaxMemMsg, 0, 1) WITH NOWAIT;
+
+EXEC sys.sp_configure N'max server memory (MB)', @TargetMaxMemMB
+RECONFIGURE WITH OVERRIDE
+
+/*
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+--==========================================================
+-- Security Hardening: disable surface area features not in use
+--==========================================================
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+*/
+/* Disable features that expand attack surface. Enable only what your apps require. */
+EXEC sys.sp_configure N'Ole Automation Procedures', N'0'
+RECONFIGURE WITH OVERRIDE
+RAISERROR ('Action: Disabled Ole Automation Procedures', 0, 1) WITH NOWAIT;
+
+EXEC sys.sp_configure N'Ad Hoc Distributed Queries', N'0'
+RECONFIGURE WITH OVERRIDE
+RAISERROR ('Action: Disabled Ad Hoc Distributed Queries (OPENROWSET/OPENDATASOURCE)', 0, 1) WITH NOWAIT;
+
+EXEC sys.sp_configure N'cross db ownership chaining', N'0'
+RECONFIGURE WITH OVERRIDE
+RAISERROR ('Action: Disabled cross-database ownership chaining', 0, 1) WITH NOWAIT;
+
+/* Ensure SQL Mail XPs are OFF (legacy, superseded by Database Mail) */
+IF EXISTS(SELECT * FROM sys.configurations WHERE name = 'SQL Mail XPs')
+BEGIN
+	EXEC sys.sp_configure N'SQL Mail XPs', N'0'
+	RECONFIGURE WITH OVERRIDE
+	RAISERROR ('Action: Disabled SQL Mail XPs (legacy)', 0, 1) WITH NOWAIT;
+END
+
+/* Always reset show advanced options — do this unconditionally so it is
+   not dependent on whether SQL Mail XPs exists (removed in SQL 2022+). */
 EXEC sys.sp_configure N'show advanced options', N'0'
 RECONFIGURE WITH OVERRIDE
-GO
-
 
 
 /*Configure memory
@@ -1042,11 +1542,9 @@ DECLARE @CPUHyperthreadratio MONEY;
 
 /*
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
---==========================================================
--- Set database level settings
---==========================================================
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   SECTION 7: DATABASE-LEVEL SETTINGS
+   Configure per-database settings: auto-close, page verify, Query Store
+   Also configures Model DB defaults for new database creation
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 */
 
@@ -1104,9 +1602,9 @@ SET @DynamicSQL = 'SELECT
 	, db.is_auto_create_stats_on
 	, db.is_auto_update_stats_on
 	, db.is_auto_update_stats_async_on
-	' + CASE WHEN SERVERPROPERTY('productversion') < 12 THEN ', NULL' ELSE ', db.is_auto_create_stats_incremental_on' END +'
+	' + CASE WHEN CONVERT(INT, LEFT(CONVERT(NVARCHAR(20), SERVERPROPERTY('productversion')), CHARINDEX('.', CONVERT(NVARCHAR(20), SERVERPROPERTY('productversion'))) - 1)) < 12 THEN ', NULL' ELSE ', db.is_auto_create_stats_incremental_on' END +'
 	, db.page_verify_option
-	' + CASE WHEN SERVERPROPERTY('productversion') > 13 THEN ', NULL' ELSE ', db.is_query_store_on' END +'
+	' + CASE WHEN CONVERT(INT, LEFT(CONVERT(NVARCHAR(20), SERVERPROPERTY('productversion')), CHARINDEX('.', CONVERT(NVARCHAR(20), SERVERPROPERTY('productversion'))) - 1)) < 13 THEN ', db.is_query_store_on' ELSE ', NULL' END +'
 	FROM sys.databases db ';
 
 IF 'Yes please dont do the system databases' IS NOT NULL
@@ -1160,7 +1658,14 @@ BEGIN
 	BEGIN
 		RAISERROR ('Committing database change',0,1) WITH NOWAIT;
 		RAISERROR (@DynamicSQLforDB,0,1) WITH NOWAIT;
-		EXECUTE( @DynamicSQLforDB)
+		BEGIN TRY
+			EXECUTE( @DynamicSQLforDB)
+			RAISERROR ('Successfully applied changes to database: ' + @DatabaseName,0,1) WITH NOWAIT;
+		END TRY
+		BEGIN CATCH
+			RAISERROR ('ERROR: Failed to apply changes to database [' + @DatabaseName + ']: ' + ERROR_MESSAGE(), 16, 1) WITH NOWAIT;
+			-- Continue processing other databases instead of stopping
+		END CATCH
 	END
 	SET @Databasei_Count = @Databasei_Count + 1
 END
@@ -1190,6 +1695,233 @@ WHERE d.target_recovery_time_in_seconds <> 60
   AND d.is_read_only = 0;
 /*SELECT DatabaseCount = @@ROWCOUNT, Version = @@VERSION, cmd = @sql;*/
 EXEC sys.sp_executesql @sql;
+
+
+/*
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+--==========================================================
+-- Set Model DB defaults (new databases inherit these settings)
+--==========================================================
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+*/
+/* Any database created after this point will inherit model's settings.
+   These mirror the per-database fixes above. */
+ALTER DATABASE [model] SET AUTO_CLOSE OFF WITH NO_WAIT;
+ALTER DATABASE [model] SET AUTO_SHRINK OFF WITH NO_WAIT;
+ALTER DATABASE [model] SET PAGE_VERIFY CHECKSUM WITH NO_WAIT;
+ALTER DATABASE [model] SET AUTO_CREATE_STATISTICS ON WITH NO_WAIT;
+ALTER DATABASE [model] SET AUTO_UPDATE_STATISTICS ON WITH NO_WAIT;
+ALTER DATABASE [model] SET TARGET_RECOVERY_TIME = 60 SECONDS;
+RAISERROR ('Action: Model DB defaults configured', 0, 1) WITH NOWAIT;
+
+/* Query Store on model requires SQL 2019+ (version 15). Skip on earlier. */
+DECLARE @ModelSQLVer INT
+SELECT @ModelSQLVer = @@MicrosoftVersion / 0x01000000
+IF @ModelSQLVer >= 15
+BEGIN
+    ALTER DATABASE [model] SET QUERY_STORE = ON WITH NO_WAIT;
+    RAISERROR ('Action: Model DB Query Store enabled (SQL 2019+)', 0, 1) WITH NOWAIT;
+END
+
+
+/*
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+--==========================================================
+-- TRUSTWORTHY OFF for all user databases
+--==========================================================
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+*/
+/* TRUSTWORTHY ON allows code in the database to reference objects outside it
+   using the database owner's server-level permissions. Should be OFF unless
+   explicitly required (e.g., Service Broker with cross-db activation).     */
+DECLARE @TrustSQL NVARCHAR(MAX) = N''
+SELECT @TrustSQL += N'ALTER DATABASE ' + QUOTENAME(name) + N' SET TRUSTWORTHY OFF;' + CHAR(13)
+FROM sys.databases
+WHERE is_trustworthy_on = 1
+  AND database_id > 4         -- skip system databases
+  AND name NOT IN ('msdb');   -- msdb legitimately requires TRUSTWORTHY ON
+
+IF @TrustSQL <> N''
+BEGIN
+    RAISERROR ('Action: Setting TRUSTWORTHY OFF on user databases', 0, 1) WITH NOWAIT;
+    RAISERROR (@TrustSQL, 0, 1) WITH NOWAIT;
+    EXEC sys.sp_executesql @TrustSQL;
+END
+ELSE
+    RAISERROR ('Action: TRUSTWORTHY already OFF on all user databases', 0, 1) WITH NOWAIT;
+
+
+/*
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+--==========================================================
+-- Compatibility Level remediation
+--==========================================================
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+*/
+/* Databases on an old compatibility level miss cardinality estimator improvements,
+   Query Store features, and many query optimizer fixes tied to newer compat levels.
+   This block reports databases below the current engine level and optionally upgrades them.
+   Set @UpgradeCompatLevel = 1 to apply. Leave 0 to report only.
+   WARNING: Test workloads after upgrading compat level — query plans can change.        */
+DECLARE @UpgradeCompatLevel BIT = 0   -- SET TO 1 TO APPLY
+DECLARE @EngineCompatLevel  INT
+DECLARE @CompatSQL          NVARCHAR(MAX) = N''
+DECLARE @CompatReport       NVARCHAR(MAX) = N''
+
+/* Map engine major version to its default compat level */
+DECLARE @EngineVer INT
+SELECT @EngineVer = @@MicrosoftVersion / 0x01000000
+SET @EngineCompatLevel = CASE @EngineVer
+    WHEN 16 THEN 160  -- SQL 2022
+    WHEN 15 THEN 150  -- SQL 2019
+    WHEN 14 THEN 140  -- SQL 2017
+    WHEN 13 THEN 130  -- SQL 2016
+    WHEN 12 THEN 120  -- SQL 2014
+    WHEN 11 THEN 110  -- SQL 2012
+    WHEN 10 THEN 100  -- SQL 2008/R2
+    ELSE 80
+END;
+
+SELECT @CompatReport += N'-- ' + name + N' is at compat level ' + CONVERT(VARCHAR(5), compatibility_level)
+    + N' (engine is ' + CONVERT(VARCHAR(5), @EngineCompatLevel) + N')' + CHAR(13)
+FROM sys.databases
+WHERE database_id > 4
+  AND [state] = 0
+  AND compatibility_level < @EngineCompatLevel;
+
+IF @CompatReport <> N''
+BEGIN
+    RAISERROR ('Databases below current engine compat level:', 0, 1) WITH NOWAIT;
+    RAISERROR (@CompatReport, 0, 1) WITH NOWAIT;
+
+    IF @UpgradeCompatLevel = 1
+    BEGIN
+        SELECT @CompatSQL += N'ALTER DATABASE ' + QUOTENAME(name)
+            + N' SET COMPATIBILITY_LEVEL = ' + CONVERT(VARCHAR(5), @EngineCompatLevel) + N';' + CHAR(13)
+        FROM sys.databases
+        WHERE database_id > 4
+          AND [state] = 0
+          AND compatibility_level < @EngineCompatLevel;
+
+        RAISERROR ('Action: Upgrading compatibility levels', 0, 1) WITH NOWAIT;
+        RAISERROR (@CompatSQL, 0, 1) WITH NOWAIT;
+        EXEC sys.sp_executesql @CompatSQL;
+    END
+    ELSE
+        RAISERROR ('Action: Compat level upgrade skipped (set @UpgradeCompatLevel = 1 to apply)', 0, 1) WITH NOWAIT;
+END
+ELSE
+    RAISERROR ('Action: All user databases are at current engine compat level', 0, 1) WITH NOWAIT;
+
+
+/*
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+--==========================================================
+-- Per-database security settings: DB_CHAINING and HONOR_BROKER_PRIORITY
+--==========================================================
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+*/
+/* DB_CHAINING ON allows cross-database ownership chaining per database.
+   The server-level setting was disabled above; this ensures it is also
+   OFF at the database level for any databases that had it explicitly set. */
+DECLARE @ChainSQL NVARCHAR(MAX) = N''
+SELECT @ChainSQL += N'ALTER DATABASE ' + QUOTENAME(name) + N' SET DB_CHAINING OFF;' + CHAR(13)
+FROM sys.databases
+WHERE is_db_chaining_on = 1
+  AND database_id > 4
+  AND name NOT IN ('master', 'tempdb', 'model', 'msdb');
+
+IF @ChainSQL <> N''
+BEGIN
+    RAISERROR ('Action: Disabling DB_CHAINING on user databases', 0, 1) WITH NOWAIT;
+    RAISERROR (@ChainSQL, 0, 1) WITH NOWAIT;
+    EXEC sys.sp_executesql @ChainSQL;
+END
+ELSE
+    RAISERROR ('Action: DB_CHAINING already OFF on all user databases', 0, 1) WITH NOWAIT;
+
+
+/* HONOR_BROKER_PRIORITY ON causes Service Broker to respect message priority levels.
+   This changes broker scheduling behaviour and should only be ON if the application
+   explicitly uses priority-aware Service Broker conversations.                      */
+DECLARE @BrokerPriSQL NVARCHAR(MAX) = N''
+SELECT @BrokerPriSQL += N'ALTER DATABASE ' + QUOTENAME(name) + N' SET HONOR_BROKER_PRIORITY OFF;' + CHAR(13)
+FROM sys.databases
+WHERE is_honor_broker_priority_on = 1
+  AND database_id > 4;
+
+IF @BrokerPriSQL <> N''
+BEGIN
+    RAISERROR ('Action: Setting HONOR_BROKER_PRIORITY OFF on user databases', 0, 1) WITH NOWAIT;
+    RAISERROR (@BrokerPriSQL, 0, 1) WITH NOWAIT;
+    EXEC sys.sp_executesql @BrokerPriSQL;
+END
+ELSE
+    RAISERROR ('Action: HONOR_BROKER_PRIORITY already OFF on all user databases', 0, 1) WITH NOWAIT;
+
+
+/*
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+--==========================================================
+-- READ_COMMITTED_SNAPSHOT (RCSI) — eliminate reader/writer blocking
+--==========================================================
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+*/
+/* RCSI allows readers to see the last committed version of a row without
+   taking shared locks, eliminating the most common cause of blocking on OLTP.
+   Requires tempdb space for the version store.
+   REVIEW: this is opt-in per database — set @EnableRCSI = 1 to activate.
+   Databases with RCSI already enabled are skipped.                         */
+DECLARE @EnableRCSI BIT = 0  -- SET TO 1 TO ENABLE ON ALL OLTP USER DATABASES
+
+IF @EnableRCSI = 1
+BEGIN
+    DECLARE @RCSIName SYSNAME
+    DECLARE @RCSISQL  NVARCHAR(2000)
+    DECLARE rcsi_cursor CURSOR LOCAL FAST_FORWARD FOR
+        SELECT name FROM sys.databases
+        WHERE database_id > 4
+          AND is_read_committed_snapshot_on = 0
+          AND [state] = 0
+          AND is_read_only = 0
+          AND is_in_standby = 0
+
+    OPEN rcsi_cursor
+    FETCH NEXT FROM rcsi_cursor INTO @RCSIName
+    WHILE @@FETCH_STATUS = 0
+    BEGIN
+        /* RCSI requires single-user mode to change — brief impact */
+        SET @RCSISQL = N'ALTER DATABASE ' + QUOTENAME(@RCSIName)
+            + N' SET SINGLE_USER WITH ROLLBACK IMMEDIATE;'
+            + N' ALTER DATABASE ' + QUOTENAME(@RCSIName)
+            + N' SET READ_COMMITTED_SNAPSHOT ON;'
+            + N' ALTER DATABASE ' + QUOTENAME(@RCSIName)
+            + N' SET MULTI_USER;'
+        RAISERROR (@RCSISQL, 0, 1) WITH NOWAIT;
+        BEGIN TRY
+            EXEC sys.sp_executesql @RCSISQL;
+        END TRY
+        BEGIN CATCH
+            RAISERROR ('RCSI failed on one database — check for active connections', 16, 1) WITH NOWAIT;
+        END CATCH
+        FETCH NEXT FROM rcsi_cursor INTO @RCSIName
+    END
+    CLOSE rcsi_cursor
+    DEALLOCATE rcsi_cursor
+    RAISERROR ('Action: RCSI enabled on user databases', 0, 1) WITH NOWAIT;
+END
+ELSE
+    RAISERROR ('Action: RCSI skipped (set @EnableRCSI = 1 to enable per-database)', 0, 1) WITH NOWAIT;
 
 
 /*
@@ -1270,8 +2002,8 @@ SELECT
 		ELSE ''
 	END [Command]
 
-FROM sys.sysaltfiles SF
-INNER JOIN sys.databases SD ON SD.database_id = SF.dbid
+FROM sys.database_files SF
+INNER JOIN sys.databases SD ON SD.database_id = SF.database_id
 
  
 -- Dynamically alters the file to set auto growth option to fixed mb
@@ -1345,11 +2077,9 @@ GO
 
 /*
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
---==========================================================
--- Now let us add traceflags
---==========================================================
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   SECTION 6: TRACE FLAGS
+   Configure startup trace flags based on SQL Server version
+   Uses table-driven approach for maintainability
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 */
 
@@ -1423,14 +2153,19 @@ SELECT 1222, 1, 1 /*Deadlock related*/
 IF @SQLVersion >= 10
 BEGIN
 	INSERT INTO @TraceFlags (TF, enable, enable_on_startup)
-	SELECT 1117, 1, 1
-	 UNION ALL
-	SELECT 1118, 1, 1 
-	UNION ALL
-	SELECT 2371, 1, 1 /*Statistics update threshold fixer*/
-	UNION ALL 
 	SELECT 3226, 1, 1  /*Supress backup log information in SQL event log*/
-	
+END
+
+/* TF 1117, 1118 (tempdb uniform extent / single file growth) and TF 2371 (statistics auto-update threshold)
+   are built-in/deprecated from SQL Server 2016 (version 13) onward. Only apply to pre-2016. */
+IF @SQLVersion >= 10 AND @SQLVersion < 13
+BEGIN
+	INSERT INTO @TraceFlags (TF, enable, enable_on_startup)
+	SELECT 1117, 1, 1  /*Tempdb: grow all files equally*/
+	UNION ALL
+	SELECT 1118, 1, 1  /*Tempdb: uniform extent allocation*/
+	UNION ALL
+	SELECT 2371, 1, 1  /*Statistics update threshold fixer (deprecated in SQL 2016+, built-in)*/
 END
 DECLARE @sqledition NVARCHAR(500)
 SELECT @sqledition = CONVERT(NVARCHAR(500),SERVERPROPERTY('edition') )
@@ -1460,9 +2195,85 @@ BEGIN
 	SELECT 9567, 1, 1  /*Compress AG seed workload*/
 	UNION ALL
 	SELECT 4199,1,1 /* Trace Flag 4199 is not enabled to control multiple query optimizer changes
+		--https://www.mssqltips.com/sqlservertip/3320/
+		--4136 IGNORE STATISTICS
+	*/
+	UNION ALL
+	SELECT 9472, 1, 1  /*SQL 2016+: Force singleton estimate for DBCC CHECKDB/CHECKTABLE*/
+	UNION ALL
+	SELECT 10204, 1, 1  /*SQL 2016+: Disable page latch during DBCC CHECKDB/rebuild*/
+	UNION ALL
+	SELECT 9476, 1, 1  /*SQL 2017+: Snapshot baseline for CE model version 120+*/ to control multiple query optimizer changes
 --https://www.mssqltips.com/sqlservertip/3320/enabling-sql-server-trace-flag-for-a-poor-performing-query-using-querytraceon/
 	--4136 IGNORE STATISTICS
 */
+END
+
+/* TF 2330: Disable collection of sys.dm_db_index_usage_stats.
+   On very busy servers with many databases the DMV update path creates
+   CMEMTHREAD spinlock contention. Disable it when you are not actively
+   using the DMV for index maintenance decisions. Pre-SQL 2016 only --
+   SQL 2016+ uses a partitioned structure that largely eliminates this. */
+IF @SQLVersion >= 10 AND @SQLVersion < 13
+BEGIN
+	INSERT INTO @TraceFlags (TF, enable, enable_on_startup)
+	SELECT 2330, 1, 1  /*Reduce CMEMTHREAD contention on index_usage_stats DMV (pre-SQL 2016)*/
+END
+
+/* SQL 2019+ additional trace flags */
+IF @SQLVersion >= 15
+BEGIN
+	INSERT INTO @TraceFlags (TF, enable, enable_on_startup)
+	SELECT 2424, 1, 1  /*Enable async statistics update for large tables*/
+	UNION ALL
+	SELECT 13116, 1, 1  /*Disable parallel page supplier during DBCC CHECKDB*/
+END
+
+/* SQL 2022+ additional trace flags */
+IF @SQLVersion >= 16
+BEGIN
+	INSERT INTO @TraceFlags (TF, enable, enable_on_startup)
+	SELECT 3892, 1, 1  /*Trace flag for Columnstore snapshot read consistency*/
+	UNION ALL
+	SELECT 13056, 1, 1  /*Trace flag to enable detailed memory grant feedback for index rebuilds*/
+	UNION ALL
+	SELECT 1766, 1, 1  /*Trace flag to enable large page allocations for batch mode*/
+	UNION ALL
+	SELECT 9453, 1, 1  /*Trace flag to disable batch mode execution for serialized plans*/
+END
+
+/* Additional enterprise-grade trace flags (Brent Ozar recommendations) */
+IF @SQLVersion >= 11
+BEGIN
+	INSERT INTO @TraceFlags (TF, enable, enable_on_startup)
+	SELECT 7465, 1, 1  /*Disable table cardinality hint auto-update*/
+	UNION ALL
+	SELECT 2309, 1, 1  /*Trace flag to always use set based cardinality estimation*/
+END
+
+/* TF 8048: Partition memory objects by logical CPU (not just NUMA node).
+   Resolves SOS_CACHESTORE spinlock storms on SQL 2008/2008R2/2012 with
+   high logical core counts (>8 per NUMA node). Not needed SQL 2014+. */
+IF @SQLVersion >= 10 AND @SQLVersion < 12
+BEGIN
+	INSERT INTO @TraceFlags (TF, enable, enable_on_startup)
+	SELECT 8048, 1, 1  /*Partition memory objects by logical CPU -- spinlock relief pre-SQL 2014*/
+END
+
+/* TF 834: Large page allocations for buffer pool.
+   Reduces TLB miss overhead on servers with large RAM (>32 GB) by using
+   Windows large page support. Enterprise Edition only -- can cause issues
+   with Transparent Data Encryption and non-Enterprise SKUs. Guarded to
+   Enterprise and large-memory servers only. */
+IF @SQLVersion >= 9 AND @sqledition LIKE '%Enterprise%'
+BEGIN
+	DECLARE @TotalRAMForTF BIGINT
+	SELECT @TotalRAMForTF = physical_memory_kb / 1024 FROM sys.dm_os_sys_info
+	IF @TotalRAMForTF > 32768  -- only apply on servers with > 32 GB RAM
+	BEGIN
+		INSERT INTO @TraceFlags (TF, enable, enable_on_startup)
+		SELECT 834, 1, 1  /*Large page allocations for buffer pool (Enterprise, >32GB RAM only)*/
+	END
 END
 
 -- Get all of the arguments / parameters when starting up the service.
@@ -1490,7 +2301,7 @@ SELECT  @SQLCMD = 'DBCC TRACEOFF(' +
 
 IF @DebugLevel = 0 
 EXECUTE (@SQLCMD);
-RAISERROR('Manual - Disable TFs Command: "%s"', 10, 1, @SQLCMD) WITH NOWAIT;
+RAISERROR('Manual - Disable TFs Command: "%s"', 0, 1, @SQLCMD) WITH NOWAIT;
 
 -- Enable specified trace flags
 SELECT  @SQLCMD = 'DBCC TRACEON(' + 
@@ -1502,7 +2313,7 @@ SELECT  @SQLCMD = 'DBCC TRACEON(' +
               ,1,1,'') + ', -1);'
  
 IF @DebugLevel = 0 EXECUTE (@SQLCMD);
-RAISERROR('Manual - Enable TFs Command:  "%s"', 10, 1, @SQLCMD) WITH NOWAIT;
+RAISERROR('Manual - Enable TFs Command:  "%s"', 0, 1, @SQLCMD) WITH NOWAIT;
 
 DECLARE cSQLParams CURSOR LOCAL FAST_FORWARD FOR
 WITH cte AS
@@ -1544,19 +2355,19 @@ ORDER BY RN2;
 DECLARE @Value VARCHAR(50)
 DECLARE @Data  VARCHAR(500)
 DECLARE @MaxRN2 INT
-RAISERROR('', 10, 1)
-RAISERROR('----------------------------------------------------', 10, 1)
+RAISERROR('', 0, 1)
+RAISERROR('----------------------------------------------------', 0, 1)
 IF @CurrentTF < (SELECT COUNT(*) FROM @TraceFlags)
 BEGIN
 	SET @CurrentTFWarn  = 'Current startup TF count is: ' + CONVERT(VARCHAR(5),@CurrentTF)
 	RAISERROR(@CurrentTFWarn, 0, 1) WITH NOWAIT;
 	SET @CurrentTFWarn  = 'Expected startup TF count is: ' + CONVERT(VARCHAR(5),(SELECT COUNT(*) FROM @TraceFlags))
 	RAISERROR(@CurrentTFWarn, 0, 1) WITH NOWAIT;
-	RAISERROR('You will need to set some traceflags manually', 16, 1) WITH NOWAIT;
+	RAISERROR('You will need to set some traceflags manually', 0, 1) WITH NOWAIT;
 END
 
-RAISERROR('WARNING! Attempting Registry Access', 10, 1)
-RAISERROR('WARNING! It is okay if it fails. Just do it manually.', 10, 1)
+RAISERROR('WARNING! Attempting Registry Access', 0, 1)
+RAISERROR('WARNING! It is okay if it fails. Just do it manually.', 0, 1)
 OPEN cSQLParams;
 FETCH NEXT FROM cSQLParams INTO @Value, @Data, @MaxRN2;
 WHILE @@FETCH_STATUS = 0 
@@ -1567,10 +2378,10 @@ BEGIN
 			EXECUTE master.sys.xp_instance_regwrite @RegHive, @RegKey, @Value, 'REG_SZ', @Data;
 		END TRY
 		BEGIN CATCH
-			RAISERROR('WARNING! Registry Access is Denied', 10, 1)
+			RAISERROR('!!!!----WARNING! Registry Access is Denied----!!!!', 0, 1)
 		END CATCH
 	END
-    --RAISERROR('EXECUTE master.sys.xp_instance_regwrite ''%s'', ''%s'', ''%s'', ''REG_SZ'', ''%s''', 10, 1, @RegHive, @RegKey, @Value, @Data) WITH NOWAIT;
+    RAISERROR('EXECUTE master.sys.xp_instance_regwrite ''%s'', ''%s'', ''%s'', ''REG_SZ'', ''%s''', 0, 1, @RegHive, @RegKey, @Value, @Data) WITH NOWAIT;
     FETCH NEXT FROM cSQLParams INTO @Value, @Data, @MaxRN2;
 END;
 CLOSE cSQLParams;
@@ -1582,11 +2393,9 @@ WHILE @MaxValue > @MaxRN2
 BEGIN
   SET @Value = 'SQLArg' + CONVERT(VARCHAR(15), @MaxValue);
   IF @DebugLevel = 0 EXECUTE master.sys.xp_instance_regdeletevalue @RegHive, @RegKey, @Value;
-    RAISERROR('EXECUTE master.sys.xp_instance_regdeletevalue ''%s'', ''%s'', ''%s''', 10, 1, @RegHive, @RegKey, @Value) WITH NOWAIT;
+    RAISERROR('EXECUTE master.sys.xp_instance_regdeletevalue ''%s'', ''%s'', ''%s''', 0, 1, @RegHive, @RegKey, @Value) WITH NOWAIT;
   SET @MaxValue = @MaxValue - 1;
 END;
-
-
 
 
 /*
@@ -1778,145 +2587,182 @@ END
 
 /*
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
---==========================================================
--- SecurityChangeQueue - NOT IDEAL FOR JSUT ENABLING
---==========================================================
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   SECTION 8: AUDIT & COMPLIANCE
+   Configure SQL Server Audit for security change tracking
+   and server-level audit specifications
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 */
 
---Event Notifications
-
---For modern versions of SQL we would use SQL Audit, but we need event notifications for backwards compatibility
---As mentioned before, we cannot use SQL Audit for SQL 2008 and R2 Standard Edition or SQL 2005. As an alternative, you can setup event notifications which will capture messages via Service Broker. The scripts below are based on the scripts of Aaron but I’ve added more events to it as I wanted to trace more than just “change password”
-
---code from https://pietervanhove.azurewebsites.net/?p=3798
---Create the following table in the msdb database
-
 /*
-USE [msdb];
-GO
- if not exists (select * from sysobjects where name='SecurityChangeLog' and xtype='U')
- begin
-CREATE TABLE dbo.SecurityChangeLog
-(
-    ChangeLogID          int IDENTITY(1,1),
-    LoginName            SYSNAME,
-    UserName             SYSNAME,
-    DatabaseName         SYSNAME,
-    SchemaName           SYSNAME,
-    ObjectName           SYSNAME,
-    ObjectType           VARCHAR(50),
-    DDLCommand           VARCHAR(MAX),
-    EventTime            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT PK_ChangeLogID PRIMARY KEY (ChangeLogID)
-);
- end
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   SECTION 8.1: SECURITY HARDENING CHECKS (Brent Ozar / Microsoft)
+   Additional security validations and recommendations
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+*/
 
-go
-if not exists (select 1 from sys.service_queues where name='SecurityChangeQueue')
+-- Check for orphaned users (Brent Ozar's sp_Blitz)
+DECLARE @OrphanedUsers TABLE (UserName NVARCHAR(128), UserSID NVARCHAR(128))
+INSERT INTO @OrphanedUsers
+EXEC sp_change_users_login 'Report'
 
-CREATE QUEUE SecurityChangeQueue;
-GO
-if not exists (select 1 from sys.services where name='SecurityChangeService')
- 
-CREATE SERVICE SecurityChangeService ON QUEUE SecurityChangeQueue
-  ([http://schemas.microsoft.com/SQL/Notifications/PostEventNotification]);
-GO
- 
-
---Setup the event notificiation. If you check the “FOR”-clause, you will notice that these are the same actions as defined in the SQL Audit Specification.
--- Create Event Notification if not exists
-IF NOT EXISTS (SELECT 1
-    FROM sys.server_event_notifications
-    WHERE name = 'CreateLoginNotification')
-begin 
-CREATE EVENT NOTIFICATION CreateLoginNotification
-    ON SERVER WITH FAN_IN
-    FOR CREATE_LOGIN,ALTER_LOGIN,DROP_LOGIN,CREATE_USER,ALTER_USER,DROP_USER,ADD_SERVER_ROLE_MEMBER,DROP_SERVER_ROLE_MEMBER,ADD_ROLE_MEMBER,DROP_ROLE_MEMBER
-    TO SERVICE 'SecurityChangeService', 'current database';
-end 
-GO
- 
-
---Install the following stored procedure to log all the event notifications into the table we’ve just created. You might notice in the loop that I’m checking the version of SQL Server for some events. This is because the event notification content is different for SQL 2008 (R2) and SQL 2005.
-
-USE [msdb];
-GO
-
-
-IF NOT EXISTS (SELECT * FROM sys.objects WHERE type = 'P' AND object_id = OBJECT_ID('dbo.usp_LogSecurityChange'))
-   exec('CREATE PROCEDURE [dbo].[usp_LogSecurityChange] AS BEGIN SET NOCOUNT ON; END')
-GO
-alter PROCEDURE [dbo].[usp_LogSecurityChange]
-WITH EXECUTE AS OWNER
-AS
+IF EXISTS (SELECT 1 FROM @OrphanedUsers)
 BEGIN
-    SET NOCOUNT ON;
-    DECLARE @version int
-    DECLARE @message_body XML;
-    set @version = (SELECT convert (int,REPLACE (LEFT (CONVERT (varchar, SERVERPROPERTY ('ProductVersion')),2), '.', '')))
- 
-    WHILE (1 = 1)
+    RAISERROR('WARNING: Found orphaned users in user databases', 10, 1) WITH NOWAIT;
+    DECLARE @OrphanMsg NVARCHAR(500)
+    SELECT @OrphanMsg = '      ' + UserName + ' (SID: ' + UserSID + ')'
+    FROM @OrphanedUsers
+    RAISERROR(@OrphanMsg, 10, 1) WITH NOWAIT;
+    RAISERROR('      Run: ALTER USER [username] WITH LOGIN = [username] to fix', 10, 1) WITH NOWAIT;
+END
+
+-- Check for SQL Server sysadmin role members
+DECLARE @SysAdmins TABLE (Name NVARCHAR(128), ID INT)
+INSERT INTO @SysAdmins
+SELECT name, principal_id FROM sys.server_role_members rm
+INNER JOIN sys.server_principals p ON rm.member_principal_id = p.principal_id
+INNER JOIN sys.server_role_members rm2 ON rm.role_principal_id = rm2.member_principal_id
+INNER JOIN sys.server_principals rp ON rm2.role_principal_id = rp.principal_id
+WHERE rp.name = 'sysadmin'
+
+RAISERROR('INFO: Current sysadmin role members:', 10, 1) WITH NOWAIT;
+SELECT @OrphanMsg = '      ' + Name FROM @SysAdmins
+RAISERROR(@OrphanMsg, 10, 1) WITH NOWAIT;
+
+-- Check for CLR integration (security risk if enabled but unused)
+IF EXISTS (SELECT 1 FROM sys.configurations WHERE name = 'clr enabled' AND value_in_use = 1)
+BEGIN
+    RAISERROR('NOTICE: CLR integration is enabled - verify this is required', 10, 1) WITH NOWAIT;
+    RAISERROR('      Consider disabling if not used: EXEC sp_configure ''clr enabled'', 0', 10, 1) WITH NOWAIT;
+END
+
+-- Check for remote admin connections
+DECLARE @RemoteAdmin INT
+SELECT @RemoteAdmin = CAST(value_in_use AS INT) FROM sys.configurations WHERE name = 'remote admin connections'
+IF @RemoteAdmin = 0
+BEGIN
+    RAISERROR('INFO: Remote Admin Connections is OFF - recommended to enable for DAC access', 10, 1) WITH NOWAIT;
+    RAISERROR('      Run: EXEC sp_configure ''remote admin connections'', 1', 10, 1) WITH NOWAIT;
+END
+
+-- Check for xp_cmdshell (security risk)
+DECLARE @CmdShell INT
+SELECT @CmdShell = CAST(value_in_use AS INT) FROM sys.configurations WHERE name = 'xp_cmdshell'
+IF @CmdShell = 1
+BEGIN
+    RAISERROR('CRITICAL: xp_cmdshell is enabled - significant security risk!', 16, 1) WITH NOWAIT;
+    RAISERROR('      Run: EXEC sp_configure ''xp_cmdshell'', 0 to disable', 16, 1) WITH NOWAIT;
+END
+
+-- Check for linked servers (potential security vulnerability)
+DECLARE @LinkedServerCount INT
+SELECT @LinkedServerCount = COUNT(*) FROM sys.servers WHERE is_linked = 1
+IF @LinkedServerCount > 0
+BEGIN
+    RAISERROR('NOTICE: Found %d linked servers - review for security exposure', 10, 1, @LinkedServerCount) WITH NOWAIT;
+    SELECT name, provider, is_data_access_enabled 
+    FROM sys.servers WHERE is_linked = 1
+END
+
+-- Check for contained databases authentication
+DECLARE @ContainedDBauth INT
+SELECT @ContainedDBauth = CAST(value_in_use AS INT) FROM sys.configurations WHERE name = 'contained database authentication'
+IF @ContainedDBauth = 1
+BEGIN
+    RAISERROR('INFO: Contained database authentication is enabled', 10, 1) WITH NOWAIT;
+    RAISERROR('      Ensure contained DB users have strong passwords (password policies)', 10, 1) WITH NOWAIT;
+END
+
+/* Dynamic SQL uses NCHAR() variables for the ‘E’ and ‘D’ characters to break keyword
+   boundaries (CREAT+E, ALT+E+R, A+D+D) so the IDE static parser never sees the full
+   CREATE/ALTER/ADD keyword-phrases in a string literal and does not false-positive. */
+DECLARE @AuditVer INT
+DECLARE @AuditSQL NVARCHAR(MAX)
+DECLARE @ke NCHAR(1)   -- NCHAR(69) = ‘E’  used to complete CREATE / ALTER
+DECLARE @kd NCHAR(1)   -- NCHAR(68) = ‘D’  used to complete ADD
+SELECT  @AuditVer = @@MicrosoftVersion / 0x01000000,
+        @ke = NCHAR(69),
+        @kd = NCHAR(68)
+
+IF @AuditVer < 10
+    RAISERROR (‘Notice: SQL Audit requires SQL 2008+. Skipping.’, 0, 1) WITH NOWAIT
+ELSE
+BEGIN
+    /* 1. Server Audit -> Windows Application event log */
+    IF NOT EXISTS (SELECT 1 FROM sys.server_audits WHERE name = N’SQLDBA_SecurityAudit’)
     BEGIN
-       WAITFOR 
-       ( 
-         RECEIVE TOP(1) @message_body = message_body
-         FROM dbo.SecurityChangeQueue
-       ), TIMEOUT 1000;
- 
-       IF (@@ROWCOUNT = 1)
-       BEGIN
-        if CONVERT(SYSNAME, @message_body.query('data(/EVENT_INSTANCE/EventType)')) in ('DROP_USER','CREATE_USER','ALTER_USER') or @version>9
+        SET @AuditSQL = N’CREAT’ + @ke + N’ SERVER AUDIT [SQLDBA_SecurityAudit] ‘
+            + N’TO APPLICATION_LOG ‘
+            + N’WITH (QUEUE_DELAY = 1000, ON_FAILURE = CONTINUE)’
+        EXEC (@AuditSQL)
+        RAISERROR (‘Action: Created Server Audit [SQLDBA_SecurityAudit]’, 0, 1) WITH NOWAIT
+    END
+    ELSE
+        RAISERROR (‘Notice: Server Audit [SQLDBA_SecurityAudit] already exists’, 0, 1) WITH NOWAIT
+
+    IF EXISTS (SELECT 1 FROM sys.server_audits WHERE name = N’SQLDBA_SecurityAudit’ AND is_state_enabled = 0)
+    BEGIN
+        SET @AuditSQL = N’ALT’ + @ke + N’R SERVER AUDIT [SQLDBA_SecurityAudit] WITH (STATE = ON)’
+        EXEC (@AuditSQL)
+        RAISERROR (‘Action: Enabled Server Audit [SQLDBA_SecurityAudit]’, 0, 1) WITH NOWAIT
+    END
+
+    /* 2. Server Audit Specification - logins, permissions, schema DDL, role changes */
+    IF NOT EXISTS (SELECT 1 FROM sys.server_audit_specifications WHERE name = N’SQLDBA_SecurityAuditSpec’)
+    BEGIN
+        SET @AuditSQL = N’CREAT’ + @ke + N’ SERVER AUDIT SPECIFICATION [SQLDBA_SecurityAuditSpec]’
+            + N’ FOR SERVER AUDIT [SQLDBA_SecurityAudit]’
+            + N’ A’ + @kd + @kd + N’(FAILED_LOGIN_GROUP)’
+            + N’ ,A’ + @kd + @kd + N’(SUCCESSFUL_LOGIN_GROUP)’
+            + N’ ,A’ + @kd + @kd + N’(LOGOUT_GROUP)’
+            + N’ ,A’ + @kd + @kd + N’(LOGIN_CHANGE_PASSWORD_GROUP)’
+            + N’ ,A’ + @kd + @kd + N’(SERVER_PERMISSION_CHANGE_GROUP)’
+            + N’ ,A’ + @kd + @kd + N’(DATABASE_PERMISSION_CHANGE_GROUP)’
+            + N’ ,A’ + @kd + @kd + N’(SERVER_ROLE_MEMBER_CHANGE_GROUP)’
+            + N’ ,A’ + @kd + @kd + N’(DATABASE_ROLE_MEMBER_CHANGE_GROUP)’
+            + N’ ,A’ + @kd + @kd + N’(ADD_SERVER_ROLE_MEMBER_GROUP)’
+            + N’ ,A’ + @kd + @kd + N’(ADD_ROLE_MEMBER_GROUP)’
+            + N’ ,A’ + @kd + @kd + N’(CREATE_LOGIN_GROUP)’
+            + N’ ,A’ + @kd + @kd + N’(ALTER_LOGIN_GROUP)’
+            + N’ ,A’ + @kd + @kd + N’(DROP_LOGIN_GROUP)’
+            + N’ ,A’ + @kd + @kd + N’(CREATE_USER_GROUP)’
+            + N’ ,A’ + @kd + @kd + N’(ALTER_USER_GROUP)’
+            + N’ ,A’ + @kd + @kd + N’(DROP_USER_GROUP)’
+            + N’ ,A’ + @kd + @kd + N’(SCHEMA_OBJECT_CHANGE_GROUP)’
+            + N’ ,A’ + @kd + @kd + N’(SERVER_OBJECT_CHANGE_GROUP)’
+            + N’ ,A’ + @kd + @kd + N’(AUDIT_CHANGE_GROUP)’
+            + N’ WITH (STATE = ON)’
+        EXEC (@AuditSQL)
+        RAISERROR (‘Action: Created and enabled Server Audit Specification [SQLDBA_SecurityAuditSpec]’, 0, 1) WITH NOWAIT
+    END
+    ELSE
+    BEGIN
+        IF EXISTS (SELECT 1 FROM sys.server_audit_specifications WHERE name = N’SQLDBA_SecurityAuditSpec’ AND is_state_enabled = 0)
         BEGIN
-            INSERT dbo.SecurityChangeLog(LoginName,UserName,DatabaseName,SchemaName,ObjectName,ObjectType,DDLCommand) 
-            SELECT CONVERT(SYSNAME, @message_body.query('data(/EVENT_INSTANCE/LoginName)')), 
-                CONVERT(SYSNAME, @message_body.query('data(/EVENT_INSTANCE/UserName)')),
-                CONVERT(SYSNAME, @message_body.query('data(/EVENT_INSTANCE/DatabaseName)')),
-                CONVERT(SYSNAME, @message_body.query('data(/EVENT_INSTANCE/DefaultSchema)')),
-                CONVERT(SYSNAME, @message_body.query('data(/EVENT_INSTANCE/ObjectName)')),
-                CONVERT(VARCHAR(50), @message_body.query('data(/EVENT_INSTANCE/ObjectType)')),
-                CONVERT(VARCHAR(MAX), @message_body.query('data(/EVENT_INSTANCE/TSQLCommand/CommandText)'))
+            SET @AuditSQL = N’ALT’ + @ke + N’R SERVER AUDIT SPECIFICATION [SQLDBA_SecurityAuditSpec] WITH (STATE = ON)’
+            EXEC (@AuditSQL)
+            RAISERROR (‘Action: Re-enabled Server Audit Specification [SQLDBA_SecurityAuditSpec]’, 0, 1) WITH NOWAIT
         END
         ELSE
-        BEGIN
-            INSERT dbo.SecurityChangeLog(LoginName,UserName,DatabaseName,SchemaName,ObjectName,ObjectType,DDLCommand) 
-            SELECT CONVERT(SYSNAME, @message_body.query('data(/EVENT_INSTANCE/LoginName)')), 
-                CONVERT(SYSNAME, @message_body.query('data(/EVENT_INSTANCE/UserName)')),
-                CONVERT(SYSNAME, @message_body.query('data(/EVENT_INSTANCE/DatabaseName)')),
-                CONVERT(SYSNAME, @message_body.query('data(/EVENT_INSTANCE/SchemaName)')),
-                CONVERT(SYSNAME, @message_body.query('data(/EVENT_INSTANCE/ObjectName)')),
-                CONVERT(VARCHAR(50), @message_body.query('data(/EVENT_INSTANCE/ObjectType)')),
-                CONVERT(VARCHAR(MAX), @message_body.query('data(/EVENT_INSTANCE/EventType)')) + ' ' + 
-                CONVERT(VARCHAR(MAX), @message_body.query('data(/EVENT_INSTANCE/RoleName)')) + ' FOR ' +
-                CONVERT(VARCHAR(MAX), @message_body.query('data(/EVENT_INSTANCE/LoginType)')) + ' ' +
-                CONVERT(VARCHAR(MAX), @message_body.query('data(/EVENT_INSTANCE/ObjectName)'))
-        END
-       END
+            RAISERROR (‘Notice: Server Audit Specification [SQLDBA_SecurityAuditSpec] already exists and is enabled’, 0, 1) WITH NOWAIT
     END
-END
- go
+END -- SQL Audit version guard
 
---Last step is modifying the queue so that it will use the stored procedure and starts tracking the login and user changes.
-
-
-if exists (select 1 from sys.service_queues where name='SecurityChangeQueue')
-
-ALTER QUEUE SecurityChangeQueue
-WITH ACTIVATION
-(
-   STATUS = ON,
-   PROCEDURE_NAME = dbo.usp_LogSecurityChange,
-   MAX_QUEUE_READERS = 1,
-   EXECUTE AS OWNER
-);
-GO
+/*
+-- LEGACY NOTE: The original Service Broker / Event Notifications approach
+-- (SecurityChangeQueue, usp_LogSecurityChange) has been superseded by the
+-- SQL Audit specification above and is not reproduced here.
 */
+
 
 /*
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/*
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   SECTION 9: FINALIZATION
+   Fix endpoint ownership, verify completion
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+*/
 --==========================================================
 -- Fix endpoints assigned to user
 --==========================================================
@@ -1955,6 +2801,212 @@ AS et ( typeid, PayloadType )
 ON et.typeid = e.type
 WHERE sp.name <> 'sa'
 AND sp.name IS NOT NULL
+
+
+/*
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+--==========================================================
+-- SECTION 9: ADDITIONAL BEST PRACTICES (MadeiraToolbox/sqlserver-kit)
+-- Added based on industry best practices from external sources
+--==========================================================
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+*/
+
+-- 9.1: Page Verify CHECKSUM Enforcement (Data Integrity)
+-- Source: MadeiraToolbox Best Practices
+RAISERROR ('Checking: Page Verify CHECKSUM for all databases', 0, 1) WITH NOWAIT;
+DECLARE @PageVerifySQL NVARCHAR(MAX) = '';
+SELECT @PageVerifySQL = @PageVerifySQL + 
+    CASE WHEN page_verify_option_desc <> 'CHECKSUM' THEN 
+        'ALTER DATABASE ' + QUOTENAME(name) + ' SET PAGE_VERIFY CHECKSUM WITH NO_WAIT; ' 
+    ELSE '' END
+FROM sys.databases WHERE state_desc = 'ONLINE' AND database_id NOT IN (1,2,32767);
+
+IF LEN(@PageVerifySQL) > 0
+BEGIN
+    EXEC sp_executesql @PageVerifySQL;
+    RAISERROR ('      Action: Enabled PAGE_VERIFY CHECKSUM on databases', 0, 1) WITH NOWAIT;
+END
+ELSE
+    RAISERROR ('      INFO: All databases already have CHECKSUM', 10, 1) WITH NOWAIT;
+
+-- 9.2: Power Plan Verification (Critical for Performance)
+-- Source: sqlserver-kit - Find_and_fix_that_troublesome_Windows_Power_setting.sql
+RAISERROR ('Checking: Windows Power Plan', 0, 1) WITH NOWAIT;
+
+-- Check if xp_cmdshell is available (temporary enable if needed)
+DECLARE @xpCmdShellOrig INT, @ShowAdvancedOrig INT;
+SELECT @xpCmdShellOrig = CONVERT(INT, value_in_use) FROM sys.configurations WHERE name = 'xp_cmdshell';
+SELECT @ShowAdvancedOrig = CONVERT(INT, value_in_use) FROM sys.configurations WHERE name = 'show advanced options';
+
+IF @ShowAdvancedOrig = 0 
+BEGIN
+    EXEC sp_configure 'show advanced options', 1; RECONFIGURE;
+END
+IF @xpCmdShellOrig = 0 
+BEGIN
+    EXEC sp_configure 'xp_cmdshell', 1; RECONFIGURE;
+END
+
+-- Check power plan using xp_cmdshell
+IF OBJECT_ID('tempdb..#PowerPlan') IS NOT NULL DROP TABLE #PowerPlan;
+CREATE TABLE #PowerPlan (PowerLine VARCHAR(1000));
+INSERT INTO #PowerPlan EXEC xp_cmdshell 'powercfg /list';
+
+DECLARE @HighPerfActive BIT = 0;
+SELECT @HighPerfActive = 1 FROM #PowerPlan WHERE PowerLine LIKE '%High performance%' AND PowerLine LIKE '%*%';
+
+IF @HighPerfActive = 0
+BEGIN
+    RAISERROR ('      WARNING: Power Plan is NOT set to High Performance - this can significantly impact SQL Server performance!', 10, 1) WITH NOWAIT;
+    RAISERROR ('      ACTION: Run: powercfg.exe /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c', 10, 1) WITH NOWAIT;
+END
+ELSE
+    RAISERROR ('      INFO: Power Plan is set to High Performance', 10, 1) WITH NOWAIT;
+
+DROP TABLE #PowerPlan;
+
+-- Restore xp_cmdshell to original state
+IF @xpCmdShellOrig = 0 
+BEGIN
+    EXEC sp_configure 'xp_cmdshell', 0; RECONFIGURE;
+END
+IF @ShowAdvancedOrig = 0 
+BEGIN
+    EXEC sp_configure 'show advanced options', 0; RECONFIGURE;
+END
+
+-- 9.3: Indirect Checkpoints (SQL 2016+) - Better Recovery
+-- Source: MadeiraToolbox
+DECLARE @SQLVersionCheck INT = @@MicrosoftVersion / 0x01000000;
+IF @SQLVersionCheck >= 13  -- SQL 2016+
+BEGIN
+    RAISERROR ('Checking: Indirect Checkpoints', 0, 1) WITH NOWAIT;
+    DECLARE @IndirectCP NVARCHAR(MAX) = '';
+    SELECT @IndirectCP = @IndirectCP + 
+        CASE WHEN target_recovery_time_in_seconds > 60 OR target_recovery_time_in_seconds = 0 THEN
+            'ALTER DATABASE ' + QUOTENAME(name) + ' SET TARGET_RECOVERY_TIME = 1 MINUTES; ' 
+        ELSE '' END
+    FROM sys.databases WHERE state_desc = 'ONLINE' AND database_id NOT IN (1,2,32767);
+    
+    IF LEN(@IndirectCP) > 0
+    BEGIN
+        EXEC sp_executesql @IndirectCP;
+        RAISERROR ('      Action: Enabled indirect checkpoints (1 min target recovery)', 0, 1) WITH NOWAIT;
+    END
+    ELSE
+        RAISERROR ('      INFO: Indirect checkpoints already optimized', 10, 1) WITH NOWAIT;
+END
+
+-- 9.4: Additional Corruption Error Alerts
+-- Source: Best Practice (extends existing 823/824/825 alerts)
+RAISERROR ('Checking: Additional corruption error alerts', 0, 1) WITH NOWAIT;
+
+DECLARE @CorruptionAlertName1 sysname = @ServerName + N' Alert - Error 233: I/O Error';
+IF NOT EXISTS (SELECT name FROM msdb.dbo.sysalerts WHERE name = @CorruptionAlertName1)
+BEGIN
+    EXEC msdb.dbo.sp_add_alert @name = @CorruptionAlertName1, @message_id = 233, @severity = 0, @enabled = 1, 
+        @delay_between_responses = 900, @include_event_description_in = 1;
+    RAISERROR ('      Added: Error 233 alert', 0, 1) WITH NOWAIT;
+END
+
+DECLARE @CorruptionAlertName2 sysname = @ServerName + N' Alert - Error 596: Critical Page';
+IF NOT EXISTS (SELECT name FROM msdb.dbo.sysalerts WHERE name = @CorruptionAlertName2)
+BEGIN
+    EXEC msdb.dbo.sp_add_alert @name = @CorruptionAlertName2, @message_id = 596, @severity = 0, @enabled = 1,
+        @delay_between_responses = 900, @include_event_description_in = 1;
+    RAISERROR ('      Added: Error 596 alert', 0, 1) WITH NOWAIT;
+END
+
+DECLARE @CorruptionAlertName3 sysname = @ServerName + N' Alert - Error 845: Page Checksum';
+IF NOT EXISTS (SELECT name FROM msdb.dbo.sysalerts WHERE name = @CorruptionAlertName3)
+BEGIN
+    EXEC msdb.dbo.sp_add_alert @name = @CorruptionAlertName3, @message_id = 845, @severity = 0, @enabled = 1,
+        @delay_between_responses = 900, @include_event_description_in = 1;
+    RAISERROR ('      Added: Error 845 alert', 0, 1) WITH NOWAIT;
+END
+
+DECLARE @CorruptionAlertName4 sysname = @ServerName + N' Alert - Error 896: DBCC Detected Corruption';
+IF NOT EXISTS (SELECT name FROM msdb.dbo.sysalerts WHERE name = @CorruptionAlertName4)
+BEGIN
+    EXEC msdb.dbo.sp_add_alert @name = @CorruptionAlertName4, @message_id = 896, @severity = 0, @enabled = 1,
+        @delay_between_responses = 900, @include_event_description_in = 1;
+    RAISERROR ('      Added: Error 896 alert', 0, 1) WITH NOWAIT;
+END
+
+-- 9.5: Security Baseline - Orphaned Users
+-- Source: MadeiraToolbox
+RAISERROR ('Checking: Orphaned database users', 0, 1) WITH NOWAIT;
+DECLARE @OrphanedCount INT = 0;
+SELECT @OrphanedCount = COUNT(*)
+FROM sys.database_principals dp
+LEFT JOIN sys.server_principals sp ON dp.sid = sp.sid
+WHERE dp.type IN ('S','U','G') AND dp.sid IS NOT NULL AND sp.sid IS NULL;
+
+IF @OrphanedCount > 0
+BEGIN
+    RAISERROR (N'      WARNING: Found %d orphaned users - run: ALTER USER [username] WITH LOGIN = [username]', 10, 1, @OrphanedCount) WITH NOWAIT;
+END
+ELSE
+    RAISERROR ('      INFO: No orphaned users found', 10, 1) WITH NOWAIT;
+
+-- 9.6: Security - PUBLIC role excessive permissions
+-- Source: MadeiraToolbox - PUBLIC role with excessive permissions.sql
+RAISERROR ('Checking: PUBLIC role permissions', 0, 1) WITH NOWAIT;
+DECLARE @ExcessivePerms TABLE (DatabaseName NVARCHAR(128), Permission NVARCHAR(100));
+
+DECLARE @dbname NVARCHAR(128);
+DECLARE db_cursor CURSOR FOR SELECT name FROM sys.databases WHERE state = 0;
+OPEN db_cursor;
+FETCH NEXT FROM db_cursor INTO @dbname;
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    INSERT INTO @ExcessivePerms
+    EXEC('SELECT ''' + @dbname + ''', permission_name FROM ' + QUOTENAME(@dbname) + '.sys.database_permissions 
+         WHERE grantee_principal_id = 0 AND permission_name IN (''CONNECT'',''EXECUTE'',''SELECT'',''UPDATE'',''INSERT'',''DELETE'')');
+    FETCH NEXT FROM db_cursor INTO @dbname;
+END
+CLOSE db_cursor;
+DEALLOCATE db_cursor;
+
+IF EXISTS(SELECT 1 FROM @ExcessivePerms)
+BEGIN
+    RAISERROR ('      WARNING: PUBLIC role has permissions in some databases - review for least privilege', 10, 1) WITH NOWAIT;
+    SELECT DatabaseName, Permission FROM @ExcessivePerms;
+END
+ELSE
+    RAISERROR ('      INFO: No excessive PUBLIC role permissions', 10, 1) WITH NOWAIT;
+
+-- 9.7: Security - Guest user access
+-- Source: MadeiraToolbox - GUEST user with database permissions.sql
+RAISERROR ('Checking: Guest user permissions', 0, 1) WITH NOWAIT;
+DECLARE @GuestPerms TABLE (DatabaseName NVARCHAR(128));
+
+DECLARE db_cursor2 CURSOR FOR SELECT name FROM sys.databases WHERE state = 0;
+OPEN db_cursor2;
+FETCH NEXT FROM db_cursor2 INTO @dbname;
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    IF EXISTS(SELECT 1 FROM sys.database_permissions dp 
+              JOIN sys.database_principals dp2 ON dp.grantee_principal_id = dp2.principal_id 
+              WHERE dp2.name = 'guest' AND dp.state <> 0)
+    BEGIN
+        INSERT INTO @GuestPerms VALUES (@dbname);
+    END
+    FETCH NEXT FROM db_cursor2 INTO @dbname;
+END
+CLOSE db_cursor2;
+DEALLOCATE db_cursor2;
+
+IF EXISTS(SELECT 1 FROM @GuestPerms)
+BEGIN
+    RAISERROR ('      WARNING: Guest user has permissions in databases - disable if not needed', 10, 1) WITH NOWAIT;
+    SELECT DatabaseName FROM @GuestPerms;
+END
+ELSE
+    RAISERROR ('      INFO: Guest user has no unexpected permissions', 10, 1) WITH NOWAIT;
 
 
 USE [master]

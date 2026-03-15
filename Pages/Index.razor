@@ -4,8 +4,6 @@
 @using SqlHealthAssessment.Components.Dashboards
 @using SqlHealthAssessment.Data
 @inject NavigationManager Navigation
-@inject UserSettingsService UserSettings
-@inject DashboardConfigService DashboardConfig
 @inject ServerConnectionManager ConnectionManager
 
 @code {
@@ -15,22 +13,14 @@
         var connections = ConnectionManager.GetConnections();
         if (connections.Count == 0)
         {
-            // No servers configured - redirect to servers page
-            Navigation.NavigateTo("/servers", replace: true);
+            // No servers configured - redirect to guide page (recommended starting point)
+            Navigation.NavigateTo("/guide", replace: true);
             return;
         }
 
-        // Check for default dashboard
-        var defaultDashboardId = UserSettings.GetDefaultDashboardId();
-        if (!string.IsNullOrEmpty(defaultDashboardId))
-        {
-            var dashboard = DashboardConfig.Config.Dashboards.FirstOrDefault(d => d.Id == defaultDashboardId && d.Enabled);
-            if (dashboard != null && !string.IsNullOrEmpty(dashboard.Route))
-            {
-                Navigation.NavigateTo(dashboard.Route, replace: true);
-                return;
-            }
-        }
+        // Default landing page is now the Guide page for first-time users
+        // Guide page provides navigation to all major features
+        Navigation.NavigateTo("/guide", replace: true);
     }
 }
 

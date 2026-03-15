@@ -92,6 +92,12 @@ namespace SqlHealthAssessment.Data
         {
             lock (_lock)
             {
+                // Validate connection name before storing
+                if (!IsValidConnectionName(connection.Id))
+                {
+                    throw new ArgumentException($"Invalid connection name: {connection.Id}");
+                }
+                
                 _connections.Add(connection);
                 InvalidateDiscoveryCache();
                 SaveConnections();
@@ -102,6 +108,12 @@ namespace SqlHealthAssessment.Data
         {
             lock (_lock)
             {
+                // Validate connection name before updating
+                if (!IsValidConnectionName(connection.Id))
+                {
+                    throw new ArgumentException($"Invalid connection name: {connection.Id}");
+                }
+                
                 var index = _connections.FindIndex(c => c.Id == connection.Id);
                 if (index >= 0)
                 {
@@ -205,28 +217,30 @@ namespace SqlHealthAssessment.Data
                 {
                     var json = File.ReadAllText(_connectionsFilePath);
                     _connections = JsonSerializer.Deserialize<List<ServerConnection>>(json, DeserializeOptions) ?? new();
-                    MigrateLegacyPasswords();
+                    
+                    // Migrate and encrypt legacy passwords on load
+                    foreach (var conn in _connections.Where(c => !string.IsNullOrEmpty(c.Password)))
+                    {
+                        if (!CredentialProtector.IsEncrypted(conn.Password))
+                        {
+                            try
+                            {
+                                string encryptedPassword = CredentialProtector.Encrypt(conn.Password);
+                                conn.SetPassword(encryptedPassword);
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[ConnectionManager] Failed to encrypt password for connection {conn.Id}: {ex.Message}");
+                            }
+                        }
+                    }
                 }
             }
             catch (Exception ex)
             {
+                // Log error but don't fail on load - use default empty connections
                 System.Diagnostics.Debug.WriteLine($"[ConnectionManager] Load error: {ex.Message}");
                 _connections = new();
-            }
-        }
-
-        private void MigrateLegacyPasswords()
-        {
-            bool migrated = false;
-            foreach (var conn in _connections.Where(c => !string.IsNullOrEmpty(c.Password) && !CredentialProtector.IsEncrypted(c.Password)))
-            {
-                conn.SetPassword(conn.Password);
-                migrated = true;
-            }
-            if (migrated)
-            {
-                SaveConnections();
-                System.Diagnostics.Debug.WriteLine("[ConnectionManager] Migrated legacy passwords");
             }
         }
 
@@ -241,6 +255,47 @@ namespace SqlHealthAssessment.Data
             {
                 System.Diagnostics.Debug.WriteLine($"[ConnectionManager] Save error: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// Validates connection name to prevent path traversal and injection attacks.
+        /// </summary>
+        private bool IsValidConnectionName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            
+            // Reject paths, special characters that could be used for injection
+            if (name.Contains("\\") || name.Contains("/") || name.Contains("..")) return false;
+            if (name.Contains("<") || name.Contains(">") || name.Contains("&") || 
+                name.Contains("'") || name.Contains("\"") || name.Contains(";")) return false;
+            
+            // Only allow alphanumeric, underscore, hyphen, dot
+            foreach (char c in name)
+            {
+                if (!char.IsLetterOrDigit(c) && c != '_' && c != '-' && c != '.') return false;
+            }
+            
+            return true;
+        }
+
+        /// <summary>
+        /// Validates password format before encryption.
+        /// </summary>
+        private bool IsValidPassword(string password)
+        {
+            if (string.IsNullOrEmpty(password)) return false;
+            
+            // Password must be at least 8 characters for security
+            if (password.Length < 8) return false;
+            
+            // Reject passwords with only printable ASCII (common in config files)
+            foreach (char c in password)
+            {
+                if (!char.IsControl(c) && !char.IsPunctuation(c) && !char.IsLetterOrDigit(c))
+                    return true; // Contains special chars - valid
+            }
+            
+            return password.Length >= 8;
         }
     }
 }

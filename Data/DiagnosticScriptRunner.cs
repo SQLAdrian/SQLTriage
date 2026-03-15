@@ -166,6 +166,13 @@ namespace SqlHealthAssessment.Data
 
                 // Load and validate the script file
                 var scriptPath = Path.Combine("scripts", config.ScriptPath);
+                
+                // Validate script path to prevent path traversal attacks
+                if (!IsValidScriptPath(config.ScriptPath))
+                {
+                    throw new InvalidOperationException($"Invalid script path detected: {config.ScriptPath}");
+                }
+                
                 if (!File.Exists(scriptPath))
                     throw new FileNotFoundException($"Script not found: {scriptPath}");
 
@@ -398,19 +405,62 @@ namespace SqlHealthAssessment.Data
             if (!Directory.Exists(outputFolder))
                 Directory.CreateDirectory(outputFolder);
 
-            var fileName = Path.Combine(outputFolder,
-                $"{result.ServerName.Replace("\\", "_")}_{result.ScriptName.Replace(" ", "_")}_{FiletimeStamp}.csv");
+            // Sanitize file name to prevent path traversal and invalid characters
+            var sanitizedServerName = SanitizeFileName(result.ServerName);
+            var sanitizedScriptName = SanitizeFileName(result.ScriptName);
+            
+            var csvFileName = Path.Combine(outputFolder,
+                $"{sanitizedServerName}_{sanitizedScriptName}_{FiletimeStamp}.csv");
+            
+            var jsonFileName = Path.Combine(outputFolder,
+                $"{sanitizedServerName}_{sanitizedScriptName}_{FiletimeStamp}.json");
 
             try
             {
                 // Write CSV directly - no need to re-read the file afterward
-                File.WriteAllText(fileName, csv, Encoding.UTF8);
-                _logger.LogInformation("CSV exported to {FileName}", fileName);
+                File.WriteAllText(csvFileName, csv, Encoding.UTF8);
+                _logger.LogInformation("CSV exported to {FileName}", csvFileName);
+                
+                // Also export JSON
+                var json = ExportToJson(result);
+                File.WriteAllText(jsonFileName, json, Encoding.UTF8);
+                _logger.LogInformation("JSON exported to {FileName}", jsonFileName);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error exporting CSV to {FileName}", fileName);
+                _logger.LogError(ex, "Error exporting files to {FileName}", csvFileName);
             }
+        }
+
+        /// <summary>
+        /// Exports the script execution result to JSON format.
+        /// </summary>
+        public string ExportToJson(ScriptExecutionResult result)
+        {
+            if (result.Results == null || result.Results.Count == 0)
+                return string.Empty;
+
+            // Create a structured JSON output with metadata
+            var jsonOutput = new
+            {
+                metadata = new
+                {
+                    serverName = result.ServerName,
+                    scriptName = result.ScriptName,
+                    executionTime = result.ExecutionTime.ToString(),
+                    executedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                    rowCount = result.Results.Count
+                },
+                results = result.Results
+            };
+
+            var options = new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            };
+
+            return JsonSerializer.Serialize(jsonOutput, options);
         }
 
         public void DownloadCsv(string csvContent, string fileName)
@@ -474,6 +524,51 @@ namespace SqlHealthAssessment.Data
                 _logger.LogWarning(ex, "Error checking if procedure {Proc} exists", procedureName);
                 return true; // If we can't check, assume it exists to avoid false negatives
             }
+        }
+
+        /// <summary>
+        /// Validates script path to prevent path traversal attacks
+        /// </summary>
+        internal static bool IsValidScriptPath(string scriptPath)
+        {
+            if (string.IsNullOrWhiteSpace(scriptPath))
+                return false;
+
+            var normalizedPath = scriptPath.Replace('\\', '/').ToLowerInvariant();
+
+            if (normalizedPath.Contains("../") || normalizedPath.Contains("..\\"))
+                return false;
+
+            if (normalizedPath.StartsWith("/") || normalizedPath.StartsWith("c:"))
+                return false;
+
+            var extension = Path.GetExtension(scriptPath).ToLowerInvariant();
+            if (extension != ".sql" && extension != ".txt")
+                return false;
+
+            return true;
+        }
+
+        /// <summary>
+        /// Sanitizes a file name to prevent path traversal and invalid characters
+        /// </summary>
+        private static string SanitizeFileName(string fileName)
+        {
+            if (string.IsNullOrWhiteSpace(fileName))
+                return "unnamed";
+
+            var invalidChars = Path.GetInvalidFileNameChars();
+            var sanitized = fileName;
+
+            foreach (var c in invalidChars)
+                sanitized = sanitized.Replace(c, '_');
+
+            sanitized = sanitized.Replace("../", "_").Replace("..\\", "_");
+
+            if (sanitized.Length > 100)
+                sanitized = sanitized.Substring(0, 100);
+
+            return sanitized;
         }
     }
 }

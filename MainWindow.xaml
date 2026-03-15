@@ -7,7 +7,8 @@
         Title="SQL Health Assessment"
         Height="900" Width="1400"
         WindowState="Maximized"
-        Background="#1a1a2e" WindowStartupLocation="CenterScreen" Icon="/SQLHealthAssessment.png">
+        Background="#1a1a2e" WindowStartupLocation="CenterScreen" Icon="/SQLHealthAssessment.png"
+        Closing="Window_Closing">
     <Grid>
         <blazor:BlazorWebView x:Name="BlazorWebView"
                                HostPage="wwwroot/index.html"
@@ -17,5 +18,27 @@
                 <blazor:RootComponent Selector="#app" ComponentType="{x:Type localComponentsLayout:MainLayout}" />
             </blazor:BlazorWebView.RootComponents>
         </blazor:BlazorWebView>
+        
+        <!-- Closing Dialog Overlay -->
+        <Grid x:Name="ClosingOverlay" Visibility="Collapsed" Background="#E0000000">
+            <Border Background="#1a1a2e" 
+                    BorderBrush="#3a3a5e" 
+                    BorderThickness="2" 
+                    CornerRadius="10" 
+                    Padding="40"
+                    HorizontalAlignment="Center" 
+                    VerticalAlignment="Center">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="20" ShadowDepth="0" Opacity="0.5"/>
+                </Border.Effect>
+                <TextBlock x:Name="ClosingMessage"
+                           Text="You awesome DBA you! Now go herd some more cats."
+                           FontFamily="Consolas" 
+                           FontSize="24" 
+                           Foreground="#00ff88"
+                           TextWrapping="Wrap"
+                           TextAlignment="Center"/>
+            </Border>
+        </Grid>
     </Grid>
 </Window>

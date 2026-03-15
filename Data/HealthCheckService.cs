@@ -48,6 +48,28 @@ namespace SqlHealthAssessment.Data
             return new Dictionary<string, ServerHealthStatus>(_healthByServer);
         }
 
+        /// <summary>
+        /// Returns a simple health summary suitable for K8s liveness/readiness probes.
+        /// </summary>
+        public (bool IsHealthy, string Status, Dictionary<string, bool> ServerStatus) GetHealthSummary()
+        {
+            var serverStatus = new Dictionary<string, bool>();
+            var allHealthy = true;
+
+            foreach (var kvp in _healthByServer)
+            {
+                var isOnline = (kvp.Value.IsOnline ?? false) && !kvp.Value.IsLoading;
+                serverStatus[kvp.Key] = isOnline;
+                if (!isOnline) allHealthy = false;
+            }
+
+            var status = allHealthy ? "Healthy" : "Degraded";
+            if (_healthByServer.IsEmpty)
+                status = "No servers configured";
+
+            return (allHealthy, status, serverStatus);
+        }
+
         public async Task<ServerHealthStatus> GetHealthStatusAsync(string serverName)
         {
             // Reuse existing object so deadlock delta tracking is preserved

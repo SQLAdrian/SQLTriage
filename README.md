@@ -23,15 +23,17 @@ SQL Health Assessment is a desktop application for monitoring multiple SQL Serve
 ### Health & Analysis
 - **Quick Check** (`Ctrl+Q`) — instant assessment: CPU, memory, blocking, missing/unused indexes
 - **Full Audit** (`Ctrl+4`) — deep-dive covering configuration, security, backups, fragmentation
-- **Interactive Execution Plan Viewer** — graphical plan rendering with node-level cost tooltips
+- **Vulnerability Assessment** — SQL Server security assessment with exportable results
+- **Interactive Execution Plan Viewer (V2)** — graphical plan with hover detail pane (object path, cost breakdown, predicate, copy button); root operator always shows 100%; pane fades after 1.5 s with hover-cancel
 - **Long Query Detection** — surface queries exceeding configurable duration thresholds
-- **Wait Statistics** — categorised wait event history and trends
+- **Wait Statistics** — categorised wait event history and trends, including locking-waits %
 
 ### Performance & Reliability
 - **SQLite WAL-mode cache** — panels serve cached data when SQL Server is temporarily unreachable
 - **Delta-fetch for time-series** — only new data points are fetched on each refresh
 - **Two-tier query throttling** — protects the monitored server from excessive load
 - **Zero-allocation row reading** — `ArrayPool<T>` and streaming JSON serialisation
+- **Cancellable dashboard loads** — switch servers or hit Cancel to abort in-flight queries instantly
 
 ### Security
 - **DPAPI credential encryption** — passwords never stored in plain text
@@ -120,6 +122,14 @@ Or deploy `Dacpacs\SQLWATCH.dacpac` via SSMS (right-click Databases → Deploy D
 | Long Queries | Queries exceeding duration threshold | — |
 | Wait Events | Wait statistics and trends | — |
 | Blocking | Blocking chains and deadlock analysis | — |
+| Performance Monitor | Erik Darling's diagnostic query dashboards | — |
+| Live Wait Stats | Wait category breakdown with locking-waits % | — |
+| Live Index Health | Missing indexes, fragmentation, unused indexes | — |
+| Backup Health | Databases overdue for full / log backups, history | — |
+| Live Query Stats | Plan cache hit ratio, top CPU / IO / duration queries | — |
+| Live Jobs | Running jobs, failures (24 h), all-jobs status | — |
+| Live TempDB | TempDB usage, version store, long transactions | — |
+| Vulnerability Assessment | SQL Server security assessment results | — |
 | Checks | Automated health check results | — |
 | Quick Check | Instant health snapshot | `Ctrl+Q` |
 
@@ -206,11 +216,9 @@ This project stands on the shoulders of giants:
 
 This project was developed with assistance from AI coding assistants:
 
-- **Claude (Anthropic)** — Architecture design, code generation, optimization strategies
-- **Amazon Q Developer** — Code review, refactoring, performance analysis, pair programming
+- **Claude (Anthropic)** — Primary pair-programming partner: architecture design, code generation, feature development, optimisation strategies, and ongoing maintenance
+- **Amazon Q Developer** — Code review, refactoring, performance analysis
 - **Kilo (Codeium)** — Real-time code completion and suggestions
-
-Special thanks to **Amazon Q Developer** for being an exceptional pair-programming partner throughout this project.
 
 ---
 

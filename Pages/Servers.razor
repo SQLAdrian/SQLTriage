@@ -10,8 +10,8 @@
     <h2>Server Management</h2>
     
     <div class="servers-toolbar">
-        <button class="btn btn-primary" @onclick="ShowAddDialog">➕ Add Server</button>
-        <button class="btn btn-secondary" @onclick="RefreshAllConnections">🔄 Refresh All</button>
+        <button class="btn btn-primary" @onclick="ShowAddDialog"><i class="fa-solid fa-plus"></i> Add Server</button>
+        <button class="btn btn-secondary" @onclick="RefreshAllConnections"><i class="fa-solid fa-rotate"></i> Refresh All</button>
     </div>
 
     @if (StatusMessage != null)
@@ -32,22 +32,22 @@
                             var serverCount = conn.GetServerCount();
                             @if (conn.SuccessfulServers.Count == serverCount)
                             {
-                                <span class="status-badge connected">🟢 Connected (@conn.SuccessfulServers.Count/@serverCount)</span>
+                                <span class="status-badge connected"><i class="fa-solid fa-circle"></i> Connected (@conn.SuccessfulServers.Count/@serverCount)</span>
                             }
                             else
                             {
-                                <span class="status-badge partial">🟡 Partial (@conn.SuccessfulServers.Count/@serverCount)</span>
+                                <span class="status-badge partial"><i class="fa-solid fa-circle-half-stroke"></i> Partial (@conn.SuccessfulServers.Count/@serverCount)</span>
                             }
                         }
                         else
                         {
-                            <span class="status-badge disconnected">🔴 Disconnected</span>
+                            <span class="status-badge disconnected"><i class="fa-solid fa-circle-xmark"></i> Disconnected</span>
                         }
                     </div>
                     <div class="server-actions">
-                        <button class="btn-icon" @onclick="() => TestConnection(conn)" title="Test">🔗</button>
-                        <button class="btn-icon" @onclick="() => EditConnection(conn)" title="Edit">✏️</button>
-                        <button class="btn-icon" @onclick="() => DeleteConnection(conn)" title="Delete">🗑️</button>
+                        <button class="btn-icon" @onclick="() => TestConnection(conn)" title="Test"><i class="fa-solid fa-link"></i></button>
+                        <button class="btn-icon" @onclick="() => EditConnection(conn)" title="Edit"><i class="fa-solid fa-pen"></i></button>
+                        <button class="btn-icon" @onclick="() => DeleteConnection(conn)" title="Delete"><i class="fa-solid fa-trash"></i></button>
                     </div>
                 </div>
                 
@@ -193,7 +193,7 @@
                         <small>Pre-fills the login hint. Leave blank to be prompted.</small>
                     </div>
                     <div class="form-group mfa-info">
-                        <small>🔐 A browser window will open for interactive MFA authentication when you connect.</small>
+                        <small><i class="fa-solid fa-lock"></i> A browser window will open for interactive MFA authentication when you connect.</small>
                     </div>
                 }
 

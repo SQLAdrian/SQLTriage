@@ -25,7 +25,7 @@
 @if (ConnectionManager.CurrentServer != null || Instances.Length > 0)
 {
     <div class="server-context-header">
-        <span class="server-context-icon">🖥️</span>
+        <span class="server-context-icon"><i class="fa-solid fa-desktop"></i></span>
         <span class="server-context-label">Connected to:</span>
         
         @if (ConnectionManager.CurrentServer != null)
@@ -84,11 +84,18 @@
 
 <div class="dashboard-content">
 
-    @* Thin loading bar — visible during every refresh, doesn't blank out the content below *@
-    @if (IsLoading)
-    {
-        <div class="db-loading-bar"><div class="db-loading-bar-fill"></div></div>
-    }
+    @* Thin loading bar — always rendered to avoid layout shift *@
+    <div class="db-loading-row">
+        <div class="db-loading-bar @(IsLoading ? "" : "db-loading-bar-idle")">
+            <div class="db-loading-bar-fill"></div>
+        </div>
+        @if (IsLoading)
+        {
+            <button class="btn-cancel-load" @onclick="CancelLoad" title="Cancel in-progress queries">
+                <i class="fa-solid fa-xmark"></i> Cancel
+            </button>
+        }
+    </div>
 
     @if (!string.IsNullOrEmpty(ErrorMessage))
     {
@@ -251,6 +258,9 @@
     private string? ErrorMessage;
     private int _loadedPanelCount = 0;
     private int _totalPanelCount = 0;
+
+    // Per-load cancellation (sqltoolsservice pattern: cancel in-flight load before starting new one)
+    private CancellationTokenSource? _loadCts;
 
     // Data results keyed by panel ID
     private ConcurrentDictionary<string, List<TimeSeriesPoint>> _timeSeriesResults = new();
@@ -455,7 +465,7 @@
         }
 
         Logger.LogInformation("[DynamicDashboard:{DashboardId}] Starting initial data load", DashboardId);
-        await LoadData();
+        await StartLoad();
         if (AutoRefresh) 
         {
             Logger.LogDebug("[DynamicDashboard:{DashboardId}] Starting auto-refresh service", DashboardId);
@@ -477,7 +487,7 @@
         {
             try
             {
-                await LoadData();
+                await StartLoad();
                 StateHasChanged();
                 Logger.LogDebug("[DynamicDashboard:{DashboardId}] Instance change completed successfully", DashboardId);
             }
@@ -503,7 +513,7 @@
         
         try
         {
-            await LoadData();
+            await StartLoad();
             Logger.LogDebug("[DynamicDashboard:{DashboardId}] Instance dropdown change completed successfully", DashboardId);
         }
         catch (Exception ex)
@@ -549,7 +559,7 @@
         if (ConnectionManager.CurrentServer != null)
         {
             ConnectionManager.CurrentServer.Database = dbName;
-            await LoadData();
+            await StartLoad();
             StateHasChanged();
         }
     }
@@ -658,6 +668,25 @@
 
         System.Diagnostics.Debug.WriteLine(
             $"[DynamicDashboard:{DashboardId}] Discovery complete. Instances: [{string.Join(", ", Instances)}]. Selected: {SelectedInstance}");
+    }
+
+    /// <summary>
+    /// Cancels any in-flight load, then starts a new one with a fresh CancellationTokenSource.
+    /// Adopted from sqltoolsservice QueryExecutionService pattern: always cancel previous
+    /// request before issuing a new one so stale results never overwrite fresh data.
+    /// </summary>
+    private async Task StartLoad()
+    {
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+        _loadCts = new CancellationTokenSource();
+        await LoadData(_loadCts.Token);
+    }
+
+    /// <summary>Cancels the current in-flight load, if any.</summary>
+    public void CancelLoad()
+    {
+        _loadCts?.Cancel();
     }
 
     private async Task LoadData(CancellationToken cancellationToken = default)
@@ -980,19 +1009,19 @@
 
     private async Task OnManualRefresh()
     {
-        await LoadData();
+        await StartLoad();
     }
 
     private async Task OnServerConnectionChanged()
     {
-        await LoadData();
+        await StartLoad();
     }
 
     private async Task OnDataSourceChanged(string newSource)
     {
         DataSource = newSource;
         RefreshPanelCaches();
-        await LoadData();
+        await StartLoad();
     }
 
     private async void OnAutoRefresh()
@@ -1057,6 +1086,11 @@
         _checkResults.Clear();
         _panelErrors.Clear();
         
+        // Cancel and dispose any in-flight query load
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+        _loadCts = null;
+
         // Unsubscribe from events without stopping RefreshService (affects all dashboards)
         RefreshService.OnRefresh -= OnAutoRefresh;
         ConfigService.OnConfigChanged -= OnConfigChanged;

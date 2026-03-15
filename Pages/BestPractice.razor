@@ -10,8 +10,8 @@
 <h3>Deploy Best Practice Scripts</h3>
 
 <div style="padding: 16px;">
-    <button @onclick="SyncScripts" class="btn-secondary">🔄 Sync Scripts from Folder</button>
-    <button @onclick="RunSelected" class="btn-primary" disabled="@(!_config.Scripts.Any(s => s.Enabled))">▶ Run Selected Scripts</button>
+    <button @onclick="SyncScripts" class="btn-secondary"><i class="fa-solid fa-rotate"></i> Sync Scripts from Folder</button>
+    <button @onclick="RunSelected" class="btn-primary" disabled="@(!_config.Scripts.Any(s => s.Enabled))"><i class="fa-solid fa-play"></i> Run Selected Scripts</button>
 </div>
 
 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px;">
@@ -56,12 +56,12 @@
                 <div style="margin-bottom: 12px;">
                     <label>SQL Script:</label>
                     <textarea @bind="_scriptContent" rows="15" style="width: 100%; padding: 8px; margin-top: 4px; font-family: 'Consolas', monospace; font-size: 12px;"></textarea>
-                    <button @onclick="SaveScript" class="btn-primary" style="margin-top: 4px;">💾 Save Script</button>
+                    <button @onclick="SaveScript" class="btn-primary" style="margin-top: 4px;"><i class="fa-solid fa-floppy-disk"></i> Save Script</button>
                 </div>
                 
                 <h5>Parameters</h5>
                 <div style="background: #1a1a1a; padding: 12px; margin-bottom: 12px; border-radius: 4px; font-size: 13px; color: #aaa;">
-                    <strong>💡 How to use parameters in SQL:</strong><br/>
+                    <strong><i class="fa-solid fa-lightbulb"></i> How to use parameters in SQL:</strong><br/>
                     Declare at top: <code style="background: #333; padding: 2px 6px; border-radius: 3px;">DECLARE @@ParamName VARCHAR(25) = '{{@@ParamName}}';</code><br/>
                     The {{@@ParamName}} placeholder will be replaced with the value you enter below.
                 </div>
@@ -86,7 +86,7 @@
                             <label style="font-size: 11px; color: #888;">Value @(param.Required ? "*" : "(optional)")</label>
                             <input @bind="param.Value" @bind:after="SaveConfig" style="width: 100%; padding: 4px;" placeholder="@param.DefaultValue" />
                         </div>
-                        <button @onclick="() => RemoveParameter(param)" style="margin-top: 8px; background: #d32f2f; color: white; border: none; padding: 4px 8px; border-radius: 3px; cursor: pointer;">🗑 Remove</button>
+                        <button @onclick="() => RemoveParameter(param)" style="margin-top: 8px; background: #d32f2f; color: white; border: none; padding: 4px 8px; border-radius: 3px; cursor: pointer;"><i class="fa-solid fa-trash"></i> Remove</button>
                     </div>
                 }
                 <button @onclick="AddParameter" class="btn-secondary">+ Add Parameter</button>

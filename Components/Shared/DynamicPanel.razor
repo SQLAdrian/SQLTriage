@@ -80,7 +80,7 @@
                   IsClickable="@Panel.DataGridIsClickable"
                   MaxRows="@Panel.DataGridMaxRows"
                   HiddenColumns="@_planHiddenColumns"
-                  PlanIndicatorColumn="@(GridData != null && GridData.Columns.Contains("Plan") ? "Plan" : null)"
+                  PlanIndicatorColumn="@(GridData != null ? _planColumnCandidates.FirstOrDefault(c => GridData.Columns.Contains(c)) : null)"
                   OnRowClick="@OnDataGridRowClick"
                   TopRowsConfig="@(Panel.DataGridTopRows > 0 ? TopRowsValue : null)"
                   OnTopRowsConfigChanged="@OnTopRowsConfigChanged" />
@@ -183,8 +183,17 @@
 
     private QueryPlanModal? _queryPlanModal;
 
-    // Hide [Plan] column in grids that have it — shown via modal on row click instead
-    private static readonly HashSet<string> _planHiddenColumns = new(StringComparer.OrdinalIgnoreCase) { "Plan" };
+    // Plan XML column names — hidden in the grid and opened via modal on row click
+    private static readonly HashSet<string> _planHiddenColumns = new(StringComparer.OrdinalIgnoreCase)
+        { "Plan", "query_plan_xml", "query_plan", "plan_xml" };
+
+    // Ordered list of column names tried when looking for a plan XML value
+    private static readonly string[] _planColumnCandidates =
+        { "Plan", "query_plan_xml", "query_plan", "plan_xml" };
+
+    // Ordered list of column names tried when looking for the query text
+    private static readonly string[] _queryTextCandidates =
+        { "query_text", "query_text_sample", "QueryText", "sql_text", "text", "statement_text", "Query" };
 
     protected override void OnInitialized()
     {
@@ -215,22 +224,26 @@
             return;
         }
         
-        if (!row.Table.Columns.Contains("Plan")) 
+        // Find plan XML in any recognised column name
+        string? xml = null;
+        foreach (var col in _planColumnCandidates)
         {
-            Logger.LogDebug("[DynamicPanel:{PanelId}] Row does not contain Plan column", Panel?.Id ?? "Unknown");
-            return;
+            if (row.Table.Columns.Contains(col) && row[col] != DBNull.Value)
+            {
+                xml = row[col]?.ToString();
+                if (!string.IsNullOrWhiteSpace(xml)) break;
+            }
         }
 
-        var xml = row["Plan"]?.ToString();
-        if (string.IsNullOrWhiteSpace(xml)) 
+        if (string.IsNullOrWhiteSpace(xml))
         {
-            Logger.LogWarning("[DynamicPanel:{PanelId}] Plan column is empty or null", Panel?.Id ?? "Unknown");
+            Logger.LogDebug("[DynamicPanel:{PanelId}] Row does not contain a recognised plan XML column", Panel?.Id ?? "Unknown");
             return;
         }
 
         // Extract query text if present
         string? queryText = null;
-        foreach (var candidate in new[] { "query_text", "QueryText", "sql_text", "text", "statement_text" })
+        foreach (var candidate in _queryTextCandidates)
         {
             if (row.Table.Columns.Contains(candidate) && row[candidate] != DBNull.Value)
             {

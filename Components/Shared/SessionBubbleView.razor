@@ -233,7 +233,23 @@
             }
         }
 
-        // Resolve collisions to prevent bubble overlap
+        // Apply deterministic radial jitter so coincident bubbles cluster rather than stack.
+        // Use golden-angle distribution (137.5° steps) keyed on SPID for stable, non-random spreading.
+        foreach (var session in Sessions)
+        {
+            var r = GetRadius(session);
+            var angle = (session.SPID * 137.508) % 360.0;
+            var jitter = r * 0.5;
+            if (_positionCache.TryGetValue(session.SPID, out var pos))
+            {
+                _positionCache[session.SPID] = (
+                    pos.x + Math.Cos(angle * Math.PI / 180.0) * jitter,
+                    pos.y + Math.Sin(angle * Math.PI / 180.0) * jitter
+                );
+            }
+        }
+
+        // Resolve remaining collisions to prevent bubble overlap
         ResolveCollisions();
     }
 
@@ -334,12 +350,13 @@
                         var newPos2X = pos2.x + moveX;
                         var newPos2Y = pos2.y + moveY;
 
-                        // Clamp to chart bounds with 2% padding
-                        var padding = Math.Max(radii[s1.SPID], radii[s2.SPID]) + 5 + offsetX;
-                        newPos1X = Math.Clamp(newPos1X, MarginLeft + padding, SvgWidth - MarginRight - padding);
-                        newPos1Y = Math.Clamp(newPos1Y, MarginTop + padding, SvgHeight - MarginBottom - padding);
-                        newPos2X = Math.Clamp(newPos2X, MarginLeft + padding, SvgWidth - MarginRight - padding);
-                        newPos2Y = Math.Clamp(newPos2Y, MarginTop + padding, SvgHeight - MarginBottom - padding);
+                        // Clamp each bubble to its own radius so none are clipped at the chart edge
+                        var pad1 = radii[s1.SPID] + 4;
+                        var pad2 = radii[s2.SPID] + 4;
+                        newPos1X = Math.Clamp(newPos1X, MarginLeft + pad1, SvgWidth - MarginRight - pad1);
+                        newPos1Y = Math.Clamp(newPos1Y, MarginTop + pad1, SvgHeight - MarginBottom - pad1);
+                        newPos2X = Math.Clamp(newPos2X, MarginLeft + pad2, SvgWidth - MarginRight - pad2);
+                        newPos2Y = Math.Clamp(newPos2Y, MarginTop + pad2, SvgHeight - MarginBottom - pad2);
 
                         _positionCache[s1.SPID] = (newPos1X, newPos1Y);
                         _positionCache[s2.SPID] = (newPos2X, newPos2Y);

@@ -19,7 +19,8 @@ namespace SqlHealthAssessment.Data
                 Dashboards = new List<DashboardDefinition>
                 {
                     BuildRepositoryDashboard(),
-                    BuildInstanceDashboard()
+                    BuildInstanceDashboard(),
+                    BuildBpCheckDashboard()
                 },
                 SupportQueries = BuildSupportQueries()
             };
@@ -1001,6 +1002,315 @@ INNER JOIN dbo.sqlwatch_meta_check c WITH (NOLOCK)
 WHERE h.report_time BETWEEN @TimeFrom AND @TimeTo
     AND d.sql_instance IN (SELECT value FROM STRING_SPLIT(@SqlInstance, ','))
 ORDER BY d.snapshot_time DESC"
+                    )
+                }
+            };
+        }
+
+        // ================================================================
+        // BPCHECK DASHBOARD  (live DMV-based best-practice checks)
+        // ================================================================
+
+        private static DashboardDefinition BuildBpCheckDashboard()
+        {
+            return new DashboardDefinition
+            {
+                Id          = "bpcheck",
+                Title       = "Best Practices Check",
+                NavTitle    = "BPCheck",
+                NavIcon     = "\u2705",
+                NavCategory = "Audits",
+                NavOrder    = 10,
+                Route       = "/bpcheck",
+                Description = "Live DMV-based best-practice health checks, adapted from tigertoolbox BPCheck.",
+                Source      = "sqlwatch",
+                DefaultDatabase = "master",
+                ShowAllOption   = false,
+                Panels = new List<PanelDefinition>
+                {
+                    // ── StatCard summary row ──────────────────────────────
+
+                    StatCardPanel(
+                        id:    "bp.maxdop",
+                        title: "MaxDOP",
+                        unit:  "",
+                        order: 1,
+                        sqlServer: @"
+SELECT CAST([value] AS INT) AS [Value]
+FROM sys.configurations WITH (NOLOCK)
+WHERE name = 'max degree of parallelism'"
+                    ),
+
+                    StatCardPanel(
+                        id:    "bp.work_queue",
+                        title: "Work Queue",
+                        unit:  "",
+                        order: 2,
+                        colorThresholds: new List<ColorThresholdRule>
+                        {
+                            new() { Operator = ">=", Value = 0, Color = "#1b5e20", Label = "Normal"   },
+                            new() { Operator = ">=", Value = 1, Color = "#f44336", Label = "Critical" }
+                        },
+                        sqlServer: @"
+SELECT SUM(work_queue_count) AS [Value]
+FROM sys.dm_os_schedulers WITH (NOLOCK)
+WHERE parent_node_id < 64 AND scheduler_id < 255"
+                    ),
+
+                    StatCardPanel(
+                        id:    "bp.lpim",
+                        title: "LPIM Active",
+                        unit:  "",
+                        order: 3,
+                        sqlServer: @"
+SELECT CASE WHEN sql_memory_model = 2 THEN 1 ELSE 0 END AS [Value]
+FROM sys.dm_os_sys_info WITH (NOLOCK)"
+                    ),
+
+                    StatCardPanel(
+                        id:    "bp.suspect_pages",
+                        title: "Suspect Pages",
+                        unit:  "",
+                        order: 4,
+                        colorThresholds: new List<ColorThresholdRule>
+                        {
+                            new() { Operator = ">=", Value = 0, Color = "#1b5e20", Label = "Clean"    },
+                            new() { Operator = ">=", Value = 1, Color = "#f44336", Label = "Critical" }
+                        },
+                        sqlServer: @"
+SELECT COUNT(*) AS [Value]
+FROM msdb.dbo.suspect_pages WITH (NOLOCK)
+WHERE event_type IN (1, 2, 3)"
+                    ),
+
+                    StatCardPanel(
+                        id:    "bp.policy_violations",
+                        title: "Policy Violations",
+                        unit:  "",
+                        order: 5,
+                        colorThresholds: new List<ColorThresholdRule>
+                        {
+                            new() { Operator = ">=", Value = 0, Color = "#1b5e20", Label = "Clean"    },
+                            new() { Operator = ">=", Value = 1, Color = "#ff9800", Label = "Warning"  }
+                        },
+                        sqlServer: @"
+SELECT COUNT(*) AS [Value]
+FROM sys.sql_logins WITH (NOLOCK)
+WHERE is_policy_checked = 0 OR is_expiration_checked = 0"
+                    ),
+
+                    // ── Max Server Memory ─────────────────────────────────
+
+                    DataGridPanel(
+                        id:    "bp.memory_config",
+                        title: "Max Server Memory vs System RAM",
+                        order: 10,
+                        span:  true,
+                        sqlServer: @"
+SELECT
+    sc.[value]                                      AS [configured_max_mem_MB],
+    dosi.physical_memory_kb / 1024                  AS [total_system_mem_MB],
+    CAST(sc.[value] * 100.0
+         / NULLIF(dosi.physical_memory_kb / 1024, 0)
+         AS DECIMAL(5,2))                           AS [pct_of_system_mem],
+    CASE
+        WHEN sc.[value] = 2147483647
+            THEN '[WARNING] MaxServerMemory is default — revise before memory pressure occurs'
+        WHEN sc.[value] > dosi.physical_memory_kb / 1024
+            THEN '[WARNING] MaxServerMemory exceeds total physical RAM'
+        WHEN sc.[value] * 100.0 / NULLIF(dosi.physical_memory_kb / 1024, 0) > 90
+            THEN '[CAUTION] MaxServerMemory leaves <10 % for OS — consider reducing'
+        ELSE '[OK]'
+    END                                             AS [recommendation]
+FROM sys.configurations sc WITH (NOLOCK)
+CROSS JOIN sys.dm_os_sys_info dosi WITH (NOLOCK)
+WHERE sc.name = 'max server memory (MB)'"
+                    ),
+
+                    // ── I/O Stall Analysis ────────────────────────────────
+
+                    DataGridPanel(
+                        id:    "bp.io_stall",
+                        title: "I/O Stall Analysis (cumulative since restart)",
+                        order: 11,
+                        span:  true,
+                        sqlServer: @"
+SELECT
+    DB_NAME(f.database_id)                                          AS [database_name],
+    f.name                                                          AS [logical_file],
+    f.type_desc                                                     AS [file_type],
+    fs.num_of_reads                                                 AS [read_count],
+    fs.num_of_writes                                                AS [write_count],
+    CAST(fs.io_stall_read_ms  / (1.0 + fs.num_of_reads)  AS NUMERIC(10,2)) AS [avg_read_latency_ms],
+    CAST(fs.io_stall_write_ms / (1.0 + fs.num_of_writes) AS NUMERIC(10,2)) AS [avg_write_latency_ms],
+    fs.io_stall                                                     AS [total_stall_ms],
+    CASE
+        WHEN fs.io_stall_read_ms  / (1.0 + fs.num_of_reads)  >= 50
+          OR fs.io_stall_write_ms / (1.0 + fs.num_of_writes) >= 50
+            THEN '[WARNING] High latency — review storage configuration'
+        WHEN fs.io_stall_read_ms  / (1.0 + fs.num_of_reads)  >= 20
+          OR fs.io_stall_write_ms / (1.0 + fs.num_of_writes) >= 20
+            THEN '[CAUTION] Elevated latency'
+        ELSE '[OK]'
+    END                                                             AS [status]
+FROM sys.dm_io_virtual_file_stats(NULL, NULL) AS fs
+INNER JOIN sys.master_files AS f WITH (NOLOCK)
+    ON fs.database_id = f.database_id AND fs.file_id = f.file_id
+ORDER BY fs.io_stall DESC"
+                    ),
+
+                    // ── Top Wait Stats with BPCheck categories ────────────
+
+                    DataGridPanel(
+                        id:    "bp.wait_stats",
+                        title: "Top Wait Stats by Category (cumulative since restart)",
+                        order: 12,
+                        span:  true,
+                        sqlServer: @"
+;WITH Waits AS (
+    SELECT
+        wait_type,
+        wait_time_ms / 1000.0                                                           AS wait_time_s,
+        signal_wait_time_ms / 1000.0                                                    AS signal_wait_time_s,
+        (wait_time_ms - signal_wait_time_ms) / 1000.0                                  AS resource_wait_time_s,
+        100.0 * wait_time_ms / NULLIF(SUM(wait_time_ms) OVER (), 0)                   AS pct,
+        ROW_NUMBER() OVER (ORDER BY wait_time_ms DESC)                                  AS rn
+    FROM sys.dm_os_wait_stats WITH (NOLOCK)
+    WHERE wait_type NOT IN (
+        'RESOURCE_QUEUE','SQLTRACE_INCREMENTAL_FLUSH_SLEEP','SP_SERVER_DIAGNOSTICS_SLEEP',
+        'SOSHOST_SLEEP','QDS_PERSIST_TASK_MAIN_LOOP_SLEEP','QDS_CLEANUP_STALE_QUERIES_TASK_MAIN_LOOP_SLEEP',
+        'LOGMGR_QUEUE','CHECKPOINT_QUEUE','REQUEST_FOR_DEADLOCK_SEARCH','XE_TIMER_EVENT',
+        'BROKER_TASK_STOP','CLR_MANUAL_EVENT','CLR_AUTO_EVENT','DISPATCHER_QUEUE_SEMAPHORE',
+        'FT_IFTS_SCHEDULER_IDLE_WAIT','BROKER_TO_FLUSH','XE_DISPATCHER_WAIT','XE_DISPATCHER_JOIN',
+        'MSQL_XP','WAIT_FOR_RESULTS','CLR_SEMAPHORE','LAZYWRITER_SLEEP','SLEEP_TASK',
+        'SLEEP_SYSTEMTASK','SQLTRACE_BUFFER_FLUSH','WAITFOR','BROKER_EVENTHANDLER','TRACEWRITE',
+        'FT_IFTSHC_MUTEX','BROKER_RECEIVE_WAITFOR','ONDEMAND_TASK_QUEUE','DBMIRROR_EVENTS_QUEUE',
+        'DBMIRRORING_CMD','BROKER_TRANSMITTER','SQLTRACE_WAIT_ENTRIES','SLEEP_BPOOL_FLUSH',
+        'SQLTRACE_LOCK','DIRTY_PAGE_POLL','HADR_FILESTREAM_IOMGR_IOCOMPLETION',
+        'WAIT_XTP_OFFLINE_CKPT_NEW_LOG'
+    )
+    AND wait_type NOT LIKE 'SLEEP_%'
+)
+SELECT
+    W1.wait_type,
+    CAST(W1.wait_time_s        AS DECIMAL(14,2)) AS wait_time_s,
+    CAST(W1.signal_wait_time_s AS DECIMAL(14,2)) AS signal_wait_time_s,
+    CAST(W1.pct                AS DECIMAL(14,2)) AS pct,
+    CASE
+        WHEN W1.wait_type = 'SOS_SCHEDULER_YIELD'                              THEN 'CPU'
+        WHEN W1.wait_type = 'THREADPOOL'                                       THEN 'CPU - Worker Threads'
+        WHEN W1.wait_type IN ('CXPACKET','EXCHANGE','CXCONSUMER',
+             'HTBUILD','HTDELETE','HTMEMO','HTREINIT','HTREPARTITION')         THEN 'CPU - Parallelism'
+        WHEN W1.wait_type LIKE 'LCK_%' OR W1.wait_type = 'LOCK'               THEN 'Lock'
+        WHEN W1.wait_type LIKE 'LATCH_%'                                       THEN 'Latch'
+        WHEN W1.wait_type LIKE 'PAGELATCH_%'                                   THEN 'Buffer Latch'
+        WHEN W1.wait_type LIKE 'PAGEIOLATCH_%'                                 THEN 'Buffer IO'
+        WHEN W1.wait_type IN ('LOGMGR','LOGBUFFER','LOGMGR_FLUSH','WRITELOG') THEN 'Tran Log IO'
+        WHEN W1.wait_type IN ('ASYNC_NETWORK_IO','NET_WAITFOR_PACKET')         THEN 'Network IO'
+        WHEN W1.wait_type LIKE 'RESOURCE_SEMAPHORE_%'                          THEN 'Memory - Compilation'
+        WHEN W1.wait_type IN ('UTIL_PAGE_ALLOC','SOS_VIRTUALMEMORY_LOW',
+             'SOS_RESERVEDMEMBLOCKLIST','RESOURCE_SEMAPHORE','CMEMTHREAD')     THEN 'Memory'
+        ELSE 'Other'
+    END AS wait_category
+FROM Waits W1
+WHERE W1.wait_time_s >= 0.01
+ORDER BY W1.rn"
+                    ),
+
+                    // ── Worker Thread Exhaustion ──────────────────────────
+
+                    DataGridPanel(
+                        id:    "bp.worker_threads",
+                        title: "Worker Thread Health",
+                        order: 13,
+                        span:  false,
+                        sqlServer: @"
+SELECT
+    SUM(current_tasks_count)   AS [current_tasks],
+    SUM(runnable_tasks_count)  AS [runnable_tasks],
+    SUM(work_queue_count)      AS [work_queue_count],
+    SUM(pending_disk_io_count) AS [pending_disk_io],
+    CASE
+        WHEN SUM(work_queue_count) > 1
+            THEN '[WARNING] Work queue > 1 — possible worker thread exhaustion'
+        WHEN AVG(runnable_tasks_count) > 2
+            THEN '[CAUTION] High runnable task count — CPU pressure'
+        ELSE '[OK]'
+    END AS [status]
+FROM sys.dm_os_schedulers WITH (NOLOCK)
+WHERE parent_node_id < 64 AND scheduler_id < 255"
+                    ),
+
+                    // ── Missing Indexes ───────────────────────────────────
+
+                    DataGridPanel(
+                        id:    "bp.missing_indexes",
+                        title: "High-Impact Missing Indexes (Score \u2265 100,000)",
+                        order: 14,
+                        span:  true,
+                        sqlServer: @"
+SELECT
+    DB_NAME(i.database_id)                                                          AS [database_name],
+    OBJECT_NAME(i.object_id, i.database_id)                                         AS [table_name],
+    i.equality_columns                                                              AS [equality_key_cols],
+    i.inequality_columns                                                            AS [inequality_key_cols],
+    i.included_columns                                                              AS [included_cols],
+    s.user_seeks + s.user_scans                                                     AS [user_hits],
+    CAST(s.avg_user_impact       AS DECIMAL(6,2))                                   AS [avg_impact_pct],
+    CAST((s.user_seeks + s.user_scans)
+         * s.avg_total_user_cost * s.avg_user_impact AS DECIMAL(18,0))              AS [score]
+FROM sys.dm_db_missing_index_details i WITH (NOLOCK)
+INNER JOIN sys.dm_db_missing_index_groups g WITH (NOLOCK)
+    ON i.index_handle = g.index_handle
+INNER JOIN sys.dm_db_missing_index_group_stats s WITH (NOLOCK)
+    ON s.group_handle = g.index_group_handle
+WHERE i.database_id > 4
+  AND (s.user_seeks + s.user_scans) * s.avg_total_user_cost * s.avg_user_impact >= 100000
+ORDER BY score DESC"
+                    ),
+
+                    // ── Password Policy ───────────────────────────────────
+
+                    DataGridPanel(
+                        id:    "bp.password_policy",
+                        title: "Password Policy Violations",
+                        order: 15,
+                        span:  false,
+                        sqlServer: @"
+SELECT
+    name                    AS [login_name],
+    is_policy_checked       AS [policy_checked],
+    is_expiration_checked   AS [expiration_checked],
+    LOGINPROPERTY(name, 'IsLocked')   AS [is_locked],
+    LOGINPROPERTY(name, 'IsExpired')  AS [is_expired]
+FROM sys.sql_logins WITH (NOLOCK)
+WHERE is_policy_checked = 0 OR is_expiration_checked = 0
+ORDER BY name"
+                    ),
+
+                    // ── Suspect Pages ─────────────────────────────────────
+
+                    DataGridPanel(
+                        id:    "bp.suspect_pages_detail",
+                        title: "Suspect Pages Detail",
+                        order: 16,
+                        span:  false,
+                        sqlServer: @"
+SELECT
+    DB_NAME(database_id) AS [database_name],
+    file_id              AS [file_id],
+    page_id              AS [page_id],
+    CASE event_type
+        WHEN 1 THEN 'Error 823 / unspecified 824'
+        WHEN 2 THEN 'Bad Checksum'
+        WHEN 3 THEN 'Torn Page'
+        ELSE CAST(event_type AS VARCHAR(10))
+    END                  AS [event_type],
+    error_count          AS [error_count],
+    last_update_date     AS [last_update_date]
+FROM msdb.dbo.suspect_pages WITH (NOLOCK)
+WHERE event_type IN (1, 2, 3)
+ORDER BY DB_NAME(database_id), last_update_date DESC, file_id, page_id"
                     )
                 }
             };

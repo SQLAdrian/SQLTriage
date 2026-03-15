@@ -19,7 +19,7 @@
             <!-- Connection Status -->
             <div class="health-card @GetSeverityClass(HealthStatus.ConnectionSeverity)">
                 <div class="card-header">
-                    <span class="card-icon">🔌</span>
+                    <span class="card-icon"><i class="fa-solid fa-plug"></i></span>
                     <span class="card-title">Connection</span>
                 </div>
                 <div class="card-value">@HealthStatus.ConnectionStatusText</div>
@@ -33,7 +33,7 @@
             <!-- CPU -->
             <div class="health-card @GetSeverityClass(HealthStatus.CpuSeverity)">
                 <div class="card-header">
-                    <span class="card-icon">💻</span>
+                    <span class="card-icon"><i class="fa-solid fa-microchip"></i></span>
                     <span class="card-title">CPU</span>
                 </div>
                 <div class="card-value">@HealthStatus.CpuDisplayText</div>
@@ -43,7 +43,7 @@
             <!-- Memory -->
             <div class="health-card @GetSeverityClass(HealthStatus.MemorySeverity)">
                 <div class="card-header">
-                    <span class="card-icon">🧠</span>
+                    <span class="card-icon"><i class="fa-solid fa-brain"></i></span>
                     <span class="card-title">Memory</span>
                 </div>
                 <div class="card-value">@HealthStatus.MemoryDisplayText</div>
@@ -53,7 +53,7 @@
             <!-- Blocking -->
             <div class="health-card @GetSeverityClass(HealthStatus.BlockingSeverity)">
                 <div class="card-header">
-                    <span class="card-icon">🚫</span>
+                    <span class="card-icon"><i class="fa-solid fa-ban"></i></span>
                     <span class="card-title">Blocking</span>
                 </div>
                 <div class="card-value">@HealthStatus.BlockingDisplayText</div>
@@ -63,7 +63,7 @@
             <!-- Threads -->
             <div class="health-card @GetSeverityClass(HealthStatus.ThreadsSeverity)">
                 <div class="card-header">
-                    <span class="card-icon">🧵</span>
+                    <span class="card-icon"><i class="fa-solid fa-threads"></i></span>
                     <span class="card-title">Threads</span>
                 </div>
                 <div class="card-value">@HealthStatus.ThreadsDisplayText</div>
@@ -73,7 +73,7 @@
             <!-- Deadlocks -->
             <div class="health-card @GetSeverityClass(HealthStatus.DeadlockSeverity)">
                 <div class="card-header">
-                    <span class="card-icon">💀</span>
+                    <span class="card-icon"><i class="fa-solid fa-skull"></i></span>
                     <span class="card-title">Deadlocks</span>
                 </div>
                 <div class="card-value">@HealthStatus.DeadlockDisplayText</div>
@@ -103,7 +103,7 @@
         
         <div class="refresh-section">
             <button class="btn btn-primary" @onclick="RefreshHealth">
-                🔄 Refresh Now
+                <i class="fa-solid fa-rotate"></i> Refresh Now
             </button>
         </div>
     }

@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
@@ -23,10 +24,37 @@ namespace SqlHealthAssessment.Data
         {
             var errors = new List<string>();
 
-            // Connection String
+            // Connection String validation
             var connStr = _config.GetConnectionString("SqlServer");
             if (string.IsNullOrWhiteSpace(connStr))
+            {
                 errors.Add("SqlServer connection string is missing");
+            }
+            else
+            {
+                // Validate connection string format
+                try
+                {
+                    var builder = new SqlConnectionStringBuilder(connStr);
+                    
+                    // Check for either Windows Auth or SQL Auth
+                    var isIntegratedSecurity = builder.IntegratedSecurity;
+                    var hasUserID = !string.IsNullOrEmpty(builder.UserID);
+                    
+                    if (!isIntegratedSecurity && !hasUserID)
+                        errors.Add("Connection string must use either Integrated Security or provide User ID");
+                    
+                    if (string.IsNullOrEmpty(builder.DataSource))
+                        errors.Add("Connection string must specify Data Source (Server)");
+                    
+                    if (string.IsNullOrEmpty(builder.InitialCatalog) || builder.InitialCatalog == ".")
+                        _logger.LogWarning("Connection string uses '.' for database - may not be intentional");
+                }
+                catch (Exception ex)
+                {
+                    errors.Add($"Invalid connection string format: {ex.Message}");
+                }
+            }
 
             // Query Timeout
             var timeout = _config.GetValue<int>("QueryTimeoutSeconds", -1);
@@ -47,6 +75,13 @@ namespace SqlHealthAssessment.Data
             var logLevel = _config["Logging:LogLevel:Default"];
             if (string.IsNullOrEmpty(logLevel))
                 errors.Add("Logging:LogLevel:Default is missing");
+            else if (!IsValidLogLevel(logLevel))
+                errors.Add($"Invalid log level '{logLevel}'. Valid values: Trace, Debug, Information, Warning, Error, Critical");
+
+            // Validate TrustServerCertificate setting
+            var trustCert = _config.GetValue<bool>("TrustServerCertificate", false);
+            if (trustCert)
+                _logger.LogWarning("TrustServerCertificate is enabled - only use in development/test environments");
 
             var isValid = !errors.Any();
             if (isValid)
@@ -55,6 +90,20 @@ namespace SqlHealthAssessment.Data
                 _logger.LogError("Configuration validation failed: {Errors}", string.Join(", ", errors));
 
             return (isValid, errors);
+        }
+
+        private static bool IsValidLogLevel(string level)
+        {
+            return level?.ToLowerInvariant() switch
+            {
+                "trace" => true,
+                "debug" => true,
+                "information" => true,
+                "warning" => true,
+                "error" => true,
+                "critical" => true,
+                _ => false
+            };
         }
     }
 }

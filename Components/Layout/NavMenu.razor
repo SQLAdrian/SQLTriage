@@ -11,72 +11,64 @@
 
 <div class="nav-menu">
     <div class="nav-brand">
-        <span class="nav-brand-icon">📊</span>
+        <span class="nav-brand-icon"><i class="fa-solid fa-heart-pulse"></i></span>
         <span class="nav-brand-text"><p>SQL Health Assessment</p></span>
     </div>
-    <div>
-        <span class="nav-version">v@(UpdateService.GetCurrentVersion())</span>
-    </div>
-    <br />
     <nav>
         <br />
         <div class="nav-divider">Live</div>
         <br />
-        <br />
-        
-        @* Dynamic Dashboard Navigation *@
-        @foreach (var category in GetNavigationCategories())
+
+        @* Dynamic dashboards — master DB, Dashboards category only (excludes Tools, Audits, etc.) *@
+        @foreach (var dashboard in DashboardConfig.Config.Dashboards
+            .Where(d => d.Enabled && d.NavCategory == "Dashboards" && d.DefaultDatabase == "master")
+            .OrderBy(d => d.NavOrder))
         {
-            @if (category.Key != "Dashboards")
-            {
-                <br />
-                <div class="nav-divider">@category.Key</div>
-                <br />
-            }
-            
-            //All
-            @foreach (var dashboard in category.Value.OrderBy(d => d.NavOrder).Where(d => d.DefaultDatabase == "master"))
+            <NavLink href="@($"/dashboard/{dashboard.Id}")" class="nav-link">
+                @NavIcon(dashboard.NavIcon) @dashboard.NavTitle
+            </NavLink>
+        }
+
+        <br />
+        <div class="nav-divider">SQLWATCH</div>
+        <br />
+        @if (_SQLWATCHExists)
+        {
+            @foreach (var dashboard in DashboardConfig.Config.Dashboards
+                .Where(d => d.Enabled && d.DefaultDatabase == "SQLWATCH")
+                .OrderBy(d => d.NavOrder))
             {
                 <NavLink href="@($"/dashboard/{dashboard.Id}")" class="nav-link">
                     @NavIcon(dashboard.NavIcon) @dashboard.NavTitle
                 </NavLink>
             }
-            <br />
-            <div class="nav-divider">SQLWATCH</div>
-            <br />
-            @if (_SQLWATCHExists)
-            {
-                @foreach (var dashboard in category.Value.OrderBy(d => d.NavOrder).Where(d => d.DefaultDatabase == "SQLWATCH"))
-                {
-                    <NavLink href="@($"/dashboard/{dashboard.Id}")" class="nav-link">
-                        @NavIcon(dashboard.NavIcon) @dashboard.NavTitle
-                    </NavLink>
-                }
-            }
-            else
-            {
-                <span class="nav-db-missing">SQLWATCH database not installed</span>
-            }
-            <br />
-            <div class="nav-divider">PerformanceMonitor</div>
-            <br />
-            @if (_performanceMonitorExists)
-            {
-                @foreach (var dashboard in category.Value.OrderBy(d => d.NavOrder).Where(d => d.DefaultDatabase == "PerformanceMonitor"))
-                {
-                    <NavLink href="@($"/dashboard/{dashboard.Id}")" class="nav-link">
-                        @NavIcon(dashboard.NavIcon) @dashboard.NavTitle
-                    </NavLink>
-                }
-            }
-            else
-            {
-                <span class="nav-db-missing">PerformanceMonitor database not installed</span>
-            }
+        }
+        else
+        {
+            <span class="nav-db-missing">SQLWATCH database not installed</span>
         }
 
         <br />
-        <div class="nav-divider">Check</div>
+        <div class="nav-divider">PerformanceMonitor</div>
+        <br />
+        @if (_performanceMonitorExists)
+        {
+            @foreach (var dashboard in DashboardConfig.Config.Dashboards
+                .Where(d => d.Enabled && d.DefaultDatabase == "PerformanceMonitor")
+                .OrderBy(d => d.NavOrder))
+            {
+                <NavLink href="@($"/dashboard/{dashboard.Id}")" class="nav-link">
+                    @NavIcon(dashboard.NavIcon) @dashboard.NavTitle
+                </NavLink>
+            }
+        }
+        else
+        {
+            <span class="nav-db-missing">PerformanceMonitor database not installed</span>
+        }
+
+        <br />
+        <div class="nav-divider">Audits</div>
         <br />
         <NavLink href="/quickcheck" class="nav-link" title="Ctrl+0">
             <span class="nav-icon"><i class="fa-solid fa-bolt-lightning"></i></span> Quick Check
@@ -84,6 +76,13 @@
         <NavLink href="/fullaudit" class="nav-link" title="Ctrl+4">
             <span class="nav-icon"><i class="fa-solid fa-clipboard-check"></i></span> Full Audit
         </NavLink>
+        <NavLink href="/vulnerabilityassessment" class="nav-link">
+            <span class="nav-icon"><i class="fa-solid fa-shield-halved"></i></span> Vulnerability Assessment
+        </NavLink>
+        <NavLink href="/reports" class="nav-link">
+            <span class="nav-icon"><i class="fa-solid fa-file-pdf"></i></span> Reports
+        </NavLink>
+
         <br />
         <div class="nav-divider">Monitoring new server</div>
         <br />
@@ -93,9 +92,24 @@
         <NavLink href="/deploydarlingPM" class="nav-link">
             <span class="nav-icon"><i class="fa-solid fa-chart-simple"></i></span> Darling Perf Monitor
         </NavLink>
-        <NavLink href="/bestpractice" class="nav-link">
-            <span class="nav-icon"><i class="fa-solid fa-check-double"></i></span> Deploy Best Practice
-        </NavLink>
+
+        @* TOOLS_SECTION_VISIBLE — set to true when XEvent/Profiler, Schema Compare, Dependency Walker are implemented *@
+        @if (ShowToolsSection)
+        {
+            <br />
+            <div class="nav-divider">Tools</div>
+            <br />
+            <NavLink href="/xevents" class="nav-link">
+                <span class="nav-icon"><i class="fa-solid fa-list-check"></i></span> XEvent / Profiler
+            </NavLink>
+            <NavLink href="/schemacompare" class="nav-link">
+                <span class="nav-icon"><i class="fa-solid fa-code-compare"></i></span> Schema Compare
+            </NavLink>
+            <NavLink href="/dependencywalker" class="nav-link">
+                <span class="nav-icon"><i class="fa-solid fa-sitemap"></i></span> Dependency Walker
+            </NavLink>
+        }
+
         <br />
         <br />
         <div class="nav-divider">Configure</div>
@@ -107,14 +121,17 @@
         <NavLink href="/dashboard-editor" class="nav-link" title="Ctrl+7">
             <span class="nav-icon"><i class="fa-solid fa-table-columns"></i></span> Dashboard Editor
         </NavLink>
-        <NavLink href="/bulkeditchecks" class="nav-link" title="Ctrl+9">
-            <span class="nav-icon"><i class="fa-solid fa-pen-to-square"></i></span> Bulk Edit Checks
-        </NavLink>
-        <NavLink href="/editauditscripts" class="nav-link">
-            <span class="nav-icon"><i class="fa-solid fa-file-code"></i></span> Edit Audit Scripts
-        </NavLink>
         <NavLink href="/servers" class="nav-link" title="Ctrl+8">
             <span class="nav-icon"><i class="fa-solid fa-server"></i></span> Servers
+        </NavLink>
+        <NavLink href="/bestpractice" class="nav-link">
+            <span class="nav-icon"><i class="fa-solid fa-list-check"></i></span> BP Checks
+        </NavLink>
+        <NavLink href="/guide" class="nav-link">
+            <span class="nav-icon"><i class="fa-solid fa-map"></i></span> Guide
+        </NavLink>
+        <NavLink href="/reports-rdl" class="nav-link">
+            <span class="nav-icon"><i class="fa-solid fa-file-pdf"></i></span> RDL Reports
         </NavLink>
         <NavLink href="/about" class="nav-link">
             <span class="nav-icon"><i class="fa-solid fa-info-circle"></i></span> About
@@ -126,6 +143,9 @@
 </div>
 
 @code {
+    // Set to true once XEvent/Profiler, Schema Compare, and Dependency Walker pages are ready
+    private const bool ShowToolsSection = false;
+
     private bool _performanceMonitorExists = false;
     private bool _SQLWATCHExists = false;
 
@@ -167,26 +187,6 @@
         }
         builder.CloseElement();
     };
-
-    private Dictionary<string, List<DashboardDefinition>> GetNavigationCategories()
-    {
-        var categories = new Dictionary<string, List<DashboardDefinition>>();
-        
-        foreach (var dashboard in DashboardConfig.Config.Dashboards.Where(d => d.Enabled))
-        {
-            if (dashboard.DefaultDatabase == "PerformanceMonitor" && !_performanceMonitorExists)
-                continue;
-            if (dashboard.DefaultDatabase == "SQLWATCH" && !_SQLWATCHExists)
-                continue;
-                
-            if (!categories.ContainsKey(dashboard.NavCategory))
-                categories[dashboard.NavCategory] = new List<DashboardDefinition>();
-                
-            categories[dashboard.NavCategory].Add(dashboard);
-        }
-        
-        return categories;
-    }
 
     async ValueTask IAsyncDisposable.DisposeAsync()
     {

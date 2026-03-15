@@ -1,0 +1,47 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using SqlHealthAssessment.Data.Services
+@inject AdminAuthService AdminAuth
+
+@if (AdminAuth.IsUnlocked)
+{
+    @ChildContent
+}
+else
+{
+    <div class="admin-guard-overlay">
+        <div class="admin-guard-box">
+            <div class="admin-guard-icon"><i class="fa-solid fa-lock"></i></div>
+            <h3 class="admin-guard-title">Admin Access Required</h3>
+            <p class="admin-guard-sub">This section is protected. Enter the admin password to continue.</p>
+            <div class="admin-guard-input-row">
+                <input type="password" class="admin-guard-input" placeholder="Admin password"
+                       @bind="_password" @onkeydown="OnKeyDown" />
+                <button class="btn btn-primary admin-guard-btn" @onclick="TryUnlock">
+                    <i class="fa-solid fa-unlock"></i> Unlock
+                </button>
+            </div>
+            @if (_failed)
+            {
+                <p class="admin-guard-error"><i class="fa-solid fa-circle-exclamation"></i> Incorrect password.</p>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private string _password = "";
+    private bool _failed;
+
+    private void TryUnlock()
+    {
+        _failed = !AdminAuth.Unlock(_password);
+        _password = "";
+    }
+
+    private void OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") TryUnlock();
+    }
+}

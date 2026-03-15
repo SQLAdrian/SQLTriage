@@ -34,7 +34,7 @@ namespace SqlHealthAssessment.Data
             public bool ShowDiagnosticPane { get; set; } = false;
             public string DefaultDashboardId { get; set; } = "";
             /// <summary>Data source: "sqlwatch" or "pm" (PerformanceMonitor)</summary>
-            public string DataSource { get; set; } = "sqlwatch";
+            public string DataSource { get; set; } = "master";
         }
 
         /// <summary>

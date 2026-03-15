@@ -4,6 +4,7 @@ using System.Windows;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using SqlHealthAssessment.Data;
+using System.Windows.Threading;
 
 namespace SqlHealthAssessment
 {
@@ -74,6 +75,21 @@ namespace SqlHealthAssessment
                     _logger?.LogError(ex, "Failed to open DevTools");
                 }
             }
+        }
+
+        private async void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
+        {
+            // Show the closing dialog
+            ClosingOverlay.Visibility = Visibility.Visible;
+            
+            // Cancel the close to allow dialog to show
+            e.Cancel = true;
+            
+            // Wait 0.8 seconds then close
+            await Task.Delay(800);
+            
+            // Actually close the window
+            Application.Current.Shutdown();
         }
     }
 }

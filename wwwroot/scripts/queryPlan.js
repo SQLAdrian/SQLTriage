@@ -1,369 +1,522 @@
 /* In the name of God, the Merciful, the Compassionate */
 
-// Query plan viewer helpers for Blazor JS interop
-window.queryPlanInterop = {
-
-    // ── public ─────────────────────────────────────────────────────────────
-    showPlan: function (containerId, xml) {
-        var container = document.getElementById(containerId);
-        if (!container) return;
-        container.innerHTML = '';
-        if (window.QP && xml) {
+// Query plan viewer helpers for Blazor JS interop - Fixed XML tree parsing with proper scoping
+window.queryPlanInterop = (function() {
+    var svgNS = 'http://www.w3.org/2000/svg';
+    
+    // ── private state ───────────────────────────────────────────────────────
+    var nodeMap = {};  // Global node map accessible to all render functions
+    
+    // ── public API ──────────────────────────────────────────────────────────
+    return {
+        showPlan: function(containerId, xml) {
+            var container = document.getElementById(containerId);
+            if (!container) return;
+            container.innerHTML = '';
+            
             try {
-                QP.showPlan(container, xml, { jsTooltips: true });
-                // Enhancement passes — all read from container['xml'] set by QP.showPlan
-                this._injectMetadataBar(container);
-                this._injectWarnings(container);
-                this._injectMissingIndexes(container);
-                this._injectCostHeaders(container);
-                this._highlightExpensiveNodes(container);
+                this._renderQueryPlan(container, xml);
             } catch (e) {
                 container.innerHTML = '<p style="color:#f44336;padding:16px;">Failed to render query plan: ' + e.message + '</p>';
             }
-        }
-    },
-
-    clearPlan: function (containerId) {
-        var container = document.getElementById(containerId);
-        if (container) container.innerHTML = '';
-    },
-
-    // ── private helpers ────────────────────────────────────────────────────
-
-    // Returns the parsed XML stored by QP.showPlan, with namespace helper.
-    _xml: function (container) { return container['xml'] || null; },
-    _ns:  'http://schemas.microsoft.com/sqlserver/2004/07/showplan',
-
-    _getElements: function (parsedXml, tag) {
-        var els = parsedXml.getElementsByTagNameNS(this._ns, tag);
-        if (!els || els.length === 0) els = parsedXml.getElementsByTagName(tag);
-        return els || [];
-    },
-
-    // Creates a styled info/warning/error banner div.
-    _banner: function (text, type, mono) {
-        var colors = {
-            info:    { fg: '#9cdcfe', bg: 'rgba(46,174,241,0.10)', border: '#2eaef1' },
-            warning: { fg: '#ffc107', bg: 'rgba(255,193,7,0.10)',  border: '#ffc107' },
-            error:   { fg: '#f44336', bg: 'rgba(244,67,54,0.10)',  border: '#f44336' },
-            success: { fg: '#4caf50', bg: 'rgba(76,175,80,0.10)',  border: '#4caf50' }
-        };
-        var c = colors[type] || colors.info;
-        var el = document.createElement('div');
-        el.style.cssText = [
-            'font-family: ' + (mono ? 'Consolas, monospace' : 'inherit'),
-            'font-size: 12px',
-            'color: ' + c.fg,
-            'background: ' + c.bg,
-            'border-left: 3px solid ' + c.border,
-            'padding: 5px 10px',
-            'margin-bottom: 4px',
-            'border-radius: 2px',
-            'user-select: none',
-            'white-space: pre-wrap',
-            'word-break: break-all'
-        ].join(';');
-        el.textContent = text;
-        return el;
-    },
-
-    // ── 1. Compile metadata bar ────────────────────────────────────────────
-    // Shows: CompileTime, CompileMemory, DOP, MemoryGrant from <QueryPlan> and <MemoryGrantInfo>
-    _injectMetadataBar: function (container) {
-        var parsedXml = this._xml(container);
-        if (!parsedXml) return;
-
-        var qps = this._getElements(parsedXml, 'QueryPlan');
-        if (!qps || qps.length === 0) return;
-        var qp = qps[0];
-
-        var parts = [];
-        var ct = qp.getAttribute('CompileTime');
-        var cm = qp.getAttribute('CompileMemory');
-        if (ct) parts.push('Compile time: ' + ct + ' ms');
-        if (cm) parts.push('Compile memory: ' + parseInt(cm).toLocaleString() + ' KB');
-
-        // Available DOP
-        var hw = this._getElements(parsedXml, 'OptimizerHardwareDependentProperties');
-        if (hw && hw.length > 0) {
-            var dop = hw[0].getAttribute('EstimatedAvailableDegreeOfParallelism');
-            if (dop) parts.push('Available DOP: ' + dop);
-        }
-
-        // Memory grant
-        var mg = this._getElements(parsedXml, 'MemoryGrantInfo');
-        if (mg && mg.length > 0) {
-            var granted = mg[0].getAttribute('GrantedMemory');
-            var maxUsed = mg[0].getAttribute('MaxUsedMemory');
-            if (granted && parseInt(granted) > 0)
-                parts.push('Memory grant: ' + parseInt(granted).toLocaleString() + ' KB' +
-                    (maxUsed ? ' (max used: ' + parseInt(maxUsed).toLocaleString() + ' KB)' : ''));
-        }
-
-        // Parallelism check — any RelOp with Parallel="true"
-        var relOps = this._getElements(parsedXml, 'RelOp');
-        var isParallel = false;
-        for (var i = 0; i < relOps.length; i++) {
-            if (relOps[i].getAttribute('Parallel') === '1' ||
-                relOps[i].getAttribute('Parallel') === 'true') {
-                isParallel = true;
-                break;
+        },
+        
+        clearPlan: function(containerId) {
+            var container = document.getElementById(containerId);
+            if (container) container.innerHTML = '';
+        },
+        
+        // ── private helpers ───────────────────────────────────────────────────
+        _ns: 'http://schemas.microsoft.com/sqlserver/2004/07/showplan',
+        
+        // Parse XML and build proper tree structure - FIX: return nodeMap for closure access
+        _parseXmlTree: function(xml) {
+            var parsedXml = new DOMParser().parseFromString(xml, "text/xml");
+            if (!parsedXml || !parsedXml.documentElement) return null;
+            
+            var qps = parsedXml.getElementsByTagNameNS(this._ns, 'QueryPlan');
+            if (qps.length === 0) {
+                // Try without namespace
+                qps = parsedXml.getElementsByTagName('QueryPlan');
             }
-        }
-        if (isParallel) parts.push('Parallel plan');
-
-        if (parts.length === 0) return;
-
-        var bar = document.createElement('div');
-        bar.style.cssText = [
-            'font-family: Consolas, monospace',
-            'font-size: 11px',
-            'color: #888',
-            'background: rgba(0,0,0,0.2)',
-            'padding: 3px 10px',
-            'margin-bottom: 6px',
-            'border-radius: 2px',
-            'user-select: none'
-        ].join(';');
-        bar.textContent = parts.join('  ·  ');
-        container.insertBefore(bar, container.firstElementChild);
-    },
-
-    // ── 2. Warnings ────────────────────────────────────────────────────────
-    // Surfaces <Warnings> attributes: NoJoinPredicate, SpillToTempDb, ColumnsWithNoStatistics, etc.
-    _injectWarnings: function (container) {
-        var parsedXml = this._xml(container);
-        if (!parsedXml) return;
-
-        var warnings = this._getElements(parsedXml, 'Warnings');
-        var messages = [];
-
-        for (var i = 0; i < warnings.length; i++) {
-            var w = warnings[i];
-
-            if (w.getAttribute('NoJoinPredicate') === '1' ||
-                w.getAttribute('NoJoinPredicate') === 'true')
-                messages.push({ text: '⚠ No join predicate — possible accidental cross join or missing WHERE clause', type: 'error' });
-
-            // SpillToTempDb child elements
-            var spills = w.getElementsByTagName('SpillToTempDb');
-            if (!spills || spills.length === 0)
-                spills = w.getElementsByTagNameNS(this._ns, 'SpillToTempDb');
-            if (spills && spills.length > 0)
-                messages.push({ text: '⚠ Operator spilled to TempDB — insufficient memory grant; consider updating statistics or increasing grant', type: 'error' });
-
-            // ColumnsWithNoStatistics
-            var noStats = w.getElementsByTagName('ColumnsWithNoStatistics');
-            if (!noStats || noStats.length === 0)
-                noStats = w.getElementsByTagNameNS(this._ns, 'ColumnsWithNoStatistics');
-            if (noStats && noStats.length > 0) {
-                var cols = [];
-                var colRefs = noStats[0].getElementsByTagName('ColumnReference');
-                for (var j = 0; j < colRefs.length; j++) {
-                    var col = (colRefs[j].getAttribute('Table') || '') + '.' + colRefs[j].getAttribute('Column');
-                    cols.push(col);
+            if (qps.length === 0) return null;
+            var qp = qps[0];
+            
+            // Collect all statement elements (StmtSimple, StmtCond, StmtCursor, etc.)
+            var stmts = [];
+            var stmtElements = parsedXml.getElementsByTagNameNS(this._ns, 'StmtSimple');
+            if (stmtElements.length === 0) {
+                stmtElements = parsedXml.getElementsByTagName('StmtSimple');
+            }
+            
+            for (var i = 0; i < stmtElements.length; i++) {
+                stmts.push(stmtElements[i]);
+            }
+            
+            // Also collect StmtCond, StmtCursor, etc.
+            var condElements = parsedXml.getElementsByTagNameNS(this._ns, 'StmtCond');
+            if (condElements.length === 0) {
+                condElements = parsedXml.getElementsByTagName('StmtCond');
+            }
+            for (var i = 0; i < condElements.length; i++) {
+                stmts.push(condElements[i]);
+            }
+            
+            var cursorElements = parsedXml.getElementsByTagNameNS(this._ns, 'StmtCursor');
+            if (cursorElements.length === 0) {
+                cursorElements = parsedXml.getElementsByTagName('StmtCursor');
+            }
+            for (var i = 0; i < cursorElements.length; i++) {
+                stmts.push(cursorElements[i]);
+            }
+            
+            // Build node map: nodeId -> node info - FIX: assign to global scope
+            nodeMap = {};
+            var statementNodes = []; // Top-level statements
+            
+            // Process each statement element
+            for (var s = 0; s < stmts.length; s++) {
+                var stmtEl = stmts[s];
+                var stmtNodeId = null;
+                
+                // Find the root RelOp or operator element in this statement
+                var relOps = stmtEl.getElementsByTagNameNS(this._ns, 'RelOp');
+                if (relOps.length === 0) {
+                    relOps = stmtEl.getElementsByTagName('RelOp');
                 }
-                messages.push({ text: '⚠ Columns with no statistics: ' + cols.join(', '), type: 'warning' });
+                
+                for (var r = 0; r < relOps.length; r++) {
+                    var relOp = relOps[r];
+                    var nodeId = relOp.getAttribute('NodeId');
+                    if (!nodeId) continue;
+                    
+                    // Create node entry - FIX: store in global nodeMap
+                    var nodeInfo = {
+                        element: relOp,
+                        statementElement: stmtEl,
+                        parentRelOp: null,
+                        children: [],
+                        isRootOfStatement: false
+                    };
+                    
+                    nodeMap[nodeId] = nodeInfo;
+                    
+                    // Find parent RelOp (nearest ancestor that is a RelOp)
+                    var current = relOp.parentElement;
+                    while (current && current !== qp) {
+                        var parentRelOps = current.getElementsByTagNameNS(this._ns, 'RelOp');
+                        if (parentRelOps.length > 0) {
+                            for (var p = 0; p < parentRelOps.length; p++) {
+                                var parentRelOp = parentRelOps[p];
+                                var parentNodeId = parentRelOp.getAttribute('NodeId');
+                                if (parentNodeId && parentNodeId === nodeId) {
+                                    // This is the same node, skip
+                                    continue;
+                                }
+                                // Check if this parent contains this RelOp in its operator element
+                                var parentOperator = this._getOperatorElement(parentRelOp);
+                                if (parentOperator) {
+                                    var childOps = parentOperator.getElementsByTagNameNS(this._ns, 'RelOp');
+                                    for (var c = 0; c < childOps.length; c++) {
+                                        var childOp = childOps[c];
+                                        if (childOp.getAttribute('NodeId') === nodeId) {
+                                            nodeInfo.parentRelOp = parentRelOp;
+                                            break;
+                                        }
+                                    }
+                                } else {
+                                    // Check for other operator element types
+                                    var seekPreds = parentOperator.getElementsByTagNameNS(this._ns, 'SeekPredicateNew');
+                                    if (seekPreds.length > 0) {
+                                        for (var sp = 0; sp < seekPreds.length; sp++) {
+                                            var spChildOps = seekPreds[sp].getElementsByTagNameNS(this._ns, 'RelOp');
+                                            for (var c2 = 0; c2 < spChildOps.length; c2++) {
+                                                if (spChildOps[c2].getAttribute('NodeId') === nodeId) {
+                                                    nodeInfo.parentRelOp = parentRelOp;
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                if (nodeInfo.parentRelOp) break;
+                            }
+                        }
+                        if (nodeInfo.parentRelOp) break;
+                        current = current.parentElement;
+                    }
+                    
+                    // If no parent found, this is a top-level node
+                    if (!nodeInfo.parentRelOp) {
+                        nodeInfo.isRootOfStatement = true;
+                        statementNodes.push(nodeInfo);
+                    }
+                }
             }
-
-            // SortSpillDetails, HashSpillDetails
-            var sortSpill = w.getElementsByTagName('SortSpillDetails');
-            if (sortSpill && sortSpill.length > 0)
-                messages.push({ text: '⚠ Sort operation spilled to TempDB', type: 'error' });
-        }
-
-        // Insert warnings after the metadata bar but before qp-root
-        var qpRoot = container.querySelector('.qp-root') || container.lastElementChild;
-        for (var k = 0; k < messages.length; k++) {
-            var el = this._banner(messages[k].text, messages[k].type, false);
-            container.insertBefore(el, qpRoot);
-        }
-    },
-
-    // ── 3. Missing index recommendations ──────────────────────────────────
-    // Parses <MissingIndexGroup> and generates CREATE INDEX T-SQL suggestions.
-    _injectMissingIndexes: function (container) {
-        var parsedXml = this._xml(container);
-        if (!parsedXml) return;
-
-        var groups = this._getElements(parsedXml, 'MissingIndexGroup');
-        if (!groups || groups.length === 0) return;
-
-        for (var i = 0; i < groups.length; i++) {
-            var group = groups[i];
-            var impact = parseFloat(group.getAttribute('Impact') || '0').toFixed(1);
-
-            var idxEls = group.getElementsByTagName('MissingIndex');
-            if (!idxEls || idxEls.length === 0)
-                idxEls = group.getElementsByTagNameNS(this._ns, 'MissingIndex');
-            if (!idxEls || idxEls.length === 0) continue;
-
-            var idx = idxEls[0];
-            var db     = (idx.getAttribute('Database') || '').replace(/[\[\]]/g, '');
-            var schema = (idx.getAttribute('Schema')   || '').replace(/[\[\]]/g, '');
-            var table  = (idx.getAttribute('Table')    || '').replace(/[\[\]]/g, '');
-
-            var eqCols = [], neqCols = [], incCols = [];
-            var colGroups = idx.getElementsByTagName('ColumnGroup');
-            if (!colGroups || colGroups.length === 0)
-                colGroups = idx.getElementsByTagNameNS(this._ns, 'ColumnGroup');
-
-            for (var g = 0; g < colGroups.length; g++) {
-                var usage = colGroups[g].getAttribute('Usage');
-                var colEls = colGroups[g].getElementsByTagName('Column');
-                var names = [];
-                for (var c = 0; c < colEls.length; c++)
-                    names.push('[' + colEls[c].getAttribute('Name') + ']');
-
-                if (usage === 'EQUALITY')   eqCols  = names;
-                if (usage === 'INEQUALITY') neqCols = names;
-                if (usage === 'INCLUDE')    incCols = names;
+            
+            return {
+                root: qp,
+                statementNodes: statementNodes,
+                nodeMap: nodeMap  // Return for reference
+            };
+        },
+        
+        // Get the main operator element (not OutputList, RunTimeInformation, etc.)
+        _getOperatorElement: function(relOpEl) {
+            for (var i = 0; i < relOpEl.children.length; i++) {
+                var child = relOpEl.children[i];
+                if (child.nodeType !== 1) continue;
+                var name = child.localName || child.tagName;
+                if (name === 'OutputList' || name === 'RunTimeInformation' || 
+                    name === 'Warnings' || name === 'MemoryFractions' || 
+                    name === 'RunTimePartitionSummary' || name === 'MemoryGrant' || 
+                    name === 'InternalInfo') {
+                    continue;
+                }
+                return child;
             }
-
-            var keyCols = eqCols.concat(neqCols).join(', ');
-            var sql = 'CREATE INDEX [IX_' + table + '_suggested]\n' +
-                      'ON [' + db + '].[' + schema + '].[' + table + '] (' + keyCols + ')' +
-                      (incCols.length > 0 ? '\nINCLUDE (' + incCols.join(', ') + ')' : '') + ';';
-
-            var wrapper = document.createElement('div');
-            wrapper.style.cssText = [
-                'background: rgba(255,193,7,0.08)',
-                'border-left: 3px solid #ffc107',
-                'border-radius: 2px',
-                'padding: 6px 10px',
-                'margin-bottom: 4px'
-            ].join(';');
-
-            var header = document.createElement('div');
-            header.style.cssText = 'font-size:12px;color:#ffc107;margin-bottom:4px;user-select:none;';
-            header.textContent = '💡 Missing index — estimated impact: ' + impact + '%';
-
-            var code = document.createElement('pre');
-            code.style.cssText = [
-                'font-family: Consolas, monospace',
-                'font-size: 11px',
-                'color: #ce9178',
-                'margin: 0',
-                'white-space: pre-wrap',
-                'word-break: break-all',
-                'user-select: text'
-            ].join(';');
-            code.textContent = sql;
-
-            wrapper.appendChild(header);
-            wrapper.appendChild(code);
-            var qpRoot = container.querySelector('.qp-root') || container.lastElementChild;
-            container.insertBefore(wrapper, qpRoot);
+            return null;
+        },
+        
+        // ── Render the query plan tree ─────────────────────────────────────────
+        _renderQueryPlan: function(container, xml) {
+            var tree = this._parseXmlTree(xml);
+            if (!tree || tree.statementNodes.length === 0) return;
+            
+            // Create root container
+            var rootDiv = document.createElement('div');
+            rootDiv.className = 'qp-root';
+            
+            // Render each top-level statement
+            for (var t = 0; t < tree.statementNodes.length; t++) {
+                this._renderNode(rootDiv, tree.statementNodes[t], null);
+            }
+            
+            container.appendChild(rootDiv);
+            
+            // Draw SVG connectors after nodes are rendered
+            setTimeout(function() {
+                this._drawConnectors(rootDiv);
+            }.bind(this), 0);
+        },
+        
+        _renderNode: function(container, node, parentContainer) {
+            var el = node.element;
+            var stmtEl = node.statementElement;
+            
+            // Get operator name
+            var nodeName = el.getAttribute('LogicalOp') || el.getAttribute('PhysicalOp') || '?';
+            
+            // Create outer container
+            var outer = document.createElement('div');
+            outer.className = 'qp-node-outer';
+            
+            // Create node
+            var nodeDiv = document.createElement('div');
+            nodeDiv.className = 'qp-node';
+            nodeDiv.setAttribute('data-node-id', el.getAttribute('NodeId'));
+            nodeDiv.setAttribute('data-statement-id', el.getAttribute('StatementId') || '1');
+            
+            // Icon div
+            var iconDiv = document.createElement('div');
+            iconDiv.className = 'qp-icon-' + this._getNodeIcon(nodeName);
+            
+            // Check for warnings
+            var warnings = stmtEl.getElementsByTagNameNS(this._ns, 'Warnings');
+            if (warnings.length > 0) {
+                var warnIcon = document.createElement('div');
+                warnIcon.className = 'qp-iconwarn';
+                iconDiv.appendChild(warnIcon);
+            }
+            
+            // Check for parallelism
+            if (el.getAttribute('Parallel') === '1' || el.getAttribute('Parallel') === 'true') {
+                var parIcon = document.createElement('div');
+                parIcon.className = 'qp-iconpar';
+                iconDiv.appendChild(parIcon);
+            }
+            
+            // Node label
+            var labelDiv = document.createElement('div');
+            labelDiv.textContent = nodeName;
+            nodeDiv.appendChild(iconDiv);
+            nodeDiv.appendChild(labelDiv);
+            
+            // Tooltip
+            var tooltip = this._createTooltip(node, stmtEl);
+            nodeDiv.appendChild(tooltip);
+            
+            outer.appendChild(nodeDiv);
+            container.appendChild(outer);
+            
+            // Render children (RelOp elements) - FIX: use global nodeMap
+            var children = el.getElementsByTagNameNS(this._ns, 'RelOp');
+            if (children.length === 0) {
+                children = el.getElementsByTagName('RelOp');
+            }
+            
+            for (var i = 0; i < children.length; i++) {
+                var childEl = children[i];
+                var childNodeId = childEl.getAttribute('NodeId');
+                if (!childNodeId) continue;
+                
+                // FIX: Use global nodeMap instead of this.nodeMap
+                var childNode = nodeMap[childNodeId];
+                if (childNode) {
+                    this._renderNode(container, childNode, outer);
+                }
+            }
+            
+            // Store reference for connector drawing
+            nodeDiv._outer = outer;
+        },
+        
+        _createTooltip: function(node, stmtEl) {
+            var el = node.element;
+            var tooltip = document.createElement('div');
+            tooltip.className = 'qp-tt';
+            tooltip.style.visibility = 'collapse';
+            
+            var table = document.createElement('table');
+            var tbody = document.createElement('tbody');
+            
+            // Operator name
+            var row1 = this._createTooltipRow('Operator', el.getAttribute('LogicalOp') || el.getAttribute('PhysicalOp') || '?');
+            tbody.appendChild(row1);
+            
+            // Estimated rows
+            var estRows = parseFloat(el.getAttribute('EstimateRows')) || 0;
+            var actualRows = null;
+            var rtInfo = el.getElementsByTagNameNS(this._ns, 'RunTimeInformation');
+            if (rtInfo.length > 0) {
+                var counters = rtInfo[0].getElementsByTagNameNS(this._ns, 'RunTimeCountersPerThread');
+                if (counters.length > 0) {
+                    actualRows = parseFloat(counters[0].getAttribute('ActualRows')) || null;
+                }
+            }
+            var row2 = this._createTooltipRow('Estimated Rows', estRows.toLocaleString());
+            if (actualRows !== null) {
+                row2.appendChild(document.createElement('br'));
+                row2.appendChild(this._createTooltipRow(null, 'Actual Rows: ' + actualRows.toLocaleString()));
+            }
+            tbody.appendChild(row2);
+            
+            // Estimated row size
+            var avgRowSize = parseFloat(el.getAttribute('AvgRowSize')) || 0;
+            var dataSize = Math.round(avgRowSize * estRows);
+            var row3 = this._createTooltipRow('Estimated Row Size', avgRowSize + ' B');
+            tbody.appendChild(row3);
+            
+            // Estimated data size
+            var row4 = this._createTooltipRow('Estimated Data Size', (dataSize / 1024).toFixed(1) + ' KB');
+            tbody.appendChild(row4);
+            
+            // CPU cost
+            var cpuCost = parseFloat(el.getAttribute('EstimateCPU')) || 0;
+            var row5 = this._createTooltipRow('Estimated CPU Cost', cpuCost.toFixed(3));
+            tbody.appendChild(row5);
+            
+            // I/O cost
+            var ioCost = parseFloat(el.getAttribute('EstimateIO')) || 0;
+            var row6 = this._createTooltipRow('Estimated I/O Cost', ioCost.toFixed(3));
+            tbody.appendChild(row6);
+            
+            // Subtree cost
+            var subtreeCost = parseFloat(el.getAttribute('StatementSubTreeCost') || el.getAttribute('EstimatedTotalSubtreeCost')) || 0;
+            var row7 = this._createTooltipRow('Estimated Subtree Cost', subtreeCost.toFixed(3));
+            tbody.appendChild(row7);
+            
+            // Parallelism
+            if (el.getAttribute('Parallel') === '1' || el.getAttribute('Parallel') === 'true') {
+                var row8 = this._createTooltipRow('Execution Mode', 'Parallel');
+                tbody.appendChild(row8);
+            }
+            
+            table.appendChild(tbody);
+            tooltip.appendChild(table);
+            return tooltip;
+        },
+        
+        _createTooltipRow: function(label, value) {
+            var tr = document.createElement('tr');
+            if (label) {
+                var th = document.createElement('th');
+                th.textContent = label;
+                tr.appendChild(th);
+            }
+            var td = document.createElement('td');
+            td.textContent = value || '';
+            tr.appendChild(td);
+            return tr;
+        },
+        
+        _getNodeIcon: function(nodeName) {
+            // Map common operator names to icon classes
+            var iconMap = {
+                'Table Scan': 'TableScan',
+                'Index Scan': 'IndexScan',
+                'Index Seek': 'IndexSeek',
+                'Hash Match': 'HashMatch',
+                'Nested Loops': 'NestedLoops',
+                'Sort': 'Sort',
+                'Stream Aggregate': 'StreamAggregate',
+                'Top': 'Top',
+                'Result': 'Result',
+                'Compute Scalar': 'ComputeScalar',
+                'Filter': 'Filter',
+                'Concatenate': 'Concatenation',
+                'Merge Join': 'MergeJoin',
+                'Statement': 'Statement'
+            };
+            return iconMap[nodeName] || 'Catchall';
+        },
+        
+        // ── Draw SVG connectors between parent and child nodes ──────────────────
+        _drawConnectors: function(root) {
+            var svg = document.createElementNS(svgNS, 'svg');
+            svg.setAttribute('width', '100%');
+            svg.setAttribute('height', '100%');
+            svg.setAttribute('pointer-events', 'none');
+            root.appendChild(svg);
+            
+            // Get all node containers
+            var nodeContainers = root.querySelectorAll('.qp-node-outer');
+            var nodes = [];
+            
+            for (var i = 0; i < nodeContainers.length; i++) {
+                var outer = nodeContainers[i];
+                var nodeDiv = outer.querySelector('.qp-node');
+                if (!nodeDiv) continue;
+                
+                var nodeId = nodeDiv.getAttribute('data-node-id');
+                var stmtId = nodeDiv.getAttribute('data-statement-id');
+                
+                nodes.push({
+                    container: outer,
+                    nodeDiv: nodeDiv,
+                    nodeId: nodeId,
+                    statementId: stmtId,
+                    rect: null
+                });
+            }
+            
+            // Calculate positions relative to SVG
+            var svgRect = svg.getBoundingClientRect();
+            
+            // Build adjacency list: parent -> [children] using global nodeMap
+            var adjList = {};
+            for (var i = 0; i < nodes.length; i++) {
+                var node = nodes[i];
+                var nodeId = node.nodeId;
+                if (!adjList[nodeId]) adjList[nodeId] = [];
+                
+                // Find children by walking DOM tree from this node's container
+                var childContainers = node.nodeDiv.querySelectorAll('.qp-node-outer');
+                for (var j = 0; j < childContainers.length; j++) {
+                    var childNodeDiv = childContainers[j].querySelector('.qp-node');
+                    if (!childNodeDiv) continue;
+                    
+                    var childNodeId = childNodeDiv.getAttribute('data-node-id');
+                    // FIX: Use global nodeMap to verify child exists
+                    if (childNodeId && nodeMap[childNodeId]) {
+                        adjList[nodeId].push(childNodeId);
+                    }
+                }
+            }
+            
+            // Draw lines for each parent-child relationship
+            for (var parentId in adjList) {
+                var parent = null;
+                for (var i = 0; i < nodes.length; i++) {
+                    if (nodes[i].nodeId === parentId) {
+                        parent = nodes[i];
+                        break;
+                    }
+                }
+                if (!parent) continue;
+                
+                // Get children
+                var childIds = adjList[parentId];
+                
+                for (var c = 0; c < childIds.length; c++) {
+                    var childId = childIds[c];
+                    var child = null;
+                    for (var i = 0; i < nodes.length; i++) {
+                        if (nodes[i].nodeId === childId) {
+                            child = nodes[i];
+                            break;
+                        }
+                    }
+                    if (!child) continue;
+                    
+                    // Calculate centers
+                    var pRect = parent.rect || this._getContainerRect(parent.container, svgRect);
+                    var cRect = child.rect || this._getContainerRect(child.container, svgRect);
+                    
+                    var centerX1 = pRect.left + pRect.width / 2;
+                    var centerY1 = pRect.top + pRect.height / 2;
+                    var centerX2 = cRect.left + cRect.width / 2;
+                    var centerY2 = cRect.top + cRect.height / 2;
+                    
+                    // Create polyline
+                    var polyline = document.createElementNS(svgNS, 'polyline');
+                    polyline.setAttribute('points', this._getPolylinePoints(centerX1, centerY1, centerX2, centerY2));
+                    polyline.setAttribute('fill', '#E3E3E3');
+                    polyline.setAttribute('stroke', '#505050');
+                    polyline.setAttribute('stroke-width', '0.5');
+                    polyline.setAttribute('data-statement-id', parent.statementId);
+                    if (parent.nodeId) {
+                        polyline.setAttribute('data-node-id', parent.nodeId);
+                    }
+                    
+                    svg.appendChild(polyline);
+                }
+            }
+        },
+        
+        _getContainerRect: function(container, svgRect) {
+            var rect = container.getBoundingClientRect();
+            return {
+                left: rect.left - svgRect.left,
+                top: rect.top - svgRect.top,
+                width: rect.width,
+                height: rect.height
+            };
+        },
+        
+        _getPolylinePoints: function(x1, y1, x2, y2) {
+            // Create arrow path
+            var w = 3; // Line thickness
+            var headLen = 8; // Arrow head length
+            
+            var dx = x2 - x1;
+            var dy = y2 - y1;
+            
+            var toX = x2 + w / 2 + 2;
+            var toY = y2;
+            var fromX = x2 - w / 2 - 2;
+            var fromY = y2;
+            
+            // Bend point (midpoint with offset)
+            var midOffset = Math.abs(dx) / 2;
+            var bendX = x1 + midOffset;
+            var bendY = y1 + (dy === 0 ? w : (dy > 0 ? -w : w));
+            
+            var points = [
+                toX + w/2 + 2, toY - (w/2 + 2),
+                toX + w/2 + 2, toY - w/2,
+                bendX + (dy <= 0 ? w/2 : -w/2), toY - w/2,
+                bendX + (dy <= 0 ? w/2 : -w/2), fromY - w/2,
+                fromX, fromY - w/2,
+                fromX, fromY + w/2,
+                bendX + (dy >= 0 ? -w/2 : w/2), fromY + w/2,
+                bendX + (dy >= 0 ? -w/2 : w/2), toY + w/2,
+                toX + w/2 + 2, toY + w/2,
+                toX + w/2 + 2, toY + w/2 + 2,
+                toX, toY
+            ];
+            
+            return points.join(' ');
         }
-    },
-
-    // ── 4. Query cost headers (relative to batch %) ────────────────────────
-    _injectCostHeaders: function (container) {
-        var parsedXml = this._xml(container);
-        if (!parsedXml) return;
-
-        var stmts = this._getElements(parsedXml, 'StmtSimple');
-        if (!stmts || stmts.length === 0) return;
-
-        var costs = [], totalCost = 0;
-        for (var i = 0; i < stmts.length; i++) {
-            var c = parseFloat(stmts[i].getAttribute('StatementSubTreeCost') || '0');
-            costs.push(c);
-            totalCost += c;
-        }
-
-        var rendered = container.querySelectorAll('[data-statement-id]');
-        var seen = new Set();
-
-        // QP.showPlan appends a single root element (.qp-root); banners must be inserted
-        // relative to statement blocks within that root, not the container itself.
-        // Use querySelector to find the actual .qp-root element, not container.firstChild
-        // which might be a text node (whitespace)
-        var qpRoot = container.querySelector('.qp-root') || container.firstElementChild || container;
-
-        rendered.forEach(function (el) {
-            var stmtId = el.getAttribute('data-statement-id');
-            if (seen.has(stmtId)) return;
-            seen.add(stmtId);
-
-            var idx = parseInt(stmtId, 10) - 1;
-            var cost = (idx >= 0 && idx < costs.length) ? costs[idx] : 0;
-            var pct  = totalCost > 0 ? Math.round(cost / totalCost * 100) : 100;
-
-            // Walk up to find the direct child of qpRoot that contains this element
-            var block = el;
-            while (block.parentElement && block.parentElement !== qpRoot && block.parentElement !== container)
-                block = block.parentElement;
-
-            var banner = document.createElement('div');
-            banner.className = 'qp-cost-banner';
-            banner.style.cssText = [
-                'font-family: Consolas, monospace',
-                'font-size: 12px',
-                'color: #9cdcfe',
-                'background: rgba(0,0,0,0.3)',
-                'border-left: 3px solid #2eaef1',
-                'padding: 4px 10px',
-                'margin-top: 20px',
-                'margin-bottom: 4px',
-                'border-radius: 2px',
-                'user-select: none'
-            ].join(';');
-            banner.textContent = 'Query cost (relative to the batch): ' + pct + '%';
-            block.parentElement.insertBefore(banner, block);
-        });
-    },
-
-    // ── 5. Expensive node highlighting ────────────────────────────────────
-    // Applies qp-hot-red (>50%) or qp-hot-orange (25–50%) CSS classes to
-    // .qp-node elements whose own cost (EstimateCPU + EstimateIO) exceeds
-    // those thresholds relative to the total query cost.
-    // Matches rendered nodes to XML via data-node-id ↔ RelOp[NodeId].
-    _highlightExpensiveNodes: function (container) {
-        var parsedXml = this._xml(container);
-        if (!parsedXml) return;
-
-        // Total query cost from statement(s)
-        var stmts = this._getElements(parsedXml, 'StmtSimple');
-        var totalCost = 0;
-        for (var s = 0; s < stmts.length; s++)
-            totalCost += parseFloat(stmts[s].getAttribute('StatementSubTreeCost') || '0');
-        if (totalCost === 0) return;
-
-        // Build NodeId → own cost (EstimateCPU + EstimateIO)
-        var relOps  = this._getElements(parsedXml, 'RelOp');
-        var costMap = {};
-        for (var i = 0; i < relOps.length; i++) {
-            var nodeId = relOps[i].getAttribute('NodeId');
-            if (nodeId === null) continue;
-            var cpu = parseFloat(relOps[i].getAttribute('EstimateCPU') || '0');
-            var io  = parseFloat(relOps[i].getAttribute('EstimateIO')  || '0');
-            costMap[nodeId] = cpu + io;
-        }
-
-        var nodes = container.querySelectorAll('.qp-node[data-node-id]');
-        nodes.forEach(function (el) {
-            var cost = costMap[el.getAttribute('data-node-id')] || 0;
-            var pct  = cost / totalCost * 100;
-
-            var cls = pct >= 50 ? 'qp-hot-red' : pct >= 25 ? 'qp-hot-orange' : null;
-            if (!cls) return;
-
-            el.classList.add(cls);
-
-            // Store pct as a data attribute — the ::after pseudo-element in CSS renders it.
-            // This avoids appending any child nodes into .qp-node (which would break the
-            // table-cell / inline-block layout and misalign the connector arrows).
-            el.setAttribute('data-heat-pct', Math.round(pct) + '%');
-
-            // Apply background to both the node box and its table-cell parent (.qp-node-outer).
-            // The SVG connectors attach to the centre of .qp-node-outer (76.4px tall), so
-            // highlighting only .qp-node (the smaller inline-block) leaves a gap where the
-            // arrow lands outside the coloured area, making it look misaligned.
-            var bgColor = cls === 'qp-hot-red' ? 'rgba(220,38,38,0.18)' : 'rgba(234,88,12,0.15)';
-            el.style.setProperty('background-color', bgColor, 'important');
-            var outer = el.closest('.qp-node-outer');
-            if (outer) outer.style.setProperty('background-color', bgColor, 'important');
-        });
-    }
-};
+    };
+})();

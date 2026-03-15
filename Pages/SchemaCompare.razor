@@ -1,0 +1,298 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/schemacompare"
+
+@using SqlHealthAssessment.Data
+@using SqlHealthAssessment.Data.Models
+@using SqlHealthAssessment.Data.Services
+@using Microsoft.Extensions.Logging
+@inject ServerConnectionManager ConnectionManager
+@inject SchemaCompareService SchemaSvc
+@inject ILogger<SchemaCompare> Logger
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Schema Compare - SQLHealthAssessment</PageTitle>
+
+<div class="schemacompare-page">
+    <div class="page-header">
+        <div>
+            <h2><i class="fa-solid fa-code-compare"></i> Schema Compare</h2>
+            <p class="page-description">
+                Compare database schemas and generate synchronization scripts.
+            </p>
+        </div>
+    </div>
+
+    <!-- Server Selection -->
+    <div class="server-selection-section">
+        <div class="section-header">
+            <h3>Select Source and Target</h3>
+        </div>
+        
+        <div class="compare-selection">
+            <div class="database-select">
+                <h4>Source Database</h4>
+                <select @bind="SourceConnectionId" @bind:after="LoadSourceDatabases" class="form-control">
+                    <option value="">-- Select source server --</option>
+                    @foreach (var conn in Connections.Where(c => c.IsEnabled))
+                    {
+                        <option value="@conn.Id">@conn.ServerNames (@conn.AuthenticationDisplay)</option>
+                    }
+                </select>
+                
+                @if (SourceDatabases.Any())
+                {
+                    <select @bind="SourceDatabase" class="form-control" style="margin-top: 8px;">
+                        <option value="">-- Select source database --</option>
+                        @foreach (var db in SourceDatabases)
+                        {
+                            <option value="@db">@db</option>
+                        }
+                    </select>
+                }
+            </div>
+
+            <div class="compare-arrow">
+                <i class="fa-solid fa-arrow-right"></i>
+            </div>
+
+            <div class="database-select">
+                <h4>Target Database</h4>
+                <select @bind="TargetConnectionId" @bind:after="LoadTargetDatabases" class="form-control">
+                    <option value="">-- Select target server --</option>
+                    @foreach (var conn in Connections.Where(c => c.IsEnabled))
+                    {
+                        <option value="@conn.Id">@conn.ServerNames (@conn.AuthenticationDisplay)</option>
+                    }
+                </select>
+                
+                @if (TargetDatabases.Any())
+                {
+                    <select @bind="TargetDatabase" class="form-control" style="margin-top: 8px;">
+                        <option value="">-- Select target database --</option>
+                        @foreach (var db in TargetDatabases)
+                        {
+                            <option value="@db">@db</option>
+                        }
+                    </select>
+                }
+            </div>
+        </div>
+
+        <div class="action-row">
+            <button class="btn btn-primary" @onclick="CompareSchemas" 
+                    disabled="@(string.IsNullOrEmpty(SourceConnectionId) || string.IsNullOrEmpty(TargetConnectionId) || string.IsNullOrEmpty(SourceDatabase) || string.IsNullOrEmpty(TargetDatabase))">
+                <i class="fa-solid fa-rotate"></i> Compare Schemas
+            </button>
+        </div>
+    </div>
+
+    <!-- Results -->
+    @if (IsLoading)
+    {
+        <div class="loading">
+            <p>Comparing schemas...</p>
+        </div>
+    }
+    else if (ComparisonResult != null)
+    {
+        <div class="results-section">
+            <div class="results-header">
+                <h3>Comparison Results</h3>
+            </div>
+
+            @if (ComparisonResult.Differences.Any())
+            {
+                <div class="differences-list">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Type</th>
+                                <th>Object</th>
+                                <th>Object Type</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var diff in ComparisonResult.Differences)
+                            {
+                                <tr>
+                                    <td>
+                                        <span class="diff-badge @diff.DifferenceType.ToLower().Replace(" ", "-")">
+                                            @diff.DifferenceType
+                                        </span>
+                                    </td>
+                                    <td><strong>@diff.ObjectName</strong></td>
+                                    <td>@diff.ObjectType</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="script-section">
+                    <div class="script-header">
+                        <h4>Synchronization Script</h4>
+                        <button class="btn btn-primary" @onclick="GenerateSyncScript">
+                            <i class="fa-solid fa-code"></i> Generate Script
+                        </button>
+                    </div>
+                    
+                    @if (!string.IsNullOrEmpty(SyncScript))
+                    {
+                        <div class="script-preview">
+                            <pre>@SyncScript</pre>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="empty-state">
+                    <i class="fa-solid fa-check-circle"></i>
+                    <h4>Schemas are in sync!</h4>
+                    <p>No differences found between @ComparisonResult.SourceDatabase and @ComparisonResult.TargetDatabase.</p>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<style>
+    .schemacompare-page { padding: 20px; }
+    .schemacompare-page h2 { margin-bottom: 8px; }
+    .page-description { color: #666; margin-bottom: 20px; }
+    .server-selection-section { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+    .section-header h3 { margin: 0 0 16px 0; font-size: 16px; }
+    .compare-selection { display: flex; gap: 20px; align-items: flex-start; margin-bottom: 20px; }
+    .database-select { flex: 1; }
+    .database-select h4 { margin: 0 0 8px 0; font-size: 14px; }
+    .compare-arrow { padding-top: 40px; font-size: 24px; color: #666; }
+    .form-control { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; }
+    .btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+    .btn-primary { background: #007bff; color: #fff; }
+    .btn-primary:hover { background: #0056b3; }
+    .btn-primary:disabled { background: #ccc; cursor: not-allowed; }
+    .action-row { display: flex; gap: 12px; }
+    .results-section { background: #fff; border-radius: 8px; }
+    .results-header { padding: 16px 20px; border-bottom: 1px solid #ddd; }
+    .results-header h3 { margin: 0; }
+    .data-table { width: 100%; border-collapse: collapse; }
+    .data-table th, .data-table td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+    .data-table th { background: #f8f9fa; font-weight: 600; }
+    .diff-badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; }
+    .diff-badge.onlyinsource { background: #d4edda; color: #155724; }
+    .diff-badge.modified { background: #fff3cd; color: #856404; }
+    .diff-badge.onlyintarget { background: #f8d7da; color: #721c24; }
+    .script-section { padding: 20px; border-top: 1px solid #ddd; }
+    .script-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .script-header h4 { margin: 0; }
+    .script-preview { background: #1e1e1e; color: #d4d4d4; padding: 16px; border-radius: 4px; max-height: 400px; overflow-y: auto; }
+    .script-preview pre { margin: 0; white-space: pre-wrap; font-family: 'Consolas', monospace; font-size: 13px; }
+    .empty-state { text-align: center; padding: 60px 20px; }
+    .empty-state i { font-size: 48px; color: #28a745; margin-bottom: 16px; }
+    .empty-state h4 { margin: 0 0 8px 0; }
+    .empty-state p { color: #666; }
+    .loading { text-align: center; padding: 40px; color: #666; }
+</style>
+
+@code {
+    private List<ServerConnection> Connections = new();
+    private List<string> SourceDatabases = new();
+    private List<string> TargetDatabases = new();
+    private string? SourceConnectionId;
+    private string? TargetConnectionId;
+    private string SourceDatabase = "";
+    private string TargetDatabase = "";
+    private bool IsLoading;
+    private SchemaComparisonResult? ComparisonResult;
+    private string SyncScript = "";
+
+    protected override void OnInitialized()
+    {
+        Connections = ConnectionManager.GetConnections().ToList();
+    }
+
+    private async Task LoadSourceDatabases()
+    {
+        if (string.IsNullOrEmpty(SourceConnectionId)) return;
+        
+        SourceDatabases.Clear();
+        try
+        {
+            var conn = ConnectionManager.GetConnection(SourceConnectionId);
+            if (conn != null)
+            {
+                var serverName = conn.ServerNames.Split(',').First().Trim();
+                var connString = conn.GetConnectionString(serverName, "master");
+                SourceDatabases = await SchemaSvc.GetDatabasesAsync(connString);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading source databases");
+        }
+    }
+
+    private async Task LoadTargetDatabases()
+    {
+        if (string.IsNullOrEmpty(TargetConnectionId)) return;
+        
+        TargetDatabases.Clear();
+        try
+        {
+            var conn = ConnectionManager.GetConnection(TargetConnectionId);
+            if (conn != null)
+            {
+                var serverName = conn.ServerNames.Split(',').First().Trim();
+                var connString = conn.GetConnectionString(serverName, "master");
+                TargetDatabases = await SchemaSvc.GetDatabasesAsync(connString);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading target databases");
+        }
+    }
+
+    private async Task CompareSchemas()
+    {
+        if (string.IsNullOrEmpty(SourceConnectionId) || string.IsNullOrEmpty(TargetConnectionId)) return;
+        
+        IsLoading = true;
+        SyncScript = "";
+        try
+        {
+            var sourceConn = ConnectionManager.GetConnection(SourceConnectionId);
+            var targetConn = ConnectionManager.GetConnection(TargetConnectionId);
+            
+            if (sourceConn != null && targetConn != null)
+            {
+                var sourceServer = sourceConn.ServerNames.Split(',').First().Trim();
+                var targetServer = targetConn.ServerNames.Split(',').First().Trim();
+                var sourceConnString = sourceConn.GetConnectionString(sourceServer, "master");
+                var targetConnString = targetConn.GetConnectionString(targetServer, "master");
+                
+                ComparisonResult = await SchemaSvc.CompareDatabasesAsync(
+                    sourceConnString, 
+                    targetConnString, 
+                    SourceDatabase, 
+                    TargetDatabase);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error comparing schemas");
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private void GenerateSyncScript()
+    {
+        if (ComparisonResult != null)
+        {
+            SyncScript = SchemaSvc.GenerateSyncScript(ComparisonResult);
+        }
+    }
+}

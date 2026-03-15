@@ -21,10 +21,10 @@
             <table>
                 <tr>
                     <td><button class="btn btn-secondary" @onclick="Undo" disabled="@(!CanUndo)">↩ Undo</button></td>
-                    <td><button class="btn btn-secondary" @onclick="Redo" disabled="@(!CanRedo)">↪ Redo</button></td>
-                    <td><button class="btn btn-secondary" @onclick="ExportConfig">📤 Export</button></td>
-                    <td><button class="btn btn-secondary" @onclick="ShowImportDialog">📥 Import</button></td>
-                    <td><button class="btn btn-primary" @onclick="SaveAll">💾 Save All</button></td>
+                    <td><button class="btn btn-secondary" @onclick="Redo" disabled="@(!CanRedo)"><i class="fa-solid fa-rotate-right"></i> Redo</button></td>
+                    <td><button class="btn btn-secondary" @onclick="ExportConfig"><i class="fa-solid fa-upload"></i> Export</button></td>
+                    <td><button class="btn btn-secondary" @onclick="ShowImportDialog"><i class="fa-solid fa-download"></i> Import</button></td>
+                    <td><button class="btn btn-primary" @onclick="SaveAll"><i class="fa-solid fa-floppy-disk"></i> Save All</button></td>
                     <td>
                         @if (!string.IsNullOrEmpty(StatusMessage))
                         {
@@ -65,7 +65,7 @@
                             <label class="toggle">
                                 <input type="checkbox" @bind="dashboard.Enabled" />
                             </label>
-                            <button class="btn-icon" @onclick="() => DeleteDashboard(dashboard)" @onclick:stopPropagation title="Delete">🗑</button>
+                            <button class="btn-icon" @onclick="() => DeleteDashboard(dashboard)" @onclick:stopPropagation title="Delete"><i class="fa-solid fa-trash"></i></button>
                         </div>
                     </div>
                 }
@@ -110,8 +110,8 @@
                                     <label class="toggle">
                                         <input type="checkbox" @bind="panel.Enabled" />
                                     </label>
-                                    <button class="btn-icon" @onclick="() => DuplicatePanel(panel)" @onclick:stopPropagation title="Duplicate">📋</button>
-                                    <button class="btn-icon" @onclick="() => DeletePanel(panel)" @onclick:stopPropagation title="Delete">🗑</button>
+                                    <button class="btn-icon" @onclick="() => DuplicatePanel(panel)" @onclick:stopPropagation title="Duplicate"><i class="fa-solid fa-copy"></i></button>
+                                    <button class="btn-icon" @onclick="() => DeletePanel(panel)" @onclick:stopPropagation title="Delete"><i class="fa-solid fa-trash"></i></button>
                                 </div>
                             </div>
                         }
@@ -131,7 +131,7 @@
             {
                 <div class="panel-header">
                     <h3>Edit Panel</h3>
-                    <button class="btn btn-sm btn-primary" @onclick="PreviewPanel">👁 Preview</button>
+                    <button class="btn btn-sm btn-primary" @onclick="PreviewPanel"><i class="fa-solid fa-eye"></i> Preview</button>
                 </div>
 
                 <div class="editor-form">
@@ -321,7 +321,7 @@
                             <label>SQL Server Query</label>
                             <textarea @bind="SelectedPanel.Query.SqlServer" @bind:event="oninput" rows="4" placeholder="SELECT..."></textarea>
                             <div class="button-row">
-                                <button class="btn btn-sm" @onclick="TestSqlServerQuery" disabled="@IsQueryRunning">🧪 Test Query</button>
+                                <button class="btn btn-sm" @onclick="TestSqlServerQuery" disabled="@IsQueryRunning"><i class="fa-solid fa-vial"></i> Test Query</button>
                                 <input type="datetime-local" @bind="TestTimeFrom" class="param-input" title="Time From" />
                                 <input type="datetime-local" @bind="TestTimeTo" class="param-input" title="Time To" />
                                 <input type="text" @bind="TestSqlInstance" class="param-input" placeholder="SqlInstance (comma-separated)" title="SQL Instance(s)" />
@@ -398,7 +398,7 @@
                                 </select>
                                 <input type="number" @bind="rule.Value" @bind:event="oninput" step="0.1" />
                                 <input type="text" @bind="rule.Color" @bind:event="oninput" placeholder="#color" style="width: 80px;" />
-                                <button class="btn-icon" @onclick="() => RemoveColorThreshold(rule)">🗑</button>
+                                <button class="btn-icon" @onclick="() => RemoveColorThreshold(rule)"><i class="fa-solid fa-trash"></i></button>
                             </div>
                         }
                     </div>
@@ -418,7 +418,7 @@
             {
                 <div class="panel-header">
                     <h3>Preview - @SelectedDashboard.Title</h3>
-                    <button class="btn btn-sm" @onclick="RefreshPreview">🔄 Refresh</button>
+                    <button class="btn btn-sm" @onclick="RefreshPreview"><i class="fa-solid fa-rotate"></i> Refresh</button>
                 </div>
                 <div class="preview-container">
                     <!-- Stats/Gauges Section (Column 0) -->

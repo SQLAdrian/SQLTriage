@@ -91,7 +91,32 @@ namespace SqlHealthAssessment.Data.Models
             ServerNames.Split(new[] { '\n', '\r', ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
                 .Select(s => s.Trim())
                 .Where(s => !string.IsNullOrEmpty(s))
+                .Select(s => ValidateServerName(s))  // Validate and sanitize each server name
                 .ToList();
+
+        /// <summary>
+        /// Validates and sanitizes a server name to prevent injection attacks
+        /// </summary>
+        private static string ValidateServerName(string serverName)
+        {
+            if (string.IsNullOrWhiteSpace(serverName))
+                return string.Empty;
+            
+            // Limit length
+            if (serverName.Length > 100)
+                serverName = serverName.Substring(0, 100);
+            
+            // Remove potentially dangerous characters and patterns
+            var dangerousPatterns = new[] { ";", "'", "\"", "--", "/*", "*/", "xp_", "sp_", "@@", "../", "..\\" };
+            var sanitized = serverName;
+            
+            foreach (var pattern in dangerousPatterns)
+            {
+                sanitized = sanitized.Replace(pattern, string.Empty);
+            }
+            
+            return sanitized.Trim();
+        }
 
         public string GetConnectionString(string serverName) => GetConnectionString(serverName, HasSqlWatch ? "SQLWATCH" : "master");
 

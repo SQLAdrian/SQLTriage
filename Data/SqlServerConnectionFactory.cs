@@ -101,24 +101,32 @@ namespace SqlHealthAssessment.Data
             }
 
             var currentServer = _serverConnectionManager?.CurrentServer;
+#if DEBUG
             System.Diagnostics.Debug.WriteLine($"[SqlServerConnectionFactory] GetCurrentConnectionString called. CurrentServer is null: {currentServer == null}");
+#endif
             
             if (currentServer != null)
             {
                 // Get the first server from the connection's server list
                 var serverList = currentServer.GetServerList();
+#if DEBUG
                 System.Diagnostics.Debug.WriteLine($"[SqlServerConnectionFactory] CurrentServer found: {currentServer.ServerNames}, ServerList count: {serverList.Count}");
+#endif
                 if (serverList.Count > 0)
                 {
                     var serverName = serverList[0];
                     var connStr = currentServer.GetConnectionStringForDashboard(serverName);
+#if DEBUG
                     System.Diagnostics.Debug.WriteLine($"[SqlServerConnectionFactory] Using server-specific connection: {serverName}");
+#endif
                     return connStr;
                 }
             }
             else
             {
+#if DEBUG
                 System.Diagnostics.Debug.WriteLine($"[SqlServerConnectionFactory] CurrentServer is null. Using fallback: {_fallbackConnectionString}");
+#endif
             }
 
             // Fall back to configured connection string

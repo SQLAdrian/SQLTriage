@@ -34,27 +34,12 @@
     }
 
  # Run your code that needs to be elevated here##############################################################################
-##
 ## Add-SqlServerStartupParameters
-##
 ## by Eric Humphrey (http://www.erichumphrey.com/category/powershell/)
-##
 ## http://www.sqlservercentral.com/blogs/erichumphrey/archive/2011/3/31/change-sql-startup-parameters-with-powershell.aspx
 ## https://github.com/mmessano/PowerShell/blob/master/Add-SqlServerStartupParameter.ps1
-##############################################################################
 
-<#
 
-.SYNOPSIS
-
-Adds an entry to the startup parameters list for all instances of SQL Server
-on a computer
-
-.EXAMPLE
-
-PS >Add-SqlServerStartupParameter '-T3226'
-
-#>
 
 $hklmRootNode = "HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server"
 
@@ -75,15 +60,22 @@ $instances | %{
     $version = $inst.Replace('MSSQL','');
     $SQLVersion = $version.substring(0,$version.indexof('.'));
     $traceflags = @();
+	if($SQLVersion -lt 13)
+    {
+		$traceflags += '-T1117';
+        $traceflags += '-T1118';
+		$traceflags += '-T2371';
+		$traceflags += '-T174';
+	}
     if($SQLVersion -ge 10)
     {
-        $traceflags += '-T1117';
-        $traceflags += '-T1118';
-        $traceflags += '-T2371';
         $traceflags += '-T3226';
         $traceflags += '-T1204';
         $traceflags += '-T1222';
-        $traceflags += '-T1224';
+        #$traceflags += '-T1224';
+		$traceflags += '-T4199';
+		$traceflags += '-T3226';
+		$traceflags += '-T1800';
     };
     if($SQLVersion -ge 11)
     {

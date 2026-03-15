@@ -15,7 +15,7 @@
     @if (ConnectionManager.CurrentServer != null)
     {
         <div class="server-context-header">
-            <span class="server-context-icon">🔵</span>
+            <span class="server-context-icon"><i class="fa-solid fa-circle"></i></span>
             <span class="server-context-label">Live Sessions on:</span>
             <span class="server-context-name">@ConnectionManager.CurrentServer.ServerNames</span>
             <span class="server-context-db">(@ConnectionManager.CurrentServer.Database)</span>
@@ -58,19 +58,40 @@
                 @(AutoRefresh ? "⏸ Pause" : "▶ Auto-Refresh")
             </button>
             <button class="toolbar-btn" @onclick="ManualRefresh">
-                🔄 Refresh
+                <i class="fa-solid fa-rotate"></i> Refresh
             </button>
         </div>
 
         <div class="toolbar-group" style="margin-left: 16px;">
             <button class="sessions-filter-btn @(HideSleeping ? "active" : "")" @onclick="ToggleHideSleeping">
-                @(HideSleeping ? "👁 Show Sleeping" : "🙈 Hide Sleeping")
+                @if (HideSleeping)
+                {
+                    <span><i class="fa-solid fa-eye"></i> Show Sleeping</span>
+                }
+                else
+                {
+                    <span><i class="fa-solid fa-eye-slash"></i> Hide Sleeping</span>
+                }
             </button>
             <button class="sessions-filter-btn @(ShowOnlyBlocked ? "active" : "")" @onclick="ToggleShowOnlyBlocked">
-                @(ShowOnlyBlocked ? "🔓 Show All" : "🔒 Only Blocked")
+                @if (ShowOnlyBlocked)
+                {
+                    <span><i class="fa-solid fa-lock-open"></i> Show All</span>
+                }
+                else
+                {
+                    <span><i class="fa-solid fa-lock"></i> Only Blocked</span>
+                }
             </button>
             <button class="sessions-filter-btn @(HideLowIO ? "active" : "")" @onclick="ToggleHideLowIO">
-                @(HideLowIO ? "📊 Show All IO" : "📊 Hide Low IO")
+                @if (HideLowIO)
+                {
+                    <span><i class="fa-solid fa-chart-simple"></i> Show All IO</span>
+                }
+                else
+                {
+                    <span><i class="fa-solid fa-chart-simple"></i> Hide Low IO</span>
+                }
             </button>
         </div>
 
@@ -113,7 +134,7 @@
                                    SelectedSpid="@SelectedSession?.SPID" />
                 <div class="sessions-bubble-footer">
                     <button class="sessions-filter-btn" @onclick="() => ShowLegend = true">
-                        📖 Show Legend
+                        <i class="fa-solid fa-book"></i> Show Legend
                     </button>
                 </div>
             </div>

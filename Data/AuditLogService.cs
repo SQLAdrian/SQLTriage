@@ -219,6 +219,82 @@ namespace SqlHealthAssessment.Data
             });
         }
 
+        /// <summary>
+        /// Logs a data export operation (PDF, CSV, etc.).
+        /// </summary>
+        public void LogExportOperation(string exportType, string targetName, bool success, string? errorMessage = null)
+        {
+            Enqueue(new AuditLogEntry
+            {
+                EventType = AuditEventType.ExportOperation,
+                Severity = success ? AuditSeverity.Info : AuditSeverity.Error,
+                Message = success
+                    ? $"{exportType} export '{targetName}' completed successfully"
+                    : $"{exportType} export '{targetName}' failed: {errorMessage}",
+                Details = new Dictionary<string, string>
+                {
+                    ["ExportType"] = exportType,
+                    ["TargetName"] = targetName,
+                    ["Success"] = success.ToString(),
+                    ["Error"] = errorMessage ?? string.Empty
+                }
+            });
+        }
+
+        /// <summary>
+        /// Logs cache operations (clearing, eviction due to memory pressure).
+        /// </summary>
+        public void LogCacheOperation(string operation, string cacheKey, Dictionary<string, string>? details = null)
+        {
+            var detailsDict = details ?? new Dictionary<string, string>();
+            detailsDict["Operation"] = operation;
+            detailsDict["CacheKey"] = cacheKey;
+
+            Enqueue(new AuditLogEntry
+            {
+                EventType = AuditEventType.CacheOperation,
+                Severity = AuditSeverity.Info,
+                Message = $"Cache operation '{operation}' on '{cacheKey}'",
+                Details = detailsDict
+            });
+        }
+
+        /// <summary>
+        /// Logs dashboard view/access for compliance tracking.
+        /// </summary>
+        public void LogDashboardAccess(string dashboardId, string viewMode)
+        {
+            Enqueue(new AuditLogEntry
+            {
+                EventType = AuditEventType.DashboardAccess,
+                Severity = AuditSeverity.Info,
+                Message = $"Dashboard '{dashboardId}' accessed in {viewMode} mode",
+                Details = new Dictionary<string, string>
+                {
+                    ["DashboardId"] = dashboardId,
+                    ["ViewMode"] = viewMode
+                }
+            });
+        }
+
+        /// <summary>
+        /// Logs user session events (login, logout, timeout).
+        /// </summary>
+        public void LogSessionEvent(string eventType, string? sessionId = null)
+        {
+            Enqueue(new AuditLogEntry
+            {
+                EventType = AuditEventType.SessionEvent,
+                Severity = AuditSeverity.Info,
+                Message = $"Session event: {eventType}",
+                Details = new Dictionary<string, string>
+                {
+                    ["EventType"] = eventType,
+                    ["SessionId"] = sessionId ?? "N/A"
+                }
+            });
+        }
+
         // ================================================================
         // CORE INFRASTRUCTURE
         // ================================================================
@@ -365,7 +441,11 @@ namespace SqlHealthAssessment.Data
         SecurityEvent,
         ConfigurationChange,
         Deployment,
-        ApplicationLifecycle
+        ApplicationLifecycle,
+        ExportOperation,
+        CacheOperation,
+        DashboardAccess,
+        SessionEvent
     }
 
     public enum AuditSeverity

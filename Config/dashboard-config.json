@@ -1212,7 +1212,7 @@
           },
           "query": {
             "source": "sqlwatch",
-            "sqlServer": "SELECT\n    TMP.Category,\n    DB_NAME(st.dbid) [DB],\n    TMP.[Total Elapsed Time in S],\n    TMP.[Total Execution Count],\n    TMP.[Total CPU Time in S],\n    TMP.[Total Logical Reads],\n    TMP.[Total Logical Writes],\n    TMP.[Total CLR Time],\n    TMP.[Number of Statements],\n    TMP.[Last Execution Time],\n    TMP.[Plan Handle],\n    st.text AS [Query],\n    qp.query_plan AS [Plan]\nFROM (\n    SELECT * FROM (\n        SELECT TOP 10 \u0027worst I/O\u0027 [Category],\n            CAST(SUM(s.total_elapsed_time) / 1000000.0 AS DECIMAL(20, 2)) AS [Total Elapsed Time in S],\n            SUM(s.execution_count) AS [Total Execution Count],\n            CAST(SUM(s.total_worker_time) / 1000000.0 AS DECIMAL(20, 2)) AS [Total CPU Time in S],\n            SUM(s.total_logical_reads) AS [Total Logical Reads],\n            SUM(s.total_logical_writes) AS [Total Logical Writes],\n            SUM(s.total_clr_time) AS [Total CLR Time],\n            COUNT(1) AS [Number of Statements],\n            MAX(s.last_execution_time) AS [Last Execution Time],\n            s.plan_handle AS [Plan Handle]\n        FROM sys.dm_exec_query_stats s WITH (NOLOCK)\n        GROUP BY s.plan_handle ORDER BY SUM(s.total_logical_reads \u002B s.total_logical_writes) DESC\n    ) TT\n) TMP\nOUTER APPLY sys.dm_exec_sql_text(TMP.[Plan Handle]) AS st\nOUTER APPLY sys.dm_exec_query_plan(TMP.[Plan Handle]) AS qp\nORDER BY Category, [Total Logical Reads] DESC\nOPTION (MAXDOP 1)"
+            "sqlServer": "SELECT\n    TMP.Category,\n    DB_NAME(st.dbid) [DB],\n    TMP.[Total Elapsed Time in S],\n    TMP.[Total Execution Count],\n    TMP.[Total CPU Time in S],\n    TMP.[Total Logical Reads],\n    TMP.[Total Logical Writes],\n    TMP.[Total CLR Time],\n    TMP.[Number of Statements],\n    TMP.[Last Execution Time],\n    TMP.[Plan Handle],\n    st.text AS [Query],\n    qp.query_plan AS [Plan]\nFROM (\n    SELECT * FROM (\n        SELECT TOP 30 \u0027worst I/O\u0027 [Category],\n            CAST(SUM(s.total_elapsed_time) / 1000000.0 AS DECIMAL(20, 2)) AS [Total Elapsed Time in S],\n            SUM(s.execution_count) AS [Total Execution Count],\n            CAST(SUM(s.total_worker_time) / 1000000.0 AS DECIMAL(20, 2)) AS [Total CPU Time in S],\n            SUM(s.total_logical_reads) AS [Total Logical Reads],\n            SUM(s.total_logical_writes) AS [Total Logical Writes],\n            SUM(s.total_clr_time) AS [Total CLR Time],\n            COUNT(1) AS [Number of Statements],\n            MAX(s.last_execution_time) AS [Last Execution Time],\n            s.plan_handle AS [Plan Handle]\n        FROM sys.dm_exec_query_stats s WITH (NOLOCK)\n        GROUP BY s.plan_handle ORDER BY SUM(s.total_logical_reads \u002B s.total_logical_writes) DESC\n    ) TT\n) TMP\nOUTER APPLY sys.dm_exec_sql_text(TMP.[Plan Handle]) AS st\nOUTER APPLY sys.dm_exec_query_plan(TMP.[Plan Handle]) AS qp\nORDER BY Category, [Total Logical Reads] DESC\nOPTION (MAXDOP 1)"
           },
           "defaultDatabase": "master",
           "statUnit": "",
@@ -1242,9 +1242,9 @@
           },
           "query": {
             "source": "sqlwatch",
-            "sqlServer": "\r\nSELECT\r\n    v.volume_name AS [Label],\r\n    CASE WHEN d.volume_total_space_bytes \u003E 0\r\n        THEN CAST((1.0 - (1.0 * d.volume_free_space_bytes / d.volume_total_space_bytes)) * 100.0 AS decimal(5,1))\r\n        ELSE 0 END AS [Value],\r\n    \u0027%\u0027 AS [Unit],\r\n    d.sql_instance AS [Instance]\r\nFROM dbo.sqlwatch_logger_disk_utilisation_volume d WITH (NOLOCK)\r\nINNER JOIN dbo.sqlwatch_logger_snapshot_header h WITH (NOLOCK)\r\n    ON h.snapshot_time = d.snapshot_time\r\n    AND h.snapshot_type_id = d.snapshot_type_id\r\n    AND h.sql_instance = d.sql_instance\r\nINNER JOIN dbo.sqlwatch_meta_os_volume v WITH (NOLOCK)\r\n    ON v.sql_instance = d.sql_instance\r\n    AND v.sqlwatch_volume_id = d.sqlwatch_volume_id\r\nWHERE h.report_time BETWEEN @TimeFrom AND @TimeTo\r\n    AND d.sql_instance IN (SELECT value FROM STRING_SPLIT(@SqlInstance, \u0027,\u0027))\r\n    AND h.snapshot_time = (\r\n        SELECT MAX(h2.snapshot_time)\r\n        FROM dbo.sqlwatch_logger_snapshot_header h2 WITH (NOLOCK)\r\n        WHERE h2.report_time BETWEEN @TimeFrom AND @TimeTo\r\n            AND h2.sql_instance = d.sql_instance\r\n            AND h2.snapshot_type_id = d.snapshot_type_id\r\n    )"
+            "sqlServer": "SELECT DISTINCT\n    vs.volume_mount_point AS [Label]\n    ,100-CAST((CAST(vs.available_bytes AS FLOAT) / CAST(vs.total_bytes AS FLOAT)) * 100 AS DECIMAL(18,2)) [Value]\n    , \u0027%\u0027 AS [Unit]\n    , @@SERVERNAME [Instance]\nFROM sys.master_files AS f\nCROSS APPLY sys.dm_os_volume_stats(f.database_id, f.file_id) AS vs;"
           },
-          "defaultDatabase": "SQLWATCH",
+          "defaultDatabase": "master",
           "statUnit": "",
           "statThresholdKey": null,
           "barGaugeThresholdKey": "Disk Space Used %",
@@ -1278,7 +1278,7 @@
           "id": "instance.checks_detail",
           "title": "Check Details",
           "description": "Detailed SQLWATCH check results with failure reasons and recommended actions.",
-          "enabled": true,
+          "enabled": false,
           "source": "",
           "panelType": "DataGrid",
           "chartType": "Line",
@@ -1323,7 +1323,7 @@
             "source": "sqlwatch",
             "sqlServer": "\r\nSELECT COUNT(*) AS [Value]\r\nFROM sys.databases WITH (NOLOCK)\r\nWHERE state_desc = \u0027ONLINE\u0027"
           },
-          "defaultDatabase": "SQLWATCH",
+          "defaultDatabase": "master",
           "statUnit": "",
           "statThresholdKey": null,
           "barGaugeThresholdKey": null,
@@ -1353,7 +1353,7 @@
             "source": "sqlwatch",
             "sqlServer": "\r\nSELECT TOP 1\r\n    h.report_time AS [Time],\r\n    \u0027Memory %\u0027 AS [Series],\r\n    d.memory_utilization_percentage AS [Value]\r\nFROM dbo.sqlwatch_logger_perf_os_process_memory d WITH (NOLOCK)\r\nINNER JOIN dbo.sqlwatch_logger_snapshot_header h WITH (NOLOCK)\r\n    ON h.snapshot_time = d.snapshot_time\r\n    AND h.snapshot_type_id = d.snapshot_type_id\r\n    AND h.sql_instance = d.sql_instance\r\nWHERE h.report_time BETWEEN @TimeFrom AND @TimeTo\r\n    AND d.sql_instance IN (SELECT value FROM STRING_SPLIT(@SqlInstance, \u0027,\u0027))\r\nORDER BY h.report_time DESC"
           },
-          "defaultDatabase": "SQLWATCH",
+          "defaultDatabase": "master",
           "statUnit": "%",
           "statThresholdKey": "SQL Memory",
           "barGaugeThresholdKey": null,
@@ -1402,7 +1402,7 @@
             "source": "sqlwatch",
             "sqlServer": "\r\nSELECT TOP 1\r\n    h.report_time AS [Time],\r\n    \u0027Pending\u0027 AS [Series],\r\n    d.work_queue_count AS [Value]\r\nFROM dbo.sqlwatch_logger_perf_os_schedulers d WITH (NOLOCK)\r\nINNER JOIN dbo.sqlwatch_logger_snapshot_header h WITH (NOLOCK)\r\n    ON h.snapshot_time = d.snapshot_time\r\n    AND h.snapshot_type_id = d.snapshot_type_id\r\n    AND h.sql_instance = d.sql_instance\r\nWHERE h.report_time BETWEEN @TimeFrom AND @TimeTo\r\n    AND d.sql_instance IN (SELECT value FROM STRING_SPLIT(@SqlInstance, \u0027,\u0027))\r\nORDER BY h.report_time DESC"
           },
-          "defaultDatabase": "SQLWATCH",
+          "defaultDatabase": "master",
           "statUnit": "",
           "statThresholdKey": "Pending",
           "barGaugeThresholdKey": null,
@@ -1445,7 +1445,7 @@
             "source": "sqlwatch",
             "sqlServer": "\r\nSELECT COUNT(DISTINCT sql_instance) AS [Value]\r\nFROM dbo.sqlwatch_config_sql_instance WITH (NOLOCK)\r\nWHERE repo_collector_is_active = 1"
           },
-          "defaultDatabase": "SQLWATCH",
+          "defaultDatabase": "master",
           "statUnit": "",
           "statThresholdKey": null,
           "barGaugeThresholdKey": null,
@@ -1475,7 +1475,7 @@
             "source": "sqlwatch",
             "sqlServer": "SELECT \n    @@SERVERNAME AS ServerName,\n    --SERVERPROPERTY(\u0027Edition\u0027) AS Edition,\n    CASE ServerProperty(\u0027EngineEdition\u0027)\n \nWHEN 1  THEN \u0027Desktop\u0027\nWHEN 2  THEN \n    CASE \n    WHEN CONVERT(VARCHAR(50),SERVERPROPERTY(\u0027Edition\u0027)) LIKE \u0027%Busi%\u0027 THEN \u0027Business Intelligence\u0027\n    WHEN CONVERT(VARCHAR(50),SERVERPROPERTY(\u0027Edition\u0027)) LIKE \u0027%Developer%\u0027 THEN \u0027Developer\u0027\n    ELSE \u0027Standard\u0027-- (For Standard, Standard Developer, Web, and Business Intelligence.)\n    END\nWHEN 3  THEN \n-- (For Enterprise, Enterprise Developer, Developer, and Evaluation editions.)\n    CASE \n    WHEN CONVERT(VARCHAR(50),SERVERPROPERTY(\u0027Edition\u0027)) LIKE \u0027%Developer%\u0027 THEN \u0027Developer\u0027\n    WHEN CONVERT(VARCHAR(50),SERVERPROPERTY(\u0027Edition\u0027)) LIKE \u0027%Evaluation%\u0027 THEN \u0027Evaluation\u0027\n    ELSE \u0027Enterprise\u0027\n    END\n\nWHEN 4  THEN \u0027Express\u0027-- (For Express, Express with Tools, and Express with Advanced Services)\nWHEN 5  THEN \u0027SQL Database\u0027\nWHEN 6  THEN \u0027Azure Synapse\u0027-- Analytics\nWHEN 8  THEN \u0027Azure SQL MI\u0027\nWHEN 9  THEN \u0027Azure SQL Edge\u0027-- (For all editions of Azure SQL Edge)\nWHEN 11 THEN  \u0027Azure Synapse serverless\u0027-- SQL pool, or Microsoft Fabric\nWHEN 12 THEN  \u0027Microsoft Fabric\u0027-- SQL database in Microsoft Fabric.\n    END AS Edition\n    ,\n    (SELECT cpu_count FROM sys.dm_os_sys_info) AS VirtualCPUs,\n    (SELECT socket_count FROM sys.dm_os_sys_info) AS Sockets,\n    CASE WHEN (SELECT virtual_machine_type FROM sys.dm_os_sys_info) = 1 THEN \u0027VM\u0027 ELSE \u0027Physical\u0027 END AS VMType,\n    CAST((SELECT physical_memory_kb FROM sys.dm_os_sys_info) / 1024.0 / 1024.0 AS DECIMAL(10,2)) AS MemoryGB,\n    CAST((SELECT committed_kb FROM sys.dm_os_sys_info) / 1024.0 / 1024.0 AS DECIMAL(10,2)) AS SqlAllocated,\n    CAST((SELECT committed_target_kb FROM sys.dm_os_sys_info) / 1024.0 / 1024.0 AS DECIMAL(10,2)) AS UsedBySql,\n    \u0027\u0027 AS MemoryState,\n    CASE \n     WHEN CONVERT(VARCHAR(128), SERVERPROPERTY (\u0027productversion\u0027)) like \u00278%\u0027    THEN \u00272000\u0027\n     WHEN CONVERT(VARCHAR(128), SERVERPROPERTY (\u0027productversion\u0027)) like \u00279%\u0027    THEN \u00272005\u0027\n     WHEN CONVERT(VARCHAR(128), SERVERPROPERTY (\u0027productversion\u0027)) like \u002710.0%\u0027 THEN \u00272008\u0027\n     WHEN CONVERT(VARCHAR(128), SERVERPROPERTY (\u0027productversion\u0027)) like \u002710.5%\u0027 THEN \u00272008 R2\u0027\n     WHEN CONVERT(VARCHAR(128), SERVERPROPERTY (\u0027productversion\u0027)) like \u002711%\u0027   THEN \u00272012\u0027\n     WHEN CONVERT(VARCHAR(128), SERVERPROPERTY (\u0027productversion\u0027)) like \u002712%\u0027   THEN \u00272014\u0027\n     WHEN CONVERT(VARCHAR(128), SERVERPROPERTY (\u0027productversion\u0027)) like \u002713%\u0027   THEN \u00272016\u0027     \n     WHEN CONVERT(VARCHAR(128), SERVERPROPERTY (\u0027productversion\u0027)) like \u002714%\u0027   THEN \u00272017\u0027 \n     WHEN CONVERT(VARCHAR(128), SERVERPROPERTY (\u0027productversion\u0027)) like \u002715%\u0027   THEN \u00272019\u0027 \n     WHEN CONVERT(VARCHAR(128), SERVERPROPERTY (\u0027productversion\u0027)) like \u002716%\u0027   THEN \u00272022\u0027 \n     ELSE \u0027unknown\u0027\n  END \n    --@@VERSION \n    AS [Version],\n    SERVERPROPERTY(\u0027ProductVersion\u0027) AS BuildNr,\n    (SELECT windows_release FROM sys.dm_os_windows_info) AS OS,\n    CASE WHEN SERVERPROPERTY(\u0027IsHadrEnabled\u0027) = 1 THEN \u0027Yes\u0027 ELSE \u0027No\u0027 END AS HADR,\n    CASE WHEN EXISTS(SELECT 1 FROM sys.server_principals WHERE name = \u0027sa\u0027 AND is_disabled = 0) THEN \u0027Enabled\u0027 ELSE \u0027Disabled\u0027 END AS SA,\n    \u0027\u0027 AS [Level]"
           },
-          "defaultDatabase": "SQLWATCH",
+          "defaultDatabase": "master",
           "statUnit": "",
           "statThresholdKey": null,
           "barGaugeThresholdKey": null,
@@ -1505,7 +1505,7 @@
             "source": "sqlwatch",
             "sqlServer": "\nSELECT \n    \n    (SELECT socket_count FROM sys.dm_os_sys_info) AS [CPU Sockets],\n    (SELECT cpu_count FROM sys.dm_os_sys_info) AS [Virtual CPU Count],\n    CASE WHEN (SELECT virtual_machine_type FROM sys.dm_os_sys_info) = 1 THEN \u0027VM\u0027 ELSE \u0027Physical\u0027 END AS [System Type],\n    (SELECT windows_release FROM sys.dm_os_windows_info) AS [Operating System]"
           },
-          "defaultDatabase": "SQLWATCH",
+          "defaultDatabase": "master",
           "statUnit": "",
           "statThresholdKey": null,
           "barGaugeThresholdKey": null,
@@ -1535,7 +1535,7 @@
             "source": "sqlwatch",
             "sqlServer": "\nSELECT \nServerName\n, Edition\n, \u0027$ \u0027 \u002B CONVERT(VARCHAR(25),CONVERT(INT,CONVERT(MONEY,\nCASE Edition \nWHEN \u0027Business Intelligence\u0027\nTHEN 5434  * VirtualCPUs / 2\n  \nWHEN \u0027Standard\u0027\nTHEN 5434  * VirtualCPUs / 2/ 3.832\n  \nWHEN \u0027Enterprise\u0027\nTHEN 5434  * VirtualCPUs / 2\nELSE  0\nEND)))\n[licensingRetailUSD]\n, [Version]\n, BuildNr\n, HADR\n, SA [sa state]\n\nFROM (\nSELECT \n    @@SERVERNAME AS ServerName,\n    --SERVERPROPERTY(\u0027Edition\u0027) AS Edition,\n    CASE ServerProperty(\u0027EngineEdition\u0027)\n \nWHEN 1  THEN \u0027Desktop\u0027\nWHEN 2  THEN \n    CASE \n    WHEN CONVERT(VARCHAR(50),SERVERPROPERTY(\u0027Edition\u0027)) LIKE \u0027%Busi%\u0027 THEN \u0027Business Intelligence\u0027\n    WHEN CONVERT(VARCHAR(50),SERVERPROPERTY(\u0027Edition\u0027)) LIKE \u0027%Developer%\u0027 THEN \u0027Developer\u0027\n    ELSE \u0027Standard\u0027-- (For Standard, Standard Developer, Web, and Business Intelligence.)\n    END\nWHEN 3  THEN \n-- (For Enterprise, Enterprise Developer, Developer, and Evaluation editions.)\n    CASE \n    WHEN CONVERT(VARCHAR(50),SERVERPROPERTY(\u0027Edition\u0027)) LIKE \u0027%Developer%\u0027 THEN \u0027Developer\u0027\n    WHEN CONVERT(VARCHAR(50),SERVERPROPERTY(\u0027Edition\u0027)) LIKE \u0027%Evaluation%\u0027 THEN \u0027Evaluation\u0027\n    ELSE \u0027Enterprise\u0027\n    END\n\nWHEN 4  THEN \u0027Express\u0027-- (For Express, Express with Tools, and Express with Advanced Services)\nWHEN 5  THEN \u0027SQL Database\u0027\nWHEN 6  THEN \u0027Azure Synapse\u0027-- Analytics\nWHEN 8  THEN \u0027Azure SQL MI\u0027\nWHEN 9  THEN \u0027Azure SQL Edge\u0027-- (For all editions of Azure SQL Edge)\nWHEN 11 THEN  \u0027Azure Synapse serverless\u0027-- SQL pool, or Microsoft Fabric\nWHEN 12 THEN  \u0027Microsoft Fabric\u0027-- SQL database in Microsoft Fabric.\n    END AS Edition\n    \n\n    ,\n    (SELECT cpu_count FROM sys.dm_os_sys_info) AS VirtualCPUs,\n    (SELECT socket_count FROM sys.dm_os_sys_info) AS Sockets,\n    CASE WHEN (SELECT virtual_machine_type FROM sys.dm_os_sys_info) = 1 THEN \u0027VM\u0027 ELSE \u0027Physical\u0027 END AS VMType,\n    CAST((SELECT physical_memory_kb FROM sys.dm_os_sys_info) / 1024.0 / 1024.0 AS DECIMAL(10,2)) AS MemoryGB,\n    CAST((SELECT committed_kb FROM sys.dm_os_sys_info) / 1024.0 / 1024.0 AS DECIMAL(10,2)) AS SqlAllocated,\n    CAST((SELECT committed_target_kb FROM sys.dm_os_sys_info) / 1024.0 / 1024.0 AS DECIMAL(10,2)) AS UsedBySql,\n    \u0027\u0027 AS MemoryState,\n    CASE \n     WHEN CONVERT(VARCHAR(128), SERVERPROPERTY (\u0027productversion\u0027)) like \u00278%\u0027    THEN \u00272000\u0027\n     WHEN CONVERT(VARCHAR(128), SERVERPROPERTY (\u0027productversion\u0027)) like \u00279%\u0027    THEN \u00272005\u0027\n     WHEN CONVERT(VARCHAR(128), SERVERPROPERTY (\u0027productversion\u0027)) like \u002710.0%\u0027 THEN \u00272008\u0027\n     WHEN CONVERT(VARCHAR(128), SERVERPROPERTY (\u0027productversion\u0027)) like \u002710.5%\u0027 THEN \u00272008 R2\u0027\n     WHEN CONVERT(VARCHAR(128), SERVERPROPERTY (\u0027productversion\u0027)) like \u002711%\u0027   THEN \u00272012\u0027\n     WHEN CONVERT(VARCHAR(128), SERVERPROPERTY (\u0027productversion\u0027)) like \u002712%\u0027   THEN \u00272014\u0027\n     WHEN CONVERT(VARCHAR(128), SERVERPROPERTY (\u0027productversion\u0027)) like \u002713%\u0027   THEN \u00272016\u0027     \n     WHEN CONVERT(VARCHAR(128), SERVERPROPERTY (\u0027productversion\u0027)) like \u002714%\u0027   THEN \u00272017\u0027 \n     WHEN CONVERT(VARCHAR(128), SERVERPROPERTY (\u0027productversion\u0027)) like \u002715%\u0027   THEN \u00272019\u0027 \n     WHEN CONVERT(VARCHAR(128), SERVERPROPERTY (\u0027productversion\u0027)) like \u002716%\u0027   THEN \u00272022\u0027 \n     ELSE \u0027unknown\u0027\n  END \n    --@@VERSION \n    AS [Version],\n    SERVERPROPERTY(\u0027ProductVersion\u0027) AS BuildNr,\n    (SELECT windows_release FROM sys.dm_os_windows_info) AS OS,\n    CASE WHEN SERVERPROPERTY(\u0027IsHadrEnabled\u0027) = 1 THEN \u0027Yes\u0027 ELSE \u0027No\u0027 END AS HADR,\n    CASE WHEN EXISTS(SELECT 1 FROM sys.server_principals WHERE name = \u0027sa\u0027 AND is_disabled = 0) THEN \u0027Enabled\u0027 ELSE \u0027Disabled\u0027 END AS SA,\n    \u0027\u0027 AS [Level]\n) T1\n   \n\n "
           },
-          "defaultDatabase": "SQLWATCH",
+          "defaultDatabase": "master",
           "statUnit": "",
           "statThresholdKey": null,
           "barGaugeThresholdKey": null,
@@ -1565,7 +1565,7 @@
             "source": "sqlwatch",
             "sqlServer": "\nselect TOP 1\n \u0027Connection Memory (MB)\u0027\t\t= CONVERT(INT,avg(case when mpc.counter_name = \u0027Connection Memory (KB)\u0027 then pc.[cntr_value_calculated]/1024\telse null end))\n ,\u0027Optimizer Memory (MB)\u0027\t\t= CONVERT(INT,avg(case when mpc.counter_name = \u0027Optimizer Memory (KB)\u0027 then pc.[cntr_value_calculated]/1024\t\telse null end))\n ,\u0027SQL Cache Memory (MB)\u0027\t\t= CONVERT(INT,avg(case when mpc.counter_name = \u0027SQL Cache Memory (KB)\u0027 then pc.[cntr_value_calculated]/1024\t\telse null end))\n ,\u0027Total Server Memory (MB)\u0027\t= CONVERT(INT,avg(case when mpc.counter_name = \u0027Total Server Memory (KB)\u0027 then pc.[cntr_value_calculated]/1024\telse null end))\n ,\u0027Stolen Server Memory (MB)\u0027\t= CONVERT(INT,avg(case when mpc.counter_name = \u0027Stolen Server Memory (KB)\u0027 then pc.[cntr_value_calculated]/1024 else null end))\n ,\u0027Target Server Memory (MB)\u0027\t= CONVERT(INT,avg(case when mpc.counter_name = \u0027Target Server Memory (KB)\u0027 then pc.[cntr_value_calculated]/1024 else null end))\nfrom [dbo].[sqlwatch_logger_perf_os_performance_counters] pc\n\ninner join [dbo].[sqlwatch_meta_performance_counter] mpc\non pc.sql_instance = mpc.sql_instance\nand pc.performance_counter_id = mpc.performance_counter_id\n\nWHERE 1=1--snapshot_time BETWEEN @TimeFrom AND @TimeTo\n\nand pc.sql_instance IN (SELECT value FROM STRING_SPLIT(@SqlInstance, \u0027,\u0027))\nand mpc.counter_name in (\u0027CPU usage %\u0027\n ,\u0027Batch Requests/sec\u0027\n ,\u0027Logins/sec\u0027\n ,\u0027Transactions/sec\u0027\n ,\u0027User Connections\u0027\n ,\u0027SQL Compilations/sec\u0027\n ,\u0027Bytes Sent to Replica/sec\u0027\n ,\u0027Bytes Received from Replica/sec\u0027\n ,\u0027Processor Time %\u0027\n ,\u0027% Processor Time\u0027\n \n ,\u0027Connection Memory (KB)\u0027\n ,\u0027Optimizer Memory (KB)\u0027\n ,\u0027SQL Cache Memory (KB)\u0027\n ,\u0027Total Server Memory (KB)\u0027\n ,\u0027Stolen Server Memory (KB)\u0027\n , \u0027Target Server Memory (KB)\u0027\n )\n\ngroup by pc.snapshot_time\norder by pc.snapshot_time DESC"
           },
-          "defaultDatabase": "SQLWATCH",
+          "defaultDatabase": "master",
           "statUnit": "",
           "statThresholdKey": null,
           "barGaugeThresholdKey": null,
@@ -1595,7 +1595,7 @@
             "source": "sqlwatch",
             "sqlServer": "\nSELECT \n   \n    CAST((SELECT physical_memory_kb FROM sys.dm_os_sys_info) / 1024.0 / 1024.0 AS DECIMAL(10,2)) AS [System Total Memory GB],\n    CAST((SELECT committed_kb FROM sys.dm_os_sys_info) / 1024.0 / 1024.0 AS DECIMAL(10,2)) AS [Memory Allocated to SQL],\n    CAST((SELECT committed_target_kb FROM sys.dm_os_sys_info) / 1024.0 / 1024.0 AS DECIMAL(10,2)) AS [Memory Used By SQL],\n    CONVERT(INT,\n    CAST((SELECT committed_target_kb FROM sys.dm_os_sys_info) / 1024.0 / 1024.0 AS DECIMAL(10,2))\n    /\n    CAST((SELECT committed_kb FROM sys.dm_os_sys_info) / 1024.0 / 1024.0 AS DECIMAL(10,2))*100)\n    [SQL Memory usage %]\n    \n"
           },
-          "defaultDatabase": "SQLWATCH",
+          "defaultDatabase": "master",
           "statUnit": "",
           "statThresholdKey": null,
           "barGaugeThresholdKey": null,
@@ -2577,7 +2577,7 @@
           },
           "query": {
             "source": "sqlwatch",
-            "sqlServer": "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT TOP 20 source, database_name, object_name, execution_count, avg_worker_time_ms, avg_elapsed_time_ms, avg_logical_reads, query_text_sample FROM report.expensive_queries_today WHERE last_execution_time \u003E= DATEADD(HOUR, -24, SYSDATETIME()) ORDER BY avg_worker_time_ms DESC"
+            "sqlServer": "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; \nSELECT TOP 20 source, database_name, object_name, execution_count, avg_worker_time_ms, avg_elapsed_time_ms, avg_logical_reads, query_text_sample , query_plan_xml\nFROM report.expensive_queries_today WHERE last_execution_time \u003E= DATEADD(HOUR, -24, SYSDATETIME()) \nORDER BY avg_worker_time_ms DESC"
           },
           "defaultDatabase": "master",
           "statUnit": "",
@@ -3272,6 +3272,942 @@
           "colorThresholds": [],
           "dataGridIsClickable": false,
           "dataGridMaxRows": 200,
+          "dataGridTopRows": 0
+        }
+      ]
+    },
+    {
+      "id": "xevents",
+      "title": "XEvent / Profiler",
+      "description": "",
+      "navTitle": "XEvent / Profiler",
+      "navIcon": "fa-solid fa-list-check",
+      "navCategory": "Tools",
+      "navOrder": 1,
+      "route": "/xevents",
+      "enabled": true,
+      "source": "",
+      "defaultDatabase": "master",
+      "showAllOption": false,
+      "panels": []
+    },
+    {
+      "id": "schemacompare",
+      "title": "Schema Compare",
+      "description": "",
+      "navTitle": "Schema Compare",
+      "navIcon": "fa-solid fa-code-compare",
+      "navCategory": "Tools",
+      "navOrder": 2,
+      "route": "/schemacompare",
+      "enabled": true,
+      "source": "",
+      "defaultDatabase": "master",
+      "showAllOption": false,
+      "panels": []
+    },
+    {
+      "id": "dependencywalker",
+      "title": "Dependency Walker",
+      "description": "",
+      "navTitle": "Dependency Walker",
+      "navIcon": "fa-solid fa-sitemap",
+      "navCategory": "Tools",
+      "navOrder": 3,
+      "route": "/dependencywalker",
+      "enabled": true,
+      "source": "",
+      "defaultDatabase": "master",
+      "showAllOption": false,
+      "panels": []
+    },
+    {
+      "id": "liveindexes",
+      "title": "Index Health",
+      "description": "",
+      "navTitle": "Index Health",
+      "navIcon": "fa-solid fa-layer-group",
+      "navCategory": "Dashboards",
+      "navOrder": 13,
+      "route": "",
+      "enabled": true,
+      "source": "live",
+      "defaultDatabase": "master",
+      "showAllOption": false,
+      "panels": [
+        {
+          "id": "liveindexes.missing_count",
+          "title": "Missing Index Count",
+          "description": "Total missing indexes detected by the query optimizer since last restart.",
+          "enabled": true,
+          "source": "",
+          "panelType": "StatCard",
+          "chartType": "Line",
+          "height": 0,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 0,
+            "order": 0,
+            "spanColumns": false
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT CAST(COUNT(*) AS FLOAT) AS [Value] FROM sys.dm_db_missing_index_details"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "N0",
+          "colorThresholds": [
+            {
+              "operator": "\u003E=",
+              "value": 10,
+              "color": "#ff9800",
+              "label": "Warning"
+            },
+            {
+              "operator": "\u003E=",
+              "value": 50,
+              "color": "#f44336",
+              "label": "Critical"
+            }
+          ],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0
+        },
+        {
+          "id": "liveindexes.high_impact_missing",
+          "title": "High Impact Missing Indexes",
+          "description": "Top missing indexes ranked by optimizer impact score (seeks \u00D7 cost \u00D7 impact). Create these first.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 320,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 0,
+            "order": 1,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT TOP 20 d.statement AS [Table], ISNULL(d.equality_columns,\u0027\u0027) AS [Equality Cols], ISNULL(d.inequality_columns,\u0027\u0027) AS [Inequality Cols], ISNULL(d.included_columns,\u0027\u0027) AS [Include Cols], CAST(gs.avg_total_user_cost * gs.avg_user_impact * (gs.user_seeks \u002B gs.user_scans) AS DECIMAL(18,0)) AS [Impact Score], gs.user_seeks AS [Seeks], gs.user_scans AS [Scans] FROM sys.dm_db_missing_index_group_stats gs JOIN sys.dm_db_missing_index_groups g ON gs.group_handle = g.index_group_handle JOIN sys.dm_db_missing_index_details d ON g.index_handle = d.index_handle ORDER BY [Impact Score] DESC"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 20,
+          "dataGridTopRows": 0
+        },
+        {
+          "id": "liveindexes.fragmentation",
+          "title": "Index Fragmentation (\u003E30%)",
+          "description": "Indexes with over 30% fragmentation and more than 100 pages. Candidates for REBUILD or REORGANIZE.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 320,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 0,
+            "order": 2,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT TOP 30 DB_NAME(s.database_id) AS [Database], OBJECT_NAME(s.object_id,s.database_id) AS [Table], i.name AS [Index], s.index_type_desc AS [Type], CAST(s.avg_fragmentation_in_percent AS DECIMAL(5,1)) AS [Frag %], s.page_count AS [Pages] FROM sys.dm_db_index_physical_stats(NULL,NULL,NULL,NULL,N\u0027LIMITED\u0027) s JOIN sys.indexes i ON s.object_id = i.object_id AND s.index_id = i.index_id WHERE s.avg_fragmentation_in_percent \u003E 30 AND s.page_count \u003E 100 AND i.name IS NOT NULL ORDER BY s.avg_fragmentation_in_percent DESC"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 30,
+          "dataGridTopRows": 0
+        },
+        {
+          "id": "liveindexes.unused",
+          "title": "Unused Indexes (Write-Heavy)",
+          "description": "Indexes with zero reads but active writes since last restart. Candidates for removal to reduce write overhead.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 320,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 0,
+            "order": 3,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT TOP 20 DB_NAME(u.database_id) AS [Database], OBJECT_NAME(u.object_id,u.database_id) AS [Table], i.name AS [Index], u.user_seeks AS [Seeks], u.user_scans AS [Scans], u.user_lookups AS [Lookups], u.user_updates AS [Writes] FROM sys.dm_db_index_usage_stats u JOIN sys.indexes i ON u.object_id = i.object_id AND u.index_id = i.index_id WHERE u.user_seeks = 0 AND u.user_scans = 0 AND u.user_lookups = 0 AND i.name IS NOT NULL AND i.index_id \u003E 1 AND u.user_updates \u003E 0 ORDER BY u.user_updates DESC"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 20,
+          "dataGridTopRows": 0
+        }
+      ]
+    },
+    {
+      "id": "backuphealth",
+      "title": "Backup Health",
+      "description": "",
+      "navTitle": "Backup Health",
+      "navIcon": "fa-solid fa-database",
+      "navCategory": "Dashboards",
+      "navOrder": 14,
+      "route": "",
+      "enabled": true,
+      "source": "live",
+      "defaultDatabase": "master",
+      "showAllOption": false,
+      "panels": [
+        {
+          "id": "backuphealth.no_full_backup",
+          "title": "DBs Without Full Backup (7d)",
+          "description": "Databases with no full backup in the last 7 days.",
+          "enabled": true,
+          "source": "",
+          "panelType": "StatCard",
+          "chartType": "Line",
+          "height": 0,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 0,
+            "order": 0,
+            "spanColumns": false
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT CAST(COUNT(*) AS FLOAT) AS [Value] FROM sys.databases d WHERE d.database_id \u003E 4 AND d.state = 0 AND d.name NOT IN (SELECT DISTINCT database_name FROM msdb.dbo.backupset WHERE type = \u0027D\u0027 AND backup_finish_date \u003E= DATEADD(DAY,-7,GETDATE()))"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "N0",
+          "colorThresholds": [
+            {
+              "operator": "\u003E=",
+              "value": 1,
+              "color": "#ff9800",
+              "label": "Warning"
+            },
+            {
+              "operator": "\u003E=",
+              "value": 3,
+              "color": "#f44336",
+              "label": "Critical"
+            }
+          ],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0
+        },
+        {
+          "id": "backuphealth.no_log_backup",
+          "title": "DBs Without Log Backup (1h)",
+          "description": "FULL recovery model databases with no transaction log backup in the last hour.",
+          "enabled": true,
+          "source": "",
+          "panelType": "StatCard",
+          "chartType": "Line",
+          "height": 0,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 0,
+            "order": 1,
+            "spanColumns": false
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT CAST(COUNT(*) AS FLOAT) AS [Value] FROM sys.databases d WHERE d.recovery_model = 1 AND d.database_id \u003E 4 AND d.state = 0 AND d.name NOT IN (SELECT DISTINCT database_name FROM msdb.dbo.backupset WHERE type = \u0027L\u0027 AND backup_finish_date \u003E= DATEADD(HOUR,-1,GETDATE()))"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "N0",
+          "colorThresholds": [
+            {
+              "operator": "\u003E=",
+              "value": 1,
+              "color": "#ff9800",
+              "label": "Warning"
+            },
+            {
+              "operator": "\u003E=",
+              "value": 3,
+              "color": "#f44336",
+              "label": "Critical"
+            }
+          ],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0
+        },
+        {
+          "id": "backuphealth.last_full_backup",
+          "title": "Last Full Backup per Database",
+          "description": "Most recent full backup date, age in hours and size for each user database.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 320,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 0,
+            "order": 2,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT d.name AS [Database], d.recovery_model_desc AS [Recovery Model], MAX(b.backup_finish_date) AS [Last Full Backup], DATEDIFF(HOUR,MAX(b.backup_finish_date),GETDATE()) AS [Hours Ago], CAST(MAX(b.backup_size)/1024.0/1024.0 AS DECIMAL(10,1)) AS [Size MB] FROM sys.databases d LEFT JOIN msdb.dbo.backupset b ON b.database_name = d.name AND b.type = \u0027D\u0027 WHERE d.database_id \u003E 4 AND d.state = 0 GROUP BY d.name,d.recovery_model_desc ORDER BY [Last Full Backup] ASC"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 100,
+          "dataGridTopRows": 0
+        },
+        {
+          "id": "backuphealth.recent_history",
+          "title": "Recent Backup History",
+          "description": "Last 50 backup operations from msdb, newest first.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 320,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 0,
+            "order": 3,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT TOP 50 bs.database_name AS [Database], CASE bs.type WHEN \u0027D\u0027 THEN \u0027Full\u0027 WHEN \u0027I\u0027 THEN \u0027Differential\u0027 WHEN \u0027L\u0027 THEN \u0027Log\u0027 ELSE bs.type END AS [Type], bs.backup_start_date AS [Started], bs.backup_finish_date AS [Finished], DATEDIFF(MINUTE,bs.backup_start_date,bs.backup_finish_date) AS [Duration (min)], CAST(bs.backup_size/1024.0/1024.0 AS DECIMAL(10,1)) AS [Size MB], bs.user_name AS [By] FROM msdb.dbo.backupset bs ORDER BY bs.backup_finish_date DESC"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 50,
+          "dataGridTopRows": 0
+        }
+      ]
+    },
+    {
+      "id": "livequerystats",
+      "title": "Live Query Stats",
+      "description": "",
+      "navTitle": "Live Query Stats",
+      "navIcon": "fa-solid fa-magnifying-glass-chart",
+      "navCategory": "Dashboards",
+      "navOrder": 15,
+      "route": "",
+      "enabled": true,
+      "source": "live",
+      "defaultDatabase": "master",
+      "showAllOption": false,
+      "panels": [
+        {
+          "id": "livequerystats.plan_cache_hit",
+          "title": "Plan Cache Hit Ratio",
+          "description": "SQL Server plan cache hit ratio from sys.dm_os_performance_counters.",
+          "enabled": true,
+          "source": "",
+          "panelType": "StatCard",
+          "chartType": "Line",
+          "height": 0,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 0,
+            "order": 0,
+            "spanColumns": false
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT CAST(cntr_value AS FLOAT) AS [Value] FROM sys.dm_os_performance_counters WHERE counter_name = \u0027Cache Hit Ratio\u0027 AND object_name LIKE \u0027%Plan Cache%\u0027 AND instance_name = \u0027_Total\u0027"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "%",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "%",
+          "valueFormat": "N1",
+          "colorThresholds": [
+            {
+              "operator": "\u003C",
+              "value": 80,
+              "color": "#ff9800",
+              "label": "Low"
+            },
+            {
+              "operator": "\u003C",
+              "value": 50,
+              "color": "#f44336",
+              "label": "Critical"
+            }
+          ],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0
+        },
+        {
+          "id": "livequerystats.plans_cached",
+          "title": "Plans Cached",
+          "description": "Total compiled plans currently in the SQL Server plan cache.",
+          "enabled": true,
+          "source": "",
+          "panelType": "StatCard",
+          "chartType": "Line",
+          "height": 0,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 0,
+            "order": 1,
+            "spanColumns": false
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT CAST(COUNT(*) AS FLOAT) AS [Value] FROM sys.dm_exec_cached_plans WHERE cacheobjtype = \u0027Compiled Plan\u0027"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "N0",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0
+        },
+        {
+          "id": "livequerystats.top_cpu",
+          "title": "Top CPU Queries",
+          "description": "Top 20 queries by total CPU time since last restart from sys.dm_exec_query_stats.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 320,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 0,
+            "order": 2,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT TOP 20 CAST(qs.total_worker_time/1000.0 AS DECIMAL(18,1)) AS [Total CPU (ms)], qs.execution_count AS [Executions], CAST(qs.total_worker_time/qs.execution_count/1000.0 AS DECIMAL(18,1)) AS [Avg CPU (ms)], CAST(qs.total_logical_reads/qs.execution_count AS BIGINT) AS [Avg Reads], qs.last_execution_time AS [Last Exec], LEFT(REPLACE(REPLACE(st.text,CHAR(13),\u0027 \u0027),CHAR(10),\u0027 \u0027),150) AS [SQL Text] FROM sys.dm_exec_query_stats qs CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st ORDER BY qs.total_worker_time DESC"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 20,
+          "dataGridTopRows": 0
+        },
+        {
+          "id": "livequerystats.top_io",
+          "title": "Top I/O Queries",
+          "description": "Top 20 queries by total logical reads since last restart.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 320,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 0,
+            "order": 3,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT TOP 20 CAST(qs.total_logical_reads/1000.0 AS DECIMAL(18,1)) AS [Total Reads (K)], qs.execution_count AS [Executions], CAST(qs.total_logical_reads/qs.execution_count AS BIGINT) AS [Avg Reads], CAST(qs.total_worker_time/qs.execution_count/1000.0 AS DECIMAL(18,1)) AS [Avg CPU (ms)], qs.last_execution_time AS [Last Exec], LEFT(REPLACE(REPLACE(st.text,CHAR(13),\u0027 \u0027),CHAR(10),\u0027 \u0027),150) AS [SQL Text] FROM sys.dm_exec_query_stats qs CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st ORDER BY qs.total_logical_reads DESC"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 20,
+          "dataGridTopRows": 0
+        },
+        {
+          "id": "livequerystats.top_duration",
+          "title": "Top Duration Queries",
+          "description": "Top 20 queries by total elapsed time since last restart.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 320,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 0,
+            "order": 4,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT TOP 20 CAST(qs.total_elapsed_time/1000.0 AS DECIMAL(18,1)) AS [Total Duration (ms)], qs.execution_count AS [Executions], CAST(qs.total_elapsed_time/qs.execution_count/1000.0 AS DECIMAL(18,1)) AS [Avg Duration (ms)], CAST(qs.total_logical_reads/qs.execution_count AS BIGINT) AS [Avg Reads], qs.last_execution_time AS [Last Exec], LEFT(REPLACE(REPLACE(st.text,CHAR(13),\u0027 \u0027),CHAR(10),\u0027 \u0027),150) AS [SQL Text] FROM sys.dm_exec_query_stats qs CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st ORDER BY qs.total_elapsed_time DESC"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 20,
+          "dataGridTopRows": 0
+        }
+      ]
+    },
+    {
+      "id": "livejobs",
+      "title": "Job Monitor",
+      "description": "",
+      "navTitle": "Job Monitor",
+      "navIcon": "fa-solid fa-clock-rotate-left",
+      "navCategory": "Dashboards",
+      "navOrder": 16,
+      "route": "",
+      "enabled": true,
+      "source": "live",
+      "defaultDatabase": "master",
+      "showAllOption": false,
+      "panels": [
+        {
+          "id": "livejobs.running_count",
+          "title": "Currently Running Jobs",
+          "description": "Number of SQL Agent jobs currently executing.",
+          "enabled": true,
+          "source": "",
+          "panelType": "StatCard",
+          "chartType": "Line",
+          "height": 0,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 0,
+            "order": 0,
+            "spanColumns": false
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT CAST(COUNT(*) AS FLOAT) AS [Value] FROM msdb.dbo.sysjobactivity ja JOIN msdb.dbo.sysjobs j ON ja.job_id = j.job_id WHERE ja.session_id = (SELECT MAX(session_id) FROM msdb.dbo.sysjobactivity) AND ja.start_execution_date IS NOT NULL AND ja.stop_execution_date IS NULL"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "N0",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0
+        },
+        {
+          "id": "livejobs.failed_24h",
+          "title": "Failed Jobs (24h)",
+          "description": "SQL Agent job failures in the last 24 hours.",
+          "enabled": true,
+          "source": "",
+          "panelType": "StatCard",
+          "chartType": "Line",
+          "height": 0,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 0,
+            "order": 1,
+            "spanColumns": false
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT CAST(COUNT(*) AS FLOAT) AS [Value] FROM msdb.dbo.sysjobhistory h WHERE h.run_status = 0 AND msdb.dbo.agent_datetime(h.run_date,h.run_time) \u003E= DATEADD(HOUR,-24,GETDATE()) AND h.step_id = 0"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "N0",
+          "colorThresholds": [
+            {
+              "operator": "\u003E=",
+              "value": 1,
+              "color": "#ff9800",
+              "label": "Warning"
+            },
+            {
+              "operator": "\u003E=",
+              "value": 5,
+              "color": "#f44336",
+              "label": "Critical"
+            }
+          ],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0
+        },
+        {
+          "id": "livejobs.running_detail",
+          "title": "Running Jobs",
+          "description": "Currently executing SQL Agent jobs with start time and duration.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 250,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 0,
+            "order": 2,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT j.name AS [Job], ja.start_execution_date AS [Started], DATEDIFF(MINUTE,ja.start_execution_date,GETDATE()) AS [Running (min)], js.step_name AS [Current Step] FROM msdb.dbo.sysjobactivity ja JOIN msdb.dbo.sysjobs j ON ja.job_id = j.job_id LEFT JOIN msdb.dbo.sysjobsteps js ON ja.job_id = js.job_id AND ja.last_executed_step_id = js.step_id WHERE ja.session_id = (SELECT MAX(session_id) FROM msdb.dbo.sysjobactivity) AND ja.start_execution_date IS NOT NULL AND ja.stop_execution_date IS NULL ORDER BY ja.start_execution_date"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 50,
+          "dataGridTopRows": 0
+        },
+        {
+          "id": "livejobs.failures_24h",
+          "title": "Job Failures (Last 24 Hours)",
+          "description": "SQL Agent jobs that failed in the last 24 hours with error messages.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 300,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 0,
+            "order": 3,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT TOP 50 j.name AS [Job], msdb.dbo.agent_datetime(h.run_date,h.run_time) AS [Failed At], h.step_name AS [Step], h.message AS [Error] FROM msdb.dbo.sysjobhistory h JOIN msdb.dbo.sysjobs j ON h.job_id = j.job_id WHERE h.run_status = 0 AND msdb.dbo.agent_datetime(h.run_date,h.run_time) \u003E= DATEADD(HOUR,-24,GETDATE()) ORDER BY msdb.dbo.agent_datetime(h.run_date,h.run_time) DESC"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 50,
+          "dataGridTopRows": 0
+        },
+        {
+          "id": "livejobs.all_jobs",
+          "title": "All Jobs Status",
+          "description": "All SQL Agent jobs with enabled status and last run outcome.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 320,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 0,
+            "order": 4,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT j.name AS [Job], j.enabled AS [Enabled], CASE jh.run_status WHEN 0 THEN \u0027Failed\u0027 WHEN 1 THEN \u0027Succeeded\u0027 WHEN 2 THEN \u0027Retry\u0027 WHEN 3 THEN \u0027Cancelled\u0027 WHEN 4 THEN \u0027Running\u0027 ELSE \u0027Unknown\u0027 END AS [Last Status], msdb.dbo.agent_datetime(jh.run_date,jh.run_time) AS [Last Run] FROM msdb.dbo.sysjobs j LEFT JOIN msdb.dbo.sysjobhistory jh ON j.job_id = jh.job_id AND jh.instance_id = (SELECT MAX(instance_id) FROM msdb.dbo.sysjobhistory h2 WHERE h2.job_id = j.job_id AND h2.step_id = 0) ORDER BY j.name"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 200,
+          "dataGridTopRows": 0
+        }
+      ]
+    },
+    {
+      "id": "livetempdb",
+      "title": "TempDB Health",
+      "description": "",
+      "navTitle": "TempDB Health",
+      "navIcon": "fa-solid fa-temperature-half",
+      "navCategory": "Dashboards",
+      "navOrder": 17,
+      "route": "",
+      "enabled": true,
+      "source": "live",
+      "defaultDatabase": "master",
+      "showAllOption": false,
+      "panels": [
+        {
+          "id": "livetempdb.used_mb",
+          "title": "TempDB Used (MB)",
+          "description": "Total TempDB space used by user objects, internal objects and version store.",
+          "enabled": true,
+          "source": "",
+          "panelType": "StatCard",
+          "chartType": "Line",
+          "height": 0,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 0,
+            "order": 0,
+            "spanColumns": false
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT CAST(SUM(user_object_reserved_page_count\u002Binternal_object_reserved_page_count\u002Bversion_store_reserved_page_count)*8/1024.0 AS DECIMAL(10,1)) AS [Value] FROM sys.dm_db_file_space_usage"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "MB",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "MB",
+          "valueFormat": "N1",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0
+        },
+        {
+          "id": "livetempdb.version_store_mb",
+          "title": "Version Store (MB)",
+          "description": "TempDB space consumed by the version store. High values may indicate long-running transactions with RCSI/SI.",
+          "enabled": true,
+          "source": "",
+          "panelType": "StatCard",
+          "chartType": "Line",
+          "height": 0,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 0,
+            "order": 1,
+            "spanColumns": false
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT CAST(SUM(version_store_reserved_page_count)*8/1024.0 AS DECIMAL(10,1)) AS [Value] FROM sys.dm_db_file_space_usage"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "MB",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "MB",
+          "valueFormat": "N1",
+          "colorThresholds": [
+            {
+              "operator": "\u003E=",
+              "value": 512,
+              "color": "#ff9800",
+              "label": "Warning"
+            },
+            {
+              "operator": "\u003E=",
+              "value": 2048,
+              "color": "#f44336",
+              "label": "Critical"
+            }
+          ],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0
+        },
+        {
+          "id": "livetempdb.long_tran_count",
+          "title": "Long Transactions (\u003E5 min)",
+          "description": "Transactions open for more than 5 minutes. These can block version store cleanup.",
+          "enabled": true,
+          "source": "",
+          "panelType": "StatCard",
+          "chartType": "Line",
+          "height": 0,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 0,
+            "order": 2,
+            "spanColumns": false
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT CAST(COUNT(*) AS FLOAT) AS [Value] FROM sys.dm_tran_active_transactions t JOIN sys.dm_tran_session_transactions st ON t.transaction_id = st.transaction_id WHERE DATEDIFF(MINUTE,t.transaction_begin_time,GETDATE()) \u003E 5"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "N0",
+          "colorThresholds": [
+            {
+              "operator": "\u003E=",
+              "value": 1,
+              "color": "#ff9800",
+              "label": "Warning"
+            },
+            {
+              "operator": "\u003E=",
+              "value": 5,
+              "color": "#f44336",
+              "label": "Critical"
+            }
+          ],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0
+        },
+        {
+          "id": "livetempdb.file_usage",
+          "title": "TempDB File Usage",
+          "description": "Per-file allocation, used and free space in TempDB.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 220,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 0,
+            "order": 3,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT f.name AS [File], f.physical_name AS [Path], CAST(f.size*8.0/1024 AS DECIMAL(10,1)) AS [Size MB], CAST((fs.user_object_reserved_page_count\u002Bfs.internal_object_reserved_page_count\u002Bfs.version_store_reserved_page_count)*8.0/1024 AS DECIMAL(10,1)) AS [Used MB], CAST(fs.unallocated_extent_page_count*8.0/1024 AS DECIMAL(10,1)) AS [Free MB] FROM sys.dm_db_file_space_usage fs CROSS JOIN tempdb.sys.database_files f WHERE f.file_id = fs.file_id"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 50,
+          "dataGridTopRows": 0
+        },
+        {
+          "id": "livetempdb.top_users",
+          "title": "Top TempDB Users",
+          "description": "Sessions currently consuming the most TempDB space via user objects and internal objects.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 280,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 0,
+            "order": 4,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT TOP 20 s.session_id AS [Session], s.login_name AS [Login], s.host_name AS [Host], s.program_name AS [Program], CAST((tsu.user_objects_alloc_page_count\u002Btsu.internal_objects_alloc_page_count)*8.0/1024 AS DECIMAL(10,1)) AS [Alloc MB], CAST((tsu.user_objects_dealloc_page_count\u002Btsu.internal_objects_dealloc_page_count)*8.0/1024 AS DECIMAL(10,1)) AS [Freed MB] FROM sys.dm_db_task_space_usage tsu JOIN sys.dm_exec_sessions s ON tsu.session_id = s.session_id WHERE tsu.user_objects_alloc_page_count\u002Btsu.internal_objects_alloc_page_count \u003E 0 ORDER BY tsu.user_objects_alloc_page_count\u002Btsu.internal_objects_alloc_page_count DESC"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 20,
+          "dataGridTopRows": 0
+        },
+        {
+          "id": "livetempdb.long_transactions",
+          "title": "Long-Running Transactions",
+          "description": "Active transactions running for more than 5 minutes with session and login details.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 280,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 0,
+            "order": 5,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT TOP 20 st.session_id AS [Session], t.transaction_begin_time AS [Started], DATEDIFF(MINUTE,t.transaction_begin_time,GETDATE()) AS [Duration (min)], t.transaction_type AS [Type], s.login_name AS [Login], s.host_name AS [Host], s.program_name AS [Program] FROM sys.dm_tran_active_transactions t JOIN sys.dm_tran_session_transactions st ON t.transaction_id = st.transaction_id JOIN sys.dm_exec_sessions s ON st.session_id = s.session_id WHERE DATEDIFF(MINUTE,t.transaction_begin_time,GETDATE()) \u003E 5 ORDER BY t.transaction_begin_time ASC"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 20,
           "dataGridTopRows": 0
         }
       ]

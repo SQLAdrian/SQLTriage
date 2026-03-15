@@ -14,6 +14,15 @@ namespace SqlHealthAssessment.Data.Services
     public class PrintService
     {
         private CoreWebView2? _webView;
+        private readonly AuditLogService? _auditLog;
+
+        /// <summary>
+        /// Constructor with optional AuditLogService for audit trail.
+        /// </summary>
+        public PrintService(AuditLogService? auditLog = null)
+        {
+            _auditLog = auditLog;
+        }
 
         public void SetWebView(CoreWebView2 webView)
         {
@@ -29,7 +38,10 @@ namespace SqlHealthAssessment.Data.Services
         public async Task<(bool Success, string? Path, string? Error)> PrintToPdfAsync(string fileName = "Report.pdf")
         {
             if (_webView == null)
+            {
+                _auditLog?.LogExportOperation("PDF", fileName, false, "WebView not available");
                 return (false, null, "WebView not available");
+            }
 
             var outputDir = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "output");
             Directory.CreateDirectory(outputDir);
@@ -65,10 +77,12 @@ namespace SqlHealthAssessment.Data.Services
             try
             {
                 await tcs.Task;
+                _auditLog?.LogExportOperation("PDF", fileName, true);
                 return (true, filePath, null);
             }
             catch (System.Exception ex)
             {
+                _auditLog?.LogExportOperation("PDF", fileName, false, ex.Message);
                 System.Diagnostics.Debug.WriteLine($"PDF export error: {ex.Message}");
                 return (false, null, ex.Message);
             }

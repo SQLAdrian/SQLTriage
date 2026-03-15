@@ -1,5 +1,6 @@
 <!--/* In the name of God, the Merciful, the Compassionate */-->
 @inject IJSRuntime JS
+@using SqlHealthAssessment.Data.Services
 
 @if (IsVisible)
 {
@@ -34,32 +35,62 @@
 }
 
 @code {
-    [Parameter] public string? PlanXml { get; set; }
-    [Parameter] public string? QueryText { get; set; }
+    [Parameter] public string? PlanXml    { get; set; }
+    [Parameter] public string? QueryText  { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
 
     public bool IsVisible { get; private set; }
 
     private bool _showQueryText = false;
 
+    // ── ROLLBACK FLAG ────────────────────────────────────────────────────────
+    // Set to false to instantly revert to the legacy JS-only renderer.
+    private const bool UseV2Renderer = true;
+
     public async Task ShowAsync(string xml, string? queryText = null)
     {
-        PlanXml = xml;
-        QueryText = queryText;
+        PlanXml       = xml;
+        QueryText     = queryText;
         _showQueryText = false;
-        IsVisible = true;
+        IsVisible     = true;
         StateHasChanged();
         await Task.Delay(50); // allow DOM to render
+
+        if (UseV2Renderer)
+        {
+            try
+            {
+                var json = ExecutionPlanParser.ParseToJson(xml);
+                await JS.InvokeVoidAsync("queryPlanInteropV2.showPlan", "qp-container", json);
+                return;
+            }
+            catch (Exception ex)
+            {
+                // Surface parse errors in the container instead of silently falling back
+                try
+                {
+                    await JS.InvokeVoidAsync("queryPlanInteropV2.showParseError", "qp-container", ex.Message);
+                    return;
+                }
+                catch
+                {
+                    // JS not available — fall through to legacy renderer
+                }
+            }
+        }
+
+        // Legacy renderer (always available as rollback)
         await JS.InvokeVoidAsync("queryPlanInterop.showPlan", "qp-container", xml);
     }
 
     public async Task CloseAsync()
     {
         IsVisible = false;
-        PlanXml = null;
+        PlanXml   = null;
         QueryText = null;
         StateHasChanged();
-        await JS.InvokeVoidAsync("queryPlanInterop.clearPlan", "qp-container");
+        var clearFn = UseV2Renderer ? "queryPlanInteropV2.clearPlan" : "queryPlanInterop.clearPlan";
+        await JS.InvokeVoidAsync(clearFn, "qp-container");
     }
 
     private async Task Close()

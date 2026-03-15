@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
@@ -40,7 +41,17 @@ namespace SqlHealthAssessment.Data
 
             try
             {
-                using var conn = (SqlConnection)_connectionFactory.CreateConnection();
+                SqlConnection conn;
+                // Always use master database to avoid connection failures
+                // when the target database doesn't exist yet
+                if (_connectionFactory is SqlServerConnectionFactory sqlFactory)
+                {
+                    conn = (SqlConnection)sqlFactory.CreateConnection("master");
+                }
+                else
+                {
+                    conn = (SqlConnection)_connectionFactory.CreateConnection();
+                }
                 await conn.OpenAsync(cancellationToken);
 
                 using var cmd = new SqlCommand(
