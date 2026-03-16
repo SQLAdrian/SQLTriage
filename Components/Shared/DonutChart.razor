@@ -2,10 +2,10 @@
 @using ApexCharts
 @using SqlHealthAssessment.Data.Models
 
-<div class="chart-panel">
+<div class="bg-app-bg-panel rounded-lg p-3 my-2">
     @if (!string.IsNullOrEmpty(Title))
     {
-        <div class="chart-title">@Title</div>
+        <div class="text-sm font-semibold text-app-text-primary mb-2 pl-1">@Title</div>
     }
 
     @if (Data != null && Data.Any())
@@ -23,7 +23,7 @@
     }
     else
     {
-        <div class="chart-empty">No data available</div>
+        <div class="text-center py-10 text-app-text-muted">No data available</div>
     }
 </div>
 

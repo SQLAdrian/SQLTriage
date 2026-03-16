@@ -3736,7 +3736,7 @@
           },
           "query": {
             "source": "",
-            "sqlServer": "SELECT TOP 20 CAST(qs.total_worker_time/1000.0 AS DECIMAL(18,1)) AS [Total CPU (ms)], qs.execution_count AS [Executions], CAST(qs.total_worker_time/qs.execution_count/1000.0 AS DECIMAL(18,1)) AS [Avg CPU (ms)], CAST(qs.total_logical_reads/qs.execution_count AS BIGINT) AS [Avg Reads], qs.last_execution_time AS [Last Exec], LEFT(REPLACE(REPLACE(st.text,CHAR(13),\u0027 \u0027),CHAR(10),\u0027 \u0027),150) AS [SQL Text] FROM sys.dm_exec_query_stats qs CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st ORDER BY qs.total_worker_time DESC"
+            "sqlServer": "SELECT TOP 20 CAST(qs.total_worker_time/1000.0 AS DECIMAL(18,1)) AS [Total CPU (ms)], qs.execution_count AS [Executions], CAST(qs.total_worker_time/qs.execution_count/1000.0 AS DECIMAL(18,1)) AS [Avg CPU (ms)], CAST(qs.total_logical_reads/qs.execution_count AS BIGINT) AS [Avg Reads], qs.last_execution_time AS [Last Exec], LEFT(REPLACE(REPLACE(st.text,CHAR(13),\u0027 \u0027),CHAR(10),\u0027 \u0027),150) AS [SQL Text] \n,qp.query_plan [Plan]\nFROM sys.dm_exec_query_stats qs \nOUTER APPLY sys.dm_exec_sql_text(qs.sql_handle) st \nOUTER APPLY sys.dm_exec_query_plan(qs.plan_handle) AS qp\nORDER BY qs.total_worker_time DESC"
           },
           "defaultDatabase": "master",
           "statUnit": "",
@@ -3766,7 +3766,7 @@
           },
           "query": {
             "source": "",
-            "sqlServer": "SELECT TOP 20 CAST(qs.total_logical_reads/1000.0 AS DECIMAL(18,1)) AS [Total Reads (K)], qs.execution_count AS [Executions], CAST(qs.total_logical_reads/qs.execution_count AS BIGINT) AS [Avg Reads], CAST(qs.total_worker_time/qs.execution_count/1000.0 AS DECIMAL(18,1)) AS [Avg CPU (ms)], qs.last_execution_time AS [Last Exec], LEFT(REPLACE(REPLACE(st.text,CHAR(13),\u0027 \u0027),CHAR(10),\u0027 \u0027),150) AS [SQL Text] FROM sys.dm_exec_query_stats qs CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st ORDER BY qs.total_logical_reads DESC"
+            "sqlServer": "SELECT TOP 20 CAST(qs.total_logical_reads/1000.0 AS DECIMAL(18,1)) AS [Total Reads (K)], qs.execution_count AS [Executions], CAST(qs.total_logical_reads/qs.execution_count AS BIGINT) AS [Avg Reads], CAST(qs.total_worker_time/qs.execution_count/1000.0 AS DECIMAL(18,1)) AS [Avg CPU (ms)], qs.last_execution_time AS [Last Exec], LEFT(REPLACE(REPLACE(st.text,CHAR(13),\u0027 \u0027),CHAR(10),\u0027 \u0027),150) AS [SQL Text] \n,qp.query_plan [Plan]\nFROM sys.dm_exec_query_stats qs \nOUTER APPLY sys.dm_exec_sql_text(qs.sql_handle) st \nOUTER APPLY sys.dm_exec_query_plan(qs.plan_handle) AS qp\nORDER BY qs.total_logical_reads DESC\n"
           },
           "defaultDatabase": "master",
           "statUnit": "",
@@ -3796,7 +3796,7 @@
           },
           "query": {
             "source": "",
-            "sqlServer": "SELECT TOP 20 CAST(qs.total_elapsed_time/1000.0 AS DECIMAL(18,1)) AS [Total Duration (ms)], qs.execution_count AS [Executions], CAST(qs.total_elapsed_time/qs.execution_count/1000.0 AS DECIMAL(18,1)) AS [Avg Duration (ms)], CAST(qs.total_logical_reads/qs.execution_count AS BIGINT) AS [Avg Reads], qs.last_execution_time AS [Last Exec], LEFT(REPLACE(REPLACE(st.text,CHAR(13),\u0027 \u0027),CHAR(10),\u0027 \u0027),150) AS [SQL Text] FROM sys.dm_exec_query_stats qs CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st ORDER BY qs.total_elapsed_time DESC"
+            "sqlServer": "SELECT TOP 20 CAST(qs.total_elapsed_time/1000.0 AS DECIMAL(18,1)) AS [Total Duration (ms)], qs.execution_count AS [Executions], CAST(qs.total_elapsed_time/qs.execution_count/1000.0 AS DECIMAL(18,1)) AS [Avg Duration (ms)], CAST(qs.total_logical_reads/qs.execution_count AS BIGINT) AS [Avg Reads], qs.last_execution_time AS [Last Exec], LEFT(REPLACE(REPLACE(st.text,CHAR(13),\u0027 \u0027),CHAR(10),\u0027 \u0027),150) AS [SQL Text] \n,qp.query_plan [Plan]\nFROM sys.dm_exec_query_stats qs \nOUTER APPLY sys.dm_exec_sql_text(qs.sql_handle) st \nOUTER APPLY sys.dm_exec_query_plan(qs.plan_handle) AS qp\nORDER BY qs.total_elapsed_time DESC"
           },
           "defaultDatabase": "master",
           "statUnit": "",
@@ -4137,7 +4137,7 @@
           },
           "query": {
             "source": "",
-            "sqlServer": "SELECT f.name AS [File], f.physical_name AS [Path], CAST(f.size*8.0/1024 AS DECIMAL(10,1)) AS [Size MB], CAST((fs.user_object_reserved_page_count\u002Bfs.internal_object_reserved_page_count\u002Bfs.version_store_reserved_page_count)*8.0/1024 AS DECIMAL(10,1)) AS [Used MB], CAST(fs.unallocated_extent_page_count*8.0/1024 AS DECIMAL(10,1)) AS [Free MB] FROM sys.dm_db_file_space_usage fs CROSS JOIN tempdb.sys.database_files f WHERE f.file_id = fs.file_id"
+            "sqlServer": "SELECT f.name AS [File], f.physical_name AS [Path], CAST(f.size*8.0/1024 AS DECIMAL(10,1)) AS [Size MB], CAST((fs.user_object_reserved_page_count\u002Bfs.internal_object_reserved_page_count\u002Bfs.version_store_reserved_page_count)*8.0/1024 AS DECIMAL(10,1)) AS [Used MB], CAST(fs.unallocated_extent_page_count*8.0/1024 AS DECIMAL(10,1)) AS [Free MB] FROM tempdb.sys.dm_db_file_space_usage fs CROSS JOIN tempdb.sys.database_files f WHERE f.file_id = fs.file_id"
           },
           "defaultDatabase": "master",
           "statUnit": "",
@@ -4208,6 +4208,421 @@
           "colorThresholds": [],
           "dataGridIsClickable": false,
           "dataGridMaxRows": 20,
+          "dataGridTopRows": 0
+        }
+      ]
+    },
+    {
+      "id": "bpcheck",
+      "title": "Best Practices Check",
+      "description": "",
+      "navTitle": "BPCheck",
+      "navIcon": "fa-solid fa-circle-check",
+      "navCategory": "Audits",
+      "navOrder": 10,
+      "route": "/bpcheck",
+      "enabled": true,
+      "source": "sqlwatch",
+      "defaultDatabase": "master",
+      "showAllOption": false,
+      "panels": [
+        {
+          "id": "bp.maxdop",
+          "title": "MaxDOP",
+          "description": "",
+          "enabled": true,
+          "source": "",
+          "panelType": "StatCard",
+          "chartType": "Line",
+          "height": 250,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 0,
+            "order": 1,
+            "spanColumns": false
+          },
+          "query": {
+            "source": "sqlwatch",
+            "sqlServer": "\r\nSELECT CAST([value] AS INT) AS [Value]\r\nFROM sys.configurations WITH (NOLOCK)\r\nWHERE name = \u0027max degree of parallelism\u0027"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "%",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0
+        },
+        {
+          "id": "bp.work_queue",
+          "title": "Work Queue",
+          "description": "",
+          "enabled": true,
+          "source": "",
+          "panelType": "StatCard",
+          "chartType": "Line",
+          "height": 250,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 0,
+            "order": 2,
+            "spanColumns": false
+          },
+          "query": {
+            "source": "sqlwatch",
+            "sqlServer": "\r\nSELECT SUM(work_queue_count) AS [Value]\r\nFROM sys.dm_os_schedulers WITH (NOLOCK)\r\nWHERE parent_node_id \u003C 64 AND scheduler_id \u003C 255"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "%",
+          "valueFormat": "",
+          "colorThresholds": [
+            {
+              "operator": "\u003E=",
+              "value": 0,
+              "color": "#1b5e20",
+              "label": "Normal"
+            },
+            {
+              "operator": "\u003E=",
+              "value": 1,
+              "color": "#f44336",
+              "label": "Critical"
+            }
+          ],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0
+        },
+        {
+          "id": "bp.lpim",
+          "title": "LPIM Active",
+          "description": "",
+          "enabled": true,
+          "source": "",
+          "panelType": "StatCard",
+          "chartType": "Line",
+          "height": 250,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 0,
+            "order": 3,
+            "spanColumns": false
+          },
+          "query": {
+            "source": "sqlwatch",
+            "sqlServer": "\r\nSELECT CASE WHEN sql_memory_model = 2 THEN 1 ELSE 0 END AS [Value]\r\nFROM sys.dm_os_sys_info WITH (NOLOCK)"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "%",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0
+        },
+        {
+          "id": "bp.suspect_pages",
+          "title": "Suspect Pages",
+          "description": "",
+          "enabled": true,
+          "source": "",
+          "panelType": "StatCard",
+          "chartType": "Line",
+          "height": 250,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 0,
+            "order": 4,
+            "spanColumns": false
+          },
+          "query": {
+            "source": "sqlwatch",
+            "sqlServer": "\r\nSELECT COUNT(*) AS [Value]\r\nFROM msdb.dbo.suspect_pages WITH (NOLOCK)\r\nWHERE event_type IN (1, 2, 3)"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "%",
+          "valueFormat": "",
+          "colorThresholds": [
+            {
+              "operator": "\u003E=",
+              "value": 0,
+              "color": "#1b5e20",
+              "label": "Clean"
+            },
+            {
+              "operator": "\u003E=",
+              "value": 1,
+              "color": "#f44336",
+              "label": "Critical"
+            }
+          ],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0
+        },
+        {
+          "id": "bp.policy_violations",
+          "title": "Policy Violations",
+          "description": "",
+          "enabled": true,
+          "source": "",
+          "panelType": "StatCard",
+          "chartType": "Line",
+          "height": 250,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 0,
+            "order": 5,
+            "spanColumns": false
+          },
+          "query": {
+            "source": "sqlwatch",
+            "sqlServer": "\r\nSELECT COUNT(*) AS [Value]\r\nFROM sys.sql_logins WITH (NOLOCK)\r\nWHERE is_policy_checked = 0 OR is_expiration_checked = 0"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "%",
+          "valueFormat": "",
+          "colorThresholds": [
+            {
+              "operator": "\u003E=",
+              "value": 0,
+              "color": "#1b5e20",
+              "label": "Clean"
+            },
+            {
+              "operator": "\u003E=",
+              "value": 1,
+              "color": "#ff9800",
+              "label": "Warning"
+            }
+          ],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0
+        },
+        {
+          "id": "bp.memory_config",
+          "title": "Max Server Memory vs System RAM",
+          "description": "",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 250,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 1,
+            "order": 10,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "sqlwatch",
+            "sqlServer": "\r\nSELECT\r\n    sc.[value]                                      AS [configured_max_mem_MB],\r\n    dosi.physical_memory_kb / 1024                  AS [total_system_mem_MB],\r\n    CAST(sc.[value] * 100.0\r\n         / NULLIF(dosi.physical_memory_kb / 1024, 0)\r\n         AS DECIMAL(5,2))                           AS [pct_of_system_mem],\r\n    CASE\r\n        WHEN sc.[value] = 2147483647\r\n            THEN \u0027[WARNING] MaxServerMemory is default \u2014 revise before memory pressure occurs\u0027\r\n        WHEN sc.[value] \u003E dosi.physical_memory_kb / 1024\r\n            THEN \u0027[WARNING] MaxServerMemory exceeds total physical RAM\u0027\r\n        WHEN sc.[value] * 100.0 / NULLIF(dosi.physical_memory_kb / 1024, 0) \u003E 90\r\n            THEN \u0027[CAUTION] MaxServerMemory leaves \u003C10 % for OS \u2014 consider reducing\u0027\r\n        ELSE \u0027[OK]\u0027\r\n    END                                             AS [recommendation]\r\nFROM sys.configurations sc WITH (NOLOCK)\r\nCROSS JOIN sys.dm_os_sys_info dosi WITH (NOLOCK)\r\nWHERE sc.name = \u0027max server memory (MB)\u0027"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "%",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0
+        },
+        {
+          "id": "bp.io_stall",
+          "title": "I/O Stall Analysis (cumulative since restart)",
+          "description": "",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 250,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 1,
+            "order": 11,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "sqlwatch",
+            "sqlServer": "\r\nSELECT\r\n    DB_NAME(f.database_id)                                          AS [database_name],\r\n    f.name                                                          AS [logical_file],\r\n    f.type_desc                                                     AS [file_type],\r\n    fs.num_of_reads                                                 AS [read_count],\r\n    fs.num_of_writes                                                AS [write_count],\r\n    CAST(fs.io_stall_read_ms  / (1.0 \u002B fs.num_of_reads)  AS NUMERIC(10,2)) AS [avg_read_latency_ms],\r\n    CAST(fs.io_stall_write_ms / (1.0 \u002B fs.num_of_writes) AS NUMERIC(10,2)) AS [avg_write_latency_ms],\r\n    fs.io_stall                                                     AS [total_stall_ms],\r\n    CASE\r\n        WHEN fs.io_stall_read_ms  / (1.0 \u002B fs.num_of_reads)  \u003E= 50\r\n          OR fs.io_stall_write_ms / (1.0 \u002B fs.num_of_writes) \u003E= 50\r\n            THEN \u0027[WARNING] High latency \u2014 review storage configuration\u0027\r\n        WHEN fs.io_stall_read_ms  / (1.0 \u002B fs.num_of_reads)  \u003E= 20\r\n          OR fs.io_stall_write_ms / (1.0 \u002B fs.num_of_writes) \u003E= 20\r\n            THEN \u0027[CAUTION] Elevated latency\u0027\r\n        ELSE \u0027[OK]\u0027\r\n    END                                                             AS [status]\r\nFROM sys.dm_io_virtual_file_stats(NULL, NULL) AS fs\r\nINNER JOIN sys.master_files AS f WITH (NOLOCK)\r\n    ON fs.database_id = f.database_id AND fs.file_id = f.file_id\r\nORDER BY fs.io_stall DESC"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "%",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0
+        },
+        {
+          "id": "bp.wait_stats",
+          "title": "Top Wait Stats by Category (cumulative since restart)",
+          "description": "",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 250,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 1,
+            "order": 12,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "sqlwatch",
+            "sqlServer": "\r\n;WITH Waits AS (\r\n    SELECT\r\n        wait_type,\r\n        wait_time_ms / 1000.0                                                           AS wait_time_s,\r\n        signal_wait_time_ms / 1000.0                                                    AS signal_wait_time_s,\r\n        (wait_time_ms - signal_wait_time_ms) / 1000.0                                  AS resource_wait_time_s,\r\n        100.0 * wait_time_ms / NULLIF(SUM(wait_time_ms) OVER (), 0)                   AS pct,\r\n        ROW_NUMBER() OVER (ORDER BY wait_time_ms DESC)                                  AS rn\r\n    FROM sys.dm_os_wait_stats WITH (NOLOCK)\r\n    WHERE wait_type NOT IN (\r\n        \u0027RESOURCE_QUEUE\u0027,\u0027SQLTRACE_INCREMENTAL_FLUSH_SLEEP\u0027,\u0027SP_SERVER_DIAGNOSTICS_SLEEP\u0027,\r\n        \u0027SOSHOST_SLEEP\u0027,\u0027QDS_PERSIST_TASK_MAIN_LOOP_SLEEP\u0027,\u0027QDS_CLEANUP_STALE_QUERIES_TASK_MAIN_LOOP_SLEEP\u0027,\r\n        \u0027LOGMGR_QUEUE\u0027,\u0027CHECKPOINT_QUEUE\u0027,\u0027REQUEST_FOR_DEADLOCK_SEARCH\u0027,\u0027XE_TIMER_EVENT\u0027,\r\n        \u0027BROKER_TASK_STOP\u0027,\u0027CLR_MANUAL_EVENT\u0027,\u0027CLR_AUTO_EVENT\u0027,\u0027DISPATCHER_QUEUE_SEMAPHORE\u0027,\r\n        \u0027FT_IFTS_SCHEDULER_IDLE_WAIT\u0027,\u0027BROKER_TO_FLUSH\u0027,\u0027XE_DISPATCHER_WAIT\u0027,\u0027XE_DISPATCHER_JOIN\u0027,\r\n        \u0027MSQL_XP\u0027,\u0027WAIT_FOR_RESULTS\u0027,\u0027CLR_SEMAPHORE\u0027,\u0027LAZYWRITER_SLEEP\u0027,\u0027SLEEP_TASK\u0027,\r\n        \u0027SLEEP_SYSTEMTASK\u0027,\u0027SQLTRACE_BUFFER_FLUSH\u0027,\u0027WAITFOR\u0027,\u0027BROKER_EVENTHANDLER\u0027,\u0027TRACEWRITE\u0027,\r\n        \u0027FT_IFTSHC_MUTEX\u0027,\u0027BROKER_RECEIVE_WAITFOR\u0027,\u0027ONDEMAND_TASK_QUEUE\u0027,\u0027DBMIRROR_EVENTS_QUEUE\u0027,\r\n        \u0027DBMIRRORING_CMD\u0027,\u0027BROKER_TRANSMITTER\u0027,\u0027SQLTRACE_WAIT_ENTRIES\u0027,\u0027SLEEP_BPOOL_FLUSH\u0027,\r\n        \u0027SQLTRACE_LOCK\u0027,\u0027DIRTY_PAGE_POLL\u0027,\u0027HADR_FILESTREAM_IOMGR_IOCOMPLETION\u0027,\r\n        \u0027WAIT_XTP_OFFLINE_CKPT_NEW_LOG\u0027\r\n    )\r\n    AND wait_type NOT LIKE \u0027SLEEP_%\u0027\r\n)\r\nSELECT\r\n    W1.wait_type,\r\n    CAST(W1.wait_time_s        AS DECIMAL(14,2)) AS wait_time_s,\r\n    CAST(W1.signal_wait_time_s AS DECIMAL(14,2)) AS signal_wait_time_s,\r\n    CAST(W1.pct                AS DECIMAL(14,2)) AS pct,\r\n    CASE\r\n        WHEN W1.wait_type = \u0027SOS_SCHEDULER_YIELD\u0027                              THEN \u0027CPU\u0027\r\n        WHEN W1.wait_type = \u0027THREADPOOL\u0027                                       THEN \u0027CPU - Worker Threads\u0027\r\n        WHEN W1.wait_type IN (\u0027CXPACKET\u0027,\u0027EXCHANGE\u0027,\u0027CXCONSUMER\u0027,\r\n             \u0027HTBUILD\u0027,\u0027HTDELETE\u0027,\u0027HTMEMO\u0027,\u0027HTREINIT\u0027,\u0027HTREPARTITION\u0027)         THEN \u0027CPU - Parallelism\u0027\r\n        WHEN W1.wait_type LIKE \u0027LCK_%\u0027 OR W1.wait_type = \u0027LOCK\u0027               THEN \u0027Lock\u0027\r\n        WHEN W1.wait_type LIKE \u0027LATCH_%\u0027                                       THEN \u0027Latch\u0027\r\n        WHEN W1.wait_type LIKE \u0027PAGELATCH_%\u0027                                   THEN \u0027Buffer Latch\u0027\r\n        WHEN W1.wait_type LIKE \u0027PAGEIOLATCH_%\u0027                                 THEN \u0027Buffer IO\u0027\r\n        WHEN W1.wait_type IN (\u0027LOGMGR\u0027,\u0027LOGBUFFER\u0027,\u0027LOGMGR_FLUSH\u0027,\u0027WRITELOG\u0027) THEN \u0027Tran Log IO\u0027\r\n        WHEN W1.wait_type IN (\u0027ASYNC_NETWORK_IO\u0027,\u0027NET_WAITFOR_PACKET\u0027)         THEN \u0027Network IO\u0027\r\n        WHEN W1.wait_type LIKE \u0027RESOURCE_SEMAPHORE_%\u0027                          THEN \u0027Memory - Compilation\u0027\r\n        WHEN W1.wait_type IN (\u0027UTIL_PAGE_ALLOC\u0027,\u0027SOS_VIRTUALMEMORY_LOW\u0027,\r\n             \u0027SOS_RESERVEDMEMBLOCKLIST\u0027,\u0027RESOURCE_SEMAPHORE\u0027,\u0027CMEMTHREAD\u0027)     THEN \u0027Memory\u0027\r\n        ELSE \u0027Other\u0027\r\n    END AS wait_category\r\nFROM Waits W1\r\nWHERE W1.wait_time_s \u003E= 0.01\r\nORDER BY W1.rn"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "%",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0
+        },
+        {
+          "id": "bp.worker_threads",
+          "title": "Worker Thread Health",
+          "description": "",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 250,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 1,
+            "order": 13,
+            "spanColumns": false
+          },
+          "query": {
+            "source": "sqlwatch",
+            "sqlServer": "\r\nSELECT\r\n    SUM(current_tasks_count)   AS [current_tasks],\r\n    SUM(runnable_tasks_count)  AS [runnable_tasks],\r\n    SUM(work_queue_count)      AS [work_queue_count],\r\n    SUM(pending_disk_io_count) AS [pending_disk_io],\r\n    CASE\r\n        WHEN SUM(work_queue_count) \u003E 1\r\n            THEN \u0027[WARNING] Work queue \u003E 1 \u2014 possible worker thread exhaustion\u0027\r\n        WHEN AVG(runnable_tasks_count) \u003E 2\r\n            THEN \u0027[CAUTION] High runnable task count \u2014 CPU pressure\u0027\r\n        ELSE \u0027[OK]\u0027\r\n    END AS [status]\r\nFROM sys.dm_os_schedulers WITH (NOLOCK)\r\nWHERE parent_node_id \u003C 64 AND scheduler_id \u003C 255"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "%",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0
+        },
+        {
+          "id": "bp.missing_indexes",
+          "title": "High-Impact Missing Indexes (Score \u2265 100,000)",
+          "description": "",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 250,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 1,
+            "order": 14,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "sqlwatch",
+            "sqlServer": "\r\nSELECT\r\n    DB_NAME(i.database_id)                                                          AS [database_name],\r\n    OBJECT_NAME(i.object_id, i.database_id)                                         AS [table_name],\r\n    i.equality_columns                                                              AS [equality_key_cols],\r\n    i.inequality_columns                                                            AS [inequality_key_cols],\r\n    i.included_columns                                                              AS [included_cols],\r\n    s.user_seeks \u002B s.user_scans                                                     AS [user_hits],\r\n    CAST(s.avg_user_impact       AS DECIMAL(6,2))                                   AS [avg_impact_pct],\r\n    CAST((s.user_seeks \u002B s.user_scans)\r\n         * s.avg_total_user_cost * s.avg_user_impact AS DECIMAL(18,0))              AS [score]\r\nFROM sys.dm_db_missing_index_details i WITH (NOLOCK)\r\nINNER JOIN sys.dm_db_missing_index_groups g WITH (NOLOCK)\r\n    ON i.index_handle = g.index_handle\r\nINNER JOIN sys.dm_db_missing_index_group_stats s WITH (NOLOCK)\r\n    ON s.group_handle = g.index_group_handle\r\nWHERE i.database_id \u003E 4\r\n  AND (s.user_seeks \u002B s.user_scans) * s.avg_total_user_cost * s.avg_user_impact \u003E= 100000\r\nORDER BY score DESC"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "%",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0
+        },
+        {
+          "id": "bp.password_policy",
+          "title": "Password Policy Violations",
+          "description": "",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 250,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 1,
+            "order": 15,
+            "spanColumns": false
+          },
+          "query": {
+            "source": "sqlwatch",
+            "sqlServer": "\r\nSELECT\r\n    name                    AS [login_name],\r\n    is_policy_checked       AS [policy_checked],\r\n    is_expiration_checked   AS [expiration_checked],\r\n    LOGINPROPERTY(name, \u0027IsLocked\u0027)   AS [is_locked],\r\n    LOGINPROPERTY(name, \u0027IsExpired\u0027)  AS [is_expired]\r\nFROM sys.sql_logins WITH (NOLOCK)\r\nWHERE is_policy_checked = 0 OR is_expiration_checked = 0\r\nORDER BY name"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "%",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0
+        },
+        {
+          "id": "bp.suspect_pages_detail",
+          "title": "Suspect Pages Detail",
+          "description": "",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 250,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 1,
+            "order": 16,
+            "spanColumns": false
+          },
+          "query": {
+            "source": "sqlwatch",
+            "sqlServer": "\r\nSELECT\r\n    DB_NAME(database_id) AS [database_name],\r\n    file_id              AS [file_id],\r\n    page_id              AS [page_id],\r\n    CASE event_type\r\n        WHEN 1 THEN \u0027Error 823 / unspecified 824\u0027\r\n        WHEN 2 THEN \u0027Bad Checksum\u0027\r\n        WHEN 3 THEN \u0027Torn Page\u0027\r\n        ELSE CAST(event_type AS VARCHAR(10))\r\n    END                  AS [event_type],\r\n    error_count          AS [error_count],\r\n    last_update_date     AS [last_update_date]\r\nFROM msdb.dbo.suspect_pages WITH (NOLOCK)\r\nWHERE event_type IN (1, 2, 3)\r\nORDER BY DB_NAME(database_id), last_update_date DESC, file_id, page_id"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "%",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
           "dataGridTopRows": 0
         }
       ]

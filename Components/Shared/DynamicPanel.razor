@@ -25,30 +25,34 @@
     case "StatCard":
         @if (StatData != null)
         {
-            <StatCard Label="@Panel.Title"
-                      Value="@StatData.Value"
-                      Unit="@Panel.StatUnit"
-                      Color="@StatData.Color"
-                      ValueFormat="@Panel.ValueFormat" />
-            @if (!string.IsNullOrEmpty(Panel.Description))
-            {
-                <div class="panel-description">@Panel.Description</div>
-            }
+            <div class="stat-panel-wrapper">
+                <StatCard Label="@Panel.Title"
+                          Value="@StatData.Value"
+                          Unit="@Panel.StatUnit"
+                          Color="@StatData.Color"
+                          ValueFormat="@Panel.ValueFormat" />
+                @if (!string.IsNullOrEmpty(Panel.Description))
+                {
+                    <div class="panel-description">@Panel.Description</div>
+                }
+            </div>
         }
         break;
 
     case "DeltaStatCard":
         @if (StatData != null)
         {
-            <DeltaStatCard Label="@Panel.Title"
-                           Value="@StatData.Value"
-                           Unit="@Panel.StatUnit"
-                           Color="@StatData.Color"
-                           ValueFormat="@Panel.ValueFormat" />
-            @if (!string.IsNullOrEmpty(Panel.Description))
-            {
-                <div class="panel-description">@Panel.Description</div>
-            }
+            <div class="stat-panel-wrapper">
+                <DeltaStatCard Label="@Panel.Title"
+                               Value="@StatData.Value"
+                               Unit="@Panel.StatUnit"
+                               Color="@StatData.Color"
+                               ValueFormat="@Panel.ValueFormat" />
+                @if (!string.IsNullOrEmpty(Panel.Description))
+                {
+                    <div class="panel-description">@Panel.Description</div>
+                }
+            </div>
         }
         break;
 

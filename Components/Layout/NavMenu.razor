@@ -9,14 +9,14 @@
 @implements IAsyncDisposable
 
 
-<div class="nav-menu">
-    <div class="nav-brand">
-        <span class="nav-brand-icon"><i class="fa-solid fa-heart-pulse"></i></span>
-        <span class="nav-brand-text"><p>SQL Health Assessment</p></span>
+<div class="w-60 min-w-60 bg-app-bg-secondary border-r border-app-border flex flex-col py-3 overflow-y-auto max-h-screen">
+    <div class="px-4 pb-4 border-b border-app-border mb-2 flex items-center gap-2">
+        <span class="text-lg text-app-accent"><i class="fa-solid fa-heart-pulse"></i></span>
+        <span class="text-base font-semibold text-app-text-primary">SQL Health Assessment</span>
     </div>
     <nav>
         <br />
-        <div class="nav-divider">Live</div>
+        <div class="px-3 py-1 text-xs font-bold uppercase tracking-wider text-app-text-secondary mt-2 border-t border-app-border">Live</div>
         <br />
 
         @* Dynamic dashboards — master DB, Dashboards category only (excludes Tools, Audits, etc.) *@
@@ -30,7 +30,7 @@
         }
 
         <br />
-        <div class="nav-divider">SQLWATCH</div>
+        <div class="px-3 py-1 text-xs font-bold uppercase tracking-wider text-app-text-secondary mt-2 border-t border-app-border">SQLWATCH</div>
         <br />
         @if (_SQLWATCHExists)
         {
@@ -45,11 +45,11 @@
         }
         else
         {
-            <span class="nav-db-missing">SQLWATCH database not installed</span>
+            <span class="block px-4 py-1 text-xs text-app-text-muted italic">SQLWATCH database not installed</span>
         }
 
         <br />
-        <div class="nav-divider">PerformanceMonitor</div>
+        <div class="px-3 py-1 text-xs font-bold uppercase tracking-wider text-app-text-secondary mt-2 border-t border-app-border">PerformanceMonitor</div>
         <br />
         @if (_performanceMonitorExists)
         {
@@ -64,81 +64,78 @@
         }
         else
         {
-            <span class="nav-db-missing">PerformanceMonitor database not installed</span>
+            <span class="block px-4 py-1 text-xs text-app-text-muted italic">PerformanceMonitor database not installed</span>
         }
 
         <br />
-        <div class="nav-divider">Audits</div>
+        <div class="px-3 py-1 text-xs font-bold uppercase tracking-wider text-app-text-secondary mt-2 border-t border-app-border">Audits</div>
         <br />
         <NavLink href="/quickcheck" class="nav-link" title="Ctrl+0">
-            <span class="nav-icon"><i class="fa-solid fa-bolt-lightning"></i></span> Quick Check
+            <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-bolt-lightning"></i></span> Quick Check
         </NavLink>
         <NavLink href="/fullaudit" class="nav-link" title="Ctrl+4">
-            <span class="nav-icon"><i class="fa-solid fa-clipboard-check"></i></span> Full Audit
+            <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-clipboard-check"></i></span> Full Audit
         </NavLink>
         <NavLink href="/vulnerabilityassessment" class="nav-link">
-            <span class="nav-icon"><i class="fa-solid fa-shield-halved"></i></span> Vulnerability Assessment
+            <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-shield-halved"></i></span> Vulnerability Assessment
         </NavLink>
-        <NavLink href="/reports" class="nav-link">
-            <span class="nav-icon"><i class="fa-solid fa-file-pdf"></i></span> Reports
-        </NavLink>
+        @* Config-driven Audits dashboards *@
+        @foreach (var dashboard in DashboardConfig.Config.Dashboards
+            .Where(d => d.Enabled && d.NavCategory == "Audits")
+            .OrderBy(d => d.NavOrder))
+        {
+            <NavLink href="@dashboard.Route" class="nav-link">
+                @NavIcon(dashboard.NavIcon) @dashboard.NavTitle
+            </NavLink>
+        }
 
         <br />
-        <div class="nav-divider">Monitoring new server</div>
+        <div class="px-3 py-1 text-xs font-bold uppercase tracking-wider text-app-text-secondary mt-2 border-t border-app-border">Monitoring new server</div>
         <br />
         <NavLink href="/deploysqlwatch" class="nav-link">
-            <span class="nav-icon"><i class="fa-solid fa-eye"></i></span> SQLWATCH
+            <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-eye"></i></span> SQLWATCH
         </NavLink>
         <NavLink href="/deploydarlingPM" class="nav-link">
-            <span class="nav-icon"><i class="fa-solid fa-chart-simple"></i></span> Darling Perf Monitor
+            <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-chart-simple"></i></span> Darling Perf Monitor
         </NavLink>
 
         @* TOOLS_SECTION_VISIBLE — set to true when XEvent/Profiler, Schema Compare, Dependency Walker are implemented *@
         @if (ShowToolsSection)
         {
             <br />
-            <div class="nav-divider">Tools</div>
+            <div class="px-3 py-1 text-xs font-bold uppercase tracking-wider text-app-text-secondary mt-2 border-t border-app-border">Tools</div>
             <br />
             <NavLink href="/xevents" class="nav-link">
-                <span class="nav-icon"><i class="fa-solid fa-list-check"></i></span> XEvent / Profiler
-            </NavLink>
-            <NavLink href="/schemacompare" class="nav-link">
-                <span class="nav-icon"><i class="fa-solid fa-code-compare"></i></span> Schema Compare
-            </NavLink>
-            <NavLink href="/dependencywalker" class="nav-link">
-                <span class="nav-icon"><i class="fa-solid fa-sitemap"></i></span> Dependency Walker
+                <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-list-check"></i></span> XEvent / Profiler
             </NavLink>
         }
 
         <br />
         <br />
-        <div class="nav-divider">Configure</div>
+        <div class="px-3 py-1 text-xs font-bold uppercase tracking-wider text-app-text-secondary mt-2 border-t border-app-border">Configure</div>
         <br />
 
         <NavLink href="/settings" class="nav-link" title="Ctrl+6">
-            <span class="nav-icon"><i class="fa-solid fa-gear"></i></span> Settings
+            <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-gear"></i></span> Settings
         </NavLink>
         <NavLink href="/dashboard-editor" class="nav-link" title="Ctrl+7">
-            <span class="nav-icon"><i class="fa-solid fa-table-columns"></i></span> Dashboard Editor
+            <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-table-columns"></i></span> Dashboard Editor
         </NavLink>
         <NavLink href="/servers" class="nav-link" title="Ctrl+8">
-            <span class="nav-icon"><i class="fa-solid fa-server"></i></span> Servers
+            <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-server"></i></span> Servers
         </NavLink>
         <NavLink href="/bestpractice" class="nav-link">
-            <span class="nav-icon"><i class="fa-solid fa-list-check"></i></span> BP Checks
+            <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-list-check"></i></span> BP Checks
         </NavLink>
         <NavLink href="/guide" class="nav-link">
-            <span class="nav-icon"><i class="fa-solid fa-map"></i></span> Guide
-        </NavLink>
-        <NavLink href="/reports-rdl" class="nav-link">
-            <span class="nav-icon"><i class="fa-solid fa-file-pdf"></i></span> RDL Reports
+            <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-map"></i></span> Guide
         </NavLink>
         <NavLink href="/about" class="nav-link">
-            <span class="nav-icon"><i class="fa-solid fa-info-circle"></i></span> About
+            <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-info-circle"></i></span> About
         </NavLink>
     </nav>
-    <div class="nav-footer">
-        <small>Ctrl+1-9: Quick Nav</small>
+    <div class="mt-auto p-3 text-center border-t border-app-border">
+        <small class="text-2xs text-app-text-secondary">Ctrl+1-9: Quick Nav</small>
     </div>
 </div>
 

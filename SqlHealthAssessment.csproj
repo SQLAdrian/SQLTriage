@@ -85,10 +85,7 @@
     </PackageReference>
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.*" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.*" />
-    <PackageReference Include="Azure.Identity" Version="1.*" />
     <PackageReference Include="Polly" Version="8.4.2" />
-    <PackageReference Include="QuestPDF" Version="2026.2.3" />
-    <PackageReference Include="ReportViewerCore.NETCore" Version="15.1.33" />
     <PackageReference Include="Serilog" Version="4.*" />
     <PackageReference Include="Serilog.Extensions.Logging" Version="8.*" />
     <PackageReference Include="Serilog.Sinks.File" Version="6.*" />
@@ -96,6 +93,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Update="Config\ruleset.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>config/ruleset.json</TargetPath>
+    </Content>
     <Content Update="Config\appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <TargetPath>config/appsettings.json</TargetPath>
@@ -117,7 +118,6 @@
       <TargetPath>config/dashboard-config.json</TargetPath>
     </Content>
 
-    <Content Include="reports\BlitzReport.rdl" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
@@ -159,12 +159,6 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="BPScripts\WeeklyReportSchedule.sql">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="BPScripts\ruleset.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="BPScripts\DefaultRuleset.csv">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
 <None Update="scripts\Check_BP_Servers.sql">

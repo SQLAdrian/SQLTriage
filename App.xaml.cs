@@ -36,7 +36,7 @@ namespace SqlHealthAssessment
                 .Enrich.WithProperty("User", Environment.UserName)
                 .Enrich.WithProperty("Machine", Environment.MachineName)
                 .WriteTo.File(
-                    path: "logs/app.log",
+                    path: "logs/app-.log",
                     rollingInterval: RollingInterval.Day,
                     retainedFileCountLimit: 30,
                     outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
@@ -126,6 +126,7 @@ namespace SqlHealthAssessment
             services.AddSingleton<UserSettingsService>();
             services.AddSingleton<SessionDataService>();
             services.AddSingleton<ToastService>();
+            services.AddSingleton<LogCleanupService>();
             services.AddSingleton<MemoryMonitorService>();
             services.AddSingleton<ConfigurationValidator>();
             services.AddSingleton<AutoUpdateService>();
@@ -135,15 +136,12 @@ namespace SqlHealthAssessment
             services.AddSingleton<Data.Services.PrintService>();
             services.AddSingleton<Data.Services.SqlAssessmentService>();
             services.AddSingleton<Data.Services.XEventService>();
-            services.AddSingleton<Data.Services.SchemaCompareService>();
-            services.AddSingleton<Data.Services.DependencyWalkerService>();
             services.AddSingleton<Data.Services.AdminAuthService>();
-            services.AddSingleton<Data.Services.ReportService>();
-            services.AddSingleton<Data.Services.RdlReportService>();
+            services.AddSingleton<QuickCheckStateService>();
+            services.AddSingleton<Data.Services.VulnerabilityAssessmentStateService>();
 
-            // Local log service for debug logging
-            var maxLogSize = configuration.GetValue<long>("LogMaxFileSizeBytes", 5 * 1024 * 1024);
-            services.AddSingleton(new LocalLogService(maxLogSize));
+            // Local log service — thin wrapper over ILogger, routes through Serilog
+            services.AddSingleton<LocalLogService>();
 
             // liveQueries caching layer — delta-fetch + offline resilience
             services.AddSingleton<liveQueriesCacheStore>();
@@ -161,6 +159,9 @@ namespace SqlHealthAssessment
             {
                 Log.Warning("Configuration validation failed: {Errors}", string.Join(", ", errors));
             }
+
+            // Start log cleanup (runs now + every 24 hours)
+            Services.GetService<LogCleanupService>()?.Start();
 
             // Start memory monitoring
             Services.GetService<MemoryMonitorService>();

@@ -73,14 +73,14 @@
 
 <DashboardToolbar @bind-TimeRangeMinutes="TimeRangeMinutes"
                   @bind-AutoRefresh="AutoRefresh"
-                  @bind-TimezoneOffsetHours="TimezoneOffsetHours"
                   DataSource="@DataSource"
                   DataSourceChanged="OnDataSourceChanged"
                   OnRefreshRequested="OnManualRefresh"
                   OnServerChanged="OnServerConnectionChanged"
                   IsLoading="@IsLoading"
                   LoadedPanels="@_loadedPanelCount"
-                  TotalPanels="@_totalPanelCount" />
+                  TotalPanels="@_totalPanelCount"
+                  DashboardName="@(Dashboard?.NavTitle ?? DashboardId)" />
 
 <div class="dashboard-content">
 
@@ -392,9 +392,10 @@
         Logger.LogInformation("[DynamicDashboard:{DashboardId}] Initializing dashboard", DashboardId);
         LocalLogger.LogInfo($"[DynamicDashboard:{DashboardId}] Starting initialization");
 
-        TimezoneOffsetHours = UserSettings.GetTimezoneOffset();
-        DataSource = UserSettings.GetDataSource();
-        Logger.LogDebug("[DynamicDashboard:{DashboardId}] Settings loaded - TimezoneOffset: {TimezoneOffset}, DataSource: {DataSource}", DashboardId, TimezoneOffsetHours, DataSource);
+        TimezoneOffsetHours = TimeZoneInfo.Local.GetUtcOffset(DateTime.Now).TotalHours;
+        TimeRangeMinutes    = UserSettings.GetDefaultTimeRange();
+        DataSource          = UserSettings.GetDataSource();
+        Logger.LogDebug("[DynamicDashboard:{DashboardId}] Settings loaded - TimezoneOffset: {TimezoneOffset}, TimeRange: {TimeRange}m, DataSource: {DataSource}", DashboardId, TimezoneOffsetHours, TimeRangeMinutes, DataSource);
         
         Dashboard = ConfigService.Config.Dashboards.FirstOrDefault(d => string.Equals(d.Id, DashboardId, StringComparison.OrdinalIgnoreCase));
 

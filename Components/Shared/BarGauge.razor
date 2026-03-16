@@ -1,13 +1,13 @@
 <!--/* In the name of God, the Merciful, the Compassionate */-->
 @using SqlHealthAssessment.Data
-<div class="bargauge-item">
-    <div class="bargauge-label">@Label</div>
-    <div class="bargauge-track">
-        <div class="bargauge-fill"
+<div class="flex items-center gap-2 py-1">
+    <div class="w-20 text-right text-sm text-app-text-secondary overflow-hidden text-ellipsis whitespace-nowrap">@Label</div>
+    <div class="flex-1 h-4 bg-app-bg-primary rounded overflow-hidden">
+        <div class="h-full rounded transition-all duration-500 ease-out"
              style="width: @(Percentage)%; background-color: @ThresholdConfig.GetColor(ThresholdKey, Value);">
         </div>
     </div>
-    <div class="bargauge-value" style="color: @ThresholdConfig.GetColor(ThresholdKey, Value);">
+    <div class="w-14 text-sm font-semibold" style="color: @ThresholdConfig.GetColor(ThresholdKey, Value);">
         @FormatValue()@UnitSuffix
     </div>
 </div>

@@ -7,7 +7,16 @@
 @inject ServerConnectionManager ConnectionManager
 @inject IDbConnectionFactory ConnectionFactory
 @inject GlobalInstanceSelector InstanceSelector
+@inject SqlHealthAssessment.Data.Services.PrintService PrintSvc
+@inject SqlHealthAssessment.Data.ToastService Toast
+@using SqlHealthAssessment.Data.Models
 @implements IDisposable
+
+<PdfExportModal @ref="_pdfModal"
+    Title="Export Sessions to PDF"
+    DefaultLandscape="true"
+    DefaultBackgrounds="true"
+    OnConfirm="OnPdfConfirmed" />
 
 <div class="sessions-page">
 
@@ -59,6 +68,17 @@
             </button>
             <button class="toolbar-btn" @onclick="ManualRefresh">
                 <i class="fa-solid fa-rotate"></i> Refresh
+            </button>
+            <button class="toolbar-btn @(_pdfExporting ? "active" : "")" @onclick="OpenPdfModal" disabled="@_pdfExporting" title="Export sessions to PDF">
+                @if (_pdfExporting)
+                {
+                    <i class="fa-solid fa-spinner fa-spin"></i>
+                }
+                else
+                {
+                    <i class="fa-solid fa-file-pdf"></i>
+                }
+                @(_pdfExporting ? " Saving..." : " PDF")
             </button>
         </div>
 
@@ -185,6 +205,8 @@
     private int TopSessionCount = 100;
     private System.Threading.Timer? _refreshTimer;
     private QueryPlanModal? _planModal;
+    private PdfExportModal _pdfModal = default!;
+    private bool _pdfExporting = false;
 
     private List<SessionInfo> FilteredSessions
     {
@@ -327,6 +349,35 @@
             StartTimer();
         else
             _refreshTimer?.Dispose();
+    }
+
+    private void OpenPdfModal()
+    {
+        var stem = $"LiveSessions_{DateTime.Now:yyyyMMdd_HHmmss}";
+        _pdfModal.Show(stem);
+    }
+
+    private async Task OnPdfConfirmed(PdfExportSettings settings)
+    {
+        await Task.Delay(350);
+        _pdfExporting = true;
+        StateHasChanged();
+        try
+        {
+            var orientation = settings.LandscapeOrientation
+                ? Microsoft.Web.WebView2.Core.CoreWebView2PrintOrientation.Landscape
+                : Microsoft.Web.WebView2.Core.CoreWebView2PrintOrientation.Portrait;
+            var (success, path, error) = await PrintSvc.PrintToPdfAsync(settings.FileName,
+                printBackgrounds: settings.PrintBackgrounds,
+                orientation: orientation);
+            if (success) Toast.ShowSuccess($"PDF saved: {System.IO.Path.GetFileName(path)}");
+            else         Toast.ShowError($"PDF export failed: {error}");
+        }
+        finally
+        {
+            _pdfExporting = false;
+            StateHasChanged();
+        }
     }
 
     private void OnRefreshIntervalChanged(ChangeEventArgs e)

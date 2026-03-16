@@ -114,20 +114,6 @@
                     Run Vulnerability Assessment
                 </button>
             </div>
-            <div class="guide-card">
-                <h3><i class="fa-solid fa-file-pdf"></i> Reports</h3>
-                <p>Generate professional PDF reports from Vulnerability Assessment data with executive summaries and detailed findings.</p>
-                <button class="btn btn-primary" @onclick="GoToReports">
-                    Generate Reports
-                </button>
-            </div>
-            <div class="guide-card">
-                <h3><i class="fa-solid fa-file-pdf"></i> RDL Reports</h3>
-                <p>View and generate reports using RDL/PowerBI template files (like BlitzReport.rdl) with your data.</p>
-                <button class="btn btn-primary" @onclick="GoToRdlReports">
-                    View RDL Reports
-                </button>
-            </div>
         </div>
     </div>
 
@@ -208,8 +194,6 @@
     private void GoToQuickCheck() => Navigation.NavigateTo("/quickcheck");
     private void GoToFullAudit() => Navigation.NavigateTo("/fullaudit");
     private void GoToVulnerabilityAssessment() => Navigation.NavigateTo("/vulnerabilityassessment");
-    private void GoToReports() => Navigation.NavigateTo("/reports");
-    private void GoToRdlReports() => Navigation.NavigateTo("/reports-rdl");
     private void GoToDeploySqlwatch() => Navigation.NavigateTo("/deploysqlwatch");
     private void GoToDeployDarlingPm() => Navigation.NavigateTo("/deploydarlingpm");
     private void GoToSettings() => Navigation.NavigateTo("/settings");
@@ -262,6 +246,8 @@
         border-radius: 8px;
         padding: 20px;
         transition: transform 0.2s ease, box-shadow 0.2s ease;
+        display: flex;
+        flex-direction: column;
     }
 
     .guide-card:hover {
@@ -282,6 +268,7 @@
         color: var(--text-secondary);
         margin-bottom: 18px;
         line-height: 1.5;
+        flex: 1;
     }
 
     .guide-card .btn {
@@ -289,6 +276,7 @@
         padding: 10px;
         font-weight: 500;
         transition: all 0.2s ease;
+        margin-top: auto;
     }
 
     .guide-card .btn:hover {

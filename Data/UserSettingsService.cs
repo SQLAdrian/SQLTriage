@@ -26,9 +26,8 @@ namespace SqlHealthAssessment.Data
         /// </summary>
         public class UserSettings
         {
-            public double TimezoneOffsetHours { get; set; } = 13; // Default to UTC+13 (NZST)
             public string SelectedTheme { get; set; } = "cyberpunk";
-            public int RefreshIntervalSeconds { get; set; } = 35;
+            public int RefreshIntervalSeconds { get; set; } = 15;
             public bool AutoRefresh { get; set; } = true;
             public int DefaultTimeRangeMinutes { get; set; } = 60;
             public bool ShowDiagnosticPane { get; set; } = false;
@@ -79,23 +78,6 @@ namespace SqlHealthAssessment.Data
             {
                 // Silently fail if unable to save
             }
-        }
-
-        /// <summary>
-        /// Get current timezone offset
-        /// </summary>
-        public double GetTimezoneOffset()
-        {
-            return _settings.TimezoneOffsetHours;
-        }
-
-        /// <summary>
-        /// Set timezone offset and save
-        /// </summary>
-        public void SetTimezoneOffset(double offset)
-        {
-            _settings.TimezoneOffsetHours = offset;
-            SaveSettings();
         }
 
         /// <summary>

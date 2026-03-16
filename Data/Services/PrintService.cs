@@ -33,9 +33,14 @@ namespace SqlHealthAssessment.Data.Services
 
         /// <summary>
         /// Exports the current WebView page to PDF in the .\output\ folder.
+        /// printBackgrounds: true preserves dark-theme colours (dashboards);
+        ///                   false forces a white print (Quick Check / text reports).
         /// Returns (true, path, null) on success, (false, null, error) if unavailable or failed.
         /// </summary>
-        public async Task<(bool Success, string? Path, string? Error)> PrintToPdfAsync(string fileName = "Report.pdf")
+        public async Task<(bool Success, string? Path, string? Error)> PrintToPdfAsync(
+            string fileName = "Report.pdf",
+            bool printBackgrounds = false,
+            CoreWebView2PrintOrientation orientation = CoreWebView2PrintOrientation.Landscape)
         {
             if (_webView == null)
             {
@@ -52,18 +57,19 @@ namespace SqlHealthAssessment.Data.Services
             var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
             // All WebView2 API calls (CreatePrintSettings + PrintToPdfAsync) must run on the WPF UI thread.
-            // Using an async lambda so we can properly await PrintToPdfAsync within the dispatcher.
             Application.Current.Dispatcher.InvokeAsync(async () =>
             {
                 try
                 {
                     var settings = _webView.Environment.CreatePrintSettings();
-                    settings.Orientation            = CoreWebView2PrintOrientation.Landscape;
-                    settings.ShouldPrintBackgrounds = false;
-                    settings.MarginTop    = 0.4;
-                    settings.MarginBottom = 0.4;
-                    settings.MarginLeft   = 0.4;
-                    settings.MarginRight  = 0.4;
+                    settings.Orientation            = orientation;
+                    settings.ShouldPrintBackgrounds = printBackgrounds;
+                    // Margins in inches — CSS @page margins take precedence for named pages;
+                    // these serve as the fallback and keep margins consistently narrow.
+                    settings.MarginTop    = 0.2;
+                    settings.MarginBottom = 0.2;
+                    settings.MarginLeft   = 0.3;
+                    settings.MarginRight  = 0.3;
 
                     await _webView.PrintToPdfAsync(filePath, settings);
                     tcs.TrySetResult(true);

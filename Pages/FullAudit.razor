@@ -11,6 +11,7 @@
 @inject FullAuditStateService AuditState
 @inject IJSRuntime JSRuntime
 @inject ILogger<FullAudit> Logger
+@inject SqlHealthAssessment.Data.ToastService Toast
 @using System.Diagnostics;
 <PageTitle>Full Audit - SQLHealthAssessment</PageTitle>
 
@@ -494,7 +495,8 @@
                 {
                     await Task.Run(() =>
                     {
-                        using var connection = new Microsoft.Data.SqlClient.SqlConnection(conn.GetConnectionString(server));
+                        // Use master database for connection test to allow testing before SQLWATCH is deployed
+                        using var connection = new Microsoft.Data.SqlClient.SqlConnection(conn.GetConnectionString(server, "master"));
                         connection.Open();
                         using var command = connection.CreateCommand();
                         command.CommandText = "SELECT @@VERSION";
@@ -542,6 +544,7 @@
         {
             var results = await ScriptRunner.ExecuteAllEnabledScriptsAsync(SelectedConnection, SelectedServer);
             AuditState.ClearAndAddResults(results);
+            Toast.ShowSuccess($"Full Audit complete: {SelectedServer} — {results.Count} script(s) run");
         }
         finally
         {
@@ -579,10 +582,11 @@
                         scriptIndex++;
                         AuditState.UpdateProgress(serverIndex, server, scriptIndex, result.ScriptName);
                         StateHasChanged();
-                        
+
                         result.ScriptName = $"[{server}] {result.ScriptName}";
                         AuditState.AddExecutionResult(result);
                     }
+                    Toast.ShowInfo($"Full Audit: {server} complete ({results.Count} scripts, {serverIndex}/{allServers.Count})");
                 }
             }
         }

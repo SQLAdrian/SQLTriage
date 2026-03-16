@@ -334,39 +334,6 @@
         <h3>Appearance</h3>
         
         <div class="settings-field">
-            <label>Timezone</label>
-            <select @onchange="OnTimezoneChanged">
-                <option value="-12" selected="@(SelectedTimezoneOffset == -12)">UTC-12</option>
-                <option value="-11">UTC-11</option>
-                <option value="-10">UTC-10</option>
-                <option value="-9">UTC-9</option>
-                <option value="-8">UTC-8 (PST)</option>
-                <option value="-7">UTC-7 (MST)</option>
-                <option value="-6">UTC-6 (CST)</option>
-                <option value="-5">UTC-5 (EST)</option>
-                <option value="-4">UTC-4 (AST)</option>
-                <option value="-3">UTC-3</option>
-                <option value="-2">UTC-2</option>
-                <option value="-1">UTC-1</option>
-                <option value="0">UTC</option>
-                <option value="1">UTC+1 (CET)</option>
-                <option value="2">UTC+2</option>
-                <option value="3">UTC+3</option>
-                <option value="4">UTC+4</option>
-                <option value="5">UTC+5</option>
-                <option value="6">UTC+6</option>
-                <option value="7">UTC+7</option>
-                <option value="8">UTC+8 (CST China)</option>
-                <option value="9">UTC+9 (JST)</option>
-                <option value="10">UTC+10</option>
-                <option value="11">UTC+11</option>
-                <option value="12">UTC+12</option>
-                <option value="13">UTC+13 (NZST)</option>
-            </select>
-            <small style="color: var(--text-secondary);">Current: UTC@(SelectedTimezoneOffset >= 0 ? "+" : "")@SelectedTimezoneOffset</small>
-        </div>
-
-        <div class="settings-field">
             <label>Theme</label>
             <input type="text" value="Dark (VS Code style)" readonly style="background: var(--bg-secondary); color: var(--text-secondary);" />
             <small style="color: var(--text-secondary);">Fixed dark theme optimized for readability</small>
@@ -377,7 +344,6 @@
 @code {
     private string? TestResult;
     private bool TestSuccess;
-    private int SelectedTimezoneOffset = 13;
     private string SelectedDataSource = "SqlServer";
     private bool RestartRequired;
     private string SqlServerConnectionString = "";
@@ -416,7 +382,6 @@
 
         // Load user settings
         ShowDiagnosticPane = UserSettings.GetShowDiagnosticPane();
-        SelectedTimezoneOffset = (int)UserSettings.GetTimezoneOffset();
         DefaultDashboardId = UserSettings.GetDefaultDashboardId();
         
         // Get cache file size
@@ -437,15 +402,6 @@
     }
 
 
-
-    private void OnTimezoneChanged(ChangeEventArgs e)
-    {
-        if (int.TryParse(e.Value?.ToString(), out int offset))
-        {
-            SelectedTimezoneOffset = offset;
-            UserSettings.SetTimezoneOffset(offset);
-        }
-    }
 
     private string MaskConnectionStringPassword(string connStr)
     {

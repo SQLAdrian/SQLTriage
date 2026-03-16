@@ -32,15 +32,15 @@
 
     private void ShowToast(ToastNotification toast)
     {
-        _toasts.Add(toast);
-        toast.IsVisible = true;
-        StateHasChanged();
-
-        _ = Task.Delay(toast.Duration).ContinueWith(_ =>
+        InvokeAsync(() =>
         {
-            InvokeAsync(() =>
+            _toasts.Add(toast);
+            toast.IsVisible = true;
+            StateHasChanged();
+
+            _ = Task.Delay(toast.Duration).ContinueWith(_ =>
             {
-                RemoveToast(toast.Id);
+                InvokeAsync(() => RemoveToast(toast.Id));
             });
         });
     }

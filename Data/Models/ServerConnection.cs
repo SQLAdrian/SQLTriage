@@ -32,6 +32,26 @@ namespace SqlHealthAssessment.Data.Models
         public string EffectiveAuthType => AuthenticationType
             ?? (UseWindowsAuthentication ? AuthenticationTypes.Windows : AuthenticationTypes.SqlServer);
 
+        /// <summary>
+        /// Validates if the connection has all required credentials for the selected authentication type.
+        /// Returns null if valid, or an error message if invalid.
+        /// </summary>
+        public string? ValidateCredentials()
+        {
+            if (EffectiveAuthType == AuthenticationTypes.SqlServer)
+            {
+                if (string.IsNullOrWhiteSpace(Username))
+                {
+                    return "Username is required for SQL Server Authentication";
+                }
+                if (string.IsNullOrEmpty(GetDecryptedPassword()))
+                {
+                    return "Password is required for SQL Server Authentication";
+                }
+            }
+            return null;
+        }
+
         [JsonIgnore]
         public string AuthenticationDisplay => EffectiveAuthType switch
         {
@@ -144,6 +164,12 @@ namespace SqlHealthAssessment.Data.Models
                     break;
 
                 case AuthenticationTypes.SqlServer:
+                    // Validate SQL Server authentication credentials
+                    if (string.IsNullOrWhiteSpace(Username))
+                    {
+                        throw new InvalidOperationException("Username is required for SQL Server Authentication. " +
+                            "Please either: 1) Enable Windows Authentication, or 2) Enter a Username for SQL Server Authentication.");
+                    }
                     builder.IntegratedSecurity = false;
                     builder.UserID = Username;
                     builder.Password = GetDecryptedPassword();

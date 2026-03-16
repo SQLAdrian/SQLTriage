@@ -3,16 +3,16 @@
 
 @using System.Linq
 
-<div class="datagrid-panel" role="region" aria-label="@(string.IsNullOrEmpty(Title) ? "Data table" : Title)">
+<div class="bg-app-bg-panel rounded-lg overflow-hidden my-2" role="region" aria-label="@(string.IsNullOrEmpty(Title) ? "Data table" : Title)">
     @if (!string.IsNullOrEmpty(Title))
     {
-        <div class="datagrid-title" id="@($"grid-title-{Title.GetHashCode()}")">
+        <div class="text-sm font-semibold px-4 pt-3 pb-2 text-app-text-primary" id="@($"grid-title-{Title.GetHashCode()}")">
             <span>@Title</span>
             @if (TopRowsConfig.HasValue)
             {
-                <span class="datagrid-toprows-control">
+                <span class="ml-4 text-xs">
                     Top <input type="number"
-                               class="datagrid-toprows-input"
+                               class="w-16 px-2 py-1 bg-app-bg-primary border border-app-border rounded text-app-text-primary text-xs"
                                value="@_topRowsInput"
                                min="1"
                                max="1000"
@@ -26,13 +26,13 @@
 
     @if (Data != null && Data.Rows.Count > 0)
     {
-        <div class="datagrid-scroll" tabindex="0">
-            <table class="datagrid-table" role="table" aria-labelledby="@($"grid-title-{Title.GetHashCode()}")">
+        <div class="overflow-x-auto max-h-100 overflow-y-auto" tabindex="0">
+            <table class="w-full border-collapse text-sm" role="table" aria-labelledby="@($"grid-title-{Title.GetHashCode()}")">
                 <thead>
                     <tr role="row">
                         @if (!string.IsNullOrEmpty(PlanIndicatorColumn) && Data.Columns.Contains(PlanIndicatorColumn))
                         {
-                            <th role="columnheader" class="datagrid-plan-col" title="Query plan available">Plan</th>
+                            <th role="columnheader" class="w-12 px-3 py-2 text-left text-xs font-semibold text-app-text-secondary bg-app-bg-secondary border-b border-app-border">Plan</th>
                         }
                         @foreach (DataColumn col in Data.Columns)
                         {
@@ -43,7 +43,7 @@
                                     tabindex="0"
                                     @onkeydown="@(e => HandleHeaderKeyDown(e, col.ColumnName))"
                                     aria-sort="@GetAriaSortValue(col.ColumnName)"
-                                    class="@(SortColumn == col.ColumnName ? "sorted" : "")">
+                                    class="px-3 py-2 text-left text-xs font-semibold text-app-text-secondary bg-app-bg-secondary border-b border-app-border cursor-pointer select-none hover:text-app-text-primary @(SortColumn == col.ColumnName ? "text-app-accent" : "")">
                                     @col.ColumnName
                                     @if (SortColumn == col.ColumnName)
                                     {
@@ -61,14 +61,14 @@
                             role="row"
                             tabindex="@(IsClickable ? "0" : "-1")"
                             @onkeydown="@(e => HandleRowKeyDown(e, row))"
-                            class="@(IsClickable ? "clickable" : "")">
+                            class="@(IsClickable ? "cursor-pointer" : "") hover:bg-app-bg-hover">
                             @if (!string.IsNullOrEmpty(PlanIndicatorColumn) && Data.Columns.Contains(PlanIndicatorColumn))
                             {
                                 var hasPlan = row[PlanIndicatorColumn] != DBNull.Value && !string.IsNullOrWhiteSpace(row[PlanIndicatorColumn]?.ToString());
-                                <td role="cell" class="datagrid-plan-col">
+                                <td role="cell" class="w-12 px-3 py-2 border-b border-app-border">
                                     @if (hasPlan)
                                     {
-                                        <span class="datagrid-plan-badge" title="Click row to view plan"><i class="fa-solid fa-clipboard-list"></i></span>
+                                        <span class="bg-app-accent/20 text-app-accent px-2 py-0.5 rounded text-xs" title="Click row to view plan"><i class="fa-solid fa-clipboard-list"></i></span>
                                     }
                                 </td>
                             }
@@ -76,7 +76,7 @@
                             {
                                 @if (HiddenColumns == null || !HiddenColumns.Contains(col.ColumnName))
                                 {
-                                    <td role="cell" title="@row[col]?.ToString()">
+                                    <td role="cell" class="px-3 py-2 border-b border-app-border text-app-text-primary max-w-xs overflow-hidden text-ellipsis whitespace-nowrap" title="@row[col]?.ToString()">
                                         @try
                                         {
                                             @FormatCell(row[col], col.ColumnName)
@@ -93,13 +93,13 @@
                 </tbody>
             </table>
         </div>
-        <div class="datagrid-footer" role="status" aria-live="polite">
+        <div class="px-4 py-2 text-xs text-app-text-muted border-t border-app-border" role="status" aria-live="polite">
             @Data.Rows.Count row(s)
         </div>
     }
     else
     {
-        <div class="datagrid-empty" role="status">No data available</div>
+        <div class="text-center py-8 text-app-text-muted" role="status">No data available</div>
     }
 </div>
 
