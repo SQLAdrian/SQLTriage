@@ -1,14 +1,32 @@
-# SQL Health Assessment
+# SQL Health Assessment — Free SQL Server Monitoring & DBA Tool
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE.txt)
 [![.NET 8](https://img.shields.io/badge/.NET-8.0-purple.svg)](https://dotnet.microsoft.com/download/dotnet/8.0)
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078d4.svg)](https://github.com/SQLAdrian/SqlHealthAssessment/releases)
 [![SQL Server 2016+](https://img.shields.io/badge/SQL%20Server-2016%2B-red.svg)](https://www.microsoft.com/en-us/sql-server)
 
-> Free, open-source SQL Server monitoring and health assessment for Windows DBAs.
-> Built on the battle-tested [SQLWATCH](https://github.com/marcingminski/sqlwatch) framework.
+> Free, open-source SQL Server monitoring, health assessment, and performance analysis tool for Windows DBAs.
+> A lightweight alternative to expensive commercial SQL monitoring tools like SolarWinds DPA, Redgate SQL Monitor, SentryOne, and Idera SQL Diagnostic Manager.
 
-SQL Health Assessment is a desktop application for monitoring multiple SQL Server instances in real time. It gives you live dashboards, health checks, blocking analysis, query execution plans, wait-event statistics, and comprehensive audit reports — all from a single, self-contained Windows executable.
+**SQL Health Assessment** is a self-contained Windows desktop application that monitors multiple SQL Server instances in real time. It provides live dashboards, health checks, blocking chain analysis, interactive query execution plan viewing, wait-event statistics, vulnerability assessments, and comprehensive audit reports — all from a single executable with no agent installation required on your SQL Servers.
+
+Built on the battle-tested [SQLWATCH](https://github.com/marcingminski/sqlwatch) and [Erik Darling's PerformanceMonitor](https://github.com/erikdarlingdata/DarlingData) frameworks, it combines the best open-source SQL Server diagnostic scripts ([sp_Blitz](https://github.com/BrentOzarULTD/SQL-Server-First-Responder-Kit), [sp_triage](https://sqldba.org), [MadeiraToolbox](https://github.com/MadeiraData/MadeiraToolbox), [TigerToolbox](https://github.com/microsoft/tigertoolbox)) into a single tool with a modern UI.
+
+### Who is this for?
+
+- **SQL Server DBAs** who need a free monitoring tool that doesn't require complex infrastructure
+- **Teams running SQL Server 2016–2022** (on-premises, Azure VM, or Azure SQL Managed Instance)
+- **Consultants** who need a portable tool to quickly assess SQL Server health at client sites
+- **Organizations** looking for an open-source alternative to SolarWinds, Redgate, SentryOne, or Idera
+
+### What problems does it solve?
+
+- **"What's happening on my SQL Server right now?"** — Live dashboards show active sessions, blocking chains, top queries, and wait stats in real time
+- **"Why is my SQL Server slow?"** — Interactive execution plan viewer, wait statistics trends, and long-running query detection
+- **"Is my SQL Server healthy?"** — Quick Check (30 seconds) and Full Audit (comprehensive) with exportable results
+- **"Is my SQL Server secure?"** — Microsoft SQL Vulnerability Assessment with 500+ security checks
+- **"How do I monitor multiple servers?"** — Multi-server support with aggregated views and per-instance drill-down
+- **"How do I export audit results to the cloud?"** — Azure Blob Storage integration with automatic CSV upload
 
 ---
 
@@ -64,7 +82,7 @@ SQL Health Assessment is a desktop application for monitoring multiple SQL Serve
 
 ## Screenshots
 
-> *Screenshots coming soon. Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).*
+> *Screenshots coming soon — live dashboards, execution plan viewer, vulnerability assessment, and audit reports. Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).*
 
 ---
 
@@ -261,8 +279,34 @@ Found a security vulnerability? Please review our [Security Policy](SECURITY.md)
 
 ---
 
+## Frequently Asked Questions
+
+**Q: Does this require installing anything on the SQL Server?**
+A: No agent is needed on the SQL Server. The app connects remotely via standard SQL connections. Optionally, you can deploy the SQLWATCH database for historical metrics collection.
+
+**Q: Can I monitor Azure SQL Database or Azure SQL Managed Instance?**
+A: Azure SQL Managed Instance is supported. Azure SQL Database (PaaS) has limited support — some DMV-based checks require server-level permissions not available in PaaS.
+
+**Q: Is this a replacement for SSMS (SQL Server Management Studio)?**
+A: No — it complements SSMS. SQL Health Assessment focuses on monitoring, health checks, and performance analysis. Use SSMS for query authoring, schema management, and administration tasks.
+
+**Q: Can I run this as a Windows Service for 24/7 monitoring?**
+A: Yes — the app supports headless Windows Service mode with Kestrel HTTPS for remote dashboard access.
+
+**Q: Are credentials stored securely?**
+A: Yes — all passwords are encrypted using AES-256-GCM with a machine-scoped DPAPI key. Credentials are tied to the machine and cannot be decrypted on another computer.
+
+**Q: How does this compare to commercial tools like SolarWinds DPA or Redgate SQL Monitor?**
+A: SQL Health Assessment is free and open-source with no licensing costs. It covers core monitoring, health checks, execution plans, and wait stats. Commercial tools may offer deeper historical trending, mobile apps, or cloud-hosted dashboards, but this tool handles the majority of day-to-day DBA monitoring needs.
+
+---
+
 ## License
 
 SQL Health Assessment is released under the [GNU General Public License v3.0](LICENSE.txt).
 
 You are free to use, modify, and distribute this software under the terms of the GPL v3.
+
+---
+
+<sub>**Keywords:** SQL Server monitoring tool, free SQL Server health check, open source DBA tool, SQL Server performance monitor, execution plan viewer, wait statistics analyzer, blocking chain analysis, SQL vulnerability assessment, sp_Blitz GUI, SQLWATCH dashboard, SQL Server audit tool, database health assessment, SQL Server real-time monitoring, .NET 8 Blazor WPF, multi-server SQL monitoring, SQL Server security assessment, alternative to SolarWinds DPA, alternative to Redgate SQL Monitor, alternative to SentryOne, alternative to Idera SQL Diagnostic Manager</sub>
