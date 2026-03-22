@@ -34,6 +34,8 @@ SQL Health Assessment is a desktop application for monitoring multiple SQL Serve
 - **Two-tier query throttling** — protects the monitored server from excessive load
 - **Zero-allocation row reading** — `ArrayPool<T>` and streaming JSON serialisation
 - **Cancellable dashboard loads** — switch servers or hit Cancel to abort in-flight queries instantly
+- **Memory pressure monitoring** — background service alerts and evicts cache under high memory load
+- **Server GC + concurrent GC** — tuned for optimal throughput in `runtimeconfig`
 
 ### Data Export
 - **Azure Blob Storage integration** — auto-upload audit CSVs with dual-path upload (Azure SDK + AzCopy fallback)
@@ -42,17 +44,21 @@ SQL Health Assessment is a desktop application for monitoring multiple SQL Serve
 - **Toast notifications** — real-time upload success/failure feedback
 
 ### Security
-- **DPAPI credential encryption** — passwords never stored in plain text
+- **AES-256-GCM credential encryption** — machine-scoped DPAPI key file + authenticated encryption; works for interactive and service accounts
+- **Ephemeral session keys** — dashboard results encrypted with a per-process key (never persisted)
 - **MFA / Azure AD authentication** — supports modern auth via `Azure.Identity`
 - **Parameterised queries only** — SQL injection prevention throughout
+- **Assembly obfuscation** — ConfuserEx2 (anti-tamper, anti-debug, string encryption)
 - **Audit log** — full query-execution and user-action trail (90-day retention)
 - **Rate limiting** — configurable max queries per minute with optional UI warnings
+- **Windows Service mode** — headless deployment with Kestrel HTTPS support
 
 ### Developer Experience
-- **JSON-based dashboard editor** — add, reorder, and configure panels without code changes
+- **JSON-based dashboard editor** — add, reorder, drag-and-drop panels without code changes
 - **10 UI themes** — dark and light options, switchable at runtime
-- **Keyboard shortcuts** — full keyboard navigation (`?` to show help)
+- **Keyboard shortcuts** — full keyboard navigation (`Ctrl+1–9`, `?` to show help)
 - **Serilog structured logging** — 30-day rolling logs with configurable verbosity
+- **Configurable alerting** — rules, notification channels, and severity thresholds
 
 ---
 
@@ -169,29 +175,34 @@ See the [Deployment Guide](DEPLOYMENT_GUIDE.md) for the full configuration refer
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│            WPF Window (MainWindow)           │
-│  ┌─────────────────────────────────────┐    │
-│  │       Blazor WebView (UI Layer)     │    │
-│  │  Pages / Components / DynamicPanel  │    │
-│  └──────────────┬──────────────────────┘    │
-│                 │                            │
-│  ┌──────────────▼──────────────────────┐    │
-│  │      Data Services (.NET 8)         │    │
-│  │  QueryExecutor · CachingExecutor    │    │
-│  │  DashboardConfigService             │    │
-│  │  AutoRefreshService                 │    │
-│  │  HealthCheckService · AlertService  │    │
-│  └──────┬─────────────────┬────────────┘    │
-│         │                 │                  │
-│  ┌──────▼──────┐  ┌───────▼──────────┐      │
-│  │  SQL Server │  │  SQLite (cache)       │      │
-│  │  SQLWATCH   │  │  WAL-mode .db    │      │
-│  └─────────────┘  └──────────────────┘      │
-└─────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                   WPF Window (MainWindow)                     │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │              Blazor WebView (UI Layer)                  │  │
+│  │  Pages · Components · DynamicPanel · DynamicDashboard  │  │
+│  │  NavMenu · DashboardToolbar · Toast Notifications      │  │
+│  └─────────────────────┬──────────────────────────────────┘  │
+│                        │                                      │
+│  ┌─────────────────────▼──────────────────────────────────┐  │
+│  │               Data Services (.NET 8)                    │  │
+│  │  QueryExecutor · CachingQueryExecutor                   │  │
+│  │  DashboardConfigService · AutoRefreshService            │  │
+│  │  DiagnosticScriptRunner · SqlAssessmentService          │  │
+│  │  AlertingService · HealthCheckService                   │  │
+│  │  AzureBlobExportService · ServerModeService             │  │
+│  │  CredentialProtector (AES-256-GCM + DPAPI)              │  │
+│  └───────┬──────────────┬──────────────┬─────────────────┘   │
+│          │              │              │                      │
+│  ┌───────▼───────┐ ┌────▼──────────┐ ┌▼───────────────────┐  │
+│  │  SQL Server   │ │ SQLite Cache  │ │  Azure Blob Storage │  │
+│  │  master /     │ │ WAL-mode .db  │ │  SDK + AzCopy       │  │
+│  │  SQLWATCH /   │ │ Delta-fetch   │ │  SAS / Delegation   │  │
+│  │  PerfMonitor  │ │ Offline mode  │ │  Auto-upload CSVs   │  │
+│  └───────────────┘ └───────────────┘ └─────────────────────┘  │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-**Tech stack:** .NET 8 · WPF · Blazor WebView · ApexCharts · Microsoft.Data.SqlClient · SQLite · Serilog · Azure.Identity · DacFx
+**Tech stack:** .NET 8 · WPF · Blazor WebView · ApexCharts · Radzen · Microsoft.Data.SqlClient · SQLite · Serilog · Azure.Identity · Azure.Storage.Blobs · DacFx · ConfuserEx2
 
 ---
 
@@ -210,11 +221,14 @@ This project stands on the shoulders of giants:
 
 | Project | Author | Role |
 |---|---|---|
-| [SQLWATCH](https://github.com/marcingminski/sqlwatch) | Marcin Gminski | SQL Server metrics collection framework — the data foundation |
+| [SQLWATCH](https://github.com/marcingminski/sqlwatch) | Marcin Gminski | SQL Server monitoring framework — the data foundation |
+| [sp_Blitz](https://github.com/BrentOzarULTD/SQL-Server-First-Responder-Kit) | Brent Ozar Unlimited | SQL Server First Responder Kit — health check scripts |
+| [sqldba.org](https://sqldba.org) | Adrian Sullivan | sp_triage — SQL health check scripts |
+| [PerformanceMonitor](https://github.com/erikdarlingdata/DarlingData) | Erik Darling | Performance Monitor framework and diagnostic queries |
+| [MadeiraToolbox](https://github.com/MadeiraData/MadeiraToolbox) | Eitan Blumin | SQL Server maintenance, diagnostics, and best-practice scripts |
+| [TigerToolbox](https://github.com/microsoft/tigertoolbox) | Pedro Lopes (Microsoft) | Collection of SQL Server tools and utilities |
 | [html-query-plan](https://github.com/JustinPealing/html-query-plan) | Justin Pealing | Interactive graphical SQL execution plan viewer |
 | [Blazor-ApexCharts](https://github.com/apexcharts/Blazor-ApexCharts) | ApexCharts Team | Rich interactive charts and time-series visualisations |
-| [sp_Blitz](https://github.com/BrentOzarULTD/SQL-Server-First-Responder-Kit) | Brent Ozar Unlimited | SQL Server First Responder Kit — health check scripts |
-| [DarlingData](https://github.com/erikdarlingdata/DarlingData) | Erik Darling | Performance Monitor framework and diagnostic queries |
 | [Serilog](https://github.com/serilog/serilog) | Serilog Contributors | Structured diagnostic logging for .NET |
 | [Microsoft.Data.Sqlite](https://github.com/dotnet/efcore) | Microsoft / .NET Foundation | Local SQLite caching layer |
 
@@ -224,7 +238,10 @@ This project was developed with assistance from AI coding assistants:
 
 - **Claude (Anthropic)** — Primary pair-programming partner: architecture design, code generation, feature development, optimisation strategies, and ongoing maintenance
 - **Amazon Q Developer** — Code review, refactoring, performance analysis
+- **Gemini (Google)** — Architecture design, feature development
 - **Kilo (Codeium)** — Real-time code completion and suggestions
+- **Cline** — Local LLM access, code completion, code review
+- **LM Studio** — Local LLM host (Deepseek R1, Gemma 3, Qwen 3.5, GLM 4.7 Flash)
 
 ---
 
