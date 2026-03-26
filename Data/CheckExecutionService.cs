@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using SqlHealthAssessment.Data.Models;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace SqlHealthAssessment.Data
 {
@@ -26,6 +27,7 @@ namespace SqlHealthAssessment.Data
     /// </summary>
     public class CheckExecutionService : IDisposable
     {
+        private readonly ILogger<CheckExecutionService> _logger;
         private readonly CheckRepositoryService _checkRepo;
         private readonly ServerConnectionManager _connectionManager;
         private readonly IConfiguration _configuration;
@@ -52,10 +54,12 @@ namespace SqlHealthAssessment.Data
         public event Action<CheckResult>? OnCheckCompleted;
 
         public CheckExecutionService(
+            ILogger<CheckExecutionService> logger,
             CheckRepositoryService checkRepo,
             ServerConnectionManager connectionManager,
             IConfiguration configuration)
         {
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _checkRepo = checkRepo ?? throw new ArgumentNullException(nameof(checkRepo));
             _connectionManager = connectionManager ?? throw new ArgumentNullException(nameof(connectionManager));
             _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
@@ -113,9 +117,8 @@ namespace SqlHealthAssessment.Data
             summary.CompletedAt = DateTime.UtcNow;
             _lastSummary[serverName] = summary;
 
-            Debug.WriteLine(
-                $"[CheckExecutionService] {serverName}: {summary.Passed} passed, " +
-                $"{summary.Failed} failed, {summary.Errors} errors in {summary.Duration.TotalSeconds:F1}s");
+            _logger.LogInformation("{Server}: {Passed} passed, {Failed} failed, {Errors} errors in {Duration:F1}s",
+                serverName, summary.Passed, summary.Failed, summary.Errors, summary.Duration.TotalSeconds);
 
             OnExecutionCompleted?.Invoke(summary);
             return summary;
@@ -171,9 +174,8 @@ namespace SqlHealthAssessment.Data
             summary.CompletedAt = DateTime.UtcNow;
             _lastSummary[serverName] = summary;
 
-            Debug.WriteLine(
-                $"[CheckExecutionService] {serverName}: {summary.Passed} passed, " +
-                $"{summary.Failed} failed, {summary.Errors} errors in {summary.Duration.TotalSeconds:F1}s");
+            _logger.LogInformation("{Server}: {Passed} passed, {Failed} failed, {Errors} errors in {Duration:F1}s",
+                serverName, summary.Passed, summary.Failed, summary.Errors, summary.Duration.TotalSeconds);
 
             OnExecutionCompleted?.Invoke(summary);
             return summary;
@@ -201,8 +203,7 @@ namespace SqlHealthAssessment.Data
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine(
-                            $"[CheckExecutionService] Error executing checks on {server}: {ex.Message}");
+                        _logger.LogError(ex, "Error executing checks on {Server}", server);
 
                         summaries.Add(new CheckExecutionSummary
                         {
@@ -416,7 +417,7 @@ namespace SqlHealthAssessment.Data
         {
             if (_resultsByInstance.TryRemove(instanceName, out _))
             {
-                Debug.WriteLine($"[CheckExecutionService] Cleared results for {instanceName}");
+                _logger.LogDebug("Cleared results for {Instance}", instanceName);
             }
         }
 
@@ -427,7 +428,7 @@ namespace SqlHealthAssessment.Data
         {
             _resultsByInstance.Clear();
             _lastSummary.Clear();
-            Debug.WriteLine("[CheckExecutionService] Cleared all results");
+            _logger.LogDebug("Cleared all check results");
         }
 
         public void Dispose()

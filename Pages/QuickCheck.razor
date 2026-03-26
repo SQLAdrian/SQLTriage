@@ -8,10 +8,39 @@
 @inject CheckExecutionService CheckExecutor
 @inject ServerConnectionManager ConnectionManager
 @inject UserSettingsService UserSettings
+@inject QuickCheckStateService State
 @inject SqlHealthAssessment.Data.Services.PrintService PrintSvc
+@inject SqlHealthAssessment.Data.Services.ReportPageConfigService ReportPageCfg
+@inject SqlHealthAssessment.Data.ToastService Toast
+@inject IJSRuntime JSRuntime
 @implements IDisposable
 
+<PdfExportModal @ref="_pdfModal"
+    Title="Export Results to PDF"
+    DefaultLandscape="false"
+    DefaultBackgrounds="false"
+    OnConfirm="OnPdfConfirmed" />
+
+<SectionEditorModal IsVisible="_editingSection != null"
+    Section="_editingSection"
+    NativeKeys="_availableNativeKeys"
+    AvailableFields="_qcFields"
+    OnSave="HandleSectionSaved"
+    OnCancel="() => _editingSection = null" />
+
+<AddSectionModal IsVisible="_showAddSection"
+    NativeKeys="_availableNativeKeys"
+    OnAdd="HandleSectionAdded"
+    OnCancel="() => _showAddSection = false" />
+
 <div class="quickcheck-page">
+    <EditPageToolbar EditMode="_editMode"
+        PageTitle="Quick Check"
+        HasUnsavedChanges="false"
+        OnAddSection="() => _showAddSection = true"
+        OnDone="() => _editMode = false"
+        OnReset="ResetSections" />
+
     <div class="page-header">
         <div>
             <h2>Quick Check</h2>
@@ -28,6 +57,10 @@
                     @onclick="ToggleDiagnosticPane" title="Toggle diagnostic output">
                 Diagnostics @(ShowDiagnosticPane ? "ON" : "OFF")
             </button>
+            <button class="btn-edit-page @(_editMode ? "btn-edit-page--active" : "")"
+                    @onclick="() => _editMode = !_editMode" title="Edit page layout">
+                <i class="fa-solid fa-pen-to-square"></i> Edit Page
+            </button>
         </div>
     </div>
 
@@ -35,22 +68,27 @@
         <!-- Main Content -->
         <div class="qc-main">
             <!-- Server Selection -->
+            <ReportSectionWrapper Section="@GetSection("server-selection")" EditMode="_editMode"
+                IsFirst="@IsFirstSection("server-selection")" IsLast="@IsLastSection("server-selection")"
+                OnMoveUp="s => MoveSection(s, -1)" OnMoveDown="s => MoveSection(s, 1)"
+                OnEdit="s => _editingSection = s" OnDelete="s => DeleteSection(s)"
+                OnToggle="s => ToggleSection(s)">
             <div class="server-selection">
                 <div class="server-selection-header">
                     <label>Target Servers:</label>
                     <div class="server-scope-toggle">
-                        <button class="scope-btn @(RunAllServers ? "active" : "")" @onclick="() => RunAllServers = true">
+                        <button class="scope-btn @(State.RunAllServers ? "active" : "")" @onclick="() => State.RunAllServers = true">
                             All Enabled Servers
                         </button>
-                        <button class="scope-btn @(!RunAllServers ? "active" : "")" @onclick="() => RunAllServers = false">
+                        <button class="scope-btn @(!State.RunAllServers ? "active" : "")" @onclick="() => State.RunAllServers = false">
                             Select Server
                         </button>
                     </div>
                 </div>
 
-                @if (!RunAllServers)
+                @if (!State.RunAllServers)
                 {
-                    <select @bind="SelectedConnectionId" @bind:after="OnServerSelected" class="server-select">
+                    <select @bind="State.SelectedConnectionId" @bind:after="OnServerSelected" class="server-select">
                         <option value="">-- Select a server connection --</option>
                         @foreach (var conn in Connections)
                         {
@@ -84,8 +122,8 @@
 
                 <div class="action-row">
                     <button class="btn btn-primary btn-run" @onclick="RunChecks"
-                            disabled="@(IsRunning || (!RunAllServers && string.IsNullOrEmpty(SelectedConnectionId)) || (RunAllServers && EnabledConnections.Count == 0))">
-                        @if (IsRunning)
+                            disabled="@(State.IsRunning || (!State.RunAllServers && string.IsNullOrEmpty(State.SelectedConnectionId)) || (State.RunAllServers && EnabledConnections.Count == 0))">
+                        @if (State.IsRunning)
                         {
                             <span>Running...</span>
                         }
@@ -95,14 +133,14 @@
                         }
                     </button>
 
-                    @if (Results.Count > 0)
+                    @if (State.Results.Count > 0)
                     {
                         <button class="btn btn-secondary" @onclick="ClearResults">Clear Results</button>
                         <button class="btn btn-secondary" @onclick="PrintResults"><i class="fa-solid fa-file-pdf"></i> Export PDF</button>
                     }
 
-                    <button class="btn btn-secondary" @onclick="ImportChecks" disabled="@IsImporting">
-                        @if (IsImporting)
+                    <button class="btn btn-secondary" @onclick="ImportChecks" disabled="@State.IsImporting">
+                        @if (State.IsImporting)
                         {
                             <span>Importing...</span>
                         }
@@ -113,32 +151,38 @@
                     </button>
                 </div>
             </div>
+            </ReportSectionWrapper>
 
-            @if (IsRunning)
+            @if (State.IsRunning)
             {
                 <div class="progress-section">
                     <div class="progress-bar">
-                        <div class="progress-fill" style="width: @Progress%"></div>
+                        <div class="progress-fill" style="width: @State.Progress%"></div>
                     </div>
                     <span class="progress-text">
-                        @ProgressMessage (@Progress%)
+                        @State.ProgressMessage (@State.Progress%)
                     </span>
                 </div>
             }
 
-            @if (Results.Count > 0)
+            @if (State.Results.Count > 0)
             {
+                <ReportSectionWrapper Section="@GetSection("summary-cards")" EditMode="_editMode"
+                    IsFirst="@IsFirstSection("summary-cards")" IsLast="@IsLastSection("summary-cards")"
+                    OnMoveUp="s => MoveSection(s, -1)" OnMoveDown="s => MoveSection(s, 1)"
+                    OnEdit="s => _editingSection = s" OnDelete="s => DeleteSection(s)"
+                    OnToggle="s => ToggleSection(s)">
                 <!-- Execution Info -->
                 <div class="execution-info">
-                    <span>Executed at @ExecutionTime.ToString("HH:mm:ss") | Duration: @ExecutionDuration</span>
-                    <span>@ServersTested server(s) tested</span>
+                    <span>Executed at @State.ExecutionTime.ToString("HH:mm:ss") | Duration: @State.ExecutionDuration</span>
+                    <span>@State.ServersTested server(s) tested</span>
                 </div>
 
                 <!-- Per-Server Summary -->
-                @if (ServerSummaries.Count > 0)
+                @if (State.ServerSummaries.Count > 0)
                 {
                     <div class="server-summaries">
-                        @foreach (var summary in ServerSummaries)
+                        @foreach (var summary in State.ServerSummaries)
                         {
                             <div class="server-summary-card @(summary.Failed > 0 ? "has-failures" : summary.Errors > 0 ? "has-errors" : "all-passed")">
                                 <div class="server-summary-name">@summary.InstanceName</div>
@@ -155,58 +199,64 @@
 
                 <!-- Clickable Overall Summary Cards -->
                 <div class="results-summary">
-                    <div class="summary-card passed @(SelectedFilter == "passed" ? "active-filter" : "")"
+                    <div class="summary-card passed @(State.SelectedFilter == "passed" ? "active-filter" : "")"
                          @onclick='() => SetFilterFromCard("passed")'>
                         <span class="summary-icon">✅</span>
                         <span class="summary-count">@PassedCount</span>
                         <span class="summary-label">Passed</span>
                     </div>
-                    <div class="summary-card failed @(SelectedFilter == "failed" ? "active-filter" : "")"
+                    <div class="summary-card failed @(State.SelectedFilter == "failed" ? "active-filter" : "")"
                          @onclick='() => SetFilterFromCard("failed")'>
                         <span class="summary-icon">❌</span>
                         <span class="summary-count">@FailedCount</span>
                         <span class="summary-label">Failed</span>
                     </div>
-                    <div class="summary-card errors @(SelectedFilter == "errors" ? "active-filter" : "")"
+                    <div class="summary-card errors @(State.SelectedFilter == "errors" ? "active-filter" : "")"
                          @onclick='() => SetFilterFromCard("errors")'>
                         <span class="summary-icon">⚠️</span>
                         <span class="summary-count">@ErrorCount</span>
                         <span class="summary-label">Errors</span>
                     </div>
-                    <div class="summary-card total @(SelectedFilter == "all" ? "active-filter" : "")"
+                    <div class="summary-card total @(State.SelectedFilter == "all" ? "active-filter" : "")"
                          @onclick='() => SetFilterFromCard("all")'>
                         <span class="summary-icon"><i class="fa-solid fa-clipboard-list"></i></span>
-                        <span class="summary-count">@Results.Count</span>
+                        <span class="summary-count">@State.Results.Count</span>
                         <span class="summary-label">Total</span>
                     </div>
                 </div>
+                </ReportSectionWrapper>
 
+                <ReportSectionWrapper Section="@GetSection("results-grid")" EditMode="_editMode"
+                    IsFirst="@IsFirstSection("results-grid")" IsLast="@IsLastSection("results-grid")"
+                    OnMoveUp="s => MoveSection(s, -1)" OnMoveDown="s => MoveSection(s, 1)"
+                    OnEdit="s => _editingSection = s" OnDelete="s => DeleteSection(s)"
+                    OnToggle="s => ToggleSection(s)">
                 <!-- Results Filter -->
                 <div class="results-filter">
                     <label>Status:</label>
-                    <select @bind="SelectedFilter" class="filter-select">
-                        <option value="all">All (@Results.Count)</option>
+                    <select @bind="State.SelectedFilter" class="filter-select">
+                        <option value="all">All (@State.Results.Count)</option>
                         <option value="passed">Passed (@PassedCount)</option>
                         <option value="failed">Failed (@FailedCount)</option>
                         <option value="errors">Errors (@ErrorCount)</option>
                     </select>
                     <label>Severity:</label>
-                    <select @bind="SelectedSeverity" class="filter-select">
+                    <select @bind="State.SelectedSeverity" class="filter-select">
                         <option value="">All Severities</option>
                         <option value="Critical">Critical</option>
                         <option value="Warning">Warning</option>
                         <option value="Info">Info</option>
                     </select>
                     <label>Category:</label>
-                    <select @bind="SelectedCategory" class="filter-select">
+                    <select @bind="State.SelectedCategory" class="filter-select">
                         <option value="">All Categories</option>
-                        @foreach (var cat in Categories)
+                        @foreach (var cat in State.Categories)
                         {
                             <option value="@cat">@cat</option>
                         }
                     </select>
                     <label>Server:</label>
-                    <select @bind="SelectedServer" class="filter-select">
+                    <select @bind="State.SelectedServer" class="filter-select">
                         <option value="">All Servers</option>
                         @foreach (var srv in ServersInResults)
                         {
@@ -226,9 +276,7 @@
                                 <th>Check</th>
                                 <th>Category</th>
                                 <th>Severity</th>
-                                <!--<th>Duration</th>-->
                                 <th>Description</th>
-                                <!--<th>Message</th>-->
                             </tr>
                         </thead>
                         <tbody>
@@ -261,11 +309,9 @@
                                             @result.Severity
                                         </span>
                                     </td>
-                                    <!--<td class="duration-cell">@(result.DurationMs)ms</td>-->
                                     <td class="description-cell">@result.Description</td>
-                                    <!--<td class="message-cell">@result.Message</td>-->
                                 </tr>
-                                @if (ExpandedResults.Contains(result.CheckId + result.InstanceName) && !string.IsNullOrEmpty(result.RecommendedAction))
+                                @if (_expandedResults.Contains(result.CheckId + result.InstanceName) && !string.IsNullOrEmpty(result.RecommendedAction))
                                 {
                                     <tr class="expanded-row">
                                         <td colspan="8">
@@ -287,18 +333,19 @@
                         </tbody>
                     </table>
                 </div>
+                </ReportSectionWrapper>
             }
-            else if (!IsRunning && HasRun)
+            else if (!State.IsRunning && State.HasRun)
             {
                 <div class="no-checks">
                     <p>No checks were executed. Make sure sql-checks.json is loaded with enabled checks.</p>
                 </div>
             }
 
-            @if (!string.IsNullOrEmpty(StatusMessage))
+            @if (!string.IsNullOrEmpty(State.StatusMessage))
             {
-                <div class="status-message @StatusClass">
-                    @StatusMessage
+                <div class="status-message @State.StatusClass">
+                    @State.StatusMessage
                 </div>
             }
         </div>
@@ -310,19 +357,19 @@
                 <div class="diag-header">
                     <span>Diagnostic Output</span>
                     <div class="diag-header-actions">
-                        <button class="btn btn-sm" @onclick="ClearDiagLog" title="Clear log">Clear</button>
+                        <button class="btn btn-sm" @onclick="() => State.ClearDiagLog()" title="Clear log">Clear</button>
                         <button class="btn btn-sm" @onclick="ToggleDiagnosticPane" title="Close pane">X</button>
                     </div>
                 </div>
-                <div class="diag-scroll" @ref="DiagScrollRef">
-                    @foreach (var entry in DiagLog)
+                <div class="diag-scroll" @ref="_diagScrollRef">
+                    @foreach (var entry in State.DiagLog)
                     {
                         <div class="diag-entry @entry.Level">
                             <span class="diag-time">@entry.Timestamp.ToString("HH:mm:ss.fff")</span>
                             <span class="diag-msg">@entry.Message</span>
                         </div>
                     }
-                    @if (DiagLog.Count == 0)
+                    @if (State.DiagLog.Count == 0)
                     {
                         <div class="diag-empty">Run a check to see diagnostic output here.</div>
                     }
@@ -333,68 +380,165 @@
 </div>
 
 @code {
-    private List<ServerConnection> Connections = new();
-    private List<CheckResult> Results = new();
-    private List<CheckExecutionSummary> ServerSummaries = new();
-    private List<string> Categories = new();
-    private HashSet<string> ExpandedResults = new();
-    private List<DiagLogEntry> DiagLog = new();
-    private ElementReference DiagScrollRef;
+    // Page-local UI only — not worth persisting across navigation
+    private PdfExportModal   _pdfModal       = default!;
+    private ElementReference _diagScrollRef;
+    private HashSet<string>  _expandedResults = new();
+    private bool             ShowDiagnosticPane;
+    private bool             _disposed;
 
-    private string SelectedConnectionId = string.Empty;
-    private string SelectedFilter = "all";
-    private string SelectedCategory = string.Empty;
-    private string SelectedServer = string.Empty;
-    private string SelectedSeverity = string.Empty;
-    private bool RunAllServers = true;
-    private bool ShowDiagnosticPane;
+    // ── Report Page Editor ────────────────────────────────────────────────
+    private bool              _editMode;
+    private List<ReportSection> _sections          = new();
+    private ReportSection?    _editingSection;
+    private bool              _showAddSection;
+    private ReportPageDefinition? _pageDef;
 
-    private bool IsRunning;
-    private bool IsImporting;
-    private bool HasRun;
-    private int Progress;
-    private string ProgressMessage = string.Empty;
-    private string StatusMessage = string.Empty;
-    private string StatusClass = string.Empty;
-    private DateTime ExecutionTime;
-    private string ExecutionDuration = string.Empty;
-    private int ServersTested;
+    private static readonly List<string> AllNativeKeys =
+        new() { "server-selection", "summary-cards", "results-grid", "diagnostics" };
 
-    private int PassedCount => Results.Count(r => r.Passed && string.IsNullOrEmpty(r.ErrorMessage));
-    private int FailedCount => Results.Count(r => !r.Passed && string.IsNullOrEmpty(r.ErrorMessage));
-    private int ErrorCount => Results.Count(r => !string.IsNullOrEmpty(r.ErrorMessage));
+    private static readonly List<ReportFieldInfo> _qcFields = new()
+    {
+        new() { Name = "CheckId",          Type = "string",   Description = "Unique identifier for the check",                     IsKey = true  },
+        new() { Name = "DisplayName",      Type = "string",   Description = "Human-readable check name",                          IsKey = false },
+        new() { Name = "Category",         Type = "string",   Description = "Check category (e.g. Security, Performance)",         IsKey = false },
+        new() { Name = "Severity",         Type = "string",   Description = "Finding severity: Critical, Warning, Info, Pass",     IsKey = false },
+        new() { Name = "Result",           Type = "string",   Description = "Raw result value or finding text",                    IsKey = false },
+        new() { Name = "Details",          Type = "string",   Description = "Extended description or recommendation",              IsKey = false },
+        new() { Name = "ServerName",       Type = "string",   Description = "SQL Server instance that produced this result",       IsKey = true  },
+        new() { Name = "RunDateUtc",       Type = "datetime", Description = "UTC timestamp when the check was executed",           IsKey = false },
+        new() { Name = "IsPass",           Type = "bit",      Description = "1 if the check passed, 0 if it raised a finding",     IsKey = false },
+        new() { Name = "ImplementationType", Type = "string", Description = "How the fix should be applied (e.g. Script, Config)", IsKey = false },
+        new() { Name = "SqlQuery",         Type = "string",   Description = "Suggested remediation SQL, if available",             IsKey = false },
+    };
 
-    private List<ServerConnection> EnabledConnections =>
-        ConnectionManager.GetEnabledConnections();
+    private List<string> _availableNativeKeys =>
+        AllNativeKeys.Where(k => !_sections.Any(s => s.NativeKey == k && s.SectionType == "native")).ToList();
 
+    private ReportSection GetSection(string nativeKey)
+    {
+        var s = _sections.FirstOrDefault(x => x.NativeKey == nativeKey && x.SectionType == "native");
+        return s ?? new ReportSection { NativeKey = nativeKey, Title = nativeKey, SectionType = "native", Enabled = true };
+    }
+
+    private bool IsFirstSection(string nativeKey)
+    {
+        var ordered = _sections.OrderBy(s => s.Order).ToList();
+        var idx = ordered.FindIndex(s => s.NativeKey == nativeKey && s.SectionType == "native");
+        return idx <= 0;
+    }
+
+    private bool IsLastSection(string nativeKey)
+    {
+        var ordered = _sections.OrderBy(s => s.Order).ToList();
+        var idx = ordered.FindIndex(s => s.NativeKey == nativeKey && s.SectionType == "native");
+        return idx < 0 || idx == ordered.Count - 1;
+    }
+
+    private void LoadSections()
+    {
+        _pageDef = ReportPageCfg.GetPage("/quickcheck");
+        _sections = _pageDef != null
+            ? _pageDef.Sections.OrderBy(s => s.Order).ToList()
+            : AllNativeKeys.Select((k, i) => new ReportSection { NativeKey = k, Title = k, SectionType = "native", Order = i, Enabled = true }).ToList();
+    }
+
+    private void MoveSection(ReportSection section, int direction)
+    {
+        if (_pageDef == null) return;
+        ReportPageCfg.MoveSection(_pageDef.Id, section.Id, direction);
+        LoadSections();
+        StateHasChanged();
+    }
+
+    private void DeleteSection(ReportSection section)
+    {
+        if (_pageDef == null) return;
+        ReportPageCfg.DeleteSection(_pageDef.Id, section.Id);
+        LoadSections();
+        StateHasChanged();
+    }
+
+    private void ToggleSection(ReportSection section)
+    {
+        if (_pageDef == null) return;
+        section.Enabled = !section.Enabled;
+        ReportPageCfg.UpsertSection(_pageDef.Id, section);
+        LoadSections();
+        StateHasChanged();
+    }
+
+    private void HandleSectionSaved(ReportSection section)
+    {
+        if (_pageDef == null) return;
+        ReportPageCfg.UpsertSection(_pageDef.Id, section);
+        LoadSections();
+        _editingSection = null;
+        StateHasChanged();
+    }
+
+    private void HandleSectionAdded(ReportSection section)
+    {
+        if (_pageDef == null) return;
+        section.Order = _sections.Count;
+        ReportPageCfg.UpsertSection(_pageDef.Id, section);
+        LoadSections();
+        _showAddSection = false;
+        StateHasChanged();
+    }
+
+    private void ResetSections()
+    {
+        // Remove all sections and let the service regenerate defaults
+        if (_pageDef == null) return;
+        foreach (var s in _sections.ToList())
+            ReportPageCfg.DeleteSection(_pageDef.Id, s.Id);
+        // Re-seed native keys
+        int i = 0;
+        foreach (var key in AllNativeKeys)
+            ReportPageCfg.UpsertSection(_pageDef.Id, new ReportSection
+            {
+                Id = Guid.NewGuid().ToString("N")[..8],
+                Title = key, NativeKey = key, SectionType = "native", Enabled = true, Order = i++
+            });
+        LoadSections();
+        StateHasChanged();
+    }
+
+    private List<ServerConnection> Connections => ConnectionManager.GetConnections();
+    private List<ServerConnection> EnabledConnections => ConnectionManager.GetEnabledConnections();
     private int EnabledChecksCount => CheckRepo.GetEnabledChecks().Count;
     private int EnabledServersCount => EnabledConnections.SelectMany(c => c.GetServerList()).Count();
 
+    private int PassedCount => State.Results.Count(r => r.Passed && string.IsNullOrEmpty(r.ErrorMessage));
+    private int FailedCount => State.Results.Count(r => !r.Passed && string.IsNullOrEmpty(r.ErrorMessage));
+    private int ErrorCount  => State.Results.Count(r => !string.IsNullOrEmpty(r.ErrorMessage));
+
     private List<string> ServersInResults =>
-        Results.Select(r => r.InstanceName).Distinct().OrderBy(s => s).ToList();
+        State.Results.Select(r => r.InstanceName).Distinct().OrderBy(s => s).ToList();
 
     private IEnumerable<CheckResult> FilteredResults
     {
         get
         {
-            var filtered = Results.AsEnumerable();
+            var filtered = State.Results.AsEnumerable();
 
-            filtered = SelectedFilter switch
+            filtered = State.SelectedFilter switch
             {
                 "passed" => filtered.Where(r => r.Passed && string.IsNullOrEmpty(r.ErrorMessage)),
                 "failed" => filtered.Where(r => !r.Passed && string.IsNullOrEmpty(r.ErrorMessage)),
                 "errors" => filtered.Where(r => !string.IsNullOrEmpty(r.ErrorMessage)),
-                _ => filtered
+                _        => filtered
             };
 
-            if (!string.IsNullOrEmpty(SelectedCategory))
-                filtered = filtered.Where(r => r.Category.Equals(SelectedCategory, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrEmpty(State.SelectedCategory))
+                filtered = filtered.Where(r => r.Category.Equals(State.SelectedCategory, StringComparison.OrdinalIgnoreCase));
 
-            if (!string.IsNullOrEmpty(SelectedServer))
-                filtered = filtered.Where(r => r.InstanceName.Equals(SelectedServer, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrEmpty(State.SelectedServer))
+                filtered = filtered.Where(r => r.InstanceName.Equals(State.SelectedServer, StringComparison.OrdinalIgnoreCase));
 
-            if (!string.IsNullOrEmpty(SelectedSeverity))
-                filtered = filtered.Where(r => r.Severity.Equals(SelectedSeverity, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrEmpty(State.SelectedSeverity))
+                filtered = filtered.Where(r => r.Severity.Equals(State.SelectedSeverity, StringComparison.OrdinalIgnoreCase));
 
             return filtered;
         }
@@ -402,58 +546,36 @@
 
     protected override async Task OnInitializedAsync()
     {
-        Connections = ConnectionManager.GetConnections();
-        await CheckRepo.LoadChecksAsync();
-        var checks = CheckRepo.GetEnabledChecks();
-        Categories = checks.Select(c => c.Category).Distinct().OrderBy(c => c).ToList();
+        LoadSections();
         ShowDiagnosticPane = UserSettings.GetShowDiagnosticPane();
+        await CheckRepo.LoadChecksAsync();
 
-        // Subscribe to per-check events for diagnostic logging
-        CheckExecutor.OnCheckCompleted += HandleCheckCompleted;
+        // Re-attach to state change notifications each time the page mounts
+        State.StateChanged += OnStateChanged;
+
+        // Ensure categories are populated (may have been loaded on a prior visit)
+        if (State.Categories.Count == 0)
+            State.Categories = CheckRepo.GetEnabledChecks()
+                .Select(c => c.Category).Distinct().OrderBy(c => c).ToList();
     }
 
     public void Dispose()
     {
-        CheckExecutor.OnCheckCompleted -= HandleCheckCompleted;
+        _disposed = true;
+        State.StateChanged -= OnStateChanged;
     }
 
-    private void HandleCheckCompleted(CheckResult result)
+    private void OnStateChanged()
     {
-        var status = !string.IsNullOrEmpty(result.ErrorMessage) ? "ERR"
-                   : result.Passed ? "PASS" : "FAIL";
-        var level = !string.IsNullOrEmpty(result.ErrorMessage) ? "error"
-                  : result.Passed ? "pass" : "fail";
-
-        var msg = $"[{result.InstanceName}] {status} {result.CheckId} \"{result.CheckName}\" " +
-                  $"(val={result.ActualValue}, exp={result.ExpectedValue}, {result.DurationMs}ms)" +
-                  (!string.IsNullOrEmpty(result.ErrorMessage) ? $" - {result.ErrorMessage}" : "");
-
-        AddDiagEntry(msg, level);
-    }
-
-    private void AddDiagEntry(string message, string level = "info")
-    {
-        DiagLog.Add(new DiagLogEntry
-        {
-            Timestamp = DateTime.Now,
-            Message = message,
-            Level = level
-        });
-
-        // Keep max 500 entries
-        //if (DiagLog.Count > 500)
-        //    DiagLog.RemoveRange(0, DiagLog.Count - 500);
-
-        // Auto-scroll and refresh UI on the UI thread
-        InvokeAsync(StateHasChanged);
+        if (!_disposed)
+            InvokeAsync(StateHasChanged);
     }
 
     private void OnServerSelected() => StateHasChanged();
 
     private void SetFilterFromCard(string filter)
     {
-        // Toggle: clicking the active filter resets to "all"
-        SelectedFilter = SelectedFilter == filter ? "all" : filter;
+        State.SelectedFilter = State.SelectedFilter == filter ? "all" : filter;
         StateHasChanged();
     }
 
@@ -463,237 +585,262 @@
         UserSettings.SetShowDiagnosticPane(ShowDiagnosticPane);
     }
 
-    private void ClearDiagLog()
+    private async Task AutoExportQuickCheckResults()
     {
-        DiagLog.Clear();
+        var settings = UserSettings.GetSettings();
+        if (!settings.AutoExportQuickCheckCsv && !settings.AutoExportQuickCheckPdf) return;
+        if (State.Results.Count == 0) return;
+
+        var outputDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "output");
+        Directory.CreateDirectory(outputDir);
+        var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+
+        if (settings.AutoExportQuickCheckCsv)
+        {
+            try
+            {
+                var csv = new System.Text.StringBuilder();
+                csv.AppendLine("Instance,CheckId,CheckName,Category,Severity,Passed,ActualValue,ExpectedValue,Message,DurationMs,ExecutedAt");
+                foreach (var r in State.Results)
+                {
+                    var msg = (r.Message ?? "").Replace("\"", "\"\"");
+                    csv.AppendLine($"\"{r.InstanceName}\",\"{r.CheckId}\",\"{r.CheckName}\",\"{r.Category}\",\"{r.Severity}\",{r.Passed},{r.ActualValue},{r.ExpectedValue},\"{msg}\",{r.DurationMs},\"{r.ExecutedAt:o}\"");
+                }
+                var fileName = $"QuickCheck_{timestamp}.csv";
+                await File.WriteAllTextAsync(Path.Combine(outputDir, fileName), csv.ToString());
+                Toast.ShowInfo($"Quick Check CSV exported: {fileName}");
+            }
+            catch (Exception ex)
+            {
+                Toast.ShowError($"CSV export failed: {ex.Message}");
+            }
+        }
+
+        if (settings.AutoExportQuickCheckPdf)
+        {
+            try
+            {
+                await Task.Delay(500); // let UI render final state
+                if (!PrintSvc.IsAvailable)
+                {
+                    await PrintSvc.PrintViaBrowserAsync(JSRuntime);
+                    Toast.ShowInfo("Browser print dialog opened for PDF export.");
+                }
+                else
+                {
+                    var fileName = $"QuickCheck_{timestamp}.pdf";
+                    var (success, path, error) = await PrintSvc.PrintToPdfAsync(
+                        fileName,
+                        printBackgrounds: false,
+                        orientation: Microsoft.Web.WebView2.Core.CoreWebView2PrintOrientation.Portrait);
+                    if (success)
+                        Toast.ShowInfo($"Quick Check PDF exported: {fileName}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Toast.ShowError($"PDF export failed: {ex.Message}");
+            }
+        }
     }
 
-    private async Task PrintResults()
+    private void PrintResults()
     {
+        var stem = $"QuickCheck_{DateTime.Now:yyyyMMdd_HHmmss}";
+        _pdfModal.Show(stem);
+    }
+
+    private async Task OnPdfConfirmed(PdfExportSettings settings)
+    {
+        await Task.Delay(350);
         try
         {
-            StatusMessage = "Exporting PDF...";
-            StatusClass = "";
-            var fileName = $"QuickCheck-{DateTime.Now:yyyy-MM-dd-HHmm}.pdf";
-            var (success, path, error) = await PrintSvc.PrintToPdfAsync(fileName);
+            if (!PrintSvc.IsAvailable)
+            {
+                // Server mode — use browser's native print dialog
+                await PrintSvc.PrintViaBrowserAsync(JSRuntime);
+                Toast.ShowInfo("Browser print dialog opened — use 'Save as PDF' to export.");
+                return;
+            }
+
+            var orientation = settings.LandscapeOrientation
+                ? Microsoft.Web.WebView2.Core.CoreWebView2PrintOrientation.Landscape
+                : Microsoft.Web.WebView2.Core.CoreWebView2PrintOrientation.Portrait;
+            var (success, path, error) = await PrintSvc.PrintToPdfAsync(
+                settings.FileName,
+                printBackgrounds: settings.PrintBackgrounds,
+                orientation: orientation);
             if (success && path != null)
-            {
-                StatusMessage = $"PDF saved: {path}";
-                StatusClass = "status-success";
-            }
+                Toast.ShowSuccess($"PDF saved: {System.IO.Path.GetFileName(path)}");
             else
-            {
-                StatusMessage = $"PDF export failed: {error ?? "WebView not ready."}";
-                StatusClass = "status-error";
-            }
+                Toast.ShowError($"PDF export failed: {error ?? "WebView not ready."}");
         }
         catch (Exception ex)
         {
-            StatusMessage = $"PDF export error: {ex.Message}";
-            StatusClass = "status-error";
+            Toast.ShowError($"PDF export error: {ex.Message}");
         }
-        StateHasChanged();
     }
 
     private void ClearResults()
     {
-        CheckExecutor.ClearAllResults();
-        Results.Clear();
-        ServerSummaries.Clear();
-        ExpandedResults.Clear();
-        HasRun = false;
-        StatusMessage = string.Empty;
-        SelectedFilter = "all";
-        SelectedCategory = string.Empty;
-        SelectedServer = string.Empty;
-        SelectedSeverity = string.Empty;
-        
+        State.ClearResults();
+        _expandedResults.Clear();
         StateHasChanged();
     }
 
     private void ToggleExpandResult(string key)
     {
-        if (!ExpandedResults.Remove(key))
-            ExpandedResults.Add(key);
+        if (!_expandedResults.Remove(key))
+            _expandedResults.Add(key);
     }
 
     private async Task RunChecks()
     {
         CheckExecutor.ClearAllResults();
-        IsRunning = true;
-        Progress = 0;
-        ProgressMessage = "Starting...";
-        Results.Clear();
-        ServerSummaries.Clear();
-        await InvokeAsync(StateHasChanged);
-        ExecutionTime = DateTime.Now;
-        ServersTested = 0;
+        State.IsRunning       = true;
+        State.Progress        = 0;
+        State.ProgressMessage = "Starting...";
+        State.Results.Clear();
+        State.ServerSummaries.Clear();
+        State.DiagLog.Clear();
+        State.ExecutionTime   = DateTime.Now;
+        State.ServersTested   = 0;
+        State.NotifyStateChanged();
 
         var overallStart = DateTime.UtcNow;
-
-        // Diagnostic logging
-        AddDiagEntry("=== Quick Check started ===", "info");
+        State.AddDiagEntry("=== Quick Check started ===", "info");
 
         try
         {
-            // Build list of (connection, server) pairs to execute against
             var targets = new List<(ServerConnection Connection, string Server)>();
 
-            if (RunAllServers)
+            if (State.RunAllServers)
             {
                 foreach (var conn in EnabledConnections)
-                {
                     foreach (var server in conn.GetServerList())
-                    {
                         targets.Add((conn, server));
-                    }
-                }
             }
             else
             {
-                var connection = ConnectionManager.GetConnection(SelectedConnectionId);
+                var connection = ConnectionManager.GetConnection(State.SelectedConnectionId);
                 if (connection == null)
                 {
-                    StatusMessage = "Connection not found.";
-                    StatusClass = "error";
-                    AddDiagEntry("ERROR: Connection not found", "error");
+                    State.StatusMessage = "Connection not found.";
+                    State.StatusClass   = "error";
+                    State.AddDiagEntry("ERROR: Connection not found", "error");
                     return;
                 }
-
                 foreach (var server in connection.GetServerList())
-                {
                     targets.Add((connection, server));
-                }
             }
 
             if (targets.Count == 0)
             {
-                StatusMessage = "No servers to check.";
-                StatusClass = "error";
-                AddDiagEntry("ERROR: No servers to check", "error");
+                State.StatusMessage = "No servers to check.";
+                State.StatusClass   = "error";
+                State.AddDiagEntry("ERROR: No servers to check", "error");
                 return;
             }
 
-            AddDiagEntry($"Targets: {targets.Count} server(s)", "info");
+            State.AddDiagEntry($"Targets: {targets.Count} server(s)", "info");
 
-            // Filter to Critical + Warning + Info severity (excludes draft/placeholder checks)
             Func<SqlCheck, bool> filter = c =>
                 c.Severity.Equals("Critical", StringComparison.OrdinalIgnoreCase) ||
-                c.Severity.Equals("Warning", StringComparison.OrdinalIgnoreCase) ||
-                c.Severity.Equals("Info", StringComparison.OrdinalIgnoreCase);
+                c.Severity.Equals("Warning",  StringComparison.OrdinalIgnoreCase) ||
+                c.Severity.Equals("Info",     StringComparison.OrdinalIgnoreCase);
 
-            // Log check counts
             var checksToRun = CheckRepo.GetEnabledChecks().Where(filter).ToList();
-            AddDiagEntry($"Checks to execute per server: {checksToRun.Count}", "info");
+            State.AddDiagEntry($"Checks to execute per server: {checksToRun.Count}", "info");
 
-            // Log check breakdown by category
-            var byCat = checksToRun.GroupBy(c => c.Category).OrderBy(g => g.Key);
-            foreach (var group in byCat)
-            {
-                AddDiagEntry($"  Category '{group.Key}': {group.Count()} checks", "info");
-            }
+            foreach (var g in checksToRun.GroupBy(c => c.Category).OrderBy(g => g.Key))
+                State.AddDiagEntry($"  Category '{g.Key}': {g.Count()} checks", "info");
+            foreach (var g in checksToRun.GroupBy(c => c.Severity).OrderBy(g => g.Key))
+                State.AddDiagEntry($"  Severity '{g.Key}': {g.Count()} checks", "info");
+            foreach (var g in checksToRun.GroupBy(c => c.ExecutionType ?? "scalar").OrderBy(g => g.Key))
+                State.AddDiagEntry($"  ExecutionType '{g.Key}': {g.Count()} checks", "info");
 
-            // Log check breakdown by severity
-            var bySev = checksToRun.GroupBy(c => c.Severity).OrderBy(g => g.Key);
-            foreach (var group in bySev)
-            {
-                AddDiagEntry($"  Severity '{group.Key}': {group.Count()} checks", "info");
-            }
-
-            // Log check breakdown by execution type
-            var byExec = checksToRun.GroupBy(c => c.ExecutionType ?? "scalar").OrderBy(g => g.Key);
-            foreach (var group in byExec)
-            {
-                AddDiagEntry($"  ExecutionType '{group.Key}': {group.Count()} checks", "info");
-            }
-
-            var allResults = new List<CheckResult>();
-            int totalTargets = targets.Count;
+            var allResults    = new List<CheckResult>();
+            int totalTargets  = targets.Count;
             int completedTargets = 0;
 
             foreach (var (conn, server) in targets)
             {
-                ProgressMessage = $"Checking {server}...";
-                AddDiagEntry($"--- Connecting to {server} ---", "info");
-                StateHasChanged();
+                State.ProgressMessage = $"Checking {server}...";
+                State.AddDiagEntry($"--- Connecting to {server} ---", "info");
+                State.NotifyStateChanged();
 
                 try
                 {
                     var summary = await CheckExecutor.ExecuteChecksAsync(conn, server, filter);
-
-                    ServerSummaries.Add(summary);
-
-                    AddDiagEntry($"--- {server} complete: {summary.Passed} pass, {summary.Failed} fail, {summary.Errors} err ({summary.Duration.TotalSeconds:F1}s) ---", "info");
-
-                    // Get the results that were just stored
-                    var serverResults = CheckExecutor.GetResults(server, 1000);
-                    allResults.AddRange(serverResults);
+                    State.ServerSummaries.Add(summary);
+                    State.AddDiagEntry($"--- {server} complete: {summary.Passed} pass, {summary.Failed} fail, {summary.Errors} err ({summary.Duration.TotalSeconds:F1}s) ---", "info");
+                    Toast.ShowInfo($"Quick Check: {server} — {summary.Passed} pass, {summary.Failed} fail ({summary.Duration.TotalSeconds:F1}s)");
+                    allResults.AddRange(CheckExecutor.GetResults(server, 1000));
                 }
                 catch (Exception ex)
                 {
-                    AddDiagEntry($"ERROR on {server}: {ex.Message}", "error");
-                    System.Diagnostics.Debug.WriteLine($"[QuickCheck] Error on {server}: {ex.Message}");
-                    ServerSummaries.Add(new CheckExecutionSummary
+                    State.AddDiagEntry($"ERROR on {server}: {ex.Message}", "error");
+                    State.ServerSummaries.Add(new CheckExecutionSummary
                     {
-                        InstanceName = server,
-                        StartedAt = DateTime.UtcNow,
-                        CompletedAt = DateTime.UtcNow,
-                        Errors = CheckRepo.GetEnabledChecks().Count
+                        InstanceName  = server,
+                        StartedAt     = DateTime.UtcNow,
+                        CompletedAt   = DateTime.UtcNow,
+                        Errors        = CheckRepo.GetEnabledChecks().Count
                     });
                 }
 
                 completedTargets++;
-                Progress = (int)((double)completedTargets / totalTargets * 100);
-                ServersTested = completedTargets;
-                StateHasChanged();
+                State.Progress      = (int)((double)completedTargets / totalTargets * 100);
+                State.ServersTested = completedTargets;
+                State.NotifyStateChanged();
             }
 
-            Results = allResults;
-            HasRun = true;
+            State.Results = allResults;
+            State.HasRun  = true;
 
-            var totalDuration = DateTime.UtcNow - overallStart;
-            ExecutionDuration = $"{totalDuration.TotalSeconds:F1}s";
+            var totalDuration     = DateTime.UtcNow - overallStart;
+            State.ExecutionDuration = $"{totalDuration.TotalSeconds:F1}s";
+            State.Categories = State.Results.Select(r => r.Category).Distinct().OrderBy(c => c).ToList();
 
-            // Update categories from results
-            Categories = Results.Select(r => r.Category).Distinct().OrderBy(c => c).ToList();
-
-            if (Results.Count > 0)
+            if (State.Results.Count > 0)
             {
-                StatusMessage = $"Quick check completed: {PassedCount} passed, {FailedCount} failed, {ErrorCount} errors across {ServersTested} server(s)";
-                StatusClass = FailedCount > 0 || ErrorCount > 0 ? "warning" : "success";
+                State.StatusMessage = $"Quick check completed: {PassedCount} passed, {FailedCount} failed, {ErrorCount} errors across {State.ServersTested} server(s)";
+                State.StatusClass   = FailedCount > 0 || ErrorCount > 0 ? "warning" : "success";
             }
             else
             {
-                StatusMessage = "No checks were executed. Make sure checks are enabled in sql-checks.json";
-                StatusClass = "warning";
+                State.StatusMessage = "No checks were executed. Make sure checks are enabled in sql-checks.json";
+                State.StatusClass   = "warning";
             }
 
-            AddDiagEntry($"=== Complete: {Results.Count} total results in {ExecutionDuration} ===", "info");
+            State.AddDiagEntry($"=== Complete: {State.Results.Count} total results in {State.ExecutionDuration} ===", "info");
+
+            await AutoExportQuickCheckResults();
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Error running checks: {ex.Message}";
-            StatusClass = "error";
-            AddDiagEntry($"FATAL ERROR: {ex.Message}", "error");
+            State.StatusMessage = $"Error running checks: {ex.Message}";
+            State.StatusClass   = "error";
+            State.AddDiagEntry($"FATAL ERROR: {ex.Message}", "error");
             System.Diagnostics.Debug.WriteLine($"[QuickCheck] Error: {ex}");
         }
         finally
         {
-            IsRunning = false;
-            Progress = 100;
-            ProgressMessage = "Complete";
+            State.IsRunning       = false;
+            State.Progress        = 100;
+            State.ProgressMessage = "Complete";
+            State.NotifyStateChanged();
         }
     }
 
     private async Task ImportChecks()
     {
-        IsImporting = true;
-        StatusMessage = string.Empty;
-        StateHasChanged();
+        State.IsImporting   = true;
+        State.StatusMessage = string.Empty;
+        State.NotifyStateChanged();
 
         try
         {
-            // Look for import files in the SQLMonitoring folder or app directory
             var searchPaths = new[]
             {
                 Path.Combine(AppContext.BaseDirectory, "..", "SQLMonitoring"),
@@ -702,75 +849,59 @@
             };
 
             string? importFile = null;
-
             foreach (var searchPath in searchPaths)
             {
                 if (Directory.Exists(searchPath))
                 {
                     var jsonFiles = Directory.GetFiles(searchPath, "sql-checks*.json")
-                        .OrderByDescending(f => f)
-                        .FirstOrDefault();
-                    if (jsonFiles != null)
-                    {
-                        importFile = jsonFiles;
-                        break;
-                    }
+                        .OrderByDescending(f => f).FirstOrDefault();
+                    if (jsonFiles != null) { importFile = jsonFiles; break; }
                 }
             }
 
             if (importFile == null)
             {
-                StatusMessage = "No import file found. Place a sql-checks-export*.json file in the SQLMonitoring folder.";
-                StatusClass = "warning";
-                AddDiagEntry("Import: no import file found", "error");
+                State.StatusMessage = "No import file found. Place a sql-checks-export*.json file in the SQLMonitoring folder.";
+                State.StatusClass   = "warning";
+                State.AddDiagEntry("Import: no import file found", "error");
                 return;
             }
 
-            AddDiagEntry($"Importing from {Path.GetFileName(importFile)}...", "info");
+            State.AddDiagEntry($"Importing from {Path.GetFileName(importFile)}...", "info");
             var (added, updated, skipped) = await CheckRepo.ImportChecksFromFileAsync(importFile);
 
-            StatusMessage = $"Import complete from {Path.GetFileName(importFile)}: {added} added, {updated} updated, {skipped} skipped";
-            StatusClass = "success";
-            AddDiagEntry($"Import done: {added} added, {updated} updated, {skipped} skipped", "pass");
+            State.StatusMessage = $"Import complete from {Path.GetFileName(importFile)}: {added} added, {updated} updated, {skipped} skipped";
+            State.StatusClass   = "success";
+            State.AddDiagEntry($"Import done: {added} added, {updated} updated, {skipped} skipped", "pass");
 
-            // Refresh categories
-            var checks = CheckRepo.GetEnabledChecks();
-            Categories = checks.Select(c => c.Category).Distinct().OrderBy(c => c).ToList();
+            State.Categories = CheckRepo.GetEnabledChecks()
+                .Select(c => c.Category).Distinct().OrderBy(c => c).ToList();
         }
         catch (Exception ex)
         {
-            StatusMessage = $"Import error: {ex.Message}";
-            StatusClass = "error";
-            AddDiagEntry($"Import ERROR: {ex.Message}", "error");
+            State.StatusMessage = $"Import error: {ex.Message}";
+            State.StatusClass   = "error";
+            State.AddDiagEntry($"Import ERROR: {ex.Message}", "error");
         }
         finally
         {
-            IsImporting = false;
+            State.IsImporting = false;
+            State.NotifyStateChanged();
         }
     }
 
     private string GetRowClass(CheckResult result)
     {
-        if (!string.IsNullOrEmpty(result.ErrorMessage))
-            return "row-error";
+        if (!string.IsNullOrEmpty(result.ErrorMessage)) return "row-error";
         return result.Passed ? "row-passed" : "row-failed";
     }
 
-    private string GetSeverityClass(string severity)
-    {
-        return severity?.ToLower() switch
+    private string GetSeverityClass(string severity) =>
+        severity?.ToLower() switch
         {
             "critical" => "severity-critical",
-            "warning" => "severity-warning",
-            "info" => "severity-info",
-            _ => "severity-default"
+            "warning"  => "severity-warning",
+            "info"     => "severity-info",
+            _          => "severity-default"
         };
-    }
-
-    private class DiagLogEntry
-    {
-        public DateTime Timestamp { get; set; }
-        public string Message { get; set; } = string.Empty;
-        public string Level { get; set; } = "info"; // "info", "pass", "fail", "error"
-    }
 }

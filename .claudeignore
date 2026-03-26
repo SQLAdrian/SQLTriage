@@ -1,0 +1,58 @@
+# Historical analysis and planning docs — never auto-load (7000+ lines saved)
+MEMORY_OPTIMIZATION_ANALYSIS.md
+MEMORY_OPTIMIZATION_RECOMMENDATIONS.md
+MEMORY_LEAK_CHECKLIST.md
+MEMORY_LEAK_STATUS.md
+REFACTORING_RECOMMENDATIONS.md
+PROJECT_GAP_ANALYSIS.md
+MODERN_FRAMEWORKS_COMPARISON.md
+SIMPLEST_IMPLEMENTATION.md
+UI_MODERNIZATION_PLAN.md
+LOG_ISSUES_ANALYSIS.md
+LOG_REVIEW_FIXES_2026-03-07.md
+FIX_VERIFICATION_CHECKLIST.md
+SQL_FIXES_SUMMARY.md
+FOOTPRINT_REDUCTION_GUIDE.md
+FOOTPRINT_REDUCTION_QUICK.md
+DACPAC_REMOVAL_SUMMARY.md
+CICD_QUICKSTART.md
+QUICK_FIX_REFERENCE.md
+NEWFEATURES.md
+NewAppTodoQ.md
+PMworking.md
+analysis-live-dashboard.md
+dashboard-analysis-progress.md
+dashboard-work-plan.md
+WORKFILE_BlitzReport.md
+
+# Community docs — not needed for coding
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+CONTRIBUTORS.md
+AUTHORS.md
+SUPPORT.md
+SECURITY.md
+
+# Reference docs — read only when explicitly needed
+DEPLOYMENT_GUIDE.md
+CHANGELOG.md
+README.md
+
+# SQL scripts — large, rarely relevant
+BPScripts/
+SQLWATCH_db/
+scripts/
+Deploy/
+
+# Build output and worktrees
+bin/
+obj/
+.claude/worktrees/
+
+# Binary and large files
+*.pdf
+*.xsd
+*.dacpac
+*.rdl
+Dacpacs/
+Runtimes/

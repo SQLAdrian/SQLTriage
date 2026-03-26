@@ -114,20 +114,6 @@
                     Run Vulnerability Assessment
                 </button>
             </div>
-            <div class="guide-card">
-                <h3><i class="fa-solid fa-file-pdf"></i> Reports</h3>
-                <p>Generate professional PDF reports from Vulnerability Assessment data with executive summaries and detailed findings.</p>
-                <button class="btn btn-primary" @onclick="GoToReports">
-                    Generate Reports
-                </button>
-            </div>
-            <div class="guide-card">
-                <h3><i class="fa-solid fa-file-pdf"></i> RDL Reports</h3>
-                <p>View and generate reports using RDL/PowerBI template files (like BlitzReport.rdl) with your data.</p>
-                <button class="btn btn-primary" @onclick="GoToRdlReports">
-                    View RDL Reports
-                </button>
-            </div>
         </div>
     </div>
 
@@ -177,6 +163,20 @@
                     Manage Servers
                 </button>
             </div>
+            <div class="guide-card">
+                <h3><i class="fa-solid fa-bell"></i> Alerting</h3>
+                <p>Configure alert rules, notification channels, and severity thresholds for proactive monitoring.</p>
+                <button class="btn btn-primary" @onclick="GoToAlerting">
+                    Configure Alerting
+                </button>
+            </div>
+            <div class="guide-card">
+                <h3><i class="fa-solid fa-microchip"></i> Service &amp; Updates</h3>
+                <p>Manage the background service, check for application updates, and configure Windows Service mode.</p>
+                <button class="btn btn-primary" @onclick="GoToServiceManagement">
+                    Service &amp; Updates
+                </button>
+            </div>
         </div>
     </div>
 
@@ -208,13 +208,13 @@
     private void GoToQuickCheck() => Navigation.NavigateTo("/quickcheck");
     private void GoToFullAudit() => Navigation.NavigateTo("/fullaudit");
     private void GoToVulnerabilityAssessment() => Navigation.NavigateTo("/vulnerabilityassessment");
-    private void GoToReports() => Navigation.NavigateTo("/reports");
-    private void GoToRdlReports() => Navigation.NavigateTo("/reports-rdl");
     private void GoToDeploySqlwatch() => Navigation.NavigateTo("/deploysqlwatch");
     private void GoToDeployDarlingPm() => Navigation.NavigateTo("/deploydarlingpm");
     private void GoToSettings() => Navigation.NavigateTo("/settings");
     private void GoToDashboardEditor() => Navigation.NavigateTo("/dashboard-editor");
     private void GoToServers() => Navigation.NavigateTo("/servers");
+    private void GoToAlerting() => Navigation.NavigateTo("/alerting-config");
+    private void GoToServiceManagement() => Navigation.NavigateTo("/service-management");
     private void GoToAbout() => Navigation.NavigateTo("/about");
 }
 
@@ -262,6 +262,8 @@
         border-radius: 8px;
         padding: 20px;
         transition: transform 0.2s ease, box-shadow 0.2s ease;
+        display: flex;
+        flex-direction: column;
     }
 
     .guide-card:hover {
@@ -282,6 +284,7 @@
         color: var(--text-secondary);
         margin-bottom: 18px;
         line-height: 1.5;
+        flex: 1;
     }
 
     .guide-card .btn {
@@ -289,6 +292,7 @@
         padding: 10px;
         font-weight: 500;
         transition: all 0.2s ease;
+        margin-top: auto;
     }
 
     .guide-card .btn:hover {

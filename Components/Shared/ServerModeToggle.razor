@@ -1,0 +1,123 @@
+@using SqlHealthAssessment.Data.Services
+@inject ServerModeService ServerMode
+@inject IJSRuntime JS
+@implements IDisposable
+
+<div class="server-mode-toggle">
+    @if (ServerMode.IsRunning)
+    {
+        <div class="server-mode-panel">
+            <div class="server-mode-status">
+                <span class="server-mode-dot running"></span>
+                <span class="server-mode-label">Server Mode</span>
+            </div>
+            <a href="@ServerMode.Url" target="_blank" class="server-mode-url" @onclick:preventDefault
+               @onclick="() => OpenUrl(ServerMode.Url!)" title="Open in browser">
+                <i class="fa-solid fa-arrow-up-right-from-square"></i> @ServerMode.Url
+            </a>
+            @if (!string.IsNullOrEmpty(ServerMode.HttpsUrl))
+            {
+                <a href="@ServerMode.HttpsUrl" target="_blank" class="server-mode-url" @onclick:preventDefault
+                   @onclick="() => OpenUrl(ServerMode.HttpsUrl!)" title="Open HTTPS in browser">
+                    <i class="fa-solid fa-lock"></i> @ServerMode.HttpsUrl
+                </a>
+            }
+            <div class="server-mode-links">
+                <a href="@GetDiagUrl()" target="_blank" class="server-mode-link" @onclick:preventDefault
+                   @onclick="() => OpenUrl(GetDiagUrl())" title="Diagnostic page">
+                    <i class="fa-solid fa-stethoscope"></i> Diag
+                </a>
+                <a href="@GetHealthUrl()" target="_blank" class="server-mode-link" @onclick:preventDefault
+                   @onclick="() => OpenUrl(GetHealthUrl())" title="Health check JSON">
+                    <i class="fa-solid fa-heart-pulse"></i> Health
+                </a>
+            </div>
+            <button class="server-mode-btn stop" @onclick="StopServer" title="Stop server mode">
+                <i class="fa-solid fa-stop"></i>
+            </button>
+        </div>
+    }
+    else
+    {
+        <button class="server-mode-btn start" @onclick="StartServer" disabled="@_starting"
+                title="Start server mode — share via browser">
+            @if (_starting)
+            {
+                <i class="fa-solid fa-spinner fa-spin"></i>
+            }
+            else
+            {
+                <i class="fa-solid fa-server"></i>
+            }
+        </button>
+    }
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="server-mode-error">@_error</div>
+    }
+</div>
+
+@code {
+    private bool _starting;
+    private string? _error;
+
+    protected override void OnInitialized()
+    {
+        ServerMode.OnStateChanged += OnStateChanged;
+    }
+
+    private async Task StartServer()
+    {
+        _starting = true;
+        _error = null;
+        StateHasChanged();
+
+        try
+        {
+            await ServerMode.StartAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _starting = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task StopServer()
+    {
+        await ServerMode.StopAsync();
+    }
+
+    private string GetDiagUrl() => $"http://localhost:{ServerMode.Port}/_server/diag";
+    private string GetHealthUrl() => $"http://localhost:{ServerMode.Port}/_server/health";
+
+    private async Task OpenUrl(string url)
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url)
+            {
+                UseShellExecute = true
+            });
+        }
+        catch
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", url);
+        }
+    }
+
+    private void OnStateChanged()
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        ServerMode.OnStateChanged -= OnStateChanged;
+    }
+}

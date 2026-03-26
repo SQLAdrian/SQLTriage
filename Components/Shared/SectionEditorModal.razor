@@ -1,0 +1,446 @@
+@* In the name of God, the Merciful, the Compassionate *@
+@using SqlHealthAssessment.Data.Models
+
+@if (IsVisible && _working != null)
+{
+    <div class="modal-backdrop" @onclick="Cancel"></div>
+    <div class="modal-dialog section-editor-modal" @onclick:stopPropagation>
+
+        <div class="modal-header">
+            <h3><i class="fa-solid fa-gear"></i> @(_working.SectionType == "panel" ? "Configure Panel Section" : "Configure Section")</h3>
+            <button class="modal-close" @onclick="Cancel"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+
+        @* ── Tab bar ──────────────────────────────────────────────────────── *@
+        <div class="sed-tabs">
+            <button class="sed-tab @(_tab == 0 ? "sed-tab--active" : "")" @onclick="() => _tab = 0">
+                <i class="fa-solid fa-sliders"></i> Section
+            </button>
+            @if (_working.SectionType == "panel")
+            {
+                <button class="sed-tab @(_tab == 1 ? "sed-tab--active" : "")" @onclick="() => _tab = 1">
+                    <i class="fa-solid fa-table-columns"></i> Panel Config
+                </button>
+                <button class="sed-tab @(_tab == 2 ? "sed-tab--active" : "")" @onclick="() => _tab = 2">
+                    <i class="fa-solid fa-code"></i> SQL Query
+                </button>
+                @if (AvailableFields.Count > 0)
+                {
+                    <button class="sed-tab @(_tab == 3 ? "sed-tab--active" : "")" @onclick="() => _tab = 3">
+                        <i class="fa-solid fa-table"></i> Field Reference
+                    </button>
+                }
+            }
+        </div>
+
+        <div class="sed-body">
+
+            @* ── Tab 0: Section metadata ──────────────────────────────────── *@
+            @if (_tab == 0)
+            {
+                <div class="form-section">
+                    <h4>Section</h4>
+                    <div class="form-group">
+                        <label>Title</label>
+                        <input type="text" @bind="_working.Title" @bind:event="oninput" placeholder="Section title" />
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group" style="flex: 1;">
+                            <label>Section Type</label>
+                            <select @bind="_working.SectionType" @bind:after="OnSectionTypeChanged">
+                                <option value="native">Native (hardcoded page content)</option>
+                                <option value="panel">Panel (custom data panel)</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex: 0 0 auto; display:flex; align-items:center; gap:6px; padding-bottom:2px;">
+                            <input type="checkbox" @bind="_working.Enabled" id="sed-enabled" />
+                            <label for="sed-enabled" style="margin:0;">Enabled</label>
+                        </div>
+                    </div>
+
+                    @* ── Position: Before / After ──────────────────────── *@
+                    <div class="form-group">
+                        <label>Position on Page</label>
+                        <div class="sed-position-toggle">
+                            <button class="sed-pos-btn @(_working.Position == "before" ? "sed-pos-btn--active" : "")"
+                                    @onclick='() => _working.Position = "before"'>
+                                <i class="fa-solid fa-arrow-up"></i> Before main content
+                            </button>
+                            <button class="sed-pos-btn @(_working.Position != "before" ? "sed-pos-btn--active" : "")"
+                                    @onclick='() => _working.Position = "after"'>
+                                <i class="fa-solid fa-arrow-down"></i> After main content
+                            </button>
+                        </div>
+                        @if (_working.Position == "after" && _working.SectionType == "panel" && AvailableFields.Count > 0)
+                        {
+                            <small class="sed-pos-hint">
+                                <i class="fa-solid fa-circle-info"></i>
+                                This panel renders after the page data loads — use the
+                                <strong>Field Reference</strong> tab to see available columns for your SQL query.
+                            </small>
+                        }
+                        @if (_working.Position == "before" && _working.SectionType == "panel")
+                        {
+                            <small class="sed-pos-hint sed-pos-hint--warn">
+                                <i class="fa-solid fa-triangle-exclamation"></i>
+                                Panels placed <em>before</em> run independently — page result data is not yet available here.
+                            </small>
+                        }
+                    </div>
+
+                    @if (_working.SectionType == "native")
+                    {
+                        <div class="form-group">
+                            <label>Native Key</label>
+                            <select @bind="_working.NativeKey">
+                                @* Always include the section's own current key so it appears in the list *@
+                                @foreach (var key in EffectiveNativeKeys)
+                                {
+                                    <option value="@key">@key</option>
+                                }
+                            </select>
+                            <small>Identifies which hardcoded page slot to render here.</small>
+                        </div>
+                    }
+                </div>
+            }
+
+            @* ── Tab 1: Panel display config ──────────────────────────────── *@
+            @if (_tab == 1 && _working.SectionType == "panel" && _panel != null)
+            {
+                <div class="form-section">
+                    <h4>Basic</h4>
+                    <div class="form-group">
+                        <label>Panel Title</label>
+                        <input type="text" @bind="_panel.Title" @bind:event="oninput" placeholder="Panel title" />
+                    </div>
+                    <div class="form-group">
+                        <label>Description</label>
+                        <textarea @bind="_panel.Description" @bind:event="oninput" rows="2" placeholder="Shown below chart"></textarea>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Default Database</label>
+                            <input type="text" @bind="_panel.DefaultDatabase" @bind:event="oninput" placeholder="master" />
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h4>Display</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Panel Type</label>
+                            <select @bind="_panel.PanelType">
+                                <option value="TimeSeries">Time Series Chart</option>
+                                <option value="StatCard">Stat Card</option>
+                                <option value="DeltaStatCard">Delta Stat Card (per/sec)</option>
+                                <option value="BarGauge">Bar Gauge</option>
+                                <option value="DataGrid">Data Grid</option>
+                                <option value="CheckStatus">Check Status</option>
+                                <option value="TextCard">Text Card</option>
+                            </select>
+                        </div>
+                        @if (_panel.PanelType == "TimeSeries")
+                        {
+                            <div class="form-group">
+                                <label>Chart Type</label>
+                                <select @bind="_panel.ChartType">
+                                    <option value="Line">Line</option>
+                                    <option value="Bar">Bar</option>
+                                    <option value="Area">Area</option>
+                                </select>
+                            </div>
+                        }
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Height (px)</label>
+                            <input type="number" @bind="_panel.Height" min="100" max="800" />
+                        </div>
+                        <div class="form-group">
+                            <label>Refresh (sec)</label>
+                            <input type="number" @bind="_panel.RefreshIntervalSeconds" min="5" max="3600" placeholder="None" />
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h4>Layout</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Column</label>
+                            <select @bind="_panel.Layout.Column">
+                                <option value="0">Special (Stats / Gauges)</option>
+                                <option value="1">Left Column</option>
+                                <option value="2">Right Column</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label><input type="checkbox" @bind="_panel.Layout.SpanColumns" /> Span Full Width</label>
+                    </div>
+                </div>
+
+                @if (_panel.PanelType == "StatCard" || _panel.PanelType == "DeltaStatCard")
+                {
+                    <div class="form-section">
+                        <h4>Stat Card Settings</h4>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Unit</label>
+                                <input type="text" @bind="_panel.StatUnit" placeholder="%, MB, etc." />
+                            </div>
+                            <div class="form-group">
+                                <label>Threshold Key</label>
+                                <input type="text" @bind="_panel.StatThresholdKey" placeholder="cpu, memory…" />
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Value Format</label>
+                            @ValueFormatSelect(_panel)
+                        </div>
+                    </div>
+                }
+
+                @if (_panel.PanelType == "BarGauge")
+                {
+                    <div class="form-section">
+                        <h4>Bar Gauge Settings</h4>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Threshold Key</label>
+                                <input type="text" @bind="_panel.BarGaugeThresholdKey" />
+                            </div>
+                            <div class="form-group">
+                                <label>Unit Suffix</label>
+                                <input type="text" @bind="_panel.BarGaugeUnitSuffix" placeholder="%" />
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Value Format</label>
+                            @ValueFormatSelect(_panel)
+                        </div>
+                    </div>
+                }
+
+                @if (_panel.PanelType == "DataGrid")
+                {
+                    <div class="form-section">
+                        <h4>Data Grid Settings</h4>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label><input type="checkbox" @bind="_panel.DataGridIsClickable" /> Clickable Rows (query plan)</label>
+                            </div>
+                            <div class="form-group">
+                                <label>Max Rows</label>
+                                <input type="number" @bind="_panel.DataGridMaxRows" min="10" max="10000" />
+                            </div>
+                        </div>
+                    </div>
+                }
+            }
+
+            @* ── Tab 2: SQL query ─────────────────────────────────────────── *@
+            @if (_tab == 2 && _working.SectionType == "panel" && _panel != null)
+            {
+                <div class="form-section">
+                    <h4>SQL Server Query</h4>
+                    @if (AvailableFields.Count > 0 && _working.Position != "before")
+                    {
+                        <div class="sed-query-hint">
+                            <i class="fa-solid fa-lightbulb"></i>
+                            Available columns from this page's data — see the <strong>Field Reference</strong> tab for details.
+                            <span class="sed-field-pills">
+                                @foreach (var f in AvailableFields.Where(f => f.IsKey))
+                                {
+                                    <span class="sed-field-pill sed-field-pill--key">@f.Name</span>
+                                }
+                            </span>
+                        </div>
+                    }
+                    <div class="form-group">
+                        <textarea @bind="_panel.Query.SqlServer" @bind:event="oninput"
+                                  rows="18" placeholder="SELECT ..."
+                                  style="font-family: 'Consolas', monospace; font-size: 12px; resize: vertical;"></textarea>
+                        <small>Use @@SqlInstance, @@DateFrom, @@DateTo parameters as needed.</small>
+                    </div>
+                </div>
+            }
+
+            @* ── Tab 3: Field Reference ───────────────────────────────────── *@
+            @if (_tab == 3 && AvailableFields.Count > 0)
+            {
+                <div class="form-section">
+                    <div class="sed-fieldref-header">
+                        <h4><i class="fa-solid fa-table"></i> Available Fields</h4>
+                        <p class="sed-fieldref-desc">
+                            These columns are produced by this page's native assessment queries.
+                            Use them in your panel's SQL query to join or reference the page data.
+                        </p>
+                    </div>
+                    <table class="sed-fieldref-table">
+                        <thead>
+                            <tr>
+                                <th>Column</th>
+                                <th>Type</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var f in AvailableFields)
+                            {
+                                <tr class="@(f.IsKey ? "sed-fieldref-row--key" : "")">
+                                    <td>
+                                        <code>@f.Name</code>
+                                        @if (f.IsKey)
+                                        {
+                                            <span class="sed-field-pill sed-field-pill--key">key</span>
+                                        }
+                                    </td>
+                                    <td><span class="sed-field-type">@f.Type</span></td>
+                                    <td class="sed-fieldref-desc-cell">@f.Description</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    <div class="sed-fieldref-note">
+                        <i class="fa-solid fa-circle-info"></i>
+                        Panel type recommendation:
+                        <strong>DataGrid</strong> — display all rows;
+                        <strong>StatCard</strong> — aggregate counts;
+                        <strong>TimeSeries</strong> — trends over time.
+                    </div>
+                </div>
+            }
+        </div>
+
+        <div class="modal-footer sed-footer">
+            <button class="btn btn-secondary" @onclick="Cancel">Cancel</button>
+            <button class="btn btn-primary" @onclick="Confirm">
+                <i class="fa-solid fa-check"></i> Save Section
+            </button>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public ReportSection? Section { get; set; }
+    /// <summary>Keys not yet in use by other sections. The editing section's own key is always added back.</summary>
+    [Parameter] public List<string> NativeKeys { get; set; } = new();
+    /// <summary>Page-specific field schema shown in the Field Reference tab.</summary>
+    [Parameter] public List<ReportFieldInfo> AvailableFields { get; set; } = new();
+    [Parameter] public EventCallback<ReportSection> OnSave { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private ReportSection? _working;
+    private PanelDefinition? _panel;
+    private int _tab = 0;
+
+    /// <summary>Includes the section's own current native key so it is always selectable.</summary>
+    private List<string> EffectiveNativeKeys
+    {
+        get
+        {
+            if (_working == null) return NativeKeys;
+            var own = _working.NativeKey;
+            if (!string.IsNullOrEmpty(own) && !NativeKeys.Contains(own))
+                return new List<string>(NativeKeys) { own };
+            return NativeKeys;
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (IsVisible && Section != null && (_working == null || _working.Id != Section.Id))
+        {
+            _working = Clone(Section);
+            _panel   = _working.PanelConfig ??= new PanelDefinition { Id = _working.Id, Title = _working.Title };
+            _tab = 0;
+        }
+    }
+
+    private void OnSectionTypeChanged()
+    {
+        if (_working == null) return;
+        if (_working.SectionType == "panel")
+        {
+            _working.PanelConfig ??= new PanelDefinition { Id = _working.Id, Title = _working.Title };
+            _panel = _working.PanelConfig;
+        }
+    }
+
+    private async Task Confirm()
+    {
+        if (_working == null) return;
+        if (_working.SectionType == "panel" && _panel != null)
+            _panel.Title = string.IsNullOrWhiteSpace(_panel.Title) ? _working.Title : _panel.Title;
+        await OnSave.InvokeAsync(_working);
+    }
+
+    private async Task Cancel()
+    {
+        _working = null;
+        await OnCancel.InvokeAsync();
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private static ReportSection Clone(ReportSection src) => new()
+    {
+        Id          = src.Id,
+        Title       = src.Title,
+        SectionType = src.SectionType,
+        NativeKey   = src.NativeKey,
+        Enabled     = src.Enabled,
+        Order       = src.Order,
+        Position    = src.Position,
+        PanelConfig = src.PanelConfig == null ? null : ClonePanel(src.PanelConfig),
+    };
+
+    private static PanelDefinition ClonePanel(PanelDefinition p) => new()
+    {
+        Id                     = p.Id,
+        Title                  = p.Title,
+        Description            = p.Description,
+        Enabled                = p.Enabled,
+        PanelType              = p.PanelType,
+        ChartType              = p.ChartType,
+        Height                 = p.Height,
+        RefreshIntervalSeconds = p.RefreshIntervalSeconds,
+        Layout                 = new PanelLayout { Column = p.Layout.Column, Order = p.Layout.Order, SpanColumns = p.Layout.SpanColumns },
+        Query                  = new QueryPair   { Source = p.Query.Source, SqlServer = p.Query.SqlServer },
+        DefaultDatabase        = p.DefaultDatabase,
+        StatUnit               = p.StatUnit,
+        StatThresholdKey       = p.StatThresholdKey,
+        BarGaugeThresholdKey   = p.BarGaugeThresholdKey,
+        BarGaugeUnitSuffix     = p.BarGaugeUnitSuffix,
+        ValueFormat            = p.ValueFormat,
+        DataGridIsClickable    = p.DataGridIsClickable,
+        DataGridMaxRows        = p.DataGridMaxRows,
+        DataGridTopRows        = p.DataGridTopRows,
+        ColorThresholds        = p.ColorThresholds.Select(t => new ColorThresholdRule
+            { Operator = t.Operator, Value = t.Value, Color = t.Color, Label = t.Label }).ToList(),
+    };
+
+    private RenderFragment ValueFormatSelect(PanelDefinition p) => __builder =>
+    {
+        <select @bind="p.ValueFormat">
+            <option value="">Default (no formatting)</option>
+            <option value="N0">Integer (1,234)</option>
+            <option value="N1">1 Decimal (1,234.5)</option>
+            <option value="N2">2 Decimals (1,234.56)</option>
+            <option value="P0">Percent 0 (100%)</option>
+            <option value="P1">Percent 1 (99.9%)</option>
+            <option value="P2">Percent 2 (99.99%)</option>
+            <option value="C0">Currency 0 ($1,234)</option>
+            <option value="C2">Currency 2 ($1,234.56)</option>
+            <option value="0.## GB">GB (1.23 GB)</option>
+            <option value="0.## MB">MB (1.23 MB)</option>
+            <option value="0.## TB">TB (1.23 TB)</option>
+            <option value="0.## ms">Milliseconds (123 ms)</option>
+            <option value="0.## s">Seconds (1.23 s)</option>
+        </select>
+    };
+}

@@ -188,6 +188,14 @@ window.queryPlanInteropV2 = (function () {
             pane.style.top   = top  + 'px';
             pane.style.left  = left + 'px';
             pane.style.right = 'auto';
+
+            // After paint, clamp bottom edge so pane doesn't overflow the container
+            requestAnimationFrame(() => {
+                const paneH    = pane.offsetHeight;
+                const maxTop   = (pane.parentElement.clientHeight || pane.parentElement.scrollHeight) - paneH - 4;
+                const clamped  = Math.max(4, Math.min(top, maxTop));
+                if (clamped !== top) pane.style.top = clamped + 'px';
+            });
         }
 
         pane.style.transition = 'opacity 0.12s ease';
@@ -258,7 +266,14 @@ window.queryPlanInteropV2 = (function () {
             const th = document.createElement('th');
             th.textContent = label;
             const td = document.createElement('td');
-            td.textContent = value;
+            // Suggested Index renders as a <pre> code block
+            if (cls === 'pane-row-index') {
+                const pre = document.createElement('pre');
+                pre.textContent = value;
+                td.appendChild(pre);
+            } else {
+                td.textContent = value;
+            }
             tr.append(th, td);
             tbl.appendChild(tr);
         });
@@ -274,6 +289,128 @@ window.queryPlanInteropV2 = (function () {
             copyBtn.innerHTML = '<i class="fa-solid fa-check"></i>';
             setTimeout(() => { copyBtn.innerHTML = '<i class="fa-solid fa-copy"></i>'; }, 1800);
         });
+    }
+
+    /**
+     * Builds a CREATE NONCLUSTERED INDEX suggestion from a node's Predicate,
+     * Seek Predicate, and Output fields.
+     *
+     * Algorithm:
+     *  1. Extract all bracketed column chains ([a].[b].[c].[col]) from Predicate
+     *     and Seek Predicate; take the last bracket segment as the column name.
+     *  2. If the word "Scalar" appears before a column in the text, mark it scalar
+     *     (scalars sort first — they are equality predicates).
+     *  3. Deduplicate across Predicate + Seek Predicate.
+     *  4. Extract Output columns (handles bare "table.col" and "[table].[col]").
+     *  5. Remove from Output any column already in the key list.
+     *  6. If no INCLUDE columns remain, omit INCLUDE().
+     */
+    function buildSuggestedIndex(node) {
+        const table    = node.properties && node.properties['Table'];
+        if (!table) return null;
+
+        const pred     = node.predicate || '';
+        const seekPred = (node.properties && node.properties['Seek Predicate']) || '';
+        const output   = (node.properties && node.properties['Output'])         || '';
+
+        // ── Extract bracketed column references from a predicate string ───────
+        // Matches chains like [msdb].[dbo].[backupset].[colName]
+        // Takes the LAST [segment] as the column name.
+        // Marks a column "scalar" if "Scalar" appears in the text immediately before it
+        // (not after AND/OR which begins a new predicate clause).
+        function extractKeyCols(text) {
+            const results  = [];
+            const seen     = new Set();
+            const chainRe  = /(\[[\w\s#$@]+\](?:\.\[[\w\s#$@]+\])+)/g;
+            let   lastPos  = 0;
+            let   m;
+            while ((m = chainRe.exec(text)) !== null) {
+                const chain  = m[1];
+                const before = text.slice(lastPos, m.index);
+                // "scalar" between the previous match end and this match start,
+                // but not as part of "AND"/"OR" that resets context
+                const clauseBefore = before.split(/\bAND\b|\bOR\b/i).pop() || '';
+                const isScalar = /scalar/i.test(clauseBefore);
+                lastPos = chainRe.lastIndex;
+
+                const parts = chain.match(/\[[\w\s#$@]+\]/g);
+                if (!parts || parts.length < 1) continue;
+                const colBracketed = parts[parts.length - 1];          // e.g. [is_copy_only]
+                const colKey       = colBracketed.toLowerCase();
+
+                if (!seen.has(colKey)) {
+                    seen.add(colKey);
+                    results.push({ col: colBracketed, scalar: isScalar });
+                } else if (isScalar) {
+                    // Upgrade existing entry to scalar
+                    const existing = results.find(r => r.col.toLowerCase() === colKey);
+                    if (existing) existing.scalar = true;
+                }
+            }
+            return results;
+        }
+
+        // ── Extract column names from Output (bare or bracketed) ─────────────
+        // Output looks like: "backupset.col1, backupset.col2" or "[tbl].[col]"
+        function extractOutputCols(text) {
+            const cols = [];
+            const seen = new Set();
+            // First try bracketed chains
+            const chainRe = /(\[[\w\s#$@]+\](?:\.\[[\w\s#$@]+\])+)/g;
+            let m;
+            while ((m = chainRe.exec(text)) !== null) {
+                const parts = m[1].match(/\[[\w\s#$@]+\]/g);
+                if (!parts) continue;
+                const col = parts[parts.length - 1].replace(/^\[|\]$/g, ''); // strip brackets
+                const key = col.toLowerCase();
+                if (!seen.has(key)) { seen.add(key); cols.push(col); }
+            }
+            // Also handle bare "table.col" tokens not covered by bracketed regex
+            text.split(/[\s,]+/).forEach(token => {
+                token = token.trim();
+                if (!token || token.startsWith('[')) return;
+                const parts = token.split('.');
+                const col   = parts[parts.length - 1].trim();
+                const key   = col.toLowerCase();
+                if (col && !seen.has(key)) { seen.add(key); cols.push(col); }
+            });
+            return cols;
+        }
+
+        // ── Merge predicate + seek predicate columns ──────────────────────────
+        const predCols     = extractKeyCols(pred);
+        const seekPredCols = extractKeyCols(seekPred);
+        const keyMap       = new Map();   // normalised-key → { col, scalar }
+
+        [...predCols, ...seekPredCols].forEach(({ col, scalar }) => {
+            const k = col.toLowerCase();
+            if (!keyMap.has(k)) keyMap.set(k, { col, scalar });
+            else if (scalar)    keyMap.get(k).scalar = true;
+        });
+
+        if (keyMap.size === 0) return null;
+
+        // Scalars first, then normal
+        const allKeyEntries = [...keyMap.values()];
+        const keyColsFinal  = [
+            ...allKeyEntries.filter(x =>  x.scalar).map(x => x.col),
+            ...allKeyEntries.filter(x => !x.scalar).map(x => x.col),
+        ];
+
+        // ── Build INCLUDE (output columns not already in keys) ────────────────
+        const keyKeys     = new Set([...keyMap.keys()]);
+        const outputCols  = extractOutputCols(output);
+        const includeCols = outputCols.filter(c => !keyKeys.has(c.toLowerCase()) &&
+                                                   !keyKeys.has('[' + c.toLowerCase() + ']'));
+
+        // ── Build DDL ─────────────────────────────────────────────────────────
+        const keyLines = keyColsFinal.map((c, i) => (i === 0 ? '  ' + c : '  ,' + c)).join('\n');
+        let ddl = `CREATE NONCLUSTERED INDEX [IX_SQLDBA_]\nON ${table}\n(\n${keyLines}\n)`;
+        if (includeCols.length > 0)
+            ddl += `\nINCLUDE(${includeCols.join(', ')})`;
+        ddl += `\nWITH(DATA_COMPRESSION=PAGE)`;
+
+        return ddl;
     }
 
     /**
@@ -348,6 +485,10 @@ window.queryPlanInteropV2 = (function () {
 
         if (node.predicate)
             rows.push(['Predicate', node.predicate, 'pane-row-predicate']);
+
+        const suggestedIdx = buildSuggestedIndex(node);
+        if (suggestedIdx)
+            rows.push(['Suggested Index', suggestedIdx, 'pane-row-index']);
 
         if (node.badges && node.badges.length > 0)
             rows.push(['Warnings', node.badges.join(', ')]);

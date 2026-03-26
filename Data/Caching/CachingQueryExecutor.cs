@@ -63,8 +63,8 @@ namespace SqlHealthAssessment.Data.Caching
             var hours = configuration.GetValue<int>("CacheEvictionHours", 24);
             _evictionThreshold = TimeSpan.FromHours(hours);
             
-            // Memory threshold: default 75% of MaxCacheSizeBytes, or 50MB minimum
-            var maxCacheBytes = configuration.GetValue<long>("MaxCacheSizeBytes", 104857600);
+            // Memory threshold: default 10% of MaxCacheSizeMB, or 50MB minimum
+            var maxCacheBytes = configuration.GetValue<long>("MaxCacheSizeMB", 100) * 1024 * 1024;
             _memoryThresholdBytes = Math.Max(maxCacheBytes / 10, 50 * 1024 * 1024); // 10% or 50MB
         }
 
@@ -147,7 +147,7 @@ namespace SqlHealthAssessment.Data.Caching
             {
                 throw; // Don't cache cancellation as offline
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // SQL Server failed — try serving from cache
                 _stateTracker.RecordFailure();
@@ -156,7 +156,7 @@ namespace SqlHealthAssessment.Data.Caching
                 if (cached != null)
                     return cached;
 
-                throw; // No cache available, propagate the original error
+                throw QueryExecutor.ScrubException(ex); // Scrub credentials before propagating
             }
         }
 
@@ -305,7 +305,7 @@ namespace SqlHealthAssessment.Data.Caching
             {
                 throw;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // SQL Server failed on initial load — check if cache has any data
                 _stateTracker.RecordFailure();
@@ -316,7 +316,7 @@ namespace SqlHealthAssessment.Data.Caching
                     return (List<T>)(object)cached;
                 }
 
-                throw; // No cache, propagate error
+                throw QueryExecutor.ScrubException(ex); // Scrub credentials before propagating
             }
         }
 
@@ -347,7 +347,7 @@ namespace SqlHealthAssessment.Data.Caching
             {
                 throw;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 _stateTracker.RecordFailure();
 
@@ -357,7 +357,7 @@ namespace SqlHealthAssessment.Data.Caching
                     return (List<T>)(object)cached;
                 }
 
-                throw;
+                throw QueryExecutor.ScrubException(ex);
             }
         }
 
@@ -388,7 +388,7 @@ namespace SqlHealthAssessment.Data.Caching
             {
                 throw;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 _stateTracker.RecordFailure();
 
@@ -398,7 +398,7 @@ namespace SqlHealthAssessment.Data.Caching
                     return (List<T>)(object)cached;
                 }
 
-                throw;
+                throw QueryExecutor.ScrubException(ex);
             }
         }
 

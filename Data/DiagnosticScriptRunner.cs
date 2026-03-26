@@ -20,15 +20,16 @@ namespace SqlHealthAssessment.Data
     {
         private readonly ServerConnectionManager _connectionManager;
         private readonly ILogger<DiagnosticScriptRunner> _logger;
+        private readonly Services.AzureBlobExportService? _blobExport;
         private List<ScriptConfiguration>? _scriptConfigurations;
         private readonly object _lock = new();
         private string FiletimeStamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
 
         /// <summary>
-        /// Maximum number of rows to read from any single script result set.
-        /// Prevents unbounded memory consumption from runaway queries.
+        /// Raised when an Azure Blob auto-upload completes (success or failure).
+        /// Args: (fileName, success, message)
         /// </summary>
-        public int MaxResultRows { get; set; } = 10_000;
+        public event Action<string, bool, string>? OnBlobUploadResult;
 
         /// <summary>
         /// Maximum number of scripts to execute concurrently when running all enabled scripts.
@@ -40,10 +41,11 @@ namespace SqlHealthAssessment.Data
             PropertyNameCaseInsensitive = true
         };
 
-        public DiagnosticScriptRunner(ServerConnectionManager connectionManager, ILogger<DiagnosticScriptRunner> logger)
+        public DiagnosticScriptRunner(ServerConnectionManager connectionManager, ILogger<DiagnosticScriptRunner> logger, Services.AzureBlobExportService? blobExport = null)
         {
             _connectionManager = connectionManager;
             _logger = logger;
+            _blobExport = blobExport;
         }
 
         public List<ScriptConfiguration> LoadScriptConfigurations()
@@ -192,7 +194,11 @@ namespace SqlHealthAssessment.Data
                         scopeResult.Reason);
                 }
 
-                // Also validate ExecutionParameters and SqlQueryForOutput
+                // Also validate ExecutionTest, ExecutionParameters and SqlQueryForOutput
+                if (!string.IsNullOrEmpty(config.ExecutionTest))
+                {
+                    SqlSafetyValidator.ValidateOrThrow(config.ExecutionTest, $"{config.Name} (ExecutionTest)");
+                }
                 if (!string.IsNullOrEmpty(config.ExecutionParameters))
                 {
                     SqlSafetyValidator.ValidateOrThrow(config.ExecutionParameters, $"{config.Name} (ExecutionParameters)");
@@ -245,9 +251,40 @@ namespace SqlHealthAssessment.Data
                     }
                 }
 
+                // Run ExecutionTest to decide whether ExecutionParameters should run
+                bool shouldRunExecParams = true;
+                if (!string.IsNullOrEmpty(config.ExecutionTest))
+                {
+                    try
+                    {
+                        using var testCmd = dbConnection.CreateCommand();
+                        testCmd.CommandText = config.ExecutionTest;
+                        testCmd.CommandTimeout = config.TimeoutSeconds;
+                        testCmd.CommandType = CommandType.Text;
+                        using var testReader = await testCmd.ExecuteReaderAsync(cancellationToken);
+
+                        if (await testReader.ReadAsync(cancellationToken))
+                        {
+                            var toRunOrdinal = testReader.GetOrdinal("ToRun");
+                            var toRun = Convert.ToInt32(testReader.GetValue(toRunOrdinal));
+                            shouldRunExecParams = toRun == 1;
+                        }
+
+                        _logger.LogInformation("ExecutionTest for {Name} on {Server}: ToRun={ToRun}",
+                            config.Name, targetServer, shouldRunExecParams ? 1 : 0);
+                    }
+                    catch (OperationCanceledException) { throw; }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "ExecutionTest failed for {Name} on {Server} — defaulting to run ExecutionParameters",
+                            config.Name, targetServer);
+                        shouldRunExecParams = true;
+                    }
+                }
+
                 // Execute the stored procedure / execution parameters
                 // A failure here is non-fatal — we still attempt SqlQueryForOutput below
-                if (!string.IsNullOrEmpty(config.ExecutionParameters))
+                if (shouldRunExecParams && !string.IsNullOrEmpty(config.ExecutionParameters))
                 {
                     try
                     {
@@ -264,9 +301,17 @@ namespace SqlHealthAssessment.Data
                         _logger.LogWarning(ex, "ExecutionParameters failed for script {Name} on {Server} — continuing to SqlQueryForOutput", config.Name, targetServer);
                     }
                 }
+                else if (!shouldRunExecParams)
+                {
+                    _logger.LogInformation("ExecutionParameters skipped for {Name} on {Server} (ExecutionTest returned ToRun=0)",
+                        config.Name, targetServer);
+                }
 
-                // Select the results
-                if (!string.IsNullOrEmpty(config.SqlQueryForOutput))
+                // Select the results:
+                // - If ExecutionParameters ran (or was empty): always run SqlQueryForOutput
+                // - If ExecutionParameters was skipped (ToRun=0): only run SqlQueryForOutput when ExportToCsv is true
+                bool shouldRunOutputQuery = shouldRunExecParams || config.ExportToCsv;
+                if (shouldRunOutputQuery && !string.IsNullOrEmpty(config.SqlQueryForOutput))
                 {
                     using var command = dbConnection.CreateCommand();
                     command.CommandText = config.SqlQueryForOutput;
@@ -278,15 +323,6 @@ namespace SqlHealthAssessment.Data
 
                     while (await reader.ReadAsync(cancellationToken))
                     {
-                        // Enforce MaxRows limit to prevent unbounded memory usage
-                        if (result.RowsAffected >= MaxResultRows)
-                        {
-                            _logger.LogWarning(
-                                "Script {Name} on {Server} hit MaxResultRows limit ({MaxRows}). Truncating results.",
-                                config.Name, targetServer, MaxResultRows);
-                            break;
-                        }
-
                         var row = new Dictionary<string, object>();
                         for (int i = 0; i < reader.FieldCount; i++)
                         {
@@ -420,11 +456,33 @@ namespace SqlHealthAssessment.Data
                 // Write CSV directly - no need to re-read the file afterward
                 File.WriteAllText(csvFileName, csv, Encoding.UTF8);
                 _logger.LogInformation("CSV exported to {FileName}", csvFileName);
-                
+
                 // Also export JSON
                 var json = ExportToJson(result);
                 File.WriteAllText(jsonFileName, json, Encoding.UTF8);
                 _logger.LogInformation("JSON exported to {FileName}", jsonFileName);
+
+                // Auto-upload to Azure if enabled — fire-and-forget, never fails the export
+                if (_blobExport is { IsConfigured: true, AutoUploadCsvs: true })
+                {
+                    var fileName = Path.GetFileName(csvFileName);
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            var uploadResult = await _blobExport.UploadLocalCsvAsync(csvFileName, result.ServerName);
+                            if (uploadResult.Success)
+                                OnBlobUploadResult?.Invoke(fileName, true, uploadResult.Message);
+                            else
+                                OnBlobUploadResult?.Invoke(fileName, false, uploadResult.Message);
+                        }
+                        catch (Exception uploadEx)
+                        {
+                            _logger.LogWarning(uploadEx, "Azure auto-upload failed for {FileName} (non-blocking)", csvFileName);
+                            OnBlobUploadResult?.Invoke(fileName, false, uploadEx.Message);
+                        }
+                    });
+                }
             }
             catch (Exception ex)
             {

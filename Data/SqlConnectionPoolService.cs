@@ -7,6 +7,7 @@ using Microsoft.Data.SqlClient;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace SqlHealthAssessment.Data
 {
@@ -23,11 +24,13 @@ namespace SqlHealthAssessment.Data
         private readonly int _minPoolSize;
         private readonly TimeSpan _connectionTimeout;
         private readonly TimeSpan _idleTimeout;
+        private readonly ILogger<SqlConnectionPoolService> _logger;
         private volatile bool _disposed;
 
-        public SqlConnectionPoolService(IConfiguration configuration)
+        public SqlConnectionPoolService(IConfiguration configuration, ILogger<SqlConnectionPoolService> logger)
         {
-            _maxPoolSize = configuration.GetValue<int>("ConnectionPool:MaxSize", 20);
+            _logger = logger;
+            _maxPoolSize = configuration.GetValue<int>("ConnectionPool:MaxSize", 50);
             _minPoolSize = configuration.GetValue<int>("ConnectionPool:MinSize", 2);
             _connectionTimeout = TimeSpan.FromSeconds(configuration.GetValue<int>("ConnectionPool:TimeoutSeconds", 30));
             _idleTimeout = TimeSpan.FromMinutes(configuration.GetValue<int>("ConnectionPool:IdleTimeoutMinutes", 5));
@@ -154,7 +157,7 @@ namespace SqlHealthAssessment.Data
                 catch { }
             }
 
-            System.Diagnostics.Debug.WriteLine($"[ConnectionPool] Cleanup: kept {connectionsToKeep.Count}, disposed {connectionsToDispose.Count}");
+            _logger.LogDebug("Connection pool cleanup completed: kept {KeptCount}, disposed {DisposedCount}", connectionsToKeep.Count, connectionsToDispose.Count);
         }
 
         /// <summary>

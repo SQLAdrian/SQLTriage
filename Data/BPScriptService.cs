@@ -5,19 +5,22 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using SqlHealthAssessment.Data.Models;
 
 namespace SqlHealthAssessment.Data
 {
     public class BPScriptService
     {
+        private readonly ILogger<BPScriptService> _logger;
         private readonly string _scriptsPath;
         private readonly string _configPath;
         private BPScriptConfig _config;
         private static readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = true };
 
-        public BPScriptService()
+        public BPScriptService(ILogger<BPScriptService> logger)
         {
+            _logger = logger;
             _scriptsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "BPScripts");
             _configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config", "bp-scripts.json");
             Directory.CreateDirectory(_scriptsPath);
@@ -84,31 +87,12 @@ namespace SqlHealthAssessment.Data
             SaveConfig();
         }
 
-        private BPScriptConfig LoadConfig()
-        {
-            if (File.Exists(_configPath))
-            {
-                try
-                {
-                    var json = File.ReadAllText(_configPath);
-                    return JsonSerializer.Deserialize<BPScriptConfig>(json, _jsonOptions) ?? new();
-                }
-                catch { }
-            }
-            return new BPScriptConfig();
-        }
+        private BPScriptConfig LoadConfig() => ConfigFileHelper.Load<BPScriptConfig>(_configPath, _jsonOptions);
 
         private void SaveConfig()
         {
-            try
-            {
-                var json = JsonSerializer.Serialize(_config, _jsonOptions);
-                File.WriteAllText(_configPath, json);
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"[BPScriptService] Save error: {ex.Message}");
-            }
+            try { ConfigFileHelper.Save(_configPath, _config, _jsonOptions); }
+            catch (Exception ex) { _logger.LogError(ex, "Failed to save BP script config"); }
         }
     }
 }

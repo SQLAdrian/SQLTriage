@@ -4,6 +4,7 @@ using System;
 using System.Threading;
 using SqlHealthAssessment.Data.Models;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace SqlHealthAssessment.Data.Caching
 {
@@ -18,6 +19,7 @@ namespace SqlHealthAssessment.Data.Caching
         private readonly TimeSpan _interval;
         private readonly TimeSpan _retentionPeriod;
         private readonly int _integrityCheckEveryNRuns;
+        private readonly ILogger<liveQueriesMaintenanceService> _logger;
         private Timer? _timer;
         private int _runCount;
         private bool _disposed;
@@ -29,9 +31,10 @@ namespace SqlHealthAssessment.Data.Caching
 
         public MaintenanceResult? LastResult { get; private set; }
 
-        public liveQueriesMaintenanceService(liveQueriesCacheStore cache, IConfiguration config)
+        public liveQueriesMaintenanceService(liveQueriesCacheStore cache, IConfiguration config, ILogger<liveQueriesMaintenanceService> logger)
         {
             _cache = cache ?? throw new ArgumentNullException(nameof(cache));
+            _logger = logger;
 
             // Default: run maintenance every 4 hours
             var intervalHours = 4;
@@ -84,17 +87,19 @@ namespace SqlHealthAssessment.Data.Caching
                 result.RowsPurged = rowsPurged;
                 LastResult = result;
 
-                System.Diagnostics.Debug.WriteLine(
-                    $"[liveQueriesMaintenanceService] Maintenance completed in {result.Duration.TotalSeconds:F1}s " +
-                    $"(purged={rowsPurged}, optimize={result.OptimizeCompleted}, vacuum={result.VacuumCompleted}" +
-                    (includeIntegrity ? $", integrity={result.IntegrityCheckResult}" : "") + ")");
+                _logger.LogInformation(
+                    "Maintenance completed in {DurationSeconds}s (purged={RowsPurged}, optimize={OptimizeCompleted}, vacuum={VacuumCompleted}, integrity={IntegrityCheckResult})",
+                    result.Duration.TotalSeconds.ToString("F1"),
+                    rowsPurged,
+                    result.OptimizeCompleted,
+                    result.VacuumCompleted,
+                    includeIntegrity ? result.IntegrityCheckResult : "skipped");
 
                 OnMaintenanceCompleted?.Invoke(result);
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine(
-                    $"[liveQueriesMaintenanceService] Maintenance error: {ex.Message}");
+                _logger.LogError(ex, "Maintenance cycle failed");
             }
         }
 

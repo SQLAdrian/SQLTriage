@@ -1,0 +1,571 @@
+@* /* In the name of God, the Merciful, the Compassionate */ *@
+@page "/service-management"
+@using SqlHealthAssessment.Data.Services
+@using Microsoft.Extensions.Logging
+@using System.Diagnostics
+@using System.IO
+@inject ILogger<ServiceManagement> Logger
+@inject ToastService Toast
+@inject AutoUpdateService UpdateService
+
+<div class="settings-page" style="max-width: 900px;">
+    <h2 style="margin-bottom: 20px;"><i class="fa-solid fa-microchip" style="color: var(--accent); margin-right: 8px;"></i>Service & Updates</h2>
+
+    @* ── Service Status Card ── *@
+    <div class="settings-group">
+        <h3 style="display: flex; align-items: center; justify-content: space-between;">
+            <span style="display: flex; align-items: center; gap: 8px;">
+                <i class="fa-solid fa-signal" style="color: var(--text-secondary);"></i>
+                Windows Service Status
+            </span>
+            <button class="settings-btn" style="background: var(--bg-hover); padding: 4px 10px; font-size: 12px;"
+                    @onclick="RefreshStatus" disabled="@_loading">
+                <i class="fa-solid fa-arrows-rotate @(_loading ? "fa-spin" : "")"></i> Refresh
+            </button>
+        </h3>
+
+        @if (_status == null)
+        {
+            <p style="font-size: 13px; color: var(--text-muted);"><i class="fa-solid fa-spinner fa-spin" style="margin-right: 4px;"></i> Checking service status...</p>
+        }
+        else if (!_status.Value.Installed)
+        {
+            <div style="display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 4px; background: rgba(255, 193, 7, 0.08); border: 1px solid rgba(255, 193, 7, 0.3); margin-bottom: 12px;">
+                <i class="fa-solid fa-circle-exclamation" style="color: var(--yellow); font-size: 16px;"></i>
+                <span style="color: var(--yellow); font-size: 13px;">Service is <strong>not installed</strong></span>
+            </div>
+        }
+        else if (_status.Value.Running)
+        {
+            <div style="display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 4px; background: rgba(78, 201, 176, 0.08); border: 1px solid rgba(78, 201, 176, 0.3); margin-bottom: 12px;">
+                <i class="fa-solid fa-circle-check" style="color: var(--green); font-size: 16px;"></i>
+                <div>
+                    <span style="color: var(--green); font-size: 13px;">Service is <strong>running</strong></span>
+                    @if (!string.IsNullOrEmpty(_status.Value.Account))
+                    {
+                        <span style="color: var(--text-secondary); font-size: 11px; margin-left: 8px;">as @_status.Value.Account</span>
+                    }
+                </div>
+            </div>
+        }
+        else
+        {
+            <div style="display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 4px; background: rgba(244, 71, 71, 0.08); border: 1px solid rgba(244, 71, 71, 0.3); margin-bottom: 12px;">
+                <i class="fa-solid fa-circle-stop" style="color: var(--red); font-size: 16px;"></i>
+                <span style="color: var(--red); font-size: 13px;">Service is <strong>stopped</strong></span>
+            </div>
+        }
+
+        <div style="font-size: 12px; color: var(--text-secondary);">
+            <strong style="color: var(--text-primary);">Service Name:</strong> @WindowsServiceHost.ServiceName<br />
+            <strong style="color: var(--text-primary);">Executable:</strong> <span style="font-family: monospace;">@_exePath --service</span>
+        </div>
+    </div>
+
+    @* ── Install / Uninstall Section ── *@
+    <div class="settings-group">
+        <h3><i class="fa-solid fa-download" style="color: var(--text-secondary); margin-right: 8px;"></i>Install / Uninstall</h3>
+
+        @if (_status?.Installed != true)
+        {
+            <div class="settings-field">
+                <label>Run As</label>
+                <select @bind="_serviceAccountType" style="max-width: 280px;">
+                    <option value="LocalSystem">Local System</option>
+                    <option value="NetworkService">Network Service</option>
+                    <option value="Custom">Custom Account</option>
+                </select>
+            </div>
+
+            @if (_serviceAccountType == "Custom")
+            {
+                <div class="settings-field">
+                    <label>Username</label>
+                    <input type="text" @bind="_serviceUsername" placeholder="DOMAIN\Username" style="max-width: 280px;" />
+                </div>
+                <div class="settings-field">
+                    <label>Password</label>
+                    <input type="password" @bind="_servicePassword" style="max-width: 280px;" />
+                </div>
+            }
+
+            <button class="settings-btn" @onclick="InstallService" disabled="@_actionInProgress" style="margin-top: 4px;">
+                @if (_actionInProgress) { <i class="fa-solid fa-spinner fa-spin" style="margin-right: 4px;"></i> }
+                <i class="fa-solid fa-plus" style="margin-right: 4px;"></i> Install Service
+            </button>
+        }
+        else
+        {
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                @if (!_status.Value.Running)
+                {
+                    <button class="settings-btn" @onclick="StartService" disabled="@_actionInProgress">
+                        <i class="fa-solid fa-play" style="margin-right: 4px;"></i> Start
+                    </button>
+                }
+                else
+                {
+                    <button class="settings-btn" style="background: var(--orange);" @onclick="StopService" disabled="@_actionInProgress">
+                        <i class="fa-solid fa-stop" style="margin-right: 4px;"></i> Stop
+                    </button>
+                    <button class="settings-btn" style="background: var(--orange);" @onclick="RestartService" disabled="@_actionInProgress">
+                        <i class="fa-solid fa-rotate" style="margin-right: 4px;"></i> Restart
+                    </button>
+                }
+                <button class="settings-btn" style="background: var(--red);" @onclick="UninstallService" disabled="@_actionInProgress">
+                    <i class="fa-solid fa-trash" style="margin-right: 4px;"></i> Uninstall
+                </button>
+                <button class="settings-btn" style="background: var(--bg-hover);" @onclick="ReinstallService" disabled="@_actionInProgress">
+                    <i class="fa-solid fa-arrows-rotate" style="margin-right: 4px;"></i> Reinstall
+                </button>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(_actionMessage))
+        {
+            <div style="margin-top: 12px; padding: 10px; border-radius: 4px; background: @(_actionSuccess ? "rgba(78, 201, 176, 0.1)" : "rgba(244, 71, 71, 0.1)"); border: 1px solid @(_actionSuccess ? "var(--green)" : "var(--red)");">
+                <pre style="white-space: pre-wrap; font-family: monospace; font-size: 12px; color: @(_actionSuccess ? "var(--green)" : "var(--red)"); margin: 0;">@_actionMessage</pre>
+            </div>
+        }
+    </div>
+
+    @* ── Update Check Section ── *@
+    <div class="settings-group">
+        <h3><i class="fa-solid fa-cloud-arrow-down" style="color: var(--text-secondary); margin-right: 8px;"></i>Updates</h3>
+
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+            <span style="font-size: 12px; color: var(--text-secondary);">Current Version:</span>
+            <span style="font-size: 13px; color: var(--text-primary); font-family: monospace;">@UpdateService.GetCurrentVersion()</span>
+        </div>
+
+        <button class="settings-btn" style="background: var(--bg-hover); margin-bottom: 12px;"
+                @onclick="CheckForUpdates" disabled="@_checkingUpdates">
+            @if (_checkingUpdates) { <i class="fa-solid fa-spinner fa-spin" style="margin-right: 4px;"></i> }
+            <i class="fa-solid fa-magnifying-glass" style="margin-right: 4px;"></i> Check for Updates
+        </button>
+
+        @if (_updateInfo != null)
+        {
+            <div style="padding: 12px; border-radius: 4px; background: rgba(0, 122, 204, 0.08); border: 1px solid rgba(0, 122, 204, 0.3);">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                    <i class="fa-solid fa-arrow-up" style="color: var(--accent);"></i>
+                    <span style="color: var(--accent); font-weight: 600; font-size: 13px;">Update Available: v@(_updateInfo.Version)</span>
+                </div>
+                <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px;">
+                    Released: @_updateInfo.ReleasedAt.ToString("yyyy-MM-dd")
+                </div>
+                @if (!string.IsNullOrEmpty(_updateInfo.ReleaseNotes))
+                {
+                    <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px; max-height: 160px; overflow-y: auto;">
+                        <pre style="white-space: pre-wrap; margin: 0;">@_updateInfo.ReleaseNotes</pre>
+                    </div>
+                }
+                <button class="settings-btn" @onclick="DownloadAndApplyUpdate" disabled="@_downloading">
+                    @if (_downloading)
+                    {
+                        <i class="fa-solid fa-spinner fa-spin" style="margin-right: 4px;"></i>
+                        <span>Downloading... @(_downloadProgress)%</span>
+                    }
+                    else
+                    {
+                        <i class="fa-solid fa-download" style="margin-right: 4px;"></i>
+                        <span>Download & Apply on Exit</span>
+                    }
+                </button>
+                @if (_updateStaged)
+                {
+                    <p style="margin-top: 12px; padding: 8px; border-radius: 4px; background: rgba(78, 201, 176, 0.1); border: 1px solid var(--green); color: var(--green); font-size: 12px;">
+                        <i class="fa-solid fa-check" style="margin-right: 4px;"></i> Update staged. It will be applied when the application exits.
+                    </p>
+                }
+            </div>
+        }
+        else if (_updateChecked && _updateInfo == null)
+        {
+            <p style="padding: 10px; border-radius: 4px; background: rgba(78, 201, 176, 0.1); border: 1px solid var(--green); color: var(--green); font-size: 13px;">
+                <i class="fa-solid fa-check" style="margin-right: 4px;"></i> You are running the latest version.
+            </p>
+        }
+
+        <hr style="border: none; border-top: 1px solid var(--border); margin: 16px 0;" />
+
+        <h4 style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+            <i class="fa-solid fa-file-code" style="color: var(--text-secondary);"></i>
+            Diagnostic Scripts
+        </h4>
+
+        <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;">
+            Check the repository for updated SQL scripts in the <code>scripts/</code> folder (sp_Blitz, sp_triage, checklists, etc.).
+        </p>
+
+        <button class="settings-btn" style="background: var(--bg-hover); margin-bottom: 12px;"
+                @onclick="CheckForScriptUpdates" disabled="@_checkingScripts">
+            @if (_checkingScripts) { <i class="fa-solid fa-spinner fa-spin" style="margin-right: 4px;"></i> }
+            <i class="fa-solid fa-code-compare" style="margin-right: 4px;"></i> Check for Script Updates
+        </button>
+
+        @if (_scriptUpdates != null && _scriptUpdates.Count > 0)
+        {
+            <div style="padding: 12px; border-radius: 4px; background: rgba(0, 122, 204, 0.08); border: 1px solid rgba(0, 122, 204, 0.3); margin-bottom: 12px;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                    <i class="fa-solid fa-arrow-up" style="color: var(--accent);"></i>
+                    <span style="color: var(--accent); font-weight: 600; font-size: 13px;">@_scriptUpdates.Count script(s) can be updated</span>
+                </div>
+                <div style="max-height: 140px; overflow-y: auto; margin-bottom: 10px;">
+                    @foreach (var s in _scriptUpdates)
+                    {
+                        <div style="display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px;">
+                            <i class="fa-solid @(s.LocalExists ? "fa-arrows-rotate" : "fa-plus") "
+                               style="color: @(s.LocalExists ? "var(--yellow)" : "var(--green)"); width: 14px; text-align: center;"></i>
+                            <span style="font-family: monospace; color: var(--text-primary);">@s.FileName</span>
+                            <span style="color: var(--text-muted);">@(s.LocalExists ? "(modified)" : "(new)")</span>
+                            @if (s.RemoteSize > 0)
+                            {
+                                <span style="color: var(--text-muted); font-size: 11px;">@FormatFileSize(s.RemoteSize)</span>
+                            }
+                        </div>
+                    }
+                </div>
+                <button class="settings-btn" @onclick="DownloadScriptUpdates" disabled="@_downloadingScripts">
+                    @if (_downloadingScripts)
+                    {
+                        <i class="fa-solid fa-spinner fa-spin" style="margin-right: 4px;"></i>
+                        <span>Downloading...</span>
+                    }
+                    else
+                    {
+                        <i class="fa-solid fa-download" style="margin-right: 4px;"></i>
+                        <span>Download All Updates</span>
+                    }
+                </button>
+            </div>
+        }
+        else if (_scriptUpdateChecked && (_scriptUpdates == null || _scriptUpdates.Count == 0))
+        {
+            <p style="padding: 10px; border-radius: 4px; background: rgba(78, 201, 176, 0.1); border: 1px solid var(--green); color: var(--green); font-size: 13px;">
+                <i class="fa-solid fa-check" style="margin-right: 4px;"></i> All scripts are up to date.
+            </p>
+        }
+    </div>
+
+    @* ── Command Line Reference ── *@
+    <div class="settings-group">
+        <h3><i class="fa-solid fa-terminal" style="color: var(--text-secondary); margin-right: 8px;"></i>Command Line Reference</h3>
+        <div style="font-size: 12px; font-family: monospace; color: var(--text-secondary); line-height: 1.8;">
+            <div><span style="color: var(--accent);">Install:</span> SqlHealthAssessment.exe --service --install</div>
+            <div><span style="color: var(--accent);">Install (custom):</span> SqlHealthAssessment.exe --service --install --username DOMAIN\User --password ***</div>
+            <div><span style="color: var(--accent);">Uninstall:</span> SqlHealthAssessment.exe --service --uninstall</div>
+            <div><span style="color: var(--accent);">Run (console):</span> SqlHealthAssessment.exe --service</div>
+            <div><span style="color: var(--accent);">Start:</span> sc start SqlHealthAssessment</div>
+            <div><span style="color: var(--accent);">Stop:</span> sc stop SqlHealthAssessment</div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private (bool Installed, bool Running, string? Account)? _status;
+    private string _exePath = "";
+    private bool _loading;
+    private bool _actionInProgress;
+    private string? _actionMessage;
+    private bool _actionSuccess;
+
+    // Install options
+    private string _serviceAccountType = "LocalSystem";
+    private string _serviceUsername = "";
+    private string _servicePassword = "";
+
+    // Update
+    private bool _checkingUpdates;
+    private bool _updateChecked;
+    private UpdateInfo? _updateInfo;
+    private bool _downloading;
+    private int _downloadProgress;
+    private bool _updateStaged;
+
+    // Script updates
+    private bool _checkingScripts;
+    private bool _scriptUpdateChecked;
+    private List<ScriptUpdateInfo>? _scriptUpdates;
+    private bool _downloadingScripts;
+
+    protected override void OnInitialized()
+    {
+        _exePath = Process.GetCurrentProcess().MainModule?.FileName
+            ?? Path.Combine(AppContext.BaseDirectory, "SqlHealthAssessment.exe");
+        _ = RefreshStatus();
+    }
+
+    private async Task RefreshStatus()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        await Task.Run(() =>
+        {
+            _status = WindowsServiceHost.GetServiceStatus();
+        });
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task InstallService()
+    {
+        _actionInProgress = true;
+        _actionMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            var args = new System.Collections.Generic.List<string> { "--service", "--install" };
+
+            if (_serviceAccountType == "NetworkService")
+            {
+                args.AddRange(new[] { "--username", "NT AUTHORITY\\NetworkService" });
+            }
+            else if (_serviceAccountType == "Custom" && !string.IsNullOrWhiteSpace(_serviceUsername))
+            {
+                args.AddRange(new[] { "--username", _serviceUsername });
+                if (!string.IsNullOrEmpty(_servicePassword))
+                    args.AddRange(new[] { "--password", _servicePassword });
+            }
+
+            var result = await RunCommandAsync(_exePath, string.Join(" ", args.Select(a => a.Contains(' ') ? $"\"{a}\"" : a)));
+            _actionMessage = result.Output;
+            _actionSuccess = result.ExitCode == 0;
+
+            if (_actionSuccess)
+                Toast.ShowSuccess("Service installed successfully");
+        }
+        catch (Exception ex)
+        {
+            _actionMessage = $"Error: {ex.Message}";
+            _actionSuccess = false;
+        }
+        finally
+        {
+            _actionInProgress = false;
+            _servicePassword = "";
+            await RefreshStatus();
+        }
+    }
+
+    private async Task UninstallService()
+    {
+        _actionInProgress = true;
+        StateHasChanged();
+
+        try
+        {
+            var result = await RunCommandAsync(_exePath, "--service --uninstall");
+            _actionMessage = result.Output;
+            _actionSuccess = result.ExitCode == 0;
+
+            if (_actionSuccess)
+                Toast.ShowSuccess("Service uninstalled");
+        }
+        catch (Exception ex)
+        {
+            _actionMessage = $"Error: {ex.Message}";
+            _actionSuccess = false;
+        }
+        finally
+        {
+            _actionInProgress = false;
+            await RefreshStatus();
+        }
+    }
+
+    private async Task ReinstallService()
+    {
+        await UninstallService();
+        await Task.Delay(2000);
+        await InstallService();
+    }
+
+    private async Task StartService()
+    {
+        _actionInProgress = true;
+        StateHasChanged();
+
+        var result = await RunCommandAsync("sc", $"start \"{WindowsServiceHost.ServiceName}\"");
+        _actionMessage = result.Output;
+        _actionSuccess = result.ExitCode == 0;
+        _actionInProgress = false;
+
+        await Task.Delay(2000);
+        await RefreshStatus();
+    }
+
+    private async Task StopService()
+    {
+        _actionInProgress = true;
+        StateHasChanged();
+
+        var result = await RunCommandAsync("sc", $"stop \"{WindowsServiceHost.ServiceName}\"");
+        _actionMessage = result.Output;
+        _actionSuccess = result.ExitCode == 0;
+        _actionInProgress = false;
+
+        await Task.Delay(2000);
+        await RefreshStatus();
+    }
+
+    private async Task RestartService()
+    {
+        await StopService();
+        await Task.Delay(2000);
+        await StartService();
+    }
+
+    private async Task CheckForUpdates()
+    {
+        _checkingUpdates = true;
+        _updateChecked = false;
+        _updateInfo = null;
+        StateHasChanged();
+
+        var (available, info) = await UpdateService.CheckForUpdatesAsync();
+        _updateInfo = info;
+        _updateChecked = true;
+        _checkingUpdates = false;
+        StateHasChanged();
+    }
+
+    private async Task DownloadAndApplyUpdate()
+    {
+        if (_updateInfo == null || string.IsNullOrEmpty(_updateInfo.DownloadUrl))
+        {
+            _actionMessage = "No download URL available.";
+            _actionSuccess = false;
+            return;
+        }
+
+        _downloading = true;
+        _downloadProgress = 0;
+        StateHasChanged();
+
+        try
+        {
+            var staged = await UpdateService.DownloadUpdateAsync(
+                _updateInfo.DownloadUrl,
+                new Progress<int>(p =>
+                {
+                    _downloadProgress = p;
+                    InvokeAsync(StateHasChanged);
+                }));
+
+            _updateStaged = staged;
+            if (staged)
+                Toast.ShowSuccess("Update downloaded", "Will apply on exit.");
+            else
+            {
+                _actionMessage = "Failed to download update.";
+                _actionSuccess = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            _actionMessage = $"Download failed: {ex.Message}";
+            _actionSuccess = false;
+        }
+        finally
+        {
+            _downloading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task CheckForScriptUpdates()
+    {
+        _checkingScripts = true;
+        _scriptUpdateChecked = false;
+        _scriptUpdates = null;
+        StateHasChanged();
+
+        try
+        {
+            _scriptUpdates = await UpdateService.CheckForScriptUpdatesAsync();
+            _scriptUpdateChecked = true;
+        }
+        catch (Exception ex)
+        {
+            _actionSuccess = false;
+            _actionMessage = $"Script update check failed: {ex.Message}";
+        }
+        finally
+        {
+            _checkingScripts = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task DownloadScriptUpdates()
+    {
+        if (_scriptUpdates == null || _scriptUpdates.Count == 0) return;
+
+        _downloadingScripts = true;
+        StateHasChanged();
+
+        try
+        {
+            var (succeeded, failed) = await UpdateService.DownloadScriptUpdatesAsync(_scriptUpdates);
+
+            if (failed == 0)
+            {
+                Toast.ShowSuccess($"{succeeded} script(s) updated successfully");
+                _scriptUpdates = null;
+                _scriptUpdateChecked = false;
+            }
+            else
+            {
+                _actionSuccess = false;
+                _actionMessage = $"Scripts: {succeeded} updated, {failed} failed. Check logs for details.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _actionSuccess = false;
+            _actionMessage = $"Script download failed: {ex.Message}";
+        }
+        finally
+        {
+            _downloadingScripts = false;
+            StateHasChanged();
+        }
+    }
+
+    private static string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:N1} KB";
+        return $"{bytes / (1024.0 * 1024.0):N1} MB";
+    }
+
+    private static async Task<(int ExitCode, string Output)> RunCommandAsync(string fileName, string arguments)
+    {
+        var psi = new ProcessStartInfo(fileName, arguments)
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            Verb = "runas"
+        };
+
+        using var proc = Process.Start(psi);
+        if (proc == null)
+            return (-1, "Failed to start process");
+
+        var output = await proc.StandardOutput.ReadToEndAsync();
+        var error = await proc.StandardError.ReadToEndAsync();
+        await proc.WaitForExitAsync();
+
+        var combined = output;
+        if (!string.IsNullOrEmpty(error))
+            combined += "\n" + error;
+
+        return (proc.ExitCode, combined);
+    }
+}

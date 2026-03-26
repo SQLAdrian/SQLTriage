@@ -1,5 +1,6 @@
 <!--/* In the name of God, the Merciful, the Compassionate */-->
 @using System.Data
+@using System.Threading
 
 @using SqlHealthAssessment.Data
 @using SqlHealthAssessment.Data.Models
@@ -25,30 +26,28 @@
     case "StatCard":
         @if (StatData != null)
         {
-            <StatCard Label="@Panel.Title"
-                      Value="@StatData.Value"
-                      Unit="@Panel.StatUnit"
-                      Color="@StatData.Color"
-                      ValueFormat="@Panel.ValueFormat" />
-            @if (!string.IsNullOrEmpty(Panel.Description))
-            {
-                <div class="panel-description">@Panel.Description</div>
-            }
+            <div class="stat-panel-wrapper">
+                <StatCard Label="@Panel.Title"
+                          Value="@StatData.Value"
+                          Unit="@Panel.StatUnit"
+                          Color="@StatData.Color"
+                          Description="@Panel.Description"
+                          ValueFormat="@Panel.ValueFormat" />
+            </div>
         }
         break;
 
     case "DeltaStatCard":
         @if (StatData != null)
         {
-            <DeltaStatCard Label="@Panel.Title"
-                           Value="@StatData.Value"
-                           Unit="@Panel.StatUnit"
-                           Color="@StatData.Color"
-                           ValueFormat="@Panel.ValueFormat" />
-            @if (!string.IsNullOrEmpty(Panel.Description))
-            {
-                <div class="panel-description">@Panel.Description</div>
-            }
+            <div class="stat-panel-wrapper">
+                <DeltaStatCard Label="@Panel.Title"
+                               Value="@StatData.Value"
+                               Unit="@Panel.StatUnit"
+                               Color="@StatData.Color"
+                               Description="@Panel.Description"
+                               ValueFormat="@Panel.ValueFormat" />
+            </div>
         }
         break;
 
@@ -83,7 +82,9 @@
                   PlanIndicatorColumn="@(GridData != null ? _planColumnCandidates.FirstOrDefault(c => GridData.Columns.Contains(c)) : null)"
                   OnRowClick="@OnDataGridRowClick"
                   TopRowsConfig="@(Panel.DataGridTopRows > 0 ? TopRowsValue : null)"
-                  OnTopRowsConfigChanged="@OnTopRowsConfigChanged" />
+                  OnTopRowsConfigChanged="@OnTopRowsConfigChanged"
+                  ActionColumn="@Panel.ActionColumn"
+                  OnActionExecute="@OnActionExecute" />
         @if (!string.IsNullOrEmpty(Panel.Description))
         {
             <div class="panel-description">@Panel.Description</div>
@@ -180,6 +181,7 @@
     [Parameter] public List<CheckStatus>? CheckData { get; set; }
     [Parameter] public int? TopRowsValue { get; set; }
     [Parameter] public EventCallback<int> OnTopRowsConfigChanged { get; set; }
+    [Parameter] public Func<string, CancellationToken, Task<(bool success, string message)>>? OnActionExecute { get; set; }
 
     private QueryPlanModal? _queryPlanModal;
 

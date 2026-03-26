@@ -9,10 +9,12 @@ namespace SqlHealthAssessment.Data
     /// <summary>
     /// Service for managing user settings that persist across sessions.
     /// Stores settings in a JSON file in the application directory.
+    /// Thread-safe: all reads/writes are protected by a lock.
     /// </summary>
     public class UserSettingsService
     {
         private readonly string _settingsFilePath;
+        private readonly object _lock = new();
         private UserSettings _settings;
 
         public UserSettingsService()
@@ -26,194 +28,139 @@ namespace SqlHealthAssessment.Data
         /// </summary>
         public class UserSettings
         {
-            public double TimezoneOffsetHours { get; set; } = 13; // Default to UTC+13 (NZST)
             public string SelectedTheme { get; set; } = "cyberpunk";
-            public int RefreshIntervalSeconds { get; set; } = 35;
+            public int RefreshIntervalSeconds { get; set; } = 15;
             public bool AutoRefresh { get; set; } = true;
             public int DefaultTimeRangeMinutes { get; set; } = 60;
             public bool ShowDiagnosticPane { get; set; } = false;
             public string DefaultDashboardId { get; set; } = "";
             /// <summary>Data source: "sqlwatch" or "pm" (PerformanceMonitor)</summary>
             public string DataSource { get; set; } = "master";
+            /// <summary>Radzen Blazor UI theme name (e.g. "dark", "material3", "fluent-dark")</summary>
+            public string RadzenUiTheme { get; set; } = "dark";
+            /// <summary>WebView2 zoom level as a percentage (e.g. 100, 125, 150). Default 150.</summary>
+            public int ZoomLevel { get; set; } = 150;
+
+            // ── Auto-Export Settings ──
+            public bool AutoExportAuditCsv { get; set; } = true;
+            public bool AutoExportAuditJson { get; set; } = false;
+            public bool AutoExportAuditPdf { get; set; } = false;
+            public bool AutoExportQuickCheckCsv { get; set; } = true;
+            public bool AutoExportQuickCheckPdf { get; set; } = true;
+            public bool AutoExportVulnerabilityAssessmentCsv { get; set; } = true;
+            public bool AutoExportVulnerabilityAssessmentPdf { get; set; } = false;
         }
 
-        /// <summary>
-        /// Load settings from file or return defaults
-        /// </summary>
-        private UserSettings LoadSettings()
-        {
-            try
-            {
-                if (File.Exists(_settingsFilePath))
-                {
-                    var json = File.ReadAllText(_settingsFilePath);
-                    var settings = JsonSerializer.Deserialize<UserSettings>(json);
-                    if (settings != null)
-                    {
-                        return settings;
-                    }
-                }
-            }
-            catch
-            {
-                // If there's any error, return defaults
-            }
+        private UserSettings LoadSettings() => ConfigFileHelper.Load<UserSettings>(_settingsFilePath);
 
-            return new UserSettings();
-        }
-
-        /// <summary>
-        /// Save settings to file
-        /// </summary>
         public void SaveSettings()
         {
-            try
+            lock (_lock)
             {
-                var json = JsonSerializer.Serialize(_settings, new JsonSerializerOptions
+                try { ConfigFileHelper.Save(_settingsFilePath, _settings); }
+                catch (Exception ex)
                 {
-                    WriteIndented = true
-                });
-                File.WriteAllText(_settingsFilePath, json);
-            }
-            catch
-            {
-                // Silently fail if unable to save
+                    System.Diagnostics.Debug.WriteLine($"[UserSettings] Save failed: {ex.Message}");
+                }
             }
         }
 
-        /// <summary>
-        /// Get current timezone offset
-        /// </summary>
-        public double GetTimezoneOffset()
-        {
-            return _settings.TimezoneOffsetHours;
-        }
+        public string GetRadzenUiTheme() { lock (_lock) return _settings.RadzenUiTheme; }
 
-        /// <summary>
-        /// Set timezone offset and save
-        /// </summary>
-        public void SetTimezoneOffset(double offset)
+        public void SetRadzenUiTheme(string theme)
         {
-            _settings.TimezoneOffsetHours = offset;
+            lock (_lock) _settings.RadzenUiTheme = theme;
             SaveSettings();
         }
 
-        /// <summary>
-        /// Get selected theme
-        /// </summary>
-        public string GetSelectedTheme()
-        {
-            return _settings.SelectedTheme;
-        }
+        public string GetSelectedTheme() { lock (_lock) return _settings.SelectedTheme; }
 
-        /// <summary>
-        /// Set selected theme and save
-        /// </summary>
         public void SetSelectedTheme(string theme)
         {
-            _settings.SelectedTheme = theme;
+            lock (_lock) _settings.SelectedTheme = theme;
             SaveSettings();
         }
 
-        /// <summary>
-        /// Get refresh interval
-        /// </summary>
-        public int GetRefreshInterval()
-        {
-            return _settings.RefreshIntervalSeconds;
-        }
+        public int GetRefreshInterval() { lock (_lock) return _settings.RefreshIntervalSeconds; }
 
-        /// <summary>
-        /// Set refresh interval and save
-        /// </summary>
         public void SetRefreshInterval(int seconds)
         {
-            _settings.RefreshIntervalSeconds = seconds;
+            lock (_lock) _settings.RefreshIntervalSeconds = seconds;
             SaveSettings();
         }
 
-        /// <summary>
-        /// Get auto refresh setting
-        /// </summary>
-        public bool GetAutoRefresh()
-        {
-            return _settings.AutoRefresh;
-        }
+        public bool GetAutoRefresh() { lock (_lock) return _settings.AutoRefresh; }
 
-        /// <summary>
-        /// Set auto refresh and save
-        /// </summary>
         public void SetAutoRefresh(bool enabled)
         {
-            _settings.AutoRefresh = enabled;
+            lock (_lock) _settings.AutoRefresh = enabled;
             SaveSettings();
         }
 
-        /// <summary>
-        /// Get default time range
-        /// </summary>
-        public int GetDefaultTimeRange()
-        {
-            return _settings.DefaultTimeRangeMinutes;
-        }
+        public int GetDefaultTimeRange() { lock (_lock) return _settings.DefaultTimeRangeMinutes; }
 
-        /// <summary>
-        /// Set default time range and save
-        /// </summary>
         public void SetDefaultTimeRange(int minutes)
         {
-            _settings.DefaultTimeRangeMinutes = minutes;
+            lock (_lock) _settings.DefaultTimeRangeMinutes = minutes;
             SaveSettings();
         }
 
-        /// <summary>
-        /// Get show diagnostic pane setting
-        /// </summary>
-        public bool GetShowDiagnosticPane()
-        {
-            return _settings.ShowDiagnosticPane;
-        }
+        public bool GetShowDiagnosticPane() { lock (_lock) return _settings.ShowDiagnosticPane; }
 
-        /// <summary>
-        /// Set show diagnostic pane and save
-        /// </summary>
         public void SetShowDiagnosticPane(bool enabled)
         {
-            _settings.ShowDiagnosticPane = enabled;
+            lock (_lock) _settings.ShowDiagnosticPane = enabled;
             SaveSettings();
         }
 
-        /// <summary>
-        /// Get default dashboard ID
-        /// </summary>
-        public string GetDefaultDashboardId()
-        {
-            return _settings.DefaultDashboardId;
-        }
+        public string GetDefaultDashboardId() { lock (_lock) return _settings.DefaultDashboardId; }
 
-        /// <summary>
-        /// Set default dashboard ID and save
-        /// </summary>
         public void SetDefaultDashboardId(string dashboardId)
         {
-            _settings.DefaultDashboardId = dashboardId;
+            lock (_lock) _settings.DefaultDashboardId = dashboardId;
             SaveSettings();
         }
 
-        /// <summary>
-        /// Get data source setting
-        /// </summary>
-        public string GetDataSource()
+        public string GetDataSource() { lock (_lock) return _settings.DataSource; }
+
+        public void SetDataSource(string source)
         {
-            return _settings.DataSource;
+            lock (_lock) _settings.DataSource = source;
+            SaveSettings();
+        }
+
+        public int GetZoomLevel() { lock (_lock) return _settings.ZoomLevel; }
+
+        public void SetZoomLevel(int zoomPercent)
+        {
+            lock (_lock) _settings.ZoomLevel = zoomPercent;
+            SaveSettings();
+            OnZoomChanged?.Invoke(zoomPercent);
         }
 
         /// <summary>
-        /// Set data source and save
+        /// Fired when zoom level changes so MainWindow can apply it to WebView2.
         /// </summary>
-        public void SetDataSource(string source)
+        public event Action<int>? OnZoomChanged;
+
+        // ── Auto-Export Accessors ──
+        public UserSettings GetSettings() { lock (_lock) return _settings; }
+
+        public void UpdateAutoExportSettings(
+            bool auditCsv, bool auditJson, bool auditPdf,
+            bool quickCheckCsv, bool quickCheckPdf,
+            bool vaCsv, bool vaPdf)
         {
-            _settings.DataSource = source;
+            lock (_lock)
+            {
+                _settings.AutoExportAuditCsv = auditCsv;
+                _settings.AutoExportAuditJson = auditJson;
+                _settings.AutoExportAuditPdf = auditPdf;
+                _settings.AutoExportQuickCheckCsv = quickCheckCsv;
+                _settings.AutoExportQuickCheckPdf = quickCheckPdf;
+                _settings.AutoExportVulnerabilityAssessmentCsv = vaCsv;
+                _settings.AutoExportVulnerabilityAssessmentPdf = vaPdf;
+            }
             SaveSettings();
         }
     }

@@ -1,18 +1,19 @@
 <!--/* In the name of God, the Merciful, the Compassionate */-->
 @using System.Data
+@using System.Threading
 
 @using System.Linq
 
-<div class="datagrid-panel" role="region" aria-label="@(string.IsNullOrEmpty(Title) ? "Data table" : Title)">
+<div class="bg-app-bg-panel rounded-lg overflow-hidden my-2" role="region" aria-label="@(string.IsNullOrEmpty(Title) ? "Data table" : Title)">
     @if (!string.IsNullOrEmpty(Title))
     {
-        <div class="datagrid-title" id="@($"grid-title-{Title.GetHashCode()}")">
+        <div class="text-sm font-semibold px-4 pt-3 pb-2 text-app-text-primary" id="@($"grid-title-{Title.GetHashCode()}")">
             <span>@Title</span>
             @if (TopRowsConfig.HasValue)
             {
-                <span class="datagrid-toprows-control">
+                <span class="ml-4 text-xs">
                     Top <input type="number"
-                               class="datagrid-toprows-input"
+                               class="w-16 px-2 py-1 bg-app-bg-primary border border-app-border rounded text-app-text-primary text-xs"
                                value="@_topRowsInput"
                                min="1"
                                max="1000"
@@ -26,24 +27,29 @@
 
     @if (Data != null && Data.Rows.Count > 0)
     {
-        <div class="datagrid-scroll" tabindex="0">
-            <table class="datagrid-table" role="table" aria-labelledby="@($"grid-title-{Title.GetHashCode()}")">
+        <div class="overflow-x-auto max-h-100 overflow-y-auto" tabindex="0">
+            <table class="w-full border-collapse text-sm" role="table" aria-labelledby="@($"grid-title-{Title.GetHashCode()}")">
                 <thead>
                     <tr role="row">
+                        @if (!string.IsNullOrEmpty(ActionColumn) && OnActionExecute != null)
+                        {
+                            <th role="columnheader" class="px-3 py-2 text-left text-xs font-semibold text-app-text-secondary bg-app-bg-secondary border-b border-app-border">Action</th>
+                        }
                         @if (!string.IsNullOrEmpty(PlanIndicatorColumn) && Data.Columns.Contains(PlanIndicatorColumn))
                         {
-                            <th role="columnheader" class="datagrid-plan-col" title="Query plan available">Plan</th>
+                            <th role="columnheader" class="w-12 px-3 py-2 text-left text-xs font-semibold text-app-text-secondary bg-app-bg-secondary border-b border-app-border">Plan</th>
                         }
                         @foreach (DataColumn col in Data.Columns)
                         {
-                            @if (HiddenColumns == null || !HiddenColumns.Contains(col.ColumnName))
+                            @if ((HiddenColumns == null || !HiddenColumns.Contains(col.ColumnName))
+                                && !(col.ColumnName == ActionColumn && OnActionExecute != null))
                             {
                                 <th @onclick="() => SortBy(col.ColumnName)"
                                     role="columnheader"
                                     tabindex="0"
                                     @onkeydown="@(e => HandleHeaderKeyDown(e, col.ColumnName))"
                                     aria-sort="@GetAriaSortValue(col.ColumnName)"
-                                    class="@(SortColumn == col.ColumnName ? "sorted" : "")">
+                                    class="px-3 py-2 text-left text-xs font-semibold text-app-text-secondary bg-app-bg-secondary border-b border-app-border cursor-pointer select-none hover:text-app-text-primary @(SortColumn == col.ColumnName ? "text-app-accent" : "")">
                                     @col.ColumnName
                                     @if (SortColumn == col.ColumnName)
                                     {
@@ -55,28 +61,76 @@
                     </tr>
                 </thead>
                 <tbody>
+                    @{ var rowIndex = 0; }
                     @foreach (var row in GetSortedRows())
                     {
+                        var ri = rowIndex++;
                         <tr @onclick="() => HandleRowClick(row)"
                             role="row"
                             tabindex="@(IsClickable ? "0" : "-1")"
                             @onkeydown="@(e => HandleRowKeyDown(e, row))"
-                            class="@(IsClickable ? "clickable" : "")">
+                            class="@(IsClickable ? "cursor-pointer" : "") hover:bg-app-bg-hover">
+                            @if (!string.IsNullOrEmpty(ActionColumn) && Data.Columns.Contains(ActionColumn) && OnActionExecute != null)
+                            {
+                                var sql = row[ActionColumn]?.ToString() ?? "";
+                                var state = _actionStates.TryGetValue(ri, out var s) ? s : ActionRowState.Idle;
+                                var msg = _actionMessages.TryGetValue(ri, out var m) ? m : "";
+                                <td role="cell" class="px-3 py-2 border-b border-app-border whitespace-nowrap" @onclick:stopPropagation>
+                                    @switch (state)
+                                    {
+                                        case ActionRowState.Idle:
+                                            <button class="action-btn action-btn-execute" title="Execute this script on the server" @onclick="() => ExecuteAction(ri, sql)">
+                                                &#9654; Execute
+                                            </button>
+                                            break;
+                                        case ActionRowState.Executing:
+                                            <span class="action-status action-status-executing">
+                                                &#9203; Running...
+                                            </span>
+                                            <button class="action-btn action-btn-cancel" title="Cancel execution" @onclick="() => CancelAction(ri)">
+                                                &#9632; Stop
+                                            </button>
+                                            break;
+                                        case ActionRowState.Success:
+                                            <span class="action-status action-status-success" title="@msg">
+                                                &#10004; Done
+                                            </span>
+                                            break;
+                                        case ActionRowState.Failed:
+                                            <span class="action-status action-status-failed" title="@msg">
+                                                &#10008; Failed
+                                            </span>
+                                            <button class="action-btn action-btn-execute" title="Retry" @onclick="() => ExecuteAction(ri, sql)">
+                                                &#8635; Retry
+                                            </button>
+                                            break;
+                                        case ActionRowState.Cancelled:
+                                            <span class="action-status action-status-cancelled" title="Cancelled">
+                                                &#9940; Cancelled
+                                            </span>
+                                            <button class="action-btn action-btn-execute" title="Retry" @onclick="() => ExecuteAction(ri, sql)">
+                                                &#8635; Retry
+                                            </button>
+                                            break;
+                                    }
+                                </td>
+                            }
                             @if (!string.IsNullOrEmpty(PlanIndicatorColumn) && Data.Columns.Contains(PlanIndicatorColumn))
                             {
                                 var hasPlan = row[PlanIndicatorColumn] != DBNull.Value && !string.IsNullOrWhiteSpace(row[PlanIndicatorColumn]?.ToString());
-                                <td role="cell" class="datagrid-plan-col">
+                                <td role="cell" class="w-12 px-3 py-2 border-b border-app-border">
                                     @if (hasPlan)
                                     {
-                                        <span class="datagrid-plan-badge" title="Click row to view plan"><i class="fa-solid fa-clipboard-list"></i></span>
+                                        <span class="bg-app-accent/20 text-app-accent px-2 py-0.5 rounded text-xs" title="Click row to view plan"><i class="fa-solid fa-clipboard-list"></i></span>
                                     }
                                 </td>
                             }
                             @foreach (DataColumn col in Data.Columns)
                             {
-                                @if (HiddenColumns == null || !HiddenColumns.Contains(col.ColumnName))
+                                @if ((HiddenColumns == null || !HiddenColumns.Contains(col.ColumnName))
+                                && !(col.ColumnName == ActionColumn && OnActionExecute != null))
                                 {
-                                    <td role="cell" title="@row[col]?.ToString()">
+                                    <td role="cell" class="px-3 py-2 border-b border-app-border text-app-text-primary max-w-xs overflow-hidden text-ellipsis whitespace-nowrap" title="@row[col]?.ToString()">
                                         @try
                                         {
                                             @FormatCell(row[col], col.ColumnName)
@@ -93,13 +147,13 @@
                 </tbody>
             </table>
         </div>
-        <div class="datagrid-footer" role="status" aria-live="polite">
+        <div class="px-4 py-2 text-xs text-app-text-muted border-t border-app-border" role="status" aria-live="polite">
             @Data.Rows.Count row(s)
         </div>
     }
     else
     {
-        <div class="datagrid-empty" role="status">No data available</div>
+        <div class="text-center py-8 text-app-text-muted" role="status">No data available</div>
     }
 </div>
 
@@ -125,6 +179,17 @@
     [Parameter] public string? PlanIndicatorColumn { get; set; }
     [Parameter] public int? TopRowsConfig { get; set; }
     [Parameter] public EventCallback<int> OnTopRowsConfigChanged { get; set; }
+
+    /// <summary>Column name whose cell value is executable SQL. Renders an Execute button per row.</summary>
+    [Parameter] public string? ActionColumn { get; set; }
+
+    /// <summary>Callback: receives the SQL string and a CancellationToken, returns (success, message).</summary>
+    [Parameter] public Func<string, CancellationToken, Task<(bool success, string message)>>? OnActionExecute { get; set; }
+
+    private enum ActionRowState { Idle, Executing, Success, Failed, Cancelled }
+    private readonly Dictionary<int, ActionRowState> _actionStates = new();
+    private readonly Dictionary<int, string> _actionMessages = new();
+    private readonly Dictionary<int, CancellationTokenSource> _actionCts = new();
 
     private DataTable? _data;
     private int _topRowsInput = 20;
@@ -227,6 +292,46 @@
     {
         if (SortColumn != columnName) return "none";
         return SortAscending ? "ascending" : "descending";
+    }
+
+    private async Task ExecuteAction(int rowIndex, string sql)
+    {
+        if (OnActionExecute == null) return;
+
+        _actionStates[rowIndex] = ActionRowState.Executing;
+        _actionMessages.Remove(rowIndex);
+        var cts = new CancellationTokenSource();
+        _actionCts[rowIndex] = cts;
+        StateHasChanged();
+
+        try
+        {
+            var (success, message) = await OnActionExecute(sql, cts.Token);
+            _actionStates[rowIndex] = success ? ActionRowState.Success : ActionRowState.Failed;
+            _actionMessages[rowIndex] = message;
+        }
+        catch (OperationCanceledException)
+        {
+            _actionStates[rowIndex] = ActionRowState.Cancelled;
+            _actionMessages[rowIndex] = "Cancelled";
+        }
+        catch (Exception ex)
+        {
+            _actionStates[rowIndex] = ActionRowState.Failed;
+            _actionMessages[rowIndex] = ex.Message;
+        }
+        finally
+        {
+            _actionCts.Remove(rowIndex);
+            cts.Dispose();
+            StateHasChanged();
+        }
+    }
+
+    private void CancelAction(int rowIndex)
+    {
+        if (_actionCts.TryGetValue(rowIndex, out var cts))
+            cts.Cancel();
     }
 
     private string FormatCell(object? value, string columnName)

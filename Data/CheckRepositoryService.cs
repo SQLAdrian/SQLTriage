@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using SqlHealthAssessment.Data.Models;
 
 namespace SqlHealthAssessment.Data
@@ -16,6 +17,7 @@ namespace SqlHealthAssessment.Data
     /// </summary>
     public class CheckRepositoryService
     {
+        private readonly ILogger<CheckRepositoryService> _logger;
         private readonly string _checksFilePath;
         private readonly string _backupFilePath;
         private List<SqlCheck> _checks = new();
@@ -37,8 +39,9 @@ namespace SqlHealthAssessment.Data
         /// </summary>
         public IReadOnlyList<SqlCheck> Checks => _checks.AsReadOnly();
 
-        public CheckRepositoryService()
+        public CheckRepositoryService(ILogger<CheckRepositoryService> logger)
         {
+            _logger = logger;
             _checksFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config", "sql-checks.json");
             _backupFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config", "sql-checks.backup.json");
         }
@@ -61,8 +64,7 @@ namespace SqlHealthAssessment.Data
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine(
-                    $"[CheckRepositoryService] Error loading checks from '{_checksFilePath}': {ex.Message}. Starting with empty check list.");
+                _logger.LogError(ex, "Error loading checks from '{FilePath}'. Starting with empty check list", _checksFilePath);
                 _checks = new List<SqlCheck>();
             }
         }
@@ -249,8 +251,8 @@ namespace SqlHealthAssessment.Data
 
             await SaveChecksAsync();
 
-            System.Diagnostics.Debug.WriteLine(
-                $"[CheckRepositoryService] Import complete: {added} added, {updated} updated, {skipped} skipped from '{filePath}'");
+            _logger.LogInformation("Import complete: {Added} added, {Updated} updated, {Skipped} skipped from '{FilePath}'",
+                added, updated, skipped, filePath);
 
             return (added, updated, skipped);
         }

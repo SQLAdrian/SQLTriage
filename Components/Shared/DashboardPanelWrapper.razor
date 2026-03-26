@@ -1,0 +1,62 @@
+@* In the name of God, the Merciful, the Compassionate *@
+@using SqlHealthAssessment.Data.Models
+
+<div class="report-section-wrapper @(EditMode ? "report-section--edit" : "") @(_hover && EditMode ? "report-section--hover" : "")"
+     @onmouseenter="() => _hover = true"
+     @onmouseleave="() => _hover = false">
+
+    @if (EditMode)
+    {
+        <div class="report-section-bar">
+            <span class="report-section-bar__type rsc-type--panel">PANEL</span>
+            <span class="report-section-bar__title">@Panel.Title</span>
+            <span class="report-section-bar__spacer"></span>
+
+            @* Panel type badge *@
+            <span class="rsc-type--panel" style="font-size:9px; padding:1px 5px; border-radius:3px; margin-right:2px;">
+                @Panel.PanelType
+            </span>
+
+            @if (!Panel.Enabled)
+            {
+                <span class="report-section-bar__badge rsc-badge--hidden">hidden</span>
+            }
+
+            @* Actions *@
+            <button class="rsc-btn" @onclick="() => OnToggle.InvokeAsync(Panel)" title="@(Panel.Enabled ? "Hide panel" : "Show panel")">
+                <i class="fa-solid @(Panel.Enabled ? "fa-eye" : "fa-eye-slash")"></i>
+            </button>
+            <button class="rsc-btn" disabled="@IsFirst" @onclick="() => OnMoveUp.InvokeAsync(Panel)" title="Move up">
+                <i class="fa-solid fa-arrow-up"></i>
+            </button>
+            <button class="rsc-btn" disabled="@IsLast" @onclick="() => OnMoveDown.InvokeAsync(Panel)" title="Move down">
+                <i class="fa-solid fa-arrow-down"></i>
+            </button>
+            <button class="rsc-btn rsc-btn--edit" @onclick="() => OnEdit.InvokeAsync(Panel)" title="Configure panel">
+                <i class="fa-solid fa-gear"></i>
+            </button>
+            <button class="rsc-btn rsc-btn--danger" @onclick="() => OnDelete.InvokeAsync(Panel)" title="Remove panel">
+                <i class="fa-solid fa-trash"></i>
+            </button>
+        </div>
+    }
+
+    <div class="report-section-body">
+        @ChildContent
+    </div>
+</div>
+
+@code {
+    [Parameter] public PanelDefinition Panel       { get; set; } = null!;
+    [Parameter] public bool            EditMode    { get; set; }
+    [Parameter] public bool            IsFirst     { get; set; }
+    [Parameter] public bool            IsLast      { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public EventCallback<PanelDefinition> OnMoveUp  { get; set; }
+    [Parameter] public EventCallback<PanelDefinition> OnMoveDown { get; set; }
+    [Parameter] public EventCallback<PanelDefinition> OnDelete   { get; set; }
+    [Parameter] public EventCallback<PanelDefinition> OnEdit     { get; set; }
+    [Parameter] public EventCallback<PanelDefinition> OnToggle   { get; set; }
+
+    private bool _hover;
+}

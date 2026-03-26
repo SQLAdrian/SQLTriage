@@ -1,0 +1,612 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/alerts"
+
+@using SqlHealthAssessment.Data
+@using SqlHealthAssessment.Data.Models
+@using SqlHealthAssessment.Data.Services
+@inject AlertDefinitionService Definitions
+@inject AlertEvaluationService Engine
+@inject AlertHistoryService History
+@inject AlertingService Alerting
+@inject ToastService Toast
+@implements IDisposable
+
+<div class="settings-page" style="max-width: 1400px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h2 style="margin: 0;">Alerts</h2>
+        <div style="display: flex; gap: 8px; align-items: center;">
+            <span class="severity-badge @(Engine.IsRunning ? "severity-info" : "")"
+                  style="font-size: 12px; padding: 4px 10px;">
+                @(Engine.IsRunning ? "Engine Running" : "Engine Stopped")
+            </span>
+            <button class="settings-btn" @onclick="ToggleEngine">
+                @(Engine.IsRunning ? "Stop" : "Start")
+            </button>
+            <button class="settings-btn" @onclick="RunNow" disabled="@(!Engine.IsRunning)">
+                Run Now
+            </button>
+        </div>
+    </div>
+
+    <!-- Tab Navigation -->
+    <div style="display: flex; gap: 2px; margin-bottom: 16px; border-bottom: 1px solid var(--border);">
+        <button class="alert-tab @(_activeTab == "active" ? "active" : "")" @onclick='() => _activeTab = "active"'>
+            Active Alerts
+            @if (_activeAlertCount > 0)
+            {
+                <span class="alert-badge">@_activeAlertCount</span>
+            }
+        </button>
+        <button class="alert-tab @(_activeTab == "config" ? "active" : "")" @onclick='() => _activeTab = "config"'>
+            Configuration
+        </button>
+        <button class="alert-tab @(_activeTab == "history" ? "active" : "")" @onclick='() => _activeTab = "history"'>
+            History
+        </button>
+    </div>
+
+    <!-- Active Alerts Tab -->
+    @if (_activeTab == "active")
+    {
+        <div class="settings-group">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h3 style="margin: 0;">Active Alerts (@_activeAlertCount)</h3>
+                @if (_activeAlertCount > 0)
+                {
+                    <button class="settings-btn" style="font-size: 12px; padding: 4px 12px;"
+                            @onclick="AcknowledgeAll">Acknowledge All</button>
+                }
+            </div>
+
+            @if (_activeAlerts.Count == 0)
+            {
+                <p style="color: var(--text-muted); text-align: center; padding: 40px 0;">
+                    No active alerts. All monitored conditions are within thresholds.
+                </p>
+            }
+            else
+            {
+                <table class="results-table" style="width: 100%;">
+                    <thead>
+                        <tr>
+                            <th style="width: 50px;">Sev</th>
+                            <th>Alert</th>
+                            <th>Server</th>
+                            <th>Value</th>
+                            <th>Hits</th>
+                            <th>First Seen</th>
+                            <th>Last Seen</th>
+                            <th style="width: 100px;">Status</th>
+                            <th style="width: 60px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var alert in _activeAlerts)
+                        {
+                            <tr style="border-left: 3px solid @GetSeverityColor(alert.Severity);">
+                                <td>
+                                    <span class="severity-badge severity-@(alert.Severity.ToLower())"
+                                          style="font-size: 10px; padding: 2px 6px;">
+                                        @alert.Severity.Substring(0,1)
+                                    </span>
+                                </td>
+                                <td>
+                                    <div style="font-weight: 500;">@alert.AlertName</div>
+                                    <div style="font-size: 11px; color: var(--text-muted);">@alert.Message</div>
+                                </td>
+                                <td style="font-family: monospace; font-size: 12px;">@alert.ServerName</td>
+                                <td style="font-family: monospace;">@alert.LastValue.ToString("N1")</td>
+                                <td style="text-align: center;">@alert.HitCount</td>
+                                <td style="font-size: 12px;">@alert.FirstTriggered.ToLocalTime().ToString("MM/dd HH:mm")</td>
+                                <td style="font-size: 12px;">@alert.LastTriggered.ToLocalTime().ToString("MM/dd HH:mm")</td>
+                                <td>
+                                    <span class="severity-badge @(alert.Status == AlertStatus.Active ? "severity-warning" : "")"
+                                          style="font-size: 10px; padding: 2px 6px;">
+                                        @alert.Status
+                                    </span>
+                                </td>
+                                <td>
+                                    @if (alert.Status == AlertStatus.Active)
+                                    {
+                                        <button class="settings-btn" style="font-size: 10px; padding: 2px 8px;"
+                                                @onclick="() => AcknowledgeOne(alert)">Ack</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+
+    <!-- Configuration Tab -->
+    @if (_activeTab == "config")
+    {
+        <!-- Global Settings -->
+        <div class="settings-group" style="margin-bottom: 16px;">
+            <h3 style="margin-top: 0;">Global Settings</h3>
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;">
+                <div class="settings-field" style="flex-direction: column; gap: 4px;">
+                    <label>Cooldown (min)</label>
+                    <input type="number" min="1" max="60" @bind="_globalDefaults.CooldownMinutes" @bind:after="SaveGlobalDefaults" />
+                </div>
+                <div class="settings-field" style="flex-direction: column; gap: 4px;">
+                    <label>Auto-Ack (hrs)</label>
+                    <input type="number" min="1" max="168" @bind="_globalDefaults.AutoAcknowledgeHours" @bind:after="SaveGlobalDefaults" />
+                </div>
+                <div class="settings-field" style="flex-direction: column; gap: 4px;">
+                    <label>Retention (days)</label>
+                    <input type="number" min="30" max="730" @bind="_globalDefaults.RetentionDays" @bind:after="SaveGlobalDefaults" />
+                </div>
+                <div class="settings-field" style="flex-direction: column; gap: 4px;">
+                    <label>Enabled</label>
+                    <label class="toggle-label">
+                        <input type="checkbox" @bind="_globalDefaults.Enabled" @bind:after="SaveGlobalDefaults" />
+                        <span>@(_globalDefaults.Enabled ? "Active" : "Disabled")</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filter by category -->
+        <div style="display: flex; gap: 4px; margin-bottom: 12px; flex-wrap: wrap;">
+            <button class="alert-filter-btn @(_selectedCategory == null ? "active" : "")"
+                    @onclick="() => _selectedCategory = null">
+                All (@_allAlerts.Count)
+            </button>
+            @foreach (var cat in _categories)
+            {
+                var count = _allAlerts.Count(a => a.Category == cat.Id);
+                <button class="alert-filter-btn @(_selectedCategory == cat.Id ? "active" : "")"
+                        @onclick="() => _selectedCategory = cat.Id">
+                    @cat.Name (@count)
+                </button>
+            }
+        </div>
+
+        <!-- Alert definitions table -->
+        <div class="settings-group">
+            <table class="results-table" style="width: 100%;">
+                <thead>
+                    <tr>
+                        <th style="width: 40px;">On</th>
+                        <th>Alert Name</th>
+                        <th style="width: 100px;">Category</th>
+                        <th style="width: 80px;">Severity</th>
+                        <th style="width: 80px;">Warning</th>
+                        <th style="width: 80px;">Critical</th>
+                        <th style="width: 60px;">Unit</th>
+                        <th style="width: 90px;">Frequency</th>
+                        <th style="width: 50px;"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var alert in FilteredAlerts)
+                    {
+                        <tr style="opacity: @(alert.Enabled ? "1" : "0.5");">
+                            <td>
+                                <input type="checkbox" checked="@alert.Enabled"
+                                       @onchange="e => ToggleAlert(alert, (bool)e.Value!)" />
+                            </td>
+                            <td>
+                                <div style="font-weight: 500;">@alert.Name</div>
+                                <div style="font-size: 11px; color: var(--text-muted); max-width: 350px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                    @alert.Description
+                                </div>
+                            </td>
+                            <td style="font-size: 12px;">@GetCategoryName(alert.Category)</td>
+                            <td>
+                                <span class="severity-badge severity-@(alert.Severity.ToLower())"
+                                      style="font-size: 10px; padding: 2px 6px;">
+                                    @alert.Severity
+                                </span>
+                            </td>
+                            <td style="font-family: monospace; font-size: 12px;">
+                                @(alert.Thresholds.Warning?.ToString("N0") ?? "—")
+                            </td>
+                            <td style="font-family: monospace; font-size: 12px;">
+                                @(alert.Thresholds.Critical?.ToString("N0") ?? "—")
+                            </td>
+                            <td style="font-size: 11px; color: var(--text-muted);">@FormatUnit(alert.Unit)</td>
+                            <td style="font-size: 12px;">@FormatFrequency(alert.FrequencySeconds)</td>
+                            <td>
+                                <button class="settings-btn" style="font-size: 10px; padding: 2px 8px;"
+                                        @onclick="() => EditAlert(alert)">Edit</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    <!-- History Tab -->
+    @if (_activeTab == "history")
+    {
+        <div class="settings-group">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h3 style="margin: 0;">Alert History</h3>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <select @bind="_historyFilter" @bind:after="LoadHistory">
+                        <option value="all">All Statuses</option>
+                        <option value="active">Active</option>
+                        <option value="acknowledged">Acknowledged</option>
+                        <option value="resolved">Resolved</option>
+                    </select>
+                    <button class="settings-btn" style="font-size: 12px;" @onclick="LoadHistory">Refresh</button>
+                </div>
+            </div>
+
+            @if (_historyRecords.Count == 0)
+            {
+                <p style="color: var(--text-muted); text-align: center; padding: 40px 0;">
+                    No alert history records found.
+                </p>
+            }
+            else
+            {
+                <table class="results-table" style="width: 100%;">
+                    <thead>
+                        <tr>
+                            <th style="width: 50px;">Sev</th>
+                            <th>Alert</th>
+                            <th>Server</th>
+                            <th>Value</th>
+                            <th>Hits</th>
+                            <th>First Triggered</th>
+                            <th>Last Triggered</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var record in _historyRecords)
+                        {
+                            <tr style="border-left: 3px solid @GetSeverityColor(record.Severity);">
+                                <td>
+                                    <span class="severity-badge severity-@(record.Severity.ToLower())"
+                                          style="font-size: 10px; padding: 2px 6px;">
+                                        @record.Severity.Substring(0,1)
+                                    </span>
+                                </td>
+                                <td>
+                                    <div style="font-weight: 500;">@record.AlertName</div>
+                                    <div style="font-size: 11px; color: var(--text-muted);">@record.Message</div>
+                                </td>
+                                <td style="font-family: monospace; font-size: 12px;">@record.ServerName</td>
+                                <td style="font-family: monospace;">@record.Value.ToString("N1")</td>
+                                <td style="text-align: center;">@record.HitCount</td>
+                                <td style="font-size: 12px;">@record.FirstTriggered.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                                <td style="font-size: 12px;">@record.LastTriggered.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                                <td>
+                                    <span class="severity-badge @GetStatusBadgeClass(record.Status)"
+                                          style="font-size: 10px; padding: 2px 6px;">
+                                        @record.Status
+                                    </span>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+
+    <!-- Edit Alert Modal -->
+    @if (_editingAlert != null)
+    {
+        <div class="modal-overlay" @onclick="CancelEdit">
+            <div class="modal-dialog" style="max-width: 500px;" @onclick:stopPropagation="true">
+                <h3 style="margin-top: 0;">Edit Alert: @_editingAlert.Name</h3>
+                <p style="color: var(--text-muted); font-size: 12px; margin-bottom: 16px;">@_editingAlert.Description</p>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div class="settings-field" style="flex-direction: column; gap: 4px;">
+                        <label>Severity</label>
+                        <select @bind="_editingAlert.Severity">
+                            <option value="Info">Info</option>
+                            <option value="Low">Low</option>
+                            <option value="Medium">Medium</option>
+                            <option value="High">High</option>
+                            <option value="Critical">Critical</option>
+                        </select>
+                    </div>
+                    <div class="settings-field" style="flex-direction: column; gap: 4px;">
+                        <label>Operator</label>
+                        <select @bind="_editingAlert.Operator">
+                            <option value="greater_than">Greater Than</option>
+                            <option value="less_than">Less Than</option>
+                        </select>
+                    </div>
+                    <div class="settings-field" style="flex-direction: column; gap: 4px;">
+                        <label>Warning Threshold</label>
+                        <input type="number" step="any" @bind="_editWarning" />
+                    </div>
+                    <div class="settings-field" style="flex-direction: column; gap: 4px;">
+                        <label>Critical Threshold</label>
+                        <input type="number" step="any" @bind="_editCritical" />
+                    </div>
+                    <div class="settings-field" style="flex-direction: column; gap: 4px;">
+                        <label>Frequency (seconds)</label>
+                        <input type="number" min="10" @bind="_editingAlert.FrequencySeconds" />
+                    </div>
+                    <div class="settings-field" style="flex-direction: column; gap: 4px;">
+                        <label>Cooldown (min, blank=global)</label>
+                        <input type="number" min="1" @bind="_editCooldown" />
+                    </div>
+                </div>
+
+                <div class="settings-field" style="flex-direction: column; gap: 4px; margin-top: 12px;">
+                    <label>T-SQL Query</label>
+                    <textarea rows="4" style="font-family: monospace; font-size: 11px; width: 100%;
+                              background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border);
+                              border-radius: 4px; padding: 8px; resize: vertical;"
+                              @bind="_editingAlert.Query"></textarea>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
+                    <button class="settings-btn" @onclick="CancelEdit">Cancel</button>
+                    <button class="settings-btn" style="background: var(--accent); color: #fff;" @onclick="SaveEdit">Save</button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .alert-tab {
+        background: transparent;
+        border: none;
+        color: var(--text-secondary);
+        padding: 8px 16px;
+        cursor: pointer;
+        border-bottom: 2px solid transparent;
+        font-size: 14px;
+        transition: all 0.2s;
+    }
+    .alert-tab:hover { color: var(--text-primary); }
+    .alert-tab.active {
+        color: var(--accent);
+        border-bottom-color: var(--accent);
+    }
+    .alert-badge {
+        background: var(--red);
+        color: #fff;
+        border-radius: 10px;
+        padding: 1px 6px;
+        font-size: 11px;
+        margin-left: 4px;
+    }
+    .alert-filter-btn {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        color: var(--text-secondary);
+        padding: 4px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+        transition: all 0.2s;
+    }
+    .alert-filter-btn:hover { border-color: var(--accent); color: var(--text-primary); }
+    .alert-filter-btn.active {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
+    }
+    .toggle-label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+        font-size: 13px;
+    }
+    .modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.6);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    }
+    .modal-dialog {
+        background: var(--bg-panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 24px;
+        width: 90%;
+        max-height: 80vh;
+        overflow-y: auto;
+    }
+</style>
+
+@code {
+    private string _activeTab = "active";
+    private string? _selectedCategory;
+    private string _historyFilter = "all";
+    private int _activeAlertCount;
+
+    private AlertGlobalDefaults _globalDefaults = new();
+    private List<AlertCategory> _categories = new();
+    private List<AlertDefinition> _allAlerts = new();
+    private List<AlertState> _activeAlerts = new();
+    private List<AlertHistoryRecord> _historyRecords = new();
+
+    // Edit modal state
+    private AlertDefinition? _editingAlert;
+    private double? _editWarning;
+    private double? _editCritical;
+    private int? _editCooldown;
+
+    private List<AlertDefinition> FilteredAlerts =>
+        _selectedCategory == null
+            ? _allAlerts
+            : _allAlerts.Where(a => a.Category == _selectedCategory).ToList();
+
+    protected override void OnInitialized()
+    {
+        LoadData();
+        Engine.OnAlertsChanged += OnEngineChanged;
+    }
+
+    private void LoadData()
+    {
+        _globalDefaults = Definitions.GetGlobalDefaults();
+        _categories = Definitions.GetCategories();
+        _allAlerts = Definitions.GetAllAlerts();
+        _activeAlerts = Engine.ActiveAlerts.ToList();
+        _activeAlertCount = Engine.ActiveCount;
+        LoadHistory();
+    }
+
+    private void LoadHistory()
+    {
+        _historyRecords = _historyFilter switch
+        {
+            "active" => History.GetActiveAlerts().Where(r => r.Status == "Active").ToList(),
+            "acknowledged" => History.GetActiveAlerts().Where(r => r.Status == "Acknowledged").ToList(),
+            "resolved" => History.GetRecentHistory(200).Where(r => r.Status == "Resolved").ToList(),
+            _ => History.GetRecentHistory(200)
+        };
+    }
+
+    private async void OnEngineChanged()
+    {
+        _activeAlerts = Engine.ActiveAlerts.ToList();
+        _activeAlertCount = Engine.ActiveCount;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void ToggleEngine()
+    {
+        if (Engine.IsRunning)
+            Engine.Stop();
+        else
+            Engine.Start();
+    }
+
+    private async Task RunNow()
+    {
+        Toast.ShowInfo("Running alert evaluation...");
+        await Engine.EvaluateAllAsync();
+        LoadData();
+        Toast.ShowSuccess("Alert evaluation complete");
+    }
+
+    private void ToggleAlert(AlertDefinition alert, bool enabled)
+    {
+        Definitions.SetAlertEnabled(alert.Id, enabled);
+        alert.Enabled = enabled;
+    }
+
+    private void EditAlert(AlertDefinition alert)
+    {
+        // Clone for editing
+        _editingAlert = new AlertDefinition
+        {
+            Id = alert.Id,
+            Name = alert.Name,
+            Description = alert.Description,
+            Category = alert.Category,
+            Enabled = alert.Enabled,
+            Severity = alert.Severity,
+            Thresholds = new AlertThresholds
+            {
+                Warning = alert.Thresholds.Warning,
+                Critical = alert.Thresholds.Critical
+            },
+            Unit = alert.Unit,
+            Operator = alert.Operator,
+            DurationSeconds = alert.DurationSeconds,
+            FrequencySeconds = alert.FrequencySeconds,
+            CooldownMinutes = alert.CooldownMinutes,
+            Query = alert.Query,
+            QueryMode = alert.QueryMode,
+            Remediation = alert.Remediation
+        };
+        _editWarning = alert.Thresholds.Warning;
+        _editCritical = alert.Thresholds.Critical;
+        _editCooldown = alert.CooldownMinutes;
+    }
+
+    private void SaveEdit()
+    {
+        if (_editingAlert == null) return;
+        _editingAlert.Thresholds.Warning = _editWarning;
+        _editingAlert.Thresholds.Critical = _editCritical;
+        _editingAlert.CooldownMinutes = _editCooldown;
+        Definitions.UpdateAlert(_editingAlert);
+        _allAlerts = Definitions.GetAllAlerts();
+        _editingAlert = null;
+        Toast.ShowSuccess("Alert definition saved");
+    }
+
+    private void CancelEdit() => _editingAlert = null;
+
+    private void AcknowledgeOne(AlertState alert)
+    {
+        Engine.AcknowledgeAlert(alert.AlertId, alert.ServerName);
+        _activeAlerts = Engine.ActiveAlerts.ToList();
+        _activeAlertCount = Engine.ActiveCount;
+    }
+
+    private void AcknowledgeAll()
+    {
+        Engine.AcknowledgeAll();
+        _activeAlerts = Engine.ActiveAlerts.ToList();
+        _activeAlertCount = Engine.ActiveCount;
+    }
+
+    private void SaveGlobalDefaults()
+    {
+        Definitions.UpdateGlobalDefaults(_globalDefaults);
+        Toast.ShowSuccess("Global alert settings saved");
+    }
+
+    private static string GetSeverityColor(string severity) => severity.ToLower() switch
+    {
+        "critical" => "var(--red)",
+        "high" => "var(--orange)",
+        "warning" or "medium" => "var(--yellow)",
+        _ => "var(--accent)"
+    };
+
+    private static string GetStatusBadgeClass(string status) => status switch
+    {
+        "Active" => "severity-warning",
+        "Acknowledged" => "severity-info",
+        "Resolved" => "",
+        _ => ""
+    };
+
+    private string GetCategoryName(string categoryId) =>
+        _categories.FirstOrDefault(c => c.Id == categoryId)?.Name ?? categoryId;
+
+    private static string FormatUnit(string unit) => unit switch
+    {
+        "percent" => "%",
+        "seconds" => "sec",
+        "milliseconds" => "ms",
+        "megabytes" => "MB",
+        "hours" => "hrs",
+        "minutes" => "min",
+        "count" => "#",
+        "per_second" => "/s",
+        "per_minute" => "/m",
+        "event" => "evt",
+        _ => unit
+    };
+
+    private static string FormatFrequency(int seconds)
+    {
+        if (seconds < 60) return $"{seconds}s";
+        if (seconds < 3600) return $"{seconds / 60}m";
+        if (seconds < 86400) return $"{seconds / 3600}h";
+        return $"{seconds / 86400}d";
+    }
+
+    public void Dispose()
+    {
+        Engine.OnAlertsChanged -= OnEngineChanged;
+    }
+}

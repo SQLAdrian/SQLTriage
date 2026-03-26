@@ -1,0 +1,70 @@
+@* In the name of God, the Merciful, the Compassionate *@
+@using SqlHealthAssessment.Data.Models
+
+@if (Section.Enabled || EditMode)
+{
+    <div class="report-section-wrapper @(EditMode ? "report-section--edit" : "") @(EditMode && _hover ? "report-section--hover" : "")"
+         @onmouseenter="() => _hover = true"
+         @onmouseleave="() => _hover = false">
+
+        @if (EditMode)
+        {
+            <div class="report-section-bar">
+                <span class="report-section-bar__type @(Section.SectionType == "panel" ? "rsc-type--panel" : "rsc-type--native")">
+                    @(Section.SectionType == "panel" ? "PANEL" : "NATIVE")
+                </span>
+                <span class="report-section-bar__title">@Section.Title</span>
+                <span class="report-section-bar__spacer"></span>
+
+                @if (!Section.Enabled)
+                {
+                    <span class="report-section-bar__badge rsc-badge--hidden">Hidden</span>
+                }
+
+                <button class="rsc-btn rsc-btn--icon" title="Toggle visibility"
+                        @onclick="() => OnToggle.InvokeAsync(Section)">
+                    <i class="fa-solid @(Section.Enabled ? "fa-eye" : "fa-eye-slash")"></i>
+                </button>
+                <button class="rsc-btn rsc-btn--icon" title="Move up"
+                        @onclick="() => OnMoveUp.InvokeAsync(Section)" disabled="@IsFirst">
+                    <i class="fa-solid fa-chevron-up"></i>
+                </button>
+                <button class="rsc-btn rsc-btn--icon" title="Move down"
+                        @onclick="() => OnMoveDown.InvokeAsync(Section)" disabled="@IsLast">
+                    <i class="fa-solid fa-chevron-down"></i>
+                </button>
+                <button class="rsc-btn rsc-btn--icon rsc-btn--edit" title="Configure section"
+                        @onclick="() => OnEdit.InvokeAsync(Section)">
+                    <i class="fa-solid fa-gear"></i>
+                </button>
+                @if (Section.SectionType == "panel")
+                {
+                    <button class="rsc-btn rsc-btn--icon rsc-btn--danger" title="Delete section"
+                            @onclick="() => OnDelete.InvokeAsync(Section)">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                }
+            </div>
+        }
+
+        <div class="report-section-body @(!Section.Enabled && EditMode ? "report-section-body--hidden" : "")">
+            @ChildContent
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public ReportSection Section   { get; set; } = null!;
+    [Parameter]                 public bool          EditMode  { get; set; }
+    [Parameter]                 public bool          IsFirst   { get; set; }
+    [Parameter]                 public bool          IsLast    { get; set; }
+    [Parameter]                 public RenderFragment? ChildContent { get; set; }
+
+    [Parameter] public EventCallback<ReportSection> OnMoveUp  { get; set; }
+    [Parameter] public EventCallback<ReportSection> OnMoveDown { get; set; }
+    [Parameter] public EventCallback<ReportSection> OnDelete  { get; set; }
+    [Parameter] public EventCallback<ReportSection> OnEdit    { get; set; }
+    [Parameter] public EventCallback<ReportSection> OnToggle  { get; set; }
+
+    private bool _hover;
+}

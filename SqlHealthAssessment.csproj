@@ -4,7 +4,8 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <OutputType>WinExe</OutputType>
     <UseWPF>true</UseWPF>
-    <DefaultItemExcludes>$(DefaultItemExcludes);PerformanceMonitor-main\**;PerformanceMonitor_db\**;Tests\**;BenchmarkSuite1\**;Data\DashboardPreloaderService.cs;Data\OptimizedDashboardLoader.cs;Config\**;publish\**;release\**</DefaultItemExcludes>
+    <UseWindowsForms>true</UseWindowsForms>
+    <DefaultItemExcludes>$(DefaultItemExcludes);PerformanceMonitor-main\**;PerformanceMonitor_db\**;Tests\**;BenchmarkSuite1\**;Data\DashboardPreloaderService.cs;Data\OptimizedDashboardLoader.cs;publish\**;release\**;lib\**</DefaultItemExcludes>
     <NoWarn>$(NoWarn);CS0169;CS0414;BL0007</NoWarn>
     <RootNamespace>SqlHealthAssessment</RootNamespace>
     <AssemblyName>SqlHealthAssessment</AssemblyName>
@@ -30,7 +31,19 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <!-- Disable Blazor hot-reload to suppress _wpftmp.csproj side-project generation -->
     <RazorHotReload>false</RazorHotReload>
+    <!-- Custom entry point: Program.Main handles both WPF and service modes -->
+    <StartupObject>SqlHealthAssessment.Program</StartupObject>
   </PropertyGroup>
+
+  <!-- ASP.NET Core framework for Blazor Server mode (Kestrel, SignalR) -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <!-- PerformanceStudio: SQL execution plan analyzer by Erik Darling (git submodule) -->
+  <ItemGroup>
+    <ProjectReference Include="lib\PerformanceStudio\src\PlanViewer.Core\PlanViewer.Core.csproj" />
+  </ItemGroup>
 
   <!-- Release Build Optimizations -->
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
@@ -40,7 +53,10 @@
     <DebugSymbols>false</DebugSymbols>
     <Optimize>true</Optimize>
     <SelfContained>true</SelfContained>
-    <PublishSingleFile>false</PublishSingleFile>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
   </PropertyGroup>
 
   <ItemGroup>
@@ -66,17 +82,23 @@
     <None Remove="PerformanceMonitor-main\**" />
   </ItemGroup>
 
-  <!-- Include Deploy and Config folders in publish output for database scripts and configuration -->
+  <!-- Include Deploy folder in publish output for database scripts -->
   <ItemGroup>
     <Content Include="Deploy\**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
-    <Content Include="Config\*.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!-- Config\*.json files are auto-included by the SDK (Config is not in DefaultItemExcludes).
+         TargetPath for each is set via Content Update entries below. -->
+    <Content Remove="Config\Ignore\**" />
+    <Content Remove="Config\*.backup" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.Google" Version="8.0.*" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.MicrosoftAccount" Version="8.0.*" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebView.Wpf" Version="8.0.*" />
     <PackageReference Include="Microsoft.SqlServer.DacFx" Version="162.*" />
     <PackageReference Include="Blazor-ApexCharts" Version="3.*" />
-    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.*" />
+    <PackageReference Include="Radzen.Blazor" Version="5.*" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.*" />
     <PackageReference Include="Microsoft.SqlServer.Management.Assessment" Version="1.*" />
     <PackageReference Include="Microsoft.SqlServer.SqlManagementObjects" Version="172.*" />
 
@@ -85,17 +107,41 @@
     </PackageReference>
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.*" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.*" />
-    <PackageReference Include="Azure.Identity" Version="1.*" />
     <PackageReference Include="Polly" Version="8.4.2" />
-    <PackageReference Include="QuestPDF" Version="2026.2.3" />
-    <PackageReference Include="ReportViewerCore.NETCore" Version="15.1.33" />
     <PackageReference Include="Serilog" Version="4.*" />
     <PackageReference Include="Serilog.Extensions.Logging" Version="8.*" />
     <PackageReference Include="Serilog.Sinks.File" Version="6.*" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="6.*" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.*" />
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.*" />
 
   </ItemGroup>
 
   <ItemGroup>
+    <Content Update="Config\ruleset.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>config/ruleset.json</TargetPath>
+    </Content>
+    <Content Update="Config\sql-checks.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>config/sql-checks.json</TargetPath>
+    </Content>
+    <Content Update="Config\script-configurations.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>config/script-configurations.json</TargetPath>
+    </Content>
+    <Content Update="Config\user-settings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>config/user-settings.json</TargetPath>
+    </Content>
+    <Content Update="Config\alert-definitions.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>config/alert-definitions.json</TargetPath>
+    </Content>
+    <Content Update="Config\scheduled-tasks.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>config/scheduled-tasks.json</TargetPath>
+    </Content>
     <Content Update="Config\appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <TargetPath>config/appsettings.json</TargetPath>
@@ -112,16 +158,15 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <TargetPath>config/version.json</TargetPath>
     </Content>
-    <Content Update="dashboard-config.json" Condition="Exists('dashboard-config.json')">
+    <Content Update="Config\dashboard-config.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <TargetPath>config/dashboard-config.json</TargetPath>
     </Content>
 
-    <Content Include="reports\BlitzReport.rdl" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="SQLHealthAssessment.ico" />
+    <Content Include="SQLHealthAssessment.ico" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
@@ -161,12 +206,6 @@
     <None Update="BPScripts\WeeklyReportSchedule.sql">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Update="BPScripts\ruleset.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="BPScripts\DefaultRuleset.csv">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
 <None Update="scripts\Check_BP_Servers.sql">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
@@ -188,23 +227,8 @@
     </None>
   </ItemGroup>
 
-  <ItemGroup>
-    <None Include="Config\appsettings.Development.json" />
-    <None Include="Config\appsettings.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="Config\appsettings.Production.json" />
-    <None Include="Config\script-configurations.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="Config\sql-checks.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="Config\user-settings.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Include="Config\version.json" />
-  </ItemGroup>
+  <!-- Config files are included via Content Include="Config\*.json" above.
+       Do NOT re-declare them as None — that overrides Content and breaks publish. -->
 
   <ItemGroup>
     <Resource Include="SQLHealthAssessment.png" />
@@ -244,9 +268,15 @@
     <RemoveDir Directories="@(LanguageFolders)" ContinueOnError="true" />
   </Target>
 
-  <!-- Increment build number before build -->
-  <Target Name="IncrementBuildNumber" BeforeTargets="BeforeBuild">
+  <!-- Increment build number on Release builds only -->
+  <Target Name="IncrementBuildNumber" BeforeTargets="BeforeBuild" Condition="'$(Configuration)' == 'Release'">
     <Exec Command="powershell -ExecutionPolicy Bypass -File increment-build.ps1" />
+  </Target>
+
+  <!-- Update PerformanceStudio submodule to latest on Release builds -->
+  <Target Name="UpdatePerformanceStudio" BeforeTargets="BeforeBuild" Condition="'$(Configuration)' == 'Release'">
+    <Exec Command="git submodule update --remote lib/PerformanceStudio" ContinueOnError="true" />
+    <Message Importance="high" Text="PerformanceStudio submodule updated to latest" />
   </Target>
 
   <!-- Create release ZIP after publish -->

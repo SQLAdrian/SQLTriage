@@ -7,7 +7,7 @@
     "ExecutionParameters": "EXEC [dbo].[sp_Blitz] @CheckUserDatabaseObjects = 1 , @CheckProcedureCache = 1 , @OutputType = \u0027TABLE\u0027 , @OutputProcedureCache = 0 , @CheckProcedureCacheFilter = NULL, @CheckServerInfo = 1, @OutputDatabaseName = \u0027master\u0027, @OutputSchemaName = \u0027dbo\u0027, @OutputTableName = \u0027sqldba_sp_Blitz_output\u0027, @BringThePain = 1;",
     "SqlQueryForOutput": "DECLARE @ThisDomain NVARCHAR(100);\r\nEXEC master.dbo.xp_regread \u0027HKEY_LOCAL_MACHINE\u0027, \u0027SYSTEM\\CurrentControlSet\\services\\Tcpip\\Parameters\u0027, N\u0027Domain\u0027,@ThisDomain OUTPUT;\r\nSELECT  ID, @ThisDomain [Domain],ServerName, CONVERT(VARCHAR,CheckDate,120), Priority, FindingsGroup, Finding, DatabaseName, URL, Details, CheckID FROM master.dbo.sqldba_sp_Blitz_output WHERE CheckDate = (SELEct max([CheckDate]) FROM master.dbo.sqldba_sp_Blitz_output);",
     "Enabled": true,
-    "TimeoutSeconds": 300,
+    "TimeoutSeconds": 900,
     "Category": "Diagnostic",
     "ExecutionOrder": 1,
     "ExportToCsv": true
@@ -20,7 +20,7 @@
     "ExecutionParameters": "EXEC  [dbo].[sp_triage\u00AE]",
     "SqlQueryForOutput": "\r\nSELECT TOP (100) PERCENT \r\nID, evaldate, domain, SQLInstance, SectionID, Section, Summary, Severity, Details, HoursToResolveWithTesting, QueryPlan\r\n\r\nFROM \r\n (SELECT         CONVERT(NVARCHAR(25), T1.ID) AS ID, REPLACE(T1.evaldate, \u0027~\u0027, \u0027-\u0027) AS evaldate, REPLACE(T1.domain, \u0027~\u0027, \u0027-\u0027) AS domain, REPLACE(T1.SQLInstance, \u0027~\u0027, \u0027-\u0027) \r\nAS SQLInstance, REPLACE(CONVERT(NVARCHAR(10), T1.SectionID), \u0027~\u0027, \u0027-\u0027) AS SectionID, REPLACE(T1.Section, \u0027~\u0027, \u0027-\u0027) AS Section, REPLACE(T1.Summary, \u0027~\u0027, \u0027-\u0027) AS Summary, \r\n REPLACE(T1.Severity, \u0027~\u0027, \u0027-\u0027) AS Severity, REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(REPLACE(T1.Details, \u0027~\u0027, \u0027-\u0027), N\u0027\u0027), CHAR(9), \u0027 \u0027), CHAR(10), \u0027 \u0027), CHAR(13), \u0027 \u0027), \u0027 \u0027, \u0027 \u0027) AS Details, \r\n REPLACE(CONVERT(NVARCHAR(10), T1.HoursToResolveWithTesting), \u0027~\u0027, \u0027-\u0027) AS HoursToResolveWithTesting, REPLACE(T1.QueryPlan, \u0027~\u0027, \u0027-\u0027) AS QueryPlan, T1.ID AS Sorter\r\nFROM            dbo.[sqldba_sp_triage\u00AE_output] AS T1 INNER JOIN\r\n(SELECT        MAX(evaldate) AS evaldate\r\nFROM            dbo.[sqldba_sp_triage\u00AE_output]) AS T2 ON T1.evaldate = T2.evaldate) AS T3\r\nORDER BY Sorter ASC\r\n\r\n",
     "Enabled": true,
-    "TimeoutSeconds": 300,
+    "TimeoutSeconds": 900,
     "Category": "Diagnostic",
     "ExecutionOrder": 99,
     "ExportToCsv": true
@@ -33,7 +33,7 @@
     "ExecutionParameters": "",
     "SqlQueryForOutput": "",
     "Enabled": false,
-    "TimeoutSeconds": 300,
+    "TimeoutSeconds": 900,
     "Category": "Diagnostic",
     "ExecutionOrder": 3,
     "ExportToCsv": true
@@ -46,7 +46,7 @@
     "ExecutionParameters": "EXEC dbo.stpSecurity_Checklist",
     "SqlQueryForOutput": "SELECT [evaldate]\r\n      ,[Domain]\r\n      ,[SQLInstance]\r\n      ,[code]\r\n      ,[Category]\r\n      ,[Title]\r\n      ,[Result]\r\n      ,[How this can be an Issue]\r\n      ,[Technical explanation]\r\n      ,[How to Fix]\r\n      ,[Result Details]\r\n      ,[External Reference]\r\n  FROM [master].[dbo].[stpSecurity_Checklist_Table]\r\n  WHERE [evaldate] = (SELECT MAX([evaldate]) FROM [stpSecurity_Checklist_Table])",
     "Enabled": true,
-    "TimeoutSeconds": 300,
+    "TimeoutSeconds": 900,
     "Category": "Diagnostic",
     "ExecutionOrder": 4,
     "ExportToCsv": true

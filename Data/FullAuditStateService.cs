@@ -6,7 +6,9 @@ using SqlHealthAssessment.Data.Models;
 namespace SqlHealthAssessment.Data
 {
     /// <summary>
-    /// Stores state for the Full Audit page to persist across navigation
+    /// Stores state for the Full Audit page to persist across navigation.
+    /// Results are automatically cleared at the start of each new execution
+    /// to prevent unbounded memory growth across repeated audit runs.
     /// </summary>
     public class FullAuditStateService
     {
@@ -17,6 +19,9 @@ namespace SqlHealthAssessment.Data
         private bool _isTesting;
         private readonly object _lock = new();
         private DateTime _lastClearTime = DateTime.Now;
+
+        /// <summary>Maximum results retained. Oldest entries are evicted when exceeded.</summary>
+        private const int MaxResults = 500;
         
         // Progress tracking state
         private int _totalServers;
@@ -101,9 +106,18 @@ namespace SqlHealthAssessment.Data
             set => _isMultiServerExecution = value;
         }
 
-        public double ProgressPercent => _totalServers * _totalScripts > 0 
-            ? (double)(_currentServerIndex * _totalScripts + _currentScriptIndex) / (_totalServers * _totalScripts) * 100 
-            : 0;
+        public double ProgressPercent
+        {
+            get
+            {
+                if (_totalServers * _totalScripts <= 0) return 0;
+                // Indices are 1-based: serverIndex 1..N, scriptIndex 0..M (0 = starting server, M = all scripts done)
+                var completed = (_currentServerIndex - 1) * _totalScripts + _currentScriptIndex;
+                var total = _totalServers * _totalScripts;
+                var pct = (double)completed / total * 100;
+                return Math.Min(pct, 100);
+            }
+        }
 
         public void AddExecutionResult(ScriptExecutionResult result)
         {
@@ -115,6 +129,18 @@ namespace SqlHealthAssessment.Data
                 result.Results = null; // Free the memory
             }
             _executionResults[result.ScriptName] = result;
+
+            // Evict oldest entries if dictionary exceeds cap
+            if (_executionResults.Count > MaxResults)
+            {
+                var oldest = _executionResults
+                    .OrderBy(kv => kv.Value.ExecutionTime)
+                    .Take(_executionResults.Count - MaxResults)
+                    .Select(kv => kv.Key)
+                    .ToList();
+                foreach (var key in oldest)
+                    _executionResults.TryRemove(key, out _);
+            }
         }
 
         public void RemoveExecutionResult(string scriptName)
@@ -144,6 +170,9 @@ namespace SqlHealthAssessment.Data
 
         public void StartExecution(int totalServers, int totalScripts, bool isMultiServer = false)
         {
+            // Clear previous run results to prevent unbounded memory growth
+            _executionResults.Clear();
+
             _totalServers = totalServers;
             _totalScripts = totalScripts;
             _currentServerIndex = 0;

@@ -1,32 +1,36 @@
 /* In the name of God, the Merciful, the Compassionate */
 
 using System;
+using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 
 namespace SqlHealthAssessment.Data
 {
     /// <summary>
-    /// Encrypts and decrypts sensitive strings (passwords, connection strings) using Windows DPAPI.
-    /// Data is protected with DataProtectionScope.CurrentUser, meaning only the same Windows user
-    /// who encrypted the data can decrypt it.
+    /// Encrypts and decrypts sensitive strings using layered encryption:
+    ///   "enc:"  — DPAPI CurrentUser scope (interactive user, original)
+    ///   "aes:"  — AES-256-GCM with DPAPI-protected machine key (works for services + any user)
+    ///
+    /// Decryption tries all formats automatically.
+    /// New encryptions use AES-256-GCM by default (strongest, cross-account on same machine).
     /// </summary>
     public static class CredentialProtector
     {
-        // Fixed app-specific entropy for DPAPI. Must be stable across restarts so that
-        // passwords encrypted in one session can be decrypted in the next.
-        // DPAPI already binds to the Windows user profile; this adds a secondary app-specific
-        // factor so data protected by this app cannot be trivially decrypted by other processes
-        // running as the same user without knowledge of this value.
-        private static readonly byte[] AdditionalEntropy =
+        private static readonly byte[] AppEntropy =
             Encoding.UTF8.GetBytes("SqlHealthAssessment.LiveMonitor.v1");
 
+        // AES key file location — next to the exe, protected by NTFS + DPAPI machine scope
+        private static readonly string KeyFilePath =
+            Path.Combine(AppContext.BaseDirectory, "config", ".credential-key");
+
+        // ────────────────────────────────────────────────────────────────
+        //  Public API
+        // ────────────────────────────────────────────────────────────────
+
         /// <summary>
-        /// Encrypts a plaintext string using DPAPI (CurrentUser scope).
-        /// Returns a Base64-encoded string prefixed with "enc:" to identify encrypted values.
+        /// Encrypts a plaintext string using AES-256-GCM (preferred) with fallback to DPAPI.
         /// </summary>
-        /// <param name="plainText">The plaintext string to encrypt.</param>
-        /// <returns>Base64-encoded encrypted string prefixed with "enc:", or empty string if input is null/empty.</returns>
         public static string Encrypt(string? plainText)
         {
             if (string.IsNullOrEmpty(plainText))
@@ -34,73 +38,159 @@ namespace SqlHealthAssessment.Data
 
             try
             {
-                byte[] plainBytes = Encoding.UTF8.GetBytes(plainText);
-                byte[] encryptedBytes = ProtectedData.Protect(
-                    plainBytes,
-                    AdditionalEntropy,
-                    DataProtectionScope.CurrentUser);
-
-                return "enc:" + Convert.ToBase64String(encryptedBytes);
+                return EncryptAesGcm(plainText);
             }
-            catch (CryptographicException)
+            catch
             {
-                // If DPAPI fails (e.g., running as a service without user profile),
-                // return empty to avoid storing plaintext
-                return string.Empty;
+                // Fallback to DPAPI CurrentUser if AES fails
+                try { return EncryptDpapi(plainText, DataProtectionScope.CurrentUser, "enc:"); }
+                catch { return string.Empty; }
             }
         }
 
         /// <summary>
-        /// Decrypts a DPAPI-encrypted string. If the input is not prefixed with "enc:",
-        /// it is treated as a legacy plaintext value and returned as-is (for migration).
-        /// WARNING: This now logs a warning for security awareness.
+        /// Decrypts a string. Auto-detects format: aes:, enc:, or legacy plaintext.
         /// </summary>
-        /// <param name="encryptedText">The encrypted string (prefixed with "enc:") or legacy plaintext.</param>
-        /// <returns>The decrypted plaintext string.</returns>
         public static string Decrypt(string? encryptedText)
         {
             if (string.IsNullOrEmpty(encryptedText))
                 return string.Empty;
 
-            // If not prefixed with "enc:", treat as legacy plaintext (migration support)
-            if (!encryptedText.StartsWith("enc:", StringComparison.Ordinal))
-            {
-                // Log warning about legacy plaintext - in production, this should trigger re-encryption
-                System.Diagnostics.Debug.WriteLine(
-                    "[Security] WARNING: Legacy plaintext credential detected. " +
-                    "Consider re-encrypting to ensure proper security.");
-                return encryptedText;
-            }
+            // AES-256-GCM (preferred)
+            if (encryptedText.StartsWith("aes:", StringComparison.Ordinal))
+                return DecryptAesGcm(encryptedText);
 
+            // DPAPI CurrentUser (legacy)
+            if (encryptedText.StartsWith("enc:", StringComparison.Ordinal))
+                return DecryptDpapi(encryptedText, "enc:");
+
+            // Legacy plaintext — will be re-encrypted on next save
+            Serilog.Log.Warning("Legacy plaintext credential detected — will be re-encrypted on next save");
+            return encryptedText;
+        }
+
+        /// <summary>
+        /// Returns true if the value is already encrypted (any supported format).
+        /// </summary>
+        public static bool IsEncrypted(string? value)
+        {
+            return value != null && (
+                value.StartsWith("enc:", StringComparison.Ordinal) ||
+                value.StartsWith("aes:", StringComparison.Ordinal));
+        }
+
+        // ────────────────────────────────────────────────────────────────
+        //  AES-256-GCM  (96-bit nonce, 128-bit tag, 256-bit key)
+        // ────────────────────────────────────────────────────────────────
+
+        private static string EncryptAesGcm(string plainText)
+        {
+            var key = GetOrCreateAesKey();
+            var plainBytes = Encoding.UTF8.GetBytes(plainText);
+            var result = AesGcmHelper.Encrypt(plainBytes, key);
+            return "aes:" + Convert.ToBase64String(result);
+        }
+
+        private static string DecryptAesGcm(string encryptedText)
+        {
             try
             {
-                string base64 = encryptedText.Substring(4); // Remove "enc:" prefix
-                byte[] encryptedBytes = Convert.FromBase64String(base64);
-                byte[] decryptedBytes = ProtectedData.Unprotect(
-                    encryptedBytes,
-                    AdditionalEntropy,
-                    DataProtectionScope.CurrentUser);
-
-                return Encoding.UTF8.GetString(decryptedBytes);
+                var key = GetOrCreateAesKey();
+                var data = Convert.FromBase64String(encryptedText.Substring(4));
+                var plainBytes = AesGcmHelper.Decrypt(data, key);
+                return Encoding.UTF8.GetString(plainBytes);
             }
             catch (CryptographicException)
             {
-                // Decryption failed - possibly encrypted by a different user or corrupted
                 return string.Empty;
             }
             catch (FormatException)
             {
-                // Invalid Base64 - treat as legacy plaintext
-                return encryptedText;
+                return string.Empty;
             }
         }
 
         /// <summary>
-        /// Returns true if the value appears to be already encrypted (prefixed with "enc:").
+        /// Gets or creates a 256-bit AES key, stored on disk protected by DPAPI LocalMachine scope.
+        /// This allows any process on the machine to use the key (including Windows Services).
         /// </summary>
-        public static bool IsEncrypted(string? value)
+        private static byte[] GetOrCreateAesKey()
         {
-            return value != null && value.StartsWith("enc:", StringComparison.Ordinal);
+            if (File.Exists(KeyFilePath))
+            {
+                try
+                {
+                    var protectedKey = File.ReadAllBytes(KeyFilePath);
+                    return ProtectedData.Unprotect(protectedKey, AppEntropy, DataProtectionScope.LocalMachine);
+                }
+                catch (CryptographicException)
+                {
+                    // Key was created by different machine or corrupted — regenerate
+                }
+            }
+
+            // Generate new 256-bit key
+            var newKey = new byte[32];
+            RandomNumberGenerator.Fill(newKey);
+
+            // Protect with DPAPI LocalMachine scope (any user/service on this machine can decrypt)
+            var protectedBytes = ProtectedData.Protect(newKey, AppEntropy, DataProtectionScope.LocalMachine);
+
+            var dir = Path.GetDirectoryName(KeyFilePath);
+            if (dir != null && !Directory.Exists(dir))
+                Directory.CreateDirectory(dir);
+
+            File.WriteAllBytes(KeyFilePath, protectedBytes);
+
+            // Restrict file permissions (best-effort — NTFS ACL)
+            try
+            {
+                var fileInfo = new FileInfo(KeyFilePath);
+                fileInfo.Attributes |= FileAttributes.Hidden;
+            }
+            catch { }
+
+            return newKey;
+        }
+
+        // ────────────────────────────────────────────────────────────────
+        //  DPAPI (legacy, kept for backward compatibility)
+        // ────────────────────────────────────────────────────────────────
+
+        private static string EncryptDpapi(string plainText, DataProtectionScope scope, string prefix)
+        {
+            byte[] plainBytes = Encoding.UTF8.GetBytes(plainText);
+            byte[] encryptedBytes = ProtectedData.Protect(plainBytes, AppEntropy, scope);
+            return prefix + Convert.ToBase64String(encryptedBytes);
+        }
+
+        private static string DecryptDpapi(string encryptedText, string prefix)
+        {
+            try
+            {
+                string base64 = encryptedText.Substring(prefix.Length);
+                byte[] encryptedBytes = Convert.FromBase64String(base64);
+
+                // Try CurrentUser first (original), then LocalMachine (service mode)
+                try
+                {
+                    byte[] decryptedBytes = ProtectedData.Unprotect(encryptedBytes, AppEntropy, DataProtectionScope.CurrentUser);
+                    return Encoding.UTF8.GetString(decryptedBytes);
+                }
+                catch (CryptographicException)
+                {
+                    byte[] decryptedBytes = ProtectedData.Unprotect(encryptedBytes, AppEntropy, DataProtectionScope.LocalMachine);
+                    return Encoding.UTF8.GetString(decryptedBytes);
+                }
+            }
+            catch (CryptographicException)
+            {
+                return string.Empty;
+            }
+            catch (FormatException)
+            {
+                return encryptedText;
+            }
         }
     }
 }

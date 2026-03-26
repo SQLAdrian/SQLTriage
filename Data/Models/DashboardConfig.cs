@@ -149,6 +149,19 @@ namespace SqlHealthAssessment.Data.Models
         [JsonPropertyName("dataGridTopRows")]
         public int DataGridTopRows { get; set; } = 0;
 
+        /// <summary>
+        /// Column name whose value is executable SQL. Adds an Execute button per row with progress/cancel.
+        /// </summary>
+        [JsonPropertyName("actionColumn")]
+        public string? ActionColumn { get; set; }
+
+        /// <summary>
+        /// When "query", the ActionColumn cell value is a SELECT that returns the actual DDL to execute (double-hop).
+        /// When null or "direct", the cell value is executed as-is.
+        /// </summary>
+        [JsonPropertyName("actionColumnMode")]
+        public string? ActionColumnMode { get; set; }
+
         /// <summary>Gets the effective source, inheriting from dashboard if not specified.</summary>
         public string GetEffectiveSource(string dashboardSource)
         {

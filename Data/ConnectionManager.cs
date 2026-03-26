@@ -5,12 +5,14 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using SqlHealthAssessment.Data.Models;
 
 namespace SqlHealthAssessment.Data
 {
     public class ServerConnectionManager
     {
+        private readonly ILogger<ServerConnectionManager> _logger;
         private readonly string _connectionsFilePath;
         private List<ServerConnection> _connections = new();
         private readonly object _lock = new();
@@ -36,8 +38,9 @@ namespace SqlHealthAssessment.Data
             WriteIndented = true
         };
 
-        public ServerConnectionManager()
+        public ServerConnectionManager(ILogger<ServerConnectionManager> logger)
         {
+            _logger = logger;
             _connectionsFilePath = Path.Combine(AppContext.BaseDirectory, "Config", "server-connections.json");
             LoadConnections();
         }
@@ -230,7 +233,7 @@ namespace SqlHealthAssessment.Data
                             }
                             catch (Exception ex)
                             {
-                                System.Diagnostics.Debug.WriteLine($"[ConnectionManager] Failed to encrypt password for connection {conn.Id}: {ex.Message}");
+                                _logger.LogWarning(ex, "Failed to encrypt password for connection {ConnectionId}", conn.Id);
                             }
                         }
                     }
@@ -239,7 +242,7 @@ namespace SqlHealthAssessment.Data
             catch (Exception ex)
             {
                 // Log error but don't fail on load - use default empty connections
-                System.Diagnostics.Debug.WriteLine($"[ConnectionManager] Load error: {ex.Message}");
+                _logger.LogError(ex, "Failed to load server connections");
                 _connections = new();
             }
         }
@@ -253,7 +256,7 @@ namespace SqlHealthAssessment.Data
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[ConnectionManager] Save error: {ex.Message}");
+                _logger.LogError(ex, "Failed to save server connections");
             }
         }
 

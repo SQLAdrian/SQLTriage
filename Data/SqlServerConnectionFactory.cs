@@ -2,6 +2,8 @@
 
 using System.Data;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.Data.SqlClient;
 using System.Threading.Tasks;
 using SqlHealthAssessment.Data.Models;
@@ -12,7 +14,8 @@ namespace SqlHealthAssessment.Data
     {
         private readonly ServerConnectionManager? _serverConnectionManager;
         private readonly GlobalInstanceSelector? _instanceSelector;
-        private string _fallbackConnectionString;
+        private byte[] _encryptedFallbackConnStr;   // AES-256-GCM encrypted in memory
+        private readonly byte[] _memKey;             // Per-instance ephemeral key
         private bool _trustServerCertificate;
 
         /// <summary>
@@ -21,7 +24,10 @@ namespace SqlHealthAssessment.Data
         /// </summary>
         public SqlServerConnectionFactory(string connectionString, bool trustServerCertificate = false)
         {
-            _fallbackConnectionString = BuildConnectionString(connectionString, trustServerCertificate);
+            _memKey = new byte[32];
+            RandomNumberGenerator.Fill(_memKey);
+            var built = BuildConnectionString(connectionString, trustServerCertificate);
+            _encryptedFallbackConnStr = MemEncrypt(built);
             _trustServerCertificate = trustServerCertificate;
             _serverConnectionManager = null;
         }
@@ -31,9 +37,12 @@ namespace SqlHealthAssessment.Data
         /// </summary>
         public SqlServerConnectionFactory(ServerConnectionManager serverConnectionManager, GlobalInstanceSelector instanceSelector, string fallbackConnectionString, bool trustServerCertificate = false)
         {
+            _memKey = new byte[32];
+            RandomNumberGenerator.Fill(_memKey);
             _serverConnectionManager = serverConnectionManager;
             _instanceSelector = instanceSelector;
-            _fallbackConnectionString = BuildConnectionString(fallbackConnectionString, trustServerCertificate);
+            var built = BuildConnectionString(fallbackConnectionString, trustServerCertificate);
+            _encryptedFallbackConnStr = MemEncrypt(built);
             _trustServerCertificate = trustServerCertificate;
         }
 
@@ -82,6 +91,7 @@ namespace SqlHealthAssessment.Data
         /// <summary>
         /// Gets the current connection string - prioritizes ServerConnectionManager.CurrentServer,
         /// falls back to the configured connection string.
+        /// Connection strings are decrypted only at the moment of use and never logged.
         /// </summary>
         private string GetCurrentConnectionString()
         {
@@ -101,36 +111,19 @@ namespace SqlHealthAssessment.Data
             }
 
             var currentServer = _serverConnectionManager?.CurrentServer;
-#if DEBUG
-            System.Diagnostics.Debug.WriteLine($"[SqlServerConnectionFactory] GetCurrentConnectionString called. CurrentServer is null: {currentServer == null}");
-#endif
-            
+
             if (currentServer != null)
             {
-                // Get the first server from the connection's server list
                 var serverList = currentServer.GetServerList();
-#if DEBUG
-                System.Diagnostics.Debug.WriteLine($"[SqlServerConnectionFactory] CurrentServer found: {currentServer.ServerNames}, ServerList count: {serverList.Count}");
-#endif
                 if (serverList.Count > 0)
                 {
                     var serverName = serverList[0];
-                    var connStr = currentServer.GetConnectionStringForDashboard(serverName);
-#if DEBUG
-                    System.Diagnostics.Debug.WriteLine($"[SqlServerConnectionFactory] Using server-specific connection: {serverName}");
-#endif
-                    return connStr;
+                    return currentServer.GetConnectionStringForDashboard(serverName);
                 }
             }
-            else
-            {
-#if DEBUG
-                System.Diagnostics.Debug.WriteLine($"[SqlServerConnectionFactory] CurrentServer is null. Using fallback: {_fallbackConnectionString}");
-#endif
-            }
 
-            // Fall back to configured connection string
-            return _fallbackConnectionString;
+            // Fall back to encrypted connection string — decrypt on demand
+            return MemDecrypt(_encryptedFallbackConnStr);
         }
 
         /// <summary>
@@ -146,11 +139,13 @@ namespace SqlHealthAssessment.Data
 
         /// <summary>
         /// Updates the fallback connection string without requiring a restart.
+        /// The new value is immediately encrypted in memory.
         /// </summary>
         public void UpdateConnectionString(string newConnectionString, bool trustServerCertificate)
         {
             _trustServerCertificate = trustServerCertificate;
-            _fallbackConnectionString = BuildConnectionString(newConnectionString, trustServerCertificate);
+            var built = BuildConnectionString(newConnectionString, trustServerCertificate);
+            _encryptedFallbackConnStr = MemEncrypt(built);
         }
 
         public string DataSourceType => "SqlServer";
@@ -177,7 +172,7 @@ namespace SqlHealthAssessment.Data
 
                 try
                 {
-                    var builder = new SqlConnectionStringBuilder(_fallbackConnectionString);
+                    var builder = new SqlConnectionStringBuilder(MemDecrypt(_encryptedFallbackConnStr));
                     return builder.DataSource;
                 }
                 catch
@@ -191,5 +186,43 @@ namespace SqlHealthAssessment.Data
         /// Gets the current server connection if one is selected, otherwise null.
         /// </summary>
         public ServerConnection? CurrentServer => _serverConnectionManager?.CurrentServer;
+
+        // ──────────────── In-Memory AES-256-GCM Encryption ──────────────
+
+        private byte[] MemEncrypt(string plainText)
+        {
+            var plain = Encoding.UTF8.GetBytes(plainText);
+            var result = AesGcmHelper.Encrypt(plain, _memKey);
+            CryptographicOperations.ZeroMemory(plain);
+            return result;
+        }
+
+        private string MemDecrypt(byte[] blob)
+        {
+            var plain = AesGcmHelper.Decrypt(blob, _memKey);
+            var result = Encoding.UTF8.GetString(plain);
+            CryptographicOperations.ZeroMemory(plain);
+            return result;
+        }
+
+        /// <summary>
+        /// Scrubs a connection string for safe logging — removes Password and User ID values.
+        /// </summary>
+        internal static string ScrubForLog(string connectionString)
+        {
+            try
+            {
+                var builder = new SqlConnectionStringBuilder(connectionString);
+                if (!string.IsNullOrEmpty(builder.Password))
+                    builder.Password = "********";
+                if (!string.IsNullOrEmpty(builder.UserID))
+                    builder.UserID = "****";
+                return builder.ConnectionString;
+            }
+            catch
+            {
+                return "[scrubbed]";
+            }
+        }
     }
 }

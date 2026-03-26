@@ -18,6 +18,15 @@ namespace SqlHealthAssessment.Data.Models
         [JsonPropertyName("ScriptPath")]
         public string ScriptPath { get; set; } = string.Empty;
 
+        /// <summary>
+        /// Optional SQL query run before ExecutionParameters. Must return a single row
+        /// with a "ToRun" column (0 or 1). If ToRun = 0, ExecutionParameters is skipped
+        /// but the .sql script and SqlQueryForOutput (when ExportToCsv is true) still run.
+        /// If empty, ExecutionParameters always runs.
+        /// </summary>
+        [JsonPropertyName("ExecutionTest")]
+        public string ExecutionTest { get; set; } = string.Empty;
+
         [JsonPropertyName("ExecutionParameters")]
         public string ExecutionParameters { get; set; } = string.Empty;
 
@@ -28,7 +37,7 @@ namespace SqlHealthAssessment.Data.Models
         public bool Enabled { get; set; }
 
         [JsonPropertyName("TimeoutSeconds")]
-        public int TimeoutSeconds { get; set; } = 300;
+        public int TimeoutSeconds { get; set; } = 900;
 
         [JsonPropertyName("Category")]
         public string Category { get; set; } = "Diagnostic";

@@ -4,6 +4,7 @@ using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.Data;
+using System.Text.RegularExpressions;
 using Microsoft.Data.SqlClient;
 using System.Threading.Tasks;
 using SqlHealthAssessment.Data.Models;
@@ -15,6 +16,7 @@ namespace SqlHealthAssessment.Data
     /// <summary>
     /// Executes parameterized queries from the QueryStore against the configured database.
     /// Uses SQL Server via Microsoft.Data.SqlClient with async I/O for optimal performance.
+    /// All exceptions are scrubbed to prevent connection string / credential leakage.
     /// </summary>
     public class QueryExecutor
     {
@@ -284,6 +286,32 @@ namespace SqlHealthAssessment.Data
             param.ParameterName = name;
             param.Value = value ?? DBNull.Value;
             cmd.Parameters.Add(param);
+        }
+
+        // ──────────────── Exception Scrubbing ──────────────
+
+        private static readonly Regex ConnStrPattern = new(
+            @"(Password|Pwd|User Id|UID)\s*=\s*[^;]+",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        /// <summary>
+        /// Scrubs connection strings, passwords, and credentials from exception messages
+        /// before they propagate to the UI or log output.
+        /// </summary>
+        internal static string ScrubExceptionMessage(string? message)
+        {
+            if (string.IsNullOrEmpty(message)) return message ?? "";
+            return ConnStrPattern.Replace(message, "$1=********");
+        }
+
+        /// <summary>
+        /// Wraps an exception with scrubbed message if it contains credential information.
+        /// </summary>
+        internal static Exception ScrubException(Exception ex)
+        {
+            var scrubbed = ScrubExceptionMessage(ex.Message);
+            if (scrubbed == ex.Message) return ex;
+            return new InvalidOperationException(scrubbed, ex.InnerException);
         }
     }
 }

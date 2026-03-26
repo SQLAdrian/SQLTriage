@@ -339,8 +339,8 @@ namespace SqlHealthAssessment.Data
                 }
                 catch (Exception ex)
                 {
-                    // Last resort: write to Debug output if file logging fails
-                    System.Diagnostics.Debug.WriteLine($"[AuditLogService] Failed to write audit log: {ex.Message}");
+                    // Last resort: use Serilog static logger since the audit log itself is failing
+                    Serilog.Log.Warning(ex, "Failed to write audit log to file");
                 }
             }
         }
@@ -362,13 +362,13 @@ namespace SqlHealthAssessment.Data
                     if (fileInfo.CreationTime < cutoffDate)
                     {
                         fileInfo.Delete();
-                        System.Diagnostics.Debug.WriteLine($"[AuditLogService] Deleted old audit log: {fileInfo.Name}");
+                        Serilog.Log.Information("Deleted old audit log: {FileName}", fileInfo.Name);
                     }
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[AuditLogService] Error applying retention policy: {ex.Message}");
+                Serilog.Log.Warning(ex, "Error applying audit log retention policy");
             }
         }
 
@@ -401,7 +401,7 @@ namespace SqlHealthAssessment.Data
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[AuditLogService] Error reading audit log {logFile}: {ex.Message}");
+                    Serilog.Log.Warning(ex, "Error reading audit log {LogFile}", logFile);
                 }
             }
 

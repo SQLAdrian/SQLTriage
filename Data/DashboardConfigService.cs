@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using SqlHealthAssessment.Data.Models;
 
 namespace SqlHealthAssessment.Data
@@ -18,6 +19,7 @@ namespace SqlHealthAssessment.Data
     /// </summary>
     public class DashboardConfigService
     {
+        private readonly ILogger<DashboardConfigService> _logger;
         private readonly string _configPath;
         private readonly string _backupPath;
         private DashboardConfigRoot _config;
@@ -105,8 +107,9 @@ namespace SqlHealthAssessment.Data
             return violations;
         }
 
-        public DashboardConfigService()
+        public DashboardConfigService(ILogger<DashboardConfigService> logger)
         {
+            _logger = logger;
             _configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config", "dashboard-config.json");
             _backupPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config", "dashboard-config.backup.json");
             _config = Load();
@@ -124,7 +127,7 @@ namespace SqlHealthAssessment.Data
                 var configDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config");
                 if (!Directory.Exists(configDir))
                 {
-                    System.Diagnostics.Debug.WriteLine($"[DashboardConfigService] Config directory not found: {configDir}");
+                    _logger.LogWarning("Config directory not found: {ConfigDir}", configDir);
                     return;
                 }
 
@@ -137,11 +140,11 @@ namespace SqlHealthAssessment.Data
                 };
 
                 _watcher.Changed += OnJsonFileChanged;
-                System.Diagnostics.Debug.WriteLine($"[DashboardConfigService] File watcher started for *.json in {configDir}");
+                _logger.LogDebug("File watcher started for *.json in {ConfigDir}", configDir);
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[DashboardConfigService] Failed to setup file watcher: {ex.Message}");
+                _logger.LogWarning(ex, "Failed to setup config file watcher");
             }
         }
 
@@ -152,7 +155,7 @@ namespace SqlHealthAssessment.Data
         {
             if (e.Name?.Equals("dashboard-config.json", StringComparison.OrdinalIgnoreCase) == true)
             {
-                System.Diagnostics.Debug.WriteLine($"[DashboardConfigService] Detected change in {e.Name}, reloading configuration...");
+                _logger.LogInformation("Detected change in {FileName}, reloading configuration", e.Name);
 
                 // Small delay to ensure file is fully written
                 Task.Delay(100).ContinueWith(_ =>
@@ -160,12 +163,12 @@ namespace SqlHealthAssessment.Data
                     try
                     {
                         var newConfig = Load();
-                        System.Diagnostics.Debug.WriteLine($"[DashboardConfigService] Reloaded config with {newConfig.Dashboards.Count} dashboards");
+                        _logger.LogInformation("Reloaded config with {Count} dashboards", newConfig.Dashboards.Count);
                         NotifyChanged();
                     }
                     catch (Exception ex)
                     {
-                        System.Diagnostics.Debug.WriteLine($"[DashboardConfigService] Error reloading config: {ex.Message}");
+                        _logger.LogError(ex, "Error reloading dashboard config");
                     }
                 });
             }
@@ -185,11 +188,7 @@ namespace SqlHealthAssessment.Data
                     var config = JsonSerializer.Deserialize<DashboardConfigRoot>(json, SerializerOptions);
                     if (config != null)
                     {
-                        System.Diagnostics.Debug.WriteLine($"[DashboardConfigService] Successfully deserialized config with {config.Dashboards?.Count ?? 0} dashboards");
-                        foreach (var d in config.Dashboards ?? new List<DashboardDefinition>())
-                        {
-                            System.Diagnostics.Debug.WriteLine($"[DashboardConfigService]   Dashboard: {d.Id} - '{d.Title}' (route: {d.Route})");
-                        }
+                        _logger.LogDebug("Deserialized config with {Count} dashboards", config.Dashboards?.Count ?? 0);
                         
                         _config = config;
                         if (PatchMissingDashboards(config))
@@ -206,14 +205,13 @@ namespace SqlHealthAssessment.Data
                     var corruptPath = _configPath + $".corrupt.{DateTime.Now:yyyyMMddHHmmss}.json";
                     try { File.Copy(_configPath, corruptPath, true); } catch { /* Best effort */ }
 
-                    var errorMsg = $"[DashboardConfigService] Error deserializing config from '{_configPath}': {ex.Message}. Corrupt file backed up to '{corruptPath}'. Falling back to defaults.";
-                    System.Diagnostics.Debug.WriteLine(errorMsg);
+                    _logger.LogError(ex, "Error deserializing config from '{ConfigPath}'. Corrupt file backed up to '{CorruptPath}'. Falling back to defaults",
+                        _configPath, corruptPath);
                 }
             }
 
             var defaultConfig = DefaultConfigGenerator.Generate();
-            var msg = $"[DashboardConfigService] Using default config with {defaultConfig.Dashboards.Count} dashboards";
-            System.Diagnostics.Debug.WriteLine(msg);
+            _logger.LogInformation("Using default config with {Count} dashboards", defaultConfig.Dashboards.Count);
             _config = defaultConfig;
             RebuildQueryCache(defaultConfig);
             // Only save defaults if no valid config file exists - don't overwrite existing files on deserialization errors
@@ -256,8 +254,7 @@ namespace SqlHealthAssessment.Data
             if (string.IsNullOrWhiteSpace(sql)) return;
             var result = SqlSafetyValidator.Validate(sql);
             if (!result.IsSafe)
-                System.Diagnostics.Debug.WriteLine(
-                    $"[DashboardConfigService] SECURITY WARNING — query '{queryId}' blocked: {result.Reason}");
+                Serilog.Log.Warning("SECURITY — query '{QueryId}' blocked: {Reason}", queryId, result.Reason);
         }
 
         /// <summary>

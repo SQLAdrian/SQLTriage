@@ -3,7 +3,7 @@
 @implements IDisposable
 
 <div class="stat-card @(!string.IsNullOrEmpty(Description) ? "has-tooltip" : "")"
-     style="background-color: @(ResolvedColor + "22"); border-left: 3px solid @ResolvedColor;"
+     style="background-color: @(ResolvedColor + "22"); border-left: 3px solid @ResolvedColor; position: relative;"
      @onmouseenter="ShowTooltip" @onmouseleave="HideTooltip">
     <div class="stat-label">@Label</div>
     <div class="stat-value" style="color: @ResolvedColor;">
@@ -29,6 +29,7 @@
     [Parameter] public string? Color { get; set; }
     [Parameter] public string Description { get; set; } = "";
     [Parameter] public string ValueFormat { get; set; } = "";
+    // Description is displayed as a tooltip via _showTooltip — no layout impact
 
     private bool _showTooltip;
     private static Dictionary<string, Queue<(DateTime Time, double Value)>> _valueHistory = new();

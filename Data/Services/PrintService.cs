@@ -3,6 +3,8 @@
 using System.IO;
 using System.Threading.Tasks;
 using System.Windows;
+using Microsoft.Extensions.Logging;
+using Microsoft.JSInterop;
 using Microsoft.Web.WebView2.Core;
 
 namespace SqlHealthAssessment.Data.Services
@@ -10,17 +12,20 @@ namespace SqlHealthAssessment.Data.Services
     /// <summary>
     /// Wraps CoreWebView2.PrintToPdfAsync to export the current page as a multi-page PDF,
     /// respecting @media print CSS rules.  Saves to .\output\ automatically.
+    /// Falls back to browser window.print() in server mode (no WebView2).
     /// </summary>
     public class PrintService
     {
         private CoreWebView2? _webView;
         private readonly AuditLogService? _auditLog;
+        private readonly ILogger<PrintService> _logger;
 
         /// <summary>
         /// Constructor with optional AuditLogService for audit trail.
         /// </summary>
-        public PrintService(AuditLogService? auditLog = null)
+        public PrintService(ILogger<PrintService> logger, AuditLogService? auditLog = null)
         {
+            _logger = logger;
             _auditLog = auditLog;
         }
 
@@ -33,14 +38,19 @@ namespace SqlHealthAssessment.Data.Services
 
         /// <summary>
         /// Exports the current WebView page to PDF in the .\output\ folder.
+        /// printBackgrounds: true preserves dark-theme colours (dashboards);
+        ///                   false forces a white print (Quick Check / text reports).
         /// Returns (true, path, null) on success, (false, null, error) if unavailable or failed.
         /// </summary>
-        public async Task<(bool Success, string? Path, string? Error)> PrintToPdfAsync(string fileName = "Report.pdf")
+        public async Task<(bool Success, string? Path, string? Error)> PrintToPdfAsync(
+            string fileName = "Report.pdf",
+            bool printBackgrounds = false,
+            CoreWebView2PrintOrientation orientation = CoreWebView2PrintOrientation.Landscape)
         {
             if (_webView == null)
             {
                 _auditLog?.LogExportOperation("PDF", fileName, false, "WebView not available");
-                return (false, null, "WebView not available");
+                return (false, null, "WebView not available — use browser print (Ctrl+P) or call PrintViaBrowserAsync.");
             }
 
             var outputDir = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "output");
@@ -52,18 +62,19 @@ namespace SqlHealthAssessment.Data.Services
             var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
             // All WebView2 API calls (CreatePrintSettings + PrintToPdfAsync) must run on the WPF UI thread.
-            // Using an async lambda so we can properly await PrintToPdfAsync within the dispatcher.
             Application.Current.Dispatcher.InvokeAsync(async () =>
             {
                 try
                 {
                     var settings = _webView.Environment.CreatePrintSettings();
-                    settings.Orientation            = CoreWebView2PrintOrientation.Landscape;
-                    settings.ShouldPrintBackgrounds = false;
-                    settings.MarginTop    = 0.4;
-                    settings.MarginBottom = 0.4;
-                    settings.MarginLeft   = 0.4;
-                    settings.MarginRight  = 0.4;
+                    settings.Orientation            = orientation;
+                    settings.ShouldPrintBackgrounds = printBackgrounds;
+                    // Margins in inches — CSS @page margins take precedence for named pages;
+                    // these serve as the fallback and keep margins consistently narrow.
+                    settings.MarginTop    = 0.2;
+                    settings.MarginBottom = 0.2;
+                    settings.MarginLeft   = 0.3;
+                    settings.MarginRight  = 0.3;
 
                     await _webView.PrintToPdfAsync(filePath, settings);
                     tcs.TrySetResult(true);
@@ -83,7 +94,26 @@ namespace SqlHealthAssessment.Data.Services
             catch (System.Exception ex)
             {
                 _auditLog?.LogExportOperation("PDF", fileName, false, ex.Message);
-                System.Diagnostics.Debug.WriteLine($"PDF export error: {ex.Message}");
+                _logger.LogError(ex, "PDF export failed for file {FileName}", fileName);
+                return (false, null, ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Falls back to the browser's native print dialog via JS interop.
+        /// Used in server mode where WebView2 is not available.
+        /// </summary>
+        public async Task<(bool Success, string? Path, string? Error)> PrintViaBrowserAsync(IJSRuntime jsRuntime)
+        {
+            try
+            {
+                await jsRuntime.InvokeVoidAsync("window.print");
+                _auditLog?.LogExportOperation("PDF", "browser-print", true);
+                return (true, null, null);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Browser print failed");
                 return (false, null, ex.Message);
             }
         }

@@ -1,0 +1,47 @@
+@* Server-mode root component — equivalent of wwwroot/index.html for Blazor Server *@
+@using Microsoft.AspNetCore.Components.Web
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SQL Health Assessment — Server Mode</title>
+    <base href="/" />
+    <link rel="icon" type="image/x-icon" href="favicon.ico" />
+    <link href="css/app.css" rel="stylesheet" />
+    <link href="css/tailwind.css" rel="stylesheet" />
+    <link href="css/qp.css" rel="stylesheet" />
+    <link href="fontawesome/css/all.min.css" rel="stylesheet" />
+    <link id="radzen-theme-css" href="_content/Radzen.Blazor/css/dark-base.css" rel="stylesheet" />
+    <HeadOutlet @rendermode="RenderMode.InteractiveServer" />
+</head>
+<body>
+    <div id="app">
+        <SqlHealthAssessment.Components.Layout.MainLayout @rendermode="RenderMode.InteractiveServer" />
+    </div>
+
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="" class="reload">Reload</a>
+        <a class="dismiss">Dismiss</a>
+    </div>
+
+    <script src="_framework/blazor.web.js"></script>
+    <script src="_content/Radzen.Blazor/Radzen.Blazor.js"></script>
+    <script src="scripts/error-handler.js"></script>
+    <script src="scripts/download.js"></script>
+    <script src="scripts/qp.js"></script>
+    <script src="scripts/queryPlan.js"></script>
+    <script src="scripts/queryPlanV2.js"></script>
+    <script src="scripts/bubbleDrag.js"></script>
+    <script src="themes.js"></script>
+    <script>
+        window.radzenTheme = {
+            setTheme: function(theme) {
+                var link = document.getElementById('radzen-theme-css');
+                if (link) link.href = '_content/Radzen.Blazor/css/' + theme + '-base.css';
+            }
+        };
+    </script>
+</body>
+</html>

@@ -49,13 +49,18 @@
             <div class="dashboard-list">
                 @foreach (var dashboard in EditedConfig.Dashboards)
                 {
-                    <div class="dashboard-item @(SelectedDashboard?.Id == dashboard.Id ? "selected" : "") @(dashboard == _dragOverDashboard ? "drag-over" : "")" 
+                    <div class="dashboard-item @(SelectedDashboard?.Id == dashboard.Id ? "selected" : "") @(dashboard == _dragOverDashboard ? "drag-over" : "")"
+                         draggable="true"
+                         @ondragstart="() => OnDashboardDragStart(dashboard)"
                          @ondragover:preventDefault="true"
                          @ondragover="() => OnDashboardDragOver(dashboard)"
                          @ondragleave="() => OnDashboardDragLeave(dashboard)"
                          @ondrop:preventDefault="true"
                          @ondrop="() => OnDashboardDrop(dashboard)"
                          @onclick="() => SelectDashboard(dashboard)">
+                        <div class="dashboard-reorder">
+                            <span class="drag-handle" title="Drag to reorder">☰</span>
+                        </div>
                         <div class="dashboard-info">
                             <span class="dashboard-title">@dashboard.Title</span>
                             <span class="dashboard-route">@dashboard.Route</span>
@@ -149,14 +154,16 @@
                             <label>Description</label>
                             <textarea @bind="SelectedPanel.Description" @bind:event="oninput" rows="2" placeholder="Description shown below chart"></textarea>
                         </div>
-                        <div class="form-group">
-                            <label>Default Database</label>
-                            <input type="text" @bind="SelectedPanel.DefaultDatabase" @bind:event="oninput" @bind:after="TriggerAutoSave" placeholder="Leave empty to inherit from dashboard" />
-                            <small>Database context for this panel's queries. Leave empty to inherit from dashboard's default database.</small>
-                        </div>
-                        <div class="form-group">
-                            <label>Enabled</label>
-                            <input type="checkbox" @bind="SelectedPanel.Enabled" />
+                        <div class="form-row" style="align-items: flex-end;">
+                            <div class="form-group" style="flex: 1;">
+                                <label>Default Database</label>
+                                <input type="text" @bind="SelectedPanel.DefaultDatabase" @bind:event="oninput" @bind:after="TriggerAutoSave" placeholder="Leave empty to inherit from dashboard" />
+                                <small>Overrides dashboard default. Leave empty to inherit.</small>
+                            </div>
+                            <div class="form-group" style="flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding-bottom: 2px;">
+                                <input type="checkbox" @bind="SelectedPanel.Enabled" style="margin: 0;" />
+                                <label style="margin: 0;">Enabled</label>
+                            </div>
                         </div>
                     </div>
 
@@ -319,7 +326,7 @@
                         @* ── SQL Server Query ── *@
                         <div class="form-group">
                             <label>SQL Server Query</label>
-                            <textarea @bind="SelectedPanel.Query.SqlServer" @bind:event="oninput" rows="4" placeholder="SELECT..."></textarea>
+                            <textarea @bind="SelectedPanel.Query.SqlServer" @bind:event="oninput" rows="10" placeholder="SELECT..." style="font-family: monospace; font-size: 12px; resize: vertical;"></textarea>
                             <div class="button-row">
                                 <button class="btn btn-sm" @onclick="TestSqlServerQuery" disabled="@IsQueryRunning"><i class="fa-solid fa-vial"></i> Test Query</button>
                                 <input type="datetime-local" @bind="TestTimeFrom" class="param-input" title="Time From" />
@@ -1076,15 +1083,24 @@
         }
     }
 
-    private PanelDefinition? _draggedPanel;
+    private PanelDefinition?     _draggedPanel;
     private DashboardDefinition? _draggedPanelDashboard;
-    private PanelDefinition? _dragOverPanel;
+    private DashboardDefinition? _draggedDashboard;
+    private PanelDefinition?     _dragOverPanel;
     private DashboardDefinition? _dragOverDashboard;
 
     private void OnDragStart(PanelDefinition panel)
     {
-        _draggedPanel = panel;
+        _draggedPanel     = panel;
         _draggedPanelDashboard = SelectedDashboard;
+        _draggedDashboard = null;
+    }
+
+    private void OnDashboardDragStart(DashboardDefinition dashboard)
+    {
+        _draggedDashboard      = dashboard;
+        _draggedPanel          = null;
+        _draggedPanelDashboard = null;
     }
 
     private void OnDragOver(PanelDefinition panel)
@@ -1115,7 +1131,35 @@
 
     private void OnDashboardDrop(DashboardDefinition targetDashboard)
     {
-        if (_draggedPanel == null || _draggedPanelDashboard == null || targetDashboard == null)
+        // ── Case 1: reorder dashboards ────────────────────────────────────────
+        if (_draggedDashboard != null)
+        {
+            if (_draggedDashboard.Id == targetDashboard.Id)
+            {
+                _draggedDashboard  = null;
+                _dragOverDashboard = null;
+                return;
+            }
+
+            SaveState();
+
+            var dashboards   = EditedConfig.Dashboards;
+            var fromIndex    = dashboards.IndexOf(_draggedDashboard);
+            var toIndex      = dashboards.IndexOf(targetDashboard);
+            if (fromIndex >= 0 && toIndex >= 0)
+            {
+                dashboards.RemoveAt(fromIndex);
+                dashboards.Insert(toIndex, _draggedDashboard);
+                UpdateDashboardOrders(dashboards);
+            }
+
+            _draggedDashboard  = null;
+            _dragOverDashboard = null;
+            return;
+        }
+
+        // ── Case 2: move panel to a different dashboard ───────────────────────
+        if (_draggedPanel == null || _draggedPanelDashboard == null)
             return;
 
         if (_draggedPanelDashboard.Id == targetDashboard.Id)
@@ -1132,9 +1176,9 @@
         SelectDashboard(targetDashboard);
         SelectPanel(_draggedPanel);
 
-        _draggedPanel = null;
+        _draggedPanel          = null;
         _draggedPanelDashboard = null;
-        _dragOverDashboard = null;
+        _dragOverDashboard     = null;
     }
 
     private void OnDrop(PanelDefinition targetPanel)
@@ -1172,9 +1216,13 @@
     private void UpdatePanelOrders(List<PanelDefinition> panels)
     {
         for (int i = 0; i < panels.Count; i++)
-        {
             panels[i].Layout.Order = i;
-        }
+    }
+
+    private void UpdateDashboardOrders(List<DashboardDefinition> dashboards)
+    {
+        for (int i = 0; i < dashboards.Count; i++)
+            dashboards[i].NavOrder = i;
     }
 
     private void AddColorThreshold()

@@ -30,63 +30,10 @@ namespace SqlHealthAssessment.Data
 
         /// <summary>
         /// Executes a SQL Server query and returns up to <paramref name="maxRows"/> rows
-        /// as a DataTable so the user can visually confirm the results.
+        /// as a DataTable. Optionally binds @TimeFrom, @TimeTo, @SqlInstance from a DashboardFilter.
         /// </summary>
         public async Task<(bool Success, string Message, DataTable? Results)> ExecuteSqlServerQueryAsync(
-            IDbConnectionFactory connectionFactory, string query, int maxRows = 50)
-        {
-            if (string.IsNullOrWhiteSpace(query))
-                return (false, "Query is empty", null);
-
-            try
-            {
-                using var connection = await connectionFactory.CreateConnectionAsync();
-
-                DbCommand cmd = connectionFactory.DataSourceType == "SqlServer"
-                    ? (DbCommand)(SqlCommand)connection.CreateCommand()
-                    : (DbCommand)(SqliteCommand)connection.CreateCommand();
-
-                cmd.CommandText = query;
-                cmd.CommandTimeout = 30;
-
-                using var reader = await cmd.ExecuteReaderAsync();
-                var dt = new DataTable();
-
-                // Build columns from schema
-                for (int i = 0; i < reader.FieldCount; i++)
-                {
-                    dt.Columns.Add(reader.GetName(i), typeof(string));
-                }
-
-                int rowCount = 0;
-                while (await reader.ReadAsync() && rowCount < maxRows)
-                {
-                    var row = dt.NewRow();
-                    for (int i = 0; i < reader.FieldCount; i++)
-                    {
-                        var val = reader.GetValue(i);
-                        row[i] = val == DBNull.Value ? "(NULL)" : val.ToString() ?? "";
-                    }
-                    dt.Rows.Add(row);
-                    rowCount++;
-                }
-
-                var truncated = reader.HasRows && rowCount >= maxRows ? $" (showing first {maxRows})" : "";
-                return (true, $"OK — {rowCount} row(s) returned{truncated}.", dt);
-            }
-            catch (Exception ex)
-            {
-                return (false, $"Error: {ex.Message}", null);
-            }
-        }
-
-        /// <summary>
-        /// Executes a SQL Server query with dashboard filter parameters and returns up to <paramref name="maxRows"/> rows
-        /// as a DataTable so the user can visually confirm the results.
-        /// Supports @TimeFrom, @TimeTo, and @SqlInstance parameters.
-        /// </summary>
-        public async Task<(bool Success, string Message, DataTable? Results)> ExecuteSqlServerQueryAsync(
-            IDbConnectionFactory connectionFactory, string query, DashboardFilter filter, int maxRows = 50)
+            IDbConnectionFactory connectionFactory, string query, DashboardFilter? filter = null, int maxRows = 50)
         {
             if (string.IsNullOrWhiteSpace(query))
                 return (false, "Query is empty", null);
@@ -105,7 +52,6 @@ namespace SqlHealthAssessment.Data
                 // Add dashboard filter parameters if filter is provided and query uses them
                 if (filter != null)
                 {
-                    // Only add parameters if the query actually uses them
                     bool hasTimeFrom = query.Contains("@TimeFrom", StringComparison.OrdinalIgnoreCase);
                     bool hasTimeTo = query.Contains("@TimeTo", StringComparison.OrdinalIgnoreCase);
                     bool hasSqlInstance = query.Contains("@SqlInstance", StringComparison.OrdinalIgnoreCase);
@@ -117,33 +63,24 @@ namespace SqlHealthAssessment.Data
                         if (hasTimeTo)
                             sqlCmd.Parameters.AddWithValue("@TimeTo", filter.TimeTo.ToString("yyyy-MM-dd HH:mm:ss"));
                         if (hasSqlInstance)
-                        {
-                            var instances = filter.Instances.Length > 0 ? string.Join(",", filter.Instances) : "";
-                            sqlCmd.Parameters.AddWithValue("@SqlInstance", instances);
-                        }
+                            sqlCmd.Parameters.AddWithValue("@SqlInstance", filter.Instances.Length > 0 ? string.Join(",", filter.Instances) : "");
                     }
-                    else if (cmd is SqliteCommand liveQueriesCmd)
+                    else if (cmd is SqliteCommand liteCmd)
                     {
                         if (hasTimeFrom)
-                            liveQueriesCmd.Parameters.AddWithValue("@TimeFrom", filter.TimeFrom.ToString("yyyy-MM-dd HH:mm:ss"));
+                            liteCmd.Parameters.AddWithValue("@TimeFrom", filter.TimeFrom.ToString("yyyy-MM-dd HH:mm:ss"));
                         if (hasTimeTo)
-                            liveQueriesCmd.Parameters.AddWithValue("@TimeTo", filter.TimeTo.ToString("yyyy-MM-dd HH:mm:ss"));
+                            liteCmd.Parameters.AddWithValue("@TimeTo", filter.TimeTo.ToString("yyyy-MM-dd HH:mm:ss"));
                         if (hasSqlInstance)
-                        {
-                            var instances = filter.Instances.Length > 0 ? string.Join(",", filter.Instances) : "";
-                            liveQueriesCmd.Parameters.AddWithValue("@SqlInstance", instances);
-                        }
+                            liteCmd.Parameters.AddWithValue("@SqlInstance", filter.Instances.Length > 0 ? string.Join(",", filter.Instances) : "");
                     }
                 }
 
                 using var reader = await cmd.ExecuteReaderAsync();
                 var dt = new DataTable();
 
-                // Build columns from schema
                 for (int i = 0; i < reader.FieldCount; i++)
-                {
                     dt.Columns.Add(reader.GetName(i), typeof(string));
-                }
 
                 int rowCount = 0;
                 while (await reader.ReadAsync() && rowCount < maxRows)

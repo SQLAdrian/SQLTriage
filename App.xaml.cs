@@ -2,6 +2,7 @@
 
 using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
+using Radzen;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Serilog;
@@ -14,8 +15,11 @@ namespace SqlHealthAssessment
     public partial class App : Application
     {
         public static IServiceProvider? Services { get; private set; }
+        public static WebView2Helper? WebView2Helper { get; private set; }
+        public static bool WebView2Available { get; private set; } = true;
+        public static string? WebView2ErrorMessage { get; private set; }
 
-        protected override void OnStartup(StartupEventArgs e)
+        protected override async void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
 
@@ -33,13 +37,36 @@ namespace SqlHealthAssessment
                 .Enrich.WithProperty("User", Environment.UserName)
                 .Enrich.WithProperty("Machine", Environment.MachineName)
                 .WriteTo.File(
-                    path: "logs/app.log",
+                    path: "logs/app-.log",
                     rollingInterval: RollingInterval.Day,
                     retainedFileCountLimit: 30,
                     outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
                 .CreateLogger();
 
             Log.Information("Application starting...");
+
+            // Check WebView2 runtime availability before proceeding
+            var webView2Helper = new WebView2Helper();
+            var webView2Status = await webView2Helper.CheckWebView2StatusAsync();
+            
+            WebView2Helper = webView2Helper;
+            
+            if (!webView2Status.IsInstalled || !webView2Status.IsCompatible)
+            {
+                WebView2Available = false;
+                WebView2ErrorMessage = webView2Status.ErrorMessage ?? "WebView2 runtime is not available";
+                
+                Log.Warning("WebView2 runtime check failed: {ErrorMessage}. Windows Version: {WindowsVersion}. " +
+                            "Application will attempt to start but may fail.", 
+                    WebView2ErrorMessage, WebView2Helper.GetWindowsVersion());
+                
+                // Don't block startup - let the MainWindow handle the error display
+                // This allows users on servers with WebView2 to still run the app
+            }
+            else
+            {
+                Log.Information("WebView2 runtime verified. Version: {Version}", webView2Status.Version);
+            }
 
             var configuration = new ConfigurationBuilder()
                 .SetBasePath(AppDomain.CurrentDomain.BaseDirectory)
@@ -55,6 +82,9 @@ namespace SqlHealthAssessment
                 builder.AddSerilog(dispose: true);
             });
             services.AddWpfBlazorWebView();
+
+            // Register WebView2 helper for runtime detection
+            services.AddSingleton<WebView2Helper>();
 
             // Register ServerConnectionManager first - it will be used by SqlServerConnectionFactory
             services.AddSingleton<ServerConnectionManager>();
@@ -89,7 +119,16 @@ namespace SqlHealthAssessment
             services.AddSingleton<DiagnosticScriptRunner>();
             services.AddSingleton<FullAuditStateService>();
             services.AddSingleton<AuditLogService>();
+            services.AddSingleton<Data.Services.NotificationChannelService>();
             services.AddSingleton<AlertingService>();
+            services.AddSingleton<Data.Services.AlertDefinitionService>();
+            services.AddSingleton<Data.Services.AlertHistoryService>();
+            services.AddSingleton<Data.Services.AlertEvaluationService>();
+
+            // Scheduled Tasks
+            services.AddSingleton<Data.Services.ScheduledTaskDefinitionService>();
+            services.AddSingleton<Data.Services.ScheduledTaskHistoryService>();
+            services.AddSingleton<Data.Services.ScheduledTaskEngine>();
             services.AddSingleton<HealthCheckService>();
             services.AddSingleton<CheckExecutionService>();
             services.AddSingleton<liveQueriesTableService>();
@@ -97,6 +136,7 @@ namespace SqlHealthAssessment
             services.AddSingleton<UserSettingsService>();
             services.AddSingleton<SessionDataService>();
             services.AddSingleton<ToastService>();
+            services.AddSingleton<LogCleanupService>();
             services.AddSingleton<MemoryMonitorService>();
             services.AddSingleton<ConfigurationValidator>();
             services.AddSingleton<AutoUpdateService>();
@@ -105,18 +145,28 @@ namespace SqlHealthAssessment
             services.AddSingleton<StartupService>();
             services.AddSingleton<Data.Services.PrintService>();
             services.AddSingleton<Data.Services.SqlAssessmentService>();
-            services.AddSingleton<Data.Services.XEventService>();
-            services.AddSingleton<Data.Services.SchemaCompareService>();
-            services.AddSingleton<Data.Services.DependencyWalkerService>();
-            services.AddSingleton<Data.Services.AdminAuthService>();
-            services.AddSingleton<Data.Services.ReportService>();
-            services.AddSingleton<Data.Services.RdlReportService>();
 
-            // Local log service for debug logging
-            var maxLogSize = configuration.GetValue<long>("LogMaxFileSizeBytes", 5 * 1024 * 1024);
-            services.AddSingleton(new LocalLogService(maxLogSize));
+            services.AddSingleton<Data.Services.ReportPageConfigService>();
+            services.AddSingleton<Data.Services.XEventService>();
+            services.AddSingleton<Data.Services.AdminAuthService>();
+            services.AddSingleton<QuickCheckStateService>();
+            services.AddSingleton<Data.Services.VulnerabilityAssessmentStateService>();
+
+            // Radzen Blazor component library
+            services.AddRadzenComponents();
+            services.AddSingleton<Data.Services.ThemeService>();
+            services.AddSingleton<Data.Services.ServerModeService>();
+            services.AddSingleton<Data.Services.DataProtectionService>();
+            services.AddSingleton<Data.Services.AzureBlobExportService>();
+            services.AddSingleton<Data.Services.ProcessGuard>();
+            services.AddSingleton<Data.Services.ProductionReadinessGate>();
+            services.AddSingleton<Data.Services.RbacService>();
+
+            // Local log service — thin wrapper over ILogger, routes through Serilog
+            services.AddSingleton<LocalLogService>();
 
             // liveQueries caching layer — delta-fetch + offline resilience
+            // liveQueriesCacheStore uses DataProtectionService for at-rest encryption
             services.AddSingleton<liveQueriesCacheStore>();
             services.AddSingleton<CacheStateTracker>();
             services.AddSingleton<CachingQueryExecutor>();
@@ -133,6 +183,9 @@ namespace SqlHealthAssessment
                 Log.Warning("Configuration validation failed: {Errors}", string.Join(", ", errors));
             }
 
+            // Start log cleanup (runs now + every 24 hours)
+            Services.GetService<LogCleanupService>()?.Start();
+
             // Start memory monitoring
             Services.GetService<MemoryMonitorService>();
 
@@ -141,6 +194,12 @@ namespace SqlHealthAssessment
 
             // Start liveQueries maintenance timer (VACUUM + optimize, default every 4 hours)
             Services.GetService<liveQueriesMaintenanceService>()?.Start();
+
+            // Start alert evaluation engine
+            Services.GetService<Data.Services.AlertEvaluationService>()?.Start();
+
+            // Start scheduled task engine
+            Services.GetService<Data.Services.ScheduledTaskEngine>()?.Start();
 
             // Log application start for audit trail
             var auditLog = Services.GetService<AuditLogService>();
@@ -161,24 +220,99 @@ namespace SqlHealthAssessment
                         var (succeeded, failed, errors) = await tableService.EnsureTablesForAllPanelsAsync(
                             connFactory, configService.Config);
 
-                        System.Diagnostics.Debug.WriteLine(
-                            $"[App] liveQueries table provisioning: {succeeded} OK, {failed} failed.");
+                        Log.Information("liveQueries table provisioning: {Succeeded} OK, {Failed} failed", succeeded, failed);
                         foreach (var err in errors)
-                            System.Diagnostics.Debug.WriteLine($"[App]   - {err}");
+                            Log.Warning("liveQueries provisioning issue: {Error}", err);
                     }
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[App] liveQueries table provisioning error: {ex.Message}");
+                    Log.Warning(ex, "liveQueries table provisioning error");
                 }
             });
         }
 
         protected override void OnExit(ExitEventArgs e)
         {
+            // Apply staged update if one was downloaded
+            try
+            {
+                var updateService = Services?.GetService<AutoUpdateService>();
+                if (updateService?.HasStagedUpdate == true)
+                {
+                    Log.Information("Applying staged update on exit...");
+                    updateService.ApplyUpdateOnExit();
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Failed to apply update on exit");
+            }
+
+            // ── Explicitly stop all background services before DI dispose ──
+            // This prevents deadlocks from IAsyncDisposable services waiting
+            // on active timer callbacks or Kestrel connections.
+            StopBackgroundServices();
+
+            // Dispose the DI container with a timeout to prevent hanging
+            try
+            {
+                var disposeTask = Task.Run(() =>
+                {
+                    if (Services is IAsyncDisposable asyncDisposable)
+                        asyncDisposable.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                    else if (Services is IDisposable disposable)
+                        disposable.Dispose();
+                });
+
+                if (!disposeTask.Wait(TimeSpan.FromSeconds(5)))
+                    Log.Warning("Service provider dispose timed out after 5 seconds");
+            }
+            catch (Exception disposeEx)
+            {
+                Log.Warning(disposeEx, "Error disposing service provider");
+            }
+
             Log.Information("Application exiting...");
             Log.CloseAndFlush();
             base.OnExit(e);
+
+            // Force-kill lingering threads (Kestrel, timers) that prevent clean exit
+            Environment.Exit(0);
+        }
+
+        /// <summary>
+        /// Explicitly stops all timer-based and background services so they release
+        /// their threads before the DI container is disposed. Without this, services
+        /// with active timer callbacks can keep the process alive indefinitely.
+        /// </summary>
+        private static void StopBackgroundServices()
+        {
+            try
+            {
+                // Stop server mode (Kestrel) — may already be stopped by MainWindow
+                var serverMode = Services?.GetService<Data.Services.ServerModeService>();
+                if (serverMode?.IsRunning == true)
+                {
+                    try { serverMode.StopAsync().GetAwaiter().GetResult(); }
+                    catch (Exception ex) { Log.Warning(ex, "Error stopping server mode on exit"); }
+                }
+
+                // Stop timer-based services
+                Services?.GetService<Data.Services.AlertEvaluationService>()?.Stop();
+                Services?.GetService<Data.Services.ScheduledTaskEngine>()?.Stop();
+                Services?.GetService<CacheEvictionService>()?.Stop();
+                Services?.GetService<liveQueriesMaintenanceService>()?.Stop();
+                Services?.GetService<MemoryMonitorService>()?.Dispose();
+                Services?.GetService<LogCleanupService>()?.Dispose();
+                Services?.GetService<AutoRefreshService>()?.Dispose();
+
+                Log.Information("Background services stopped");
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Error stopping background services");
+            }
         }
 
         private void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
@@ -190,7 +324,29 @@ namespace SqlHealthAssessment
         private void OnDispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
         {
             Log.Error(e.Exception, "Unhandled dispatcher exception occurred");
+
+            // If WebView2 is missing, the BlazorWebView throws asynchronously through the
+            // dispatcher as TargetInvocationException → WebView2RuntimeNotFoundException.
+            // Catch it here and trigger server mode fallback on the main window.
+            if (IsWebView2Exception(e.Exception))
+            {
+                Log.Warning("WebView2 runtime exception caught — triggering server mode fallback");
+                var mainWindow = MainWindow as MainWindow;
+                mainWindow?.FallbackToServerMode();
+            }
+
             e.Handled = true; // Prevent application crash
+        }
+
+        private static bool IsWebView2Exception(Exception? ex)
+        {
+            while (ex != null)
+            {
+                if (ex.GetType().Name.Contains("WebView2Runtime", StringComparison.OrdinalIgnoreCase))
+                    return true;
+                ex = ex.InnerException;
+            }
+            return false;
         }
 
         private void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)

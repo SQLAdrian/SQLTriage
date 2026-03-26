@@ -1,6 +1,7 @@
 <!--/* In the name of God, the Merciful, the Compassionate */-->@using System.IO
 @using SqlHealthAssessment.Data
 @using SqlHealthAssessment.Data.Models
+@using SqlHealthAssessment.Data.Services
 @inject IDbConnectionFactory ConnectionFactory
 @inject NavigationManager Navigation
 @inject AutoRefreshService AutoRefreshService
@@ -8,6 +9,15 @@
 @inject UserSettingsService UserSettings
 @inject GlobalInstanceSelector InstanceSelector
 @inject ServerConnectionManager ConnectionManager
+@inject PrintService PrintSvc
+@inject ToastService Toast
+@inject IJSRuntime JSRuntime
+
+<PdfExportModal @ref="_pdfModal"
+    Title="Export Dashboard to PDF"
+    DefaultLandscape="true"
+    DefaultBackgrounds="true"
+    OnConfirm="OnPdfConfirmed" />
 
 <div class="toolbar">
     <div class="toolbar-group">
@@ -33,38 +43,6 @@
         </select>
     </div>
 
-    
-    <div class="toolbar-group">
-        <label class="toolbar-label">Timezone:</label>
-        <select class="toolbar-select" @onchange="OnTimezoneChanged">
-            <option value="-12" selected="@(TimezoneOffsetHours == -12)">UTC-12</option>
-            <option value="-11" selected="@(TimezoneOffsetHours == -11)">UTC-11</option>
-            <option value="-10" selected="@(TimezoneOffsetHours == -10)">UTC-10</option>
-            <option value="-9" selected="@(TimezoneOffsetHours == -9)">UTC-9</option>
-            <option value="-8" selected="@(TimezoneOffsetHours == -8)">UTC-8 (PST)</option>
-            <option value="-7" selected="@(TimezoneOffsetHours == -7)">UTC-7 (MST)</option>
-            <option value="-6" selected="@(TimezoneOffsetHours == -6)">UTC-6 (CST)</option>
-            <option value="-5" selected="@(TimezoneOffsetHours == -5)">UTC-5 (EST)</option>
-            <option value="-4" selected="@(TimezoneOffsetHours == -4)">UTC-4 (AST)</option>
-            <option value="-3" selected="@(TimezoneOffsetHours == -3)">UTC-3</option>
-            <option value="-2" selected="@(TimezoneOffsetHours == -2)">UTC-2</option>
-            <option value="-1" selected="@(TimezoneOffsetHours == -1)">UTC-1</option>
-            <option value="0" selected="@(TimezoneOffsetHours == 0)">UTC</option>
-            <option value="1" selected="@(TimezoneOffsetHours == 1)">UTC+1 (CET)</option>
-            <option value="2" selected="@(TimezoneOffsetHours == 2)">UTC+2</option>
-            <option value="3" selected="@(TimezoneOffsetHours == 3)">UTC+3</option>
-            <option value="4" selected="@(TimezoneOffsetHours == 4)">UTC+4</option>
-            <option value="5" selected="@(TimezoneOffsetHours == 5)">UTC+5</option>
-            <option value="6" selected="@(TimezoneOffsetHours == 6)">UTC+6</option>
-            <option value="7" selected="@(TimezoneOffsetHours == 7)">UTC+7</option>
-            <option value="8" selected="@(TimezoneOffsetHours == 8)">UTC+8 (CST China)</option>
-            <option value="9" selected="@(TimezoneOffsetHours == 9)">UTC+9 (JST)</option>
-            <option value="10" selected="@(TimezoneOffsetHours == 10)">UTC+10</option>
-            <option value="11" selected="@(TimezoneOffsetHours == 11)">UTC+11</option>
-            <option value="12" selected="@(TimezoneOffsetHours == 12)">UTC+12</option>
-            <option value="13" selected="@(TimezoneOffsetHours == 13)">UTC+13 (NZST)</option>
-        </select>
-    </div>
 
    <!-- <div class="toolbar-group">
         <label class="toolbar-label">Source:</label>
@@ -81,6 +59,17 @@
         </button>
         <button class="toolbar-btn" @onclick="() => OnRefreshRequested.InvokeAsync()">
             <i class="fa-solid fa-rotate"></i> Refresh
+        </button>
+        <button class="toolbar-btn @(_pdfExporting ? "active" : "")" @onclick="OpenPdfModal" disabled="@_pdfExporting" title="Export dashboard to PDF">
+            @if (_pdfExporting)
+            {
+                <i class="fa-solid fa-spinner fa-spin"></i>
+            }
+            else
+            {
+                <i class="fa-solid fa-file-pdf"></i>
+            }
+            @(_pdfExporting ? " Saving..." : " PDF")
         </button>
     </div>
 
@@ -131,16 +120,17 @@
     [Parameter] public bool AutoRefresh { get; set; } = true;
     [Parameter] public EventCallback<bool> AutoRefreshChanged { get; set; }
     [Parameter] public EventCallback OnRefreshRequested { get; set; }
-    [Parameter] public double TimezoneOffsetHours { get; set; } = 0;
-    [Parameter] public EventCallback<double> TimezoneOffsetHoursChanged { get; set; }
     [Parameter] public EventCallback OnServerChanged { get; set; }
     [Parameter] public string DataSource { get; set; } = "master";
     [Parameter] public EventCallback<string> DataSourceChanged { get; set; }
     [Parameter] public bool IsLoading { get; set; }
     [Parameter] public int LoadedPanels { get; set; }
     [Parameter] public int TotalPanels { get; set; }
+    [Parameter] public string DashboardName { get; set; } = "Dashboard";
 
+    private PdfExportModal _pdfModal = default!;
     private string ServerDisplayName = "SqlServer";
+    private bool _pdfExporting = false;
     private int RefreshIntervalSeconds = 35;
 
     // Server connection dropdown state
@@ -157,11 +147,9 @@
                 ServerDisplayName = serverName;
         }
 
-        // Load refresh interval from configuration
-        RefreshIntervalSeconds = int.TryParse(Configuration["RefreshIntervalSeconds"], out var seconds) ? seconds : 35;
-
-        // Load timezone from user settings (default to UTC+13 for NZ)
-        TimezoneOffsetHours = UserSettings.GetTimezoneOffset();
+        // Load refresh interval from user settings and sync to the timer service
+        RefreshIntervalSeconds = UserSettings.GetRefreshInterval();
+        AutoRefreshService.SetInterval(RefreshIntervalSeconds);
 
         // Load data source from user settings
         DataSource = UserSettings.GetDataSource();
@@ -218,44 +206,10 @@
         if (int.TryParse(e.Value?.ToString(), out var seconds))
         {
             RefreshIntervalSeconds = seconds;
-            
-            // Update the auto-refresh service
             AutoRefreshService.SetInterval(seconds);
-            
-            // Save to appsettings.json
-            await SaveRefreshIntervalToConfig(seconds);
+            UserSettings.SetRefreshInterval(seconds);
         }
-    }
-
-    private async Task SaveRefreshIntervalToConfig(int seconds)
-    {
-        try
-        {
-            var configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "appsettings.json");
-            var json = await File.ReadAllTextAsync(configPath);
-
-            using var doc = System.Text.Json.JsonDocument.Parse(json);
-            using var ms = new System.IO.MemoryStream();
-            var writerOptions = new System.Text.Json.JsonWriterOptions { Indented = true };
-            using (var writer = new System.Text.Json.Utf8JsonWriter(ms, writerOptions))
-            {
-                writer.WriteStartObject();
-                foreach (var prop in doc.RootElement.EnumerateObject())
-                {
-                    if (prop.Name == "RefreshIntervalSeconds")
-                        writer.WriteNumber("RefreshIntervalSeconds", seconds);
-                    else
-                        prop.WriteTo(writer);
-                }
-                writer.WriteEndObject();
-            }
-
-            await File.WriteAllBytesAsync(configPath, ms.ToArray());
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Error saving refresh interval: {ex.Message}");
-        }
+        await Task.CompletedTask;
     }
 
     private async Task OnTimeRangeChanged(ChangeEventArgs e)
@@ -263,17 +217,8 @@
         if (int.TryParse(e.Value?.ToString(), out var minutes))
         {
             TimeRangeMinutes = minutes;
+            UserSettings.SetDefaultTimeRange(minutes);
             await TimeRangeMinutesChanged.InvokeAsync(minutes);
-        }
-    }
-
-    private async Task OnTimezoneChanged(ChangeEventArgs e)
-    {
-        if (double.TryParse(e.Value?.ToString(), out var offset))
-        {
-            TimezoneOffsetHours = offset;
-            UserSettings.SetTimezoneOffset(offset);
-            await TimezoneOffsetHoursChanged.InvokeAsync(offset);
         }
     }
 
@@ -289,6 +234,52 @@
     {
         AutoRefresh = !AutoRefresh;
         await AutoRefreshChanged.InvokeAsync(AutoRefresh);
+    }
+
+    private void OpenPdfModal()
+    {
+        var safeName = SanitizeName(DashboardName);
+        var stem = $"{safeName}_{DateTime.Now:yyyyMMdd_HHmmss}";
+        _pdfModal.Show(stem);
+    }
+
+    private async Task OnPdfConfirmed(PdfExportSettings settings)
+    {
+        // Allow the modal to fully disappear from the DOM before WebView2 captures the page
+        await Task.Delay(350);
+        _pdfExporting = true;
+        StateHasChanged();
+        try
+        {
+            if (!PrintSvc.IsAvailable)
+            {
+                await PrintSvc.PrintViaBrowserAsync(JSRuntime);
+                Toast.ShowInfo("Browser print dialog opened — use 'Save as PDF' to export.");
+                return;
+            }
+
+            var orientation = settings.LandscapeOrientation
+                ? Microsoft.Web.WebView2.Core.CoreWebView2PrintOrientation.Landscape
+                : Microsoft.Web.WebView2.Core.CoreWebView2PrintOrientation.Portrait;
+            var (success, path, error) = await PrintSvc.PrintToPdfAsync(settings.FileName,
+                printBackgrounds: settings.PrintBackgrounds,
+                orientation: orientation);
+            if (success) Toast.ShowSuccess($"PDF saved: {System.IO.Path.GetFileName(path)}");
+            else         Toast.ShowError($"PDF export failed: {error}");
+        }
+        finally
+        {
+            _pdfExporting = false;
+            StateHasChanged();
+        }
+    }
+
+    private static string SanitizeName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "Dashboard";
+        var invalid = System.IO.Path.GetInvalidFileNameChars();
+        var cleaned = new string(name.Where(c => !invalid.Contains(c)).ToArray());
+        return System.Text.RegularExpressions.Regex.Replace(cleaned, @"[\s]+", "_").Trim('_');
     }
 
     private void OpenSettings()

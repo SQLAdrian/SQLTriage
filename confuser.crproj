@@ -1,0 +1,45 @@
+<Project baseDir="." outputDir=".\publish-protected" xmlns="http://confuser.codeplex.com">
+  <!-- ConfuserEx2 protection profile for SQL Health Assessment -->
+  <!-- Run: ConfuserEx.CLI.exe confuser.crproj -->
+
+  <Rule pattern="true" inherit="false">
+    <!-- Symbol renaming: renames classes, methods, fields to unreadable names -->
+    <Protection id="rename">
+      <Argument name="mode" value="unicode" />
+      <Argument name="renPublic" value="false" />
+    </Protection>
+
+    <!-- String encryption: encrypts all string literals in IL -->
+    <Protection id="constants">
+      <Argument name="mode" value="dynamic" />
+    </Protection>
+
+    <!-- Control flow obfuscation: scrambles method logic -->
+    <Protection id="ctrl flow">
+      <Argument name="type" value="switch" />
+    </Protection>
+
+    <!-- Anti-tamper: detects and prevents IL modification -->
+    <Protection id="anti tamper">
+      <Argument name="mode" value="normal" />
+    </Protection>
+
+    <!-- Anti-debug: prevents debuggers from attaching -->
+    <Protection id="anti debug">
+      <Argument name="mode" value="safe" />
+    </Protection>
+
+    <!-- Reference proxy: hides method call targets -->
+    <Protection id="ref proxy">
+      <Argument name="mode" value="mild" />
+    </Protection>
+
+    <!-- Resource encryption: encrypts embedded resources -->
+    <Protection id="resources">
+      <Argument name="mode" value="dynamic" />
+    </Protection>
+  </Rule>
+
+  <!-- Protect the main assembly -->
+  <Module path="publish\SqlHealthAssessment.dll" />
+</Project>

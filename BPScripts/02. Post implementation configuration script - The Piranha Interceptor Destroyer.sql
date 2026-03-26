@@ -109,7 +109,7 @@ END');
 --==========================================================
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-*/
+
 DECLARE @HasServerLevelPermissions BIT = 0;
 DECLARE @HasDBOwnerPermissions BIT = 0;
 
@@ -117,8 +117,8 @@ DECLARE @HasDBOwnerPermissions BIT = 0;
 BEGIN TRY
     -- Test sys.server_permissions
     SELECT TOP 1 @HasServerLevelPermissions = 1 
-    FROM sys.server_permissions 
-    WHERE perm_state = 'G' AND (principal_id = DATABASE_PRINCIPAL_ID() OR principal_id = 1);
+    SELEct * FROM sys.server_permissions 
+    WHERE state = 'G' AND (principal_id = DATABASE_PRINCIPAL_ID() OR principal_id = 1);
 END TRY
 BEGIN CATCH
     SET @HasServerLevelPermissions = 0;
@@ -128,7 +128,7 @@ IF @HasServerLevelPermissions = 0
 BEGIN
     RAISERROR('WARNING: Running without server-level permissions. Some configurations may fail.', 10, 1) WITH NOWAIT;
 END
-
+*/
 /*
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    SECTION 1.3: CONFIGURATION SNAPSHOTS
@@ -148,18 +148,20 @@ BEGIN
 	FROM sys.databases
 END
 
+
 IF OBJECT_ID('master.dbo.DBA_SYS_DATABASE_FILES') IS NULL
 BEGIN
-	SELECT GETDATE() [Timestamp], DB_NAME(database_id) AS [DB], *
+	SELECT GETDATE() [Timestamp], DB_NAME(dbid) AS [DB], *
 	INTO master.dbo.DBA_SYS_DATABASE_FILES
-	FROM sys.database_files
+	FROM sys.sysaltfiles SF
 END 
 ELSE
 BEGIN
 	INSERT  INTO master.dbo.DBA_SYS_DATABASE_FILES
-	SELECT GETDATE() [Timestamp], DB_NAME(database_id) AS [DB], *
-	FROM sys.database_files
+	SELECT GETDATE() [Timestamp], DB_NAME(dbid) AS [DB], *
+	FROM sys.sysaltfiles SF
 END
+
 
 IF OBJECT_ID('master.dbo.DBA_SYS_TRACEFLAGS') IS NULL
 BEGIN
@@ -542,8 +544,8 @@ END
 -- Lock Pages in Memory (LPIM) - Enterprise Edition only
 -- Prevents SQL Server working set from being paged out by Windows
 DECLARE @SQLVer INT, @SQLEdition NVARCHAR(500)
-SELECT @SQLVer = @@MicrosoftVersion / 0x01000000,
-       @SQLEdition = SERVERPROPERTY('Edition')
+SELECT  @SQLVer = CONVERT(INT, @@MicrosoftVersion / 0x01000000),
+       @SQLEdition = CONVERT(NVARCHAR(500),SERVERPROPERTY('Edition'))
 
 IF @SQLEdition LIKE '%Enterprise%' OR @SQLEdition LIKE '%Developer%'
 BEGIN
@@ -557,9 +559,34 @@ BEGIN
     RECONFIGURE
 END
 
+
+-- Secondary tempdb data files (best practice for SQL 2016+)
+-- Create multiple tempdb files based on logical CPU count (up to 8, or cores per NUMA)
+IF @SQLVer >= 13
+BEGIN
+    DECLARE @TempDBFileCount INT, @CPUCount INT
+    SELECT @CPUCount = cpu_count FROM sys.dm_os_sys_info
+    SET @TempDBFileCount = CASE WHEN @CPUCount > 8 THEN 8 ELSE @CPUCount END
+    
+    -- Check existing tempdb data files
+    DECLARE @CurrentTempDBFiles INT
+    SELECT @CurrentTempDBFiles = COUNT(*) 
+    FROM tempdb.sys.database_files 
+    WHERE type = 0  -- data files only
+    
+    IF @CurrentTempDBFiles < @TempDBFileCount
+    BEGIN
+        RAISERROR('INFO: tempdb currently has %d data files, best practice suggests %d for this server', 
+            10, 1, @CurrentTempDBFiles, @TempDBFileCount) WITH NOWAIT;
+        RAISERROR('      Recommend adding additional tempdb data files manually for best performance', 10, 1) WITH NOWAIT;
+    END
+END
+
 -- Accelerated Database Recovery (ADR) - SQL 2019+ only
 -- Improves database availability during long-running transactions
-IF @SQLVer >= 15
+IF @SQLVer >= 15 AND EXISTS(SELECT 1 FROM sys.columns 
+          WHERE Name = N'is_accelerated_database_recovery_on'
+          AND Object_ID = Object_ID(N'sys.databases'))
 BEGIN
     DECLARE @ADRSQL NVARCHAR(MAX) = N''
     SELECT @ADRSQL += N'ALTER DATABASE ' + QUOTENAME(name) + N' SET ACCELERATED_DATABASE_RECOVERY = ON;' + CHAR(13)
@@ -579,36 +606,13 @@ BEGIN
     ELSE
         RAISERROR('INFO: ADR already enabled on all applicable databases', 10, 1) WITH NOWAIT;
 END
-
--- Secondary tempdb data files (best practice for SQL 2016+)
--- Create multiple tempdb files based on logical CPU count (up to 8, or cores per NUMA)
-IF @SQLVer >= 13
-BEGIN
-    DECLARE @TempDBFileCount INT, @CPUCount INT
-    SELECT @CPUCount = cpu_count FROM sys.dm_os_sys_info
-    SET @TempDBFileCount = CASE WHEN @CPUCount > 8 THEN 8 ELSE @CPUCount END
-    
-    -- Check existing tempdb data files
-    DECLARE @CurrentTempDBFiles INT
-    SELECT @CurrentTempDBFiles = COUNT(*) 
-    FROM sys.database_files 
-    WHERE database_id = 2 AND type = 0  -- data files only
-    
-    IF @CurrentTempDBFiles < @TempDBFileCount
-    BEGIN
-        RAISERROR('INFO: tempdb currently has %d data files, best practice suggests %d for this server', 
-            10, 1, @CurrentTempDBFiles, @TempDBFileCount) WITH NOWAIT;
-        RAISERROR('      Recommend adding additional tempdb data files manually for best performance', 10, 1) WITH NOWAIT;
-    END
-END
-
 -- Query Store retention settings (recommended by Brent Ozar)
 -- Set to 7 days, auto-cleanup, capture all queries
 IF @SQLVer >= 13
 BEGIN
     DECLARE @QSSQL NVARCHAR(MAX) = N''
     SELECT @QSSQL += N'ALTER DATABASE ' + QUOTENAME(name) + 
-        N' SET QUERY_STORE (OPERATION_MODE = READ_WRITE, CLEANUP_POLICY = (STALE_QUERY_THRESHOLD_DAYS = 7), ' +
+        N' SET QUERY_STORE (OPERATION_MODE = READ_WRITE, CLEANUP_POLICY = (STALE_QUERY_THRESHOLD_DAYS = 30), ' +
         N'DATA_FLUSH_INTERVAL_SECONDS = 60, MAX_STORAGE_SIZE_MB = 1000, INTERVAL_LENGTH_MINUTES = 60);' + CHAR(13)
     FROM sys.databases
     WHERE database_id > 4 AND state = 0 AND is_query_store_on = 1
@@ -897,7 +901,13 @@ END
 
 
 
-DECLARE @AlertTable TABLE (ID INT IDENTITY(1,1), AlertType NVARCHAR(50), TheNumber INT,AlertName sysname)
+DECLARE @AlertTable TABLE 
+(
+	ID INT IDENTITY(1,1)
+	, AlertType NVARCHAR(50)
+	, TheNumber INT
+	, AlertName sysname
+)
 INSERT INTO @AlertTable VALUES ('Severity',19, 	@ServerName + N' Alert - Sev 19 Error: Fatal Error in Resource')
 INSERT INTO @AlertTable VALUES ('Severity',20, 	@ServerName + N' Alert - Sev 20 Error: Fatal Error in Current Process')
 INSERT INTO @AlertTable VALUES ('Severity',21, 	@ServerName + N' Alert - Sev 21 Error: Fatal Error in Database Process')
@@ -906,210 +916,6 @@ INSERT INTO @AlertTable VALUES ('Severity',23, 	@ServerName + N' Alert - Sev 23 
 INSERT INTO @AlertTable VALUES ('Severity',24, 	@ServerName + N' Alert - Sev 24 Error: Fatal Hardware Error')
 INSERT INTO @AlertTable VALUES ('Severity',25, 	@ServerName + N' Alert - Sev 25 Error: Fatal Error')
 
-
-
-INSERT INTO @AlertTable VALUES ('Error',823, 	@ServerName + N' Alert - Error 823: The operating system returned an error')
-INSERT INTO @AlertTable VALUES ('Error',824, 	@ServerName + N' Alert - Error 824: Logical consistency-based I/O error')
-INSERT INTO @AlertTable VALUES ('Error',825, 	@ServerName + N' Alert - Error 825: Read-Retry Required')
-INSERT INTO @AlertTable VALUES ('Error',832, 	@ServerName + N' Alert - Error 832: Constant page has changed')
-INSERT INTO @AlertTable VALUES ('Error',855, 	@ServerName + N' Alert - Error 855: Uncorrectable hardware memory corruption detected')
-INSERT INTO @AlertTable VALUES ('Error',856, 	@ServerName + N' Alert - Error 856: SQL Server has detected hardware memory corruption, but has recovered the page')
-INSERT INTO @AlertTable VALUES ('Error',1205, 	@ServerName + N' Alert - Error 1205: Deadlock')
-INSERT INTO @AlertTable VALUES ('Error',3928, 	@ServerName + N' Alert - Error 3928: Deadlock')
- 
- 
-INSERT INTO @AlertTable VALUES ('Error',35265, 	@ServerName + N' Alert - AG 35265: AG Data Movement - Resumed')
-INSERT INTO @AlertTable VALUES ('Error',35264, 	@ServerName + N' Alert - AG 35264: AG Data Movement - Suspended')
-INSERT INTO @AlertTable VALUES ('Error',28034, 	@ServerName + N' Alert - AG 28034: Connection handshake on broker')
-INSERT INTO @AlertTable VALUES ('Error',1480, 	@ServerName + N' Alert - AG 1480: AG Role Change' )
-INSERT INTO @AlertTable VALUES ('Error',41091, 	@ServerName + N' Alert - AG 41091: Replica Going Offline / Lease Expired')
-INSERT INTO @AlertTable VALUES ('Error',41131, 	@ServerName + N' Alert - AG 41131: Failed to Bring AG ONLINE')
-INSERT INTO @AlertTable VALUES ('Error',41142, 	@ServerName + N' Alert - AG 41142: Replica Cannot become primary')
-INSERT INTO @AlertTable VALUES ('Error',41406, 	@ServerName + N' Alert - AG 41406: AG not Ready for Auto Failover')
-INSERT INTO @AlertTable VALUES ('Error',41414, 	@ServerName + N' Alert - AG 41414: Secondary not Connected')
-INSERT INTO @AlertTable VALUES ('Error',983, 	@ServerName + N' Alert - Error 983: Unable to access availability database'   )
-INSERT INTO @AlertTable VALUES ('Error',35276, 	@ServerName + N' Alert - Error 35276: Failed to allocate and schedule an AG task for database'  )
-
-INSERT INTO @AlertTable VALUES ('Error',19407, 	@ServerName + N' Alert - AG - Cluster connectivity issue.' )-- The lease between the SQL availability group and the Windows Server Failover Cluster has expired.'  )
-INSERT INTO @AlertTable VALUES ('Error',19419, 	@ServerName + N' Alert - AG - Cluster to SQL lease timeout.' )--  Failover Cluster did not receive a process event signal from SQL Server hosting availability group within the lease timeout period.'  )
-INSERT INTO @AlertTable VALUES ('Error',19421, 	@ServerName + N' Alert - AG - SQL to Cluster lease timeout.' )--  SQL availability group did not receive a process event signal from the Failover Cluster within the lease timeout period.'  )
-INSERT INTO @AlertTable VALUES ('Error',19422, 	@ServerName + N' Alert - AG - AG lease renewal failed.' )--  SQL availability group and the Windows Server Failover Cluster failed because SQL Server encountered Windows error with error code.'  )
-INSERT INTO @AlertTable VALUES ('Error',41143, 	@ServerName + N' Alert - AG - AG replica is in a failed state.' )--   A previous operation to read or update persisted configuration data for the availability group has failed.  To recover from this failure, either restart the local Windows Server Failover Clustering (WSFC) service or restart the local instance of SQL Server.'  )
-INSERT INTO @AlertTable VALUES ('Error',41005, 	@ServerName + N' Alert - AG - Failed to obtain Failover Clustering (WSFC) resource handle.' )--  The WSFC service may not be running or may not be accessible in its current state.'  )
-INSERT INTO @AlertTable VALUES ('Error',41144, 	@ServerName + N' Alert - AG - Local AG replica is in a failed state.' )--   The replica failed to read or update the persisted configuration data. To recover from this failure, either restart the local Windows Server Failover Clustering (WSFC) service or restart the local instance of SQL Server.'  )
-
-
-INSERT INTO @AlertTable VALUES ('Error',9002, 	@ServerName + N' Alert - Error 9002: Log File FULL')
-INSERT INTO @AlertTable VALUES ('Error',1101,	@ServerName + N' Alert - Error 1101: Database filegroup out of space')
-INSERT INTO @AlertTable VALUES ('Error',3041,	@ServerName + N' Alert - Error 3041: - BACKUP failed to complete. Check the backup application log for detailed messages.')
-INSERT INTO @AlertTable VALUES ('Error',12412,	@ServerName + N' Alert - Error 12412:- Internal table access error. Failed to access the Query Store internal table.')
-INSERT INTO @AlertTable VALUES ('Error',18210,	@ServerName + N' Alert - Error 18210:- Failure on backup device. Operating system error.')
-
-INSERT INTO @AlertTable VALUES ('Error',28036, 	@ServerName + N' Alert - Error 28036: Connection handshake failed.' )--  The certificate used by this endpoint was not found')
-INSERT INTO @AlertTable VALUES ('Error',610, 	@ServerName + N' Alert - Error 610: Invalid header value from a page.' )--  Run DBCC CHECKDB to check for a data corruption.'   )
-INSERT INTO @AlertTable VALUES ('Error',2511, 	@ServerName + N' Alert - Error 2511: Table error. Keys out of order on page.' )-- 
-INSERT INTO @AlertTable VALUES ('Error',5228, 	@ServerName + N' Alert - Error 5228: Table error. DBCC detected incomplete cleanup.' )-- 
-INSERT INTO @AlertTable VALUES ('Error',5229, 	@ServerName + N' Alert - Error 5229: Table error. contains an anti-matter column.' )-- 
-INSERT INTO @AlertTable VALUES ('Error',5242, 	@ServerName + N' Alert - Error 5242: An inconsistency was detected during an internal operation in database.' )-- 
-INSERT INTO @AlertTable VALUES ('Error',5243, 	@ServerName + N' Alert - Error 5243: An inconsistency was detected during an internal operation.' )-- 
-INSERT INTO @AlertTable VALUES ('Error',5250, 	@ServerName + N' Alert - Error 5250: Database error. This error cannot be repaired.' )--
-
-/* Memory pressure alerts */
-INSERT INTO @AlertTable VALUES ('Error',701,	@ServerName + N' Alert - Error 701: Insufficient memory in resource pool')
-INSERT INTO @AlertTable VALUES ('Error',802,	@ServerName + N' Alert - Error 802: Insufficient memory available in the buffer pool')
-INSERT INTO @AlertTable VALUES ('Error',8645,	@ServerName + N' Alert - Error 8645: Timeout waiting for memory resource (RESOURCE_SEMAPHORE)')
-INSERT INTO @AlertTable VALUES ('Error',8651,	@ServerName + N' Alert - Error 8651: Low memory condition - deferred request failed')
-INSERT INTO @AlertTable VALUES ('Error',17803,	@ServerName + N' Alert - Error 17803: Insufficient memory during thread creation (Windows memory allocation failed)')
-
-/* Log / disk space alerts */
-INSERT INTO @AlertTable VALUES ('Error',9001,	@ServerName + N' Alert - Error 9001: Log for database is not available (log corruption / inaccessible)')
-INSERT INTO @AlertTable VALUES ('Error',1105,	@ServerName + N' Alert - Error 1105: Could not allocate space in filegroup (data file full, including PRIMARY)')
-INSERT INTO @AlertTable VALUES ('Error',3271,	@ServerName + N' Alert - Error 3271: Non-recoverable I/O error occurred on file')
-
-/* Authentication / security */
-INSERT INTO @AlertTable VALUES ('Error',17806,	@ServerName + N' Alert - Error 17806: SSPI handshake failed (authentication failure)')
-
-/* I/O subsystem */
-INSERT INTO @AlertTable VALUES ('Error',7105,	@ServerName + N' Alert - Error 7105: Could not retrieve row from disk (out-of-row BLOB I/O error)')
-
-/* Configuration change audit trail */
-INSERT INTO @AlertTable VALUES ('Error',15457,	@ServerName + N' Alert - Error 15457: Configuration option changed (audit trail)')
-
-/* Network / TDS errors */
-INSERT INTO @AlertTable VALUES ('Error',4014,	@ServerName + N' Alert - Error 4014: Fatal error reading input stream from the network (TDS corruption)')
-INSERT INTO @AlertTable VALUES ('Error',17826,	@ServerName + N' Alert - Error 17826: Could not start network library due to internal error (SQL lost its listener)')
-
-/* File Control Block / pre-corruption indicator */
-INSERT INTO @AlertTable VALUES ('Error',5180,	@ServerName + N' Alert - Error 5180: Could not open File Control Block for invalid file ID (precursor to 823/824 corruption)')
-
-/* Stack alignment fatal error */
-INSERT INTO @AlertTable VALUES ('Error',17551,	@ServerName + N' Alert - Error 17551: Fatal error - stack not properly aligned (indicates driver/OS issue)')
-
-/* Buffer manager internal error */
-INSERT INTO @AlertTable VALUES ('Error',8966,	@ServerName + N' Alert - Error 8966: Unable to read and latch page (internal buffer manager error indicating corruption)')
-
-/* Backup / restore termination (complementary to 3041 -- also fires on restore failures) */
-INSERT INTO @AlertTable VALUES ('Error',3013,	@ServerName + N' Alert - Error 3013: BACKUP or RESTORE terminating abnormally')
-
-/* Service Broker / endpoint */
-INSERT INTO @AlertTable VALUES ('Error',1918,	@ServerName + N' Alert - Error 1918: Error during starting endpoint (Service Broker / mirroring endpoint failure)')
-
-/* MSDTC distributed transaction recovery */
-INSERT INTO @AlertTable VALUES ('Error',3452,	@ServerName + N' Alert - Error 3452: Recovery of in-doubt distributed transactions (MSDTC) detected')
-
-/* Security monitoring -- login failures (delay_between_responses set to 60s in the loop to avoid storms) */
-INSERT INTO @AlertTable VALUES ('Error',18456,	@ServerName + N' Alert - Error 18456: Login failed (security monitoring)')
-
-/* Additional critical missing alerts - best practice additions */
-/* I/O subsystem and lock errors */
-INSERT INTO @AlertTable VALUES ('Error',596,	@ServerName + N' Alert - Error 596: LCK_M_IX lock wait exceeded (severe blocking)')
-INSERT INTO @AlertTable VALUES ('Error',595,	@ServerName + N' Alert - Error 595: Lock escalation prevented')
-INSERT INTO @AlertTable VALUES ('Error',1221,	@ServerName + N' Alert - Error 1221: Lock resources exceeded (deadlock victim)')
-
-/* TempDB critical issues */
-INSERT INTO @AlertTable VALUES ('Error',1105,	@ServerName + N' Alert - Error 1105: Could not allocate space in tempdb')
-INSERT INTO @AlertTable VALUES ('Error',1102,	@ServerName + N' Alert - Error 1102: Allocation page latch timeout in tempdb')
-
-/* Query Store errors */
-INSERT INTO @AlertTable VALUES ('Error',12410,	@ServerName + N' Alert - Error 12410: Query Store internal error')
-INSERT INTO @AlertTable VALUES ('Error',12411,	@ServerName + N' Alert - Error 12411: Query Store collection failed')
-
-/* Always On / AG critical */
-INSERT INTO @AlertTable VALUES ('Error',1481,	@ServerName + N' Alert - AG 1481: Database replica sync health check failed')
-INSERT INTO @AlertTable VALUES ('Error',35201,	@ServerName + N' Alert - AG 35201: Connection to primary failed')
-
-/* Transaction log corruption */
-INSERT INTO @AlertTable VALUES ('Error',9003,	@ServerName + N' Alert - Error 9003: Log scan - invalid log sequence number')
-INSERT INTO @AlertTable VALUES ('Error',9004,	@ServerName + N' Alert - Error 9004: Log file corruption - truncated')
-INSERT INTO @AlertTable VALUES ('Error',9013,	@ServerName + N' Alert - Error 9013: Virtual log file too small')
-
-/* DAC connection issues */
-INSERT INTO @AlertTable VALUES ('Error',233,	@ServerName + N' Alert - Error 233: Shared memory provider disconnected')
-
-/* Brent Ozar / Microsoft additional critical alerts */
-/* Out of memory conditions */
-INSERT INTO @AlertTable VALUES ('Error',701, 	@ServerName + N' Alert - Error 701: Insufficient memory (resource pool)')
-INSERT INTO @AlertTable VALUES ('Error',802, 	@ServerName + N' Alert - Error 802: Buffer pool insufficient memory')
-INSERT INTO @AlertTable VALUES ('Error',8645, 	@ServerName + N' Alert - Error 8645: Resource semaphore wait timeout')
-
-/* SOS scheduler exhaustion (critical) */
-INSERT INTO @AlertTable VALUES ('Error',17883, 	@ServerName + N' Alert - Error 17883: Scheduler deadlock detected')
-INSERT INTO @AlertTable VALUES ('Error',17884, 	@ServerName + N' Alert - Error 17884: All schedulers appear deadlocked')
-
-
-DECLARE @MaxAlerts TINYINT
-DECLARE @AlertCounter TINYINT 
-SET @AlertCounter = 1
-DECLARE @ThisName sysname
-DECLARE @ThisAlert INT
-DECLARE @ThisMessage INT
-DECLARE @ThisAlertType NVARCHAR(50)
-SELECT @MaxAlerts = MAX(ID) FROM @AlertTable
-USE msdb
-WHILE @AlertCounter <= @MaxAlerts
-BEGIN
-	SELECT @ThisName = AlertName
-	, @ThisAlert = TheNumber
-	, @ThisAlertType = AlertType
-	FROM @AlertTable WHERE ID = @AlertCounter
-	IF @ThisAlertType = 'Error'
-	BEGIN
-		SET @ThisMessage = @ThisAlert
-		SET @ThisAlert = 0
-	END
-	IF NOT EXISTS (SELECT name FROM msdb.dbo.sysalerts WHERE name = @ThisName)
-	BEGIN
-		IF @ThisAlert <> 0
-			RAISERROR (@ThisAlert,0,1) WITH NOWAIT;
-		BEGIN TRY
-	    EXEC msdb.dbo.sp_add_alert @name = @ThisName, 
-	                  @message_id = @ThisMessage, @severity = @ThisAlert, @enabled = 1, 
-	                  @delay_between_responses = 900, @include_event_description_in = 1,@notification_message=@SQLDBANotification,
-	                  @category_name = @CategoryName, 
-	                 @job_id = N'00000000-0000-0000-0000-000000000000';
-		IF NOT EXISTS(SELECT *
-              FROM msdb.dbo.sysalerts AS sa
-              INNER JOIN msdb.dbo.sysnotifications AS sn
-              ON sa.id = sn.alert_id
-              WHERE (sa.name = @ThisName
-			  OR sa.message_id = @ThisAlert))
-		BEGIN
-			EXEC msdb.dbo.sp_add_notification @alert_name = @ThisName, @operator_name = @OperatorName, @notification_method = 1;
-			--EXEC msdb.dbo.sp_add_notification @alert_name = @ThisName, @operator_name = @ServiceDesk, @notification_method = 1;
-			SET @ThisName = 'Configure alert - ' + @ThisName
-			
-			/*Ensure these errors log for SCOM*/
-			IF @ThisAlertType = 'Error'
-				EXEC sp_altermessage @ThisMessage, 'WITH_LOG', 'true'
-
-			RAISERROR (@ThisName,0,1) WITH NOWAIT;
-		END
-
-		END TRY
-		BEGIN CATCH
-			SET @ThisName = 'Failed to configure alert - ' + @ThisName
-			RAISERROR (@ThisName,16,1) WITH NOWAIT;
-		END CATCH
-	END		  
-	SET @AlertCounter = @AlertCounter + 1
-END
-
-/* 18456 fires on every failed login and would spam the operator at 900s delay.
-   Override it to 300 seconds (5 min) after the loop so the alert exists but is less noisy.
-   Adjust as needed for your environment. */
-BEGIN TRY
-	DECLARE @Alert18456Name NVARCHAR(500)
-	SET @Alert18456Name = @ServerName + N' Alert - Error 18456: Login failed (security monitoring)'
-	IF EXISTS (SELECT id FROM msdb.dbo.sysalerts WHERE name = @Alert18456Name)
-	BEGIN
-		EXEC msdb.dbo.sp_update_alert @name = @Alert18456Name,
-			@delay_between_responses = 300
-		RAISERROR ('Action: Set 18456 alert delay to 300s', 0, 1) WITH NOWAIT;
-	END
-END TRY
-BEGIN CATCH
-	RAISERROR ('Could not update 18456 alert delay', 0, 1) WITH NOWAIT;
-END CATCH
 
 
 -- Error 823: Operating System Error
@@ -1137,13 +943,211 @@ END CATCH
 -- Error 854 is just informing you that your instance supports memory error correction
 
 -- Using SQL Server in Windows 8 and Windows Server 2012 environments
+--https://learn.microsoft.com/en-us/sql/relational-databases/errors-events/database-engine-events-and-errors-0-to-999?view=sql-server-ver17
 -- http://support.microsoft.com/kb/2681562
+INSERT INTO @AlertTable VALUES ('Error',610, 	@ServerName + N' Alert! Error 610: Invalid header value from a page.' )--  Run DBCC CHECKDB to check for a data corruption.'   )
+INSERT INTO @AlertTable VALUES ('Error',823, 	@ServerName + N' Alert! Error 823: The operating system returned an error')
+INSERT INTO @AlertTable VALUES ('Error',824, 	@ServerName + N' Alert! Error 824: Logical consistency-based I/O error')
+INSERT INTO @AlertTable VALUES ('Error',825, 	@ServerName + N' Alert! Error 825: Read-Retry Required')
+INSERT INTO @AlertTable VALUES ('Error',832, 	@ServerName + N' Alert! Error 832: Constant page has changed')
+INSERT INTO @AlertTable VALUES ('Error',855, 	@ServerName + N' Alert! Error 855: Uncorrectable hardware memory corruption detected')
+INSERT INTO @AlertTable VALUES ('Error',856, 	@ServerName + N' Alert! Error 856: SQL Server has detected hardware memory corruption, but has recovered the page')
+INSERT INTO @AlertTable VALUES ('Error',1205, 	@ServerName + N' Alert! Error 1205: Deadlock')
+INSERT INTO @AlertTable VALUES ('Error',3928, 	@ServerName + N' Alert! Error 3928: Deadlock')
+INSERT INTO @AlertTable VALUES ('Error',829,	@ServerName + N' Alert! Error Database, Page is marked RestorePending, which may indicate disk corruption.')-- To recover from this state, perform a restore.')
+INSERT INTO @AlertTable VALUES ('Error',211,	@ServerName + N' Alert! Error 211: Corruption in database possibly due to schema or catalog inconsistency.')-- Run DBCC CHECKCATALOG.')
+INSERT INTO @AlertTable VALUES ('Error',602,	@ServerName + N' Alert! Error 602: A stored procedure references a dropped table, or metadata is corrupted.')-- Drop and re-create the stored procedure, or execute DBCC CHECKDB.
+INSERT INTO @AlertTable VALUES ('Error',603,	@ServerName + N' Alert! Error 603: Could not find an entry for table or index with object ID.')-- This error can occur if a stored procedure references a dropped table, or metadata is corrupted. Drop and re-create the stored procedure, or execute DBCC CHECKDB.
+INSERT INTO @AlertTable VALUES ('Error',608,	@ServerName + N' Alert! Error 608: No catalog entry found for partition ID in database. The metadata is inconsistent.')-- Run DBCC CHECKDB to check for a metadata corruption.	
+INSERT INTO @AlertTable VALUES ('Error',683,	@ServerName + N' Alert! Error 683: An internal error occurred trying to convert between variable- and fixed-length decimal formats.')-- Run DBCC CHECKDB to check for any database corruption.
+INSERT INTO @AlertTable VALUES ('Error',684,	@ServerName + N' Alert! Error 684: An internal error occurred attempting to convert between compressed and uncompressed storage .')-- Run DBCC CHECKDB to check for any corruption.
+INSERT INTO @AlertTable VALUES ('Error',692,	@ServerName + N' Alert! Error 692: Internal error. Buffer provided to write a fixed column value is too large.')-- Run DBCC CHECKDB to check for any corruption.
+INSERT INTO @AlertTable VALUES ('Error',808,	@ServerName + N' Alert! Error 808: Insufficient bytes transferred. Backup, insufficient disk space, corruption or hardware failure.')-- Check errorlogs/application-logs for detailed messages and correct error conditions.
+INSERT INTO @AlertTable VALUES ('Error',882,	@ServerName + N' Alert! Error 882: The schema of a table created by InternalBaseTable is corrupt.')--
+INSERT INTO @AlertTable VALUES ('Error',918,	@ServerName + N' Alert! Error 918: Failed to load the engine script metadata from script DLL. This is a serious error condition.')-- which usually indicates a corrupt or incomplete installation-- Repairing the SQL Server instance may help resolve this error.
+INSERT INTO @AlertTable VALUES ('Error',965,	@ServerName + N' Alert! Error 965: Warning: A column nullability inconsistency was detected in the metadata. Index may be corrupt.')-- Run DBCC CHECKTABLE to verify consistency.
+INSERT INTO @AlertTable VALUES ('Error',976,	@ServerName + N' Alert! Error 976: Database Not Accessible')
+INSERT INTO @AlertTable VALUES ('Error',983,	@ServerName + N' Alert! Error 983: Database Role Resolving. Unable to access availability database')
+INSERT INTO @AlertTable VALUES ('Error',3402,	@ServerName + N' Alert! Error 3402: Database Restoring')
+/* Always On / AG critical */
+INSERT INTO @AlertTable VALUES ('Error',35265, 	@ServerName + N' Alert! AG 35265: AG Data Movement - Resumed')
+INSERT INTO @AlertTable VALUES ('Error',35264, 	@ServerName + N' Alert! AG 35264: AG Data Movement - Suspended')
+INSERT INTO @AlertTable VALUES ('Error',28034, 	@ServerName + N' Alert! AG 28034: Connection handshake on broker')
+INSERT INTO @AlertTable VALUES ('Error',1480, 	@ServerName + N' Alert! AG 1480: AG Role Change' )
+INSERT INTO @AlertTable VALUES ('Error',41091, 	@ServerName + N' Alert! AG 41091: Replica Going Offline Lease Expired')
+INSERT INTO @AlertTable VALUES ('Error',41131, 	@ServerName + N' Alert! AG 41131: Failed to Bring AG ONLINE')
+INSERT INTO @AlertTable VALUES ('Error',41142, 	@ServerName + N' Alert! AG 41142: Replica Cannot become primary')
+INSERT INTO @AlertTable VALUES ('Error',41406, 	@ServerName + N' Alert! AG 41406: AG not Ready for Auto Failover')
+INSERT INTO @AlertTable VALUES ('Error',41414, 	@ServerName + N' Alert! AG 41414: Secondary not Connected')
+INSERT INTO @AlertTable VALUES ('Error',35276, 	@ServerName + N' Alert! Error 35276: Failed to allocate and schedule an AG task for database. Database Out of Sync'  )
 
 
+INSERT INTO @AlertTable VALUES ('Error',1481,	@ServerName + N' Alert! AG 1481: Database replica sync health check failed')
+INSERT INTO @AlertTable VALUES ('Error',35201,	@ServerName + N' Alert! AG 35201: Connection to primary failed')
+INSERT INTO @AlertTable VALUES ('Error',19407, 	@ServerName + N' Alert! AG 19407: Cluster connectivity issue.' )-- The lease between the SQL availability group and the Windows Server Failover Cluster has expired.'  )
+INSERT INTO @AlertTable VALUES ('Error',19419, 	@ServerName + N' Alert! AG 19419: Cluster to SQL lease timeout.' )--  Failover Cluster did not receive a process event signal from SQL Server hosting availability group within the lease timeout period.'  )
+INSERT INTO @AlertTable VALUES ('Error',19421, 	@ServerName + N' Alert! AG 19421: SQL to Cluster lease timeout.' )--  SQL availability group did not receive a process event signal from the Failover Cluster within the lease timeout period.'  )
+INSERT INTO @AlertTable VALUES ('Error',19422, 	@ServerName + N' Alert! AG 19422: AG lease renewal failed.' )--  SQL availability group and the Windows Server Failover Cluster failed because SQL Server encountered Windows error with error code.'  )
+INSERT INTO @AlertTable VALUES ('Error',41143, 	@ServerName + N' Alert! AG 41143: AG replica is in a failed state.' )--   A previous operation to read or update persisted configuration data for the availability group has failed.  To recover from this failure, either restart the local Windows Server Failover Clustering (WSFC) service or restart the local instance of SQL Server.'  )
+INSERT INTO @AlertTable VALUES ('Error',41005, 	@ServerName + N' Alert! AG 41005: Failed to obtain Failover Clustering (WSFC) resource handle.' )--  The WSFC service may not be running or may not be accessible in its current state.'  )
+INSERT INTO @AlertTable VALUES ('Error',41144, 	@ServerName + N' Alert! AG 41144: Local AG replica is in a failed state.' )--   The replica failed to read or update the persisted configuration data. To recover from this failure, either restart the local Windows Server Failover Clustering (WSFC) service or restart the local instance of SQL Server.'  )
+
+INSERT INTO @AlertTable VALUES ('Error',19406, 	@ServerName + N' Alert! AG 19406: AG Replica Changed States')
+INSERT INTO @AlertTable VALUES ('Error',35206, 	@ServerName + N' Alert! AG 35206: Connection Timeout')
+INSERT INTO @AlertTable VALUES ('Error',35250, 	@ServerName + N' Alert! AG 35250: Connection to Primary Inactive')
+INSERT INTO @AlertTable VALUES ('Error',35273, 	@ServerName + N' Alert! AG 35273: Database Inaccessible')
+INSERT INTO @AlertTable VALUES ('Error',35274, 	@ServerName + N' Alert! AG 35274: Database Recovery Pending')
+INSERT INTO @AlertTable VALUES ('Error',35275, 	@ServerName + N' Alert! AG 35275: Database in Suspect State')
+      
+ 
+
+INSERT INTO @AlertTable VALUES ('Error',9002, 	@ServerName + N' Alert! Error 9002: Log File FULL')
+INSERT INTO @AlertTable VALUES ('Error',1101,	@ServerName + N' Alert! Error 1101: Database filegroup out of space')
+INSERT INTO @AlertTable VALUES ('Error',3041,	@ServerName + N' Alert! Error 3041: - BACKUP failed to complete. Check the backup application log for detailed messages.')
+INSERT INTO @AlertTable VALUES ('Error',12412,	@ServerName + N' Alert! Error 12412:- Internal table access error. Failed to access the Query Store internal table.')
+INSERT INTO @AlertTable VALUES ('Error',18210,	@ServerName + N' Alert! Error 18210:- Failure on backup device. Operating system error.')
+INSERT INTO @AlertTable VALUES ('Error',28036, 	@ServerName + N' Alert! Error 28036: Connection handshake failed.' )--  The certificate used by this endpoint was not found')
+INSERT INTO @AlertTable VALUES ('Error',2511, 	@ServerName + N' Alert! Error 2511: Table error. Keys out of order on page.' )-- 
+INSERT INTO @AlertTable VALUES ('Error',5228, 	@ServerName + N' Alert! Error 5228: Table error. DBCC detected incomplete cleanup.' )-- 
+INSERT INTO @AlertTable VALUES ('Error',5229, 	@ServerName + N' Alert! Error 5229: Table error. contains an anti-matter column.' )-- 
+INSERT INTO @AlertTable VALUES ('Error',5242, 	@ServerName + N' Alert! Error 5242: An inconsistency was detected during an internal operation in database.' )-- 
+INSERT INTO @AlertTable VALUES ('Error',5243, 	@ServerName + N' Alert! Error 5243: An inconsistency was detected during an internal operation.' )-- 
+INSERT INTO @AlertTable VALUES ('Error',5250, 	@ServerName + N' Alert! Error 5250: Database error. This error cannot be repaired.' )--
+
+/* Memory pressure alerts */
+INSERT INTO @AlertTable VALUES ('Error',701,	@ServerName + N' Alert! Error 701: Insufficient memory in resource pool')
+INSERT INTO @AlertTable VALUES ('Error',802,	@ServerName + N' Alert! Error 802: Insufficient memory available in the buffer pool')
+INSERT INTO @AlertTable VALUES ('Error',8645,	@ServerName + N' Alert! Error 8645: Timeout waiting for memory resource (RESOURCE_SEMAPHORE)')
+INSERT INTO @AlertTable VALUES ('Error',8651,	@ServerName + N' Alert! Error 8651: Low memory condition - deferred request failed')
+INSERT INTO @AlertTable VALUES ('Error',17803,	@ServerName + N' Alert! Error 17803: Insufficient memory during thread creation (Windows memory allocation failed)')
+
+/* Log / disk space alerts */
+INSERT INTO @AlertTable VALUES ('Error',9001,	@ServerName + N' Alert! Error 9001: Log for database is not available (log corruption / inaccessible)')
+INSERT INTO @AlertTable VALUES ('Error',1105,	@ServerName + N' Alert! Error 1105: Could not allocate space in filegroup (data file full, including PRIMARY)')
+INSERT INTO @AlertTable VALUES ('Error',3271,	@ServerName + N' Alert! Error 3271: Non-recoverable I/O error occurred on file')
+
+/* Authentication / security */
+INSERT INTO @AlertTable VALUES ('Error',17806,	@ServerName + N' Alert! Error 17806: SSPI handshake failed (authentication failure)')
+
+/* I/O subsystem */
+INSERT INTO @AlertTable VALUES ('Error',7105,	@ServerName + N' Alert! Error 7105: Could not retrieve row from disk (out-of-row BLOB I/O error)')
+
+/* Configuration change audit trail */
+INSERT INTO @AlertTable VALUES ('Error',15457,	@ServerName + N' Alert! Error 15457: Configuration option changed (audit trail)')
+
+/* Network / TDS errors */
+INSERT INTO @AlertTable VALUES ('Error',4014,	@ServerName + N' Alert! Error 4014: Fatal error reading input stream from the network (TDS corruption)')
+INSERT INTO @AlertTable VALUES ('Error',17826,	@ServerName + N' Alert! Error 17826: Could not start network library due to internal error (SQL lost its listener)')
+
+/* File Control Block / pre-corruption indicator */
+INSERT INTO @AlertTable VALUES ('Error',5180,	@ServerName + N' Alert! Error 5180: Could not open File Control Block for invalid file ID (precursor to 823/824 corruption)')
+
+/* Stack alignment fatal error */
+INSERT INTO @AlertTable VALUES ('Error',17551,	@ServerName + N' Alert! Error 17551: Fatal error - stack not properly aligned (indicates driver/OS issue)')
+
+/* Buffer manager internal error */
+INSERT INTO @AlertTable VALUES ('Error',8966,	@ServerName + N' Alert! Error 8966: Unable to read and latch page (internal buffer manager error indicating corruption)')
+
+/* Backup / restore termination (complementary to 3041 -- also fires on restore failures) */
+INSERT INTO @AlertTable VALUES ('Error',3013,	@ServerName + N' Alert! Error 3013: BACKUP or RESTORE terminating abnormally')
+
+/* MSDTC distributed transaction recovery */
+INSERT INTO @AlertTable VALUES ('Error',3452,	@ServerName + N' Alert! Error 3452: Recovery of in-doubt distributed transactions (MSDTC) detected')
+
+/* Security monitoring -- login failures (delay_between_responses set to 60s in the loop to avoid storms) */
+INSERT INTO @AlertTable VALUES ('Error',18456,	@ServerName + N' Alert! Error 18456: Login failed (security monitoring)')
+
+/* Additional critical missing alerts - best practice additions */
+/* I/O subsystem and lock errors */
+INSERT INTO @AlertTable VALUES ('Error',596,	@ServerName + N' Alert! Error 596: LCK_M_IX lock wait exceeded (severe blocking)')
+INSERT INTO @AlertTable VALUES ('Error',595,	@ServerName + N' Alert! Error 595: Lock escalation prevented')
+INSERT INTO @AlertTable VALUES ('Error',1221,	@ServerName + N' Alert! Error 1221: Lock resources exceeded (deadlock victim)')
+
+/* TempDB critical issues */
+INSERT INTO @AlertTable VALUES ('Error',1105,	@ServerName + N' Alert! Error 1105: Could not allocate space in tempdb')
+
+/* Query Store errors */
+INSERT INTO @AlertTable VALUES ('Error',12410,	@ServerName + N' Alert! Error 12410: Query Store internal error')
+INSERT INTO @AlertTable VALUES ('Error',12411,	@ServerName + N' Alert! Error 12411: Query Store collection failed')
+
+/* Transaction log corruption */
+INSERT INTO @AlertTable VALUES ('Error',9003,	@ServerName + N' Alert! Error 9003: Log scan - invalid log sequence number')
+INSERT INTO @AlertTable VALUES ('Error',9004,	@ServerName + N' Alert! Error 9004: Log file corruption - truncated')
+INSERT INTO @AlertTable VALUES ('Error',9013,	@ServerName + N' Alert! Error 9013: Virtual log file too small')
+
+/* DAC connection issues */
+INSERT INTO @AlertTable VALUES ('Error',233,	@ServerName + N' Alert! Error 233: Shared memory provider disconnected')
+
+/* Brent Ozar / Microsoft additional critical alerts */
+/* Out of memory conditions */
+INSERT INTO @AlertTable VALUES ('Error',701, 	@ServerName + N' Alert! Error 701: Insufficient memory (resource pool)')
+INSERT INTO @AlertTable VALUES ('Error',802, 	@ServerName + N' Alert! Error 802: Buffer pool insufficient memory')
+INSERT INTO @AlertTable VALUES ('Error',8645, 	@ServerName + N' Alert! Error 8645: Resource semaphore wait timeout')
+
+/* SOS scheduler exhaustion (critical) */
+INSERT INTO @AlertTable VALUES ('Error',17883, 	@ServerName + N' Alert! Error 17883: Scheduler deadlock detected')
+INSERT INTO @AlertTable VALUES ('Error',17884, 	@ServerName + N' Alert! Error 17884: All schedulers appear deadlocked')
 
 
+DECLARE @MaxAlerts TINYINT
+DECLARE @AlertCounter TINYINT 
+SET @AlertCounter = 1
+DECLARE @ThisName sysname
+DECLARE @Exception NVARCHAR(2000)
+DECLARE @ThisAlert INT
+DECLARE @ThisMessage INT
+DECLARE @ThisAlertType NVARCHAR(50)
+SELECT @MaxAlerts = MAX(ID) FROM @AlertTable
+USE msdb
+WHILE @AlertCounter <= @MaxAlerts
+BEGIN
+	SELECT @ThisName = AlertName
+	, @ThisAlert = TheNumber
+	, @ThisAlertType = AlertType
+	FROM @AlertTable WHERE ID = @AlertCounter
+	IF @ThisAlertType = 'Error'
+	BEGIN
+		SET @ThisMessage = @ThisAlert
+		SET @ThisAlert = 0
+	END
+	IF NOT EXISTS (SELECT name FROM msdb.dbo.sysalerts WHERE name = @ThisName)
+	BEGIN
+		IF @ThisAlert <> 0
+			RAISERROR (@ThisAlert,0,1) WITH NOWAIT;
+		BEGIN TRY
+			EXEC msdb.dbo.sp_add_alert @name = @ThisName, 
+						  @message_id = @ThisMessage, @severity = @ThisAlert, @enabled = 1, 
+						  @delay_between_responses = 900, @include_event_description_in = 1,@notification_message=@SQLDBANotification,
+						  @category_name = @CategoryName, 
+						 @job_id = N'00000000-0000-0000-0000-000000000000';
+			IF NOT EXISTS(SELECT *
+				  FROM msdb.dbo.sysalerts AS sa
+				  INNER JOIN msdb.dbo.sysnotifications AS sn
+				  ON sa.id = sn.alert_id
+				  WHERE (sa.name = @ThisName
+				  OR sa.message_id = @ThisAlert))
+			BEGIN
+				EXEC msdb.dbo.sp_add_notification @alert_name = @ThisName, @operator_name = @OperatorName, @notification_method = 1;
+				--EXEC msdb.dbo.sp_add_notification @alert_name = @ThisName, @operator_name = @ServiceDesk, @notification_method = 1;
+				SET @ThisName = 'Configure alert - ' + @ThisName
+			
+				/*Ensure these errors log for SCOM*/
+				IF @ThisAlertType = 'Error'
+					EXEC sp_altermessage @ThisMessage, 'WITH_LOG', 'true'
 
+				RAISERROR (@ThisName,0,1) WITH NOWAIT;
+			END
 
+		END TRY
+
+		BEGIN CATCH
+			SET @Exception = 'Failed to configure alert - ' + @ThisName + '. ' + CONVERT(VARCHAR(50),ERROR_NUMBER()) + '. ' + CONVERT(VARCHAR(500),ERROR_MESSAGE())
+			IF ERROR_NUMBER() <> 14501 --Already exists
+				RAISERROR (@Exception,16,1) WITH NOWAIT;
+		END CATCH
+	END		  
+	SET @AlertCounter = @AlertCounter + 1
+END
 
 
 
@@ -1488,8 +1492,8 @@ SET @MaxMemMsg = 'Action: Set max server memory to ' + CONVERT(VARCHAR(10), @Tar
     + ' MB (total RAM: ' + CONVERT(VARCHAR(10), @TotalRAMMB) + ' MB, reserved for OS: ' + CONVERT(VARCHAR(10), @ReservedForOSMB) + ' MB)'
 RAISERROR (@MaxMemMsg, 0, 1) WITH NOWAIT;
 
-EXEC sys.sp_configure N'max server memory (MB)', @TargetMaxMemMB
-RECONFIGURE WITH OVERRIDE
+--EXEC sys.sp_configure N'max server memory (MB)', @TargetMaxMemMB
+--RECONFIGURE WITH OVERRIDE
 
 /*
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -1616,7 +1620,7 @@ INSERT INTO @Databases
 EXEC sp_executesql @DynamicSQL ;
 SET @Databasei_Max = (SELECT MAX(id) FROM @Databases );
 
-
+DECLARE @dynamicmessage NVARCHAR(500)
 SET @Databasei_Count = 1; 
 WHILE @Databasei_Count <= @Databasei_Max 
 BEGIN 
@@ -1660,10 +1664,12 @@ BEGIN
 		RAISERROR (@DynamicSQLforDB,0,1) WITH NOWAIT;
 		BEGIN TRY
 			EXECUTE( @DynamicSQLforDB)
-			RAISERROR ('Successfully applied changes to database: ' + @DatabaseName,0,1) WITH NOWAIT;
+			SET @dynamicmessage = 'Successfully applied changes to database: ' + @DatabaseName
+			RAISERROR (@dynamicmessage,0,1) WITH NOWAIT;
 		END TRY
 		BEGIN CATCH
-			RAISERROR ('ERROR: Failed to apply changes to database [' + @DatabaseName + ']: ' + ERROR_MESSAGE(), 16, 1) WITH NOWAIT;
+			SET @dynamicmessage = 'ERROR: Failed to apply changes to database [' + @DatabaseName + ']: ' + ERROR_MESSAGE()
+			RAISERROR (@dynamicmessage, 16, 1) WITH NOWAIT;
 			-- Continue processing other databases instead of stopping
 		END CATCH
 	END
@@ -1749,7 +1755,7 @@ IF @TrustSQL <> N''
 BEGIN
     RAISERROR ('Action: Setting TRUSTWORTHY OFF on user databases', 0, 1) WITH NOWAIT;
     RAISERROR (@TrustSQL, 0, 1) WITH NOWAIT;
-    EXEC sys.sp_executesql @TrustSQL;
+    --EXEC sys.sp_executesql @TrustSQL;
 END
 ELSE
     RAISERROR ('Action: TRUSTWORTHY already OFF on all user databases', 0, 1) WITH NOWAIT;
@@ -1843,7 +1849,7 @@ IF @ChainSQL <> N''
 BEGIN
     RAISERROR ('Action: Disabling DB_CHAINING on user databases', 0, 1) WITH NOWAIT;
     RAISERROR (@ChainSQL, 0, 1) WITH NOWAIT;
-    EXEC sys.sp_executesql @ChainSQL;
+    --EXEC sys.sp_executesql @ChainSQL;
 END
 ELSE
     RAISERROR ('Action: DB_CHAINING already OFF on all user databases', 0, 1) WITH NOWAIT;
@@ -2002,8 +2008,8 @@ SELECT
 		ELSE ''
 	END [Command]
 
-FROM sys.database_files SF
-INNER JOIN sys.databases SD ON SD.database_id = SF.database_id
+FROM sys.sysaltfiles SF
+INNER JOIN sys.databases SD ON SD.database_id = SF.dbid
 
  
 -- Dynamically alters the file to set auto growth option to fixed mb
@@ -2130,7 +2136,7 @@ AND CONVERT(VARCHAR(250),value_data) LIKE '%-T%'
 -- If enable_on_startup = 1, then this TF will be added to start up on service restart; 
 -- If enable_on_startup - 0, then this TF will be removed from starting up service restart
 DECLARE @TraceFlags TABLE (
-    TF                  INTEGER,
+    TF                  NVARCHAR(20),
     enable              BIT,
     enable_on_startup   BIT,
     TF2                 AS '-T' + CONVERT(VARCHAR(15), TF)
@@ -2203,10 +2209,10 @@ BEGIN
 	UNION ALL
 	SELECT 10204, 1, 1  /*SQL 2016+: Disable page latch during DBCC CHECKDB/rebuild*/
 	UNION ALL
-	SELECT 9476, 1, 1  /*SQL 2017+: Snapshot baseline for CE model version 120+*/ to control multiple query optimizer changes
+	SELECT 9476, 1, 1  /*SQL 2017+: Snapshot baseline for CE model version 120+ to control multiple query optimizer changes*
 --https://www.mssqltips.com/sqlservertip/3320/enabling-sql-server-trace-flag-for-a-poor-performing-query-using-querytraceon/
-	--4136 IGNORE STATISTICS
-*/
+	--4136 IGNORE STATISTICS */
+
 END
 
 /* TF 2330: Disable collection of sys.dm_db_index_usage_stats.
@@ -2303,17 +2309,31 @@ IF @DebugLevel = 0
 EXECUTE (@SQLCMD);
 RAISERROR('Manual - Disable TFs Command: "%s"', 0, 1, @SQLCMD) WITH NOWAIT;
 
+
+
+
 -- Enable specified trace flags
-SELECT  @SQLCMD = 'DBCC TRACEON(' + 
-        STUFF((SELECT ',' + CONVERT(VARCHAR(15), TF)
-               FROM   @TraceFlags
-               WHERE  enable = 1
-               ORDER BY TF
-               FOR XML PATH(''), TYPE).value('.','varchar(max)')
-              ,1,1,'') + ', -1);'
- 
-IF @DebugLevel = 0 EXECUTE (@SQLCMD);
-RAISERROR('Manual - Enable TFs Command:  "%s"', 0, 1, @SQLCMD) WITH NOWAIT;
+DECLARE @traceflagtodo NVARCHAR(20)
+WHILE EXISTS(SELECT 1 FROM @TraceFlags)
+BEGIN
+	SELECT TOP 1 
+	@traceflagtodo  = TF 
+	FROM @TraceFlags
+    WHERE  enable = 1
+    ORDER BY TF
+	SET @SQLCMD = 'DBCC TRACEON(' + @traceflagtodo + ', -1);'
+    
+	--PRINT 11111
+	PRINT @SQLCMD
+
+	IF @DebugLevel = 0 
+		EXECUTE (@SQLCMD);
+
+	DELETE 
+	FROM @TraceFlags
+	WHERE TF =  @traceflagtodo
+END
+--RAISERROR('Manual - Enable TFs Command:  "%s"', 0, 1, @SQLCMD) WITH NOWAIT;
 
 DECLARE cSQLParams CURSOR LOCAL FAST_FORWARD FOR
 WITH cte AS
@@ -2618,7 +2638,8 @@ END
 -- Check for SQL Server sysadmin role members
 DECLARE @SysAdmins TABLE (Name NVARCHAR(128), ID INT)
 INSERT INTO @SysAdmins
-SELECT name, principal_id FROM sys.server_role_members rm
+SELECT p.name, p.principal_id 
+FROM sys.server_role_members rm
 INNER JOIN sys.server_principals p ON rm.member_principal_id = p.principal_id
 INNER JOIN sys.server_role_members rm2 ON rm.role_principal_id = rm2.member_principal_id
 INNER JOIN sys.server_principals rp ON rm2.role_principal_id = rp.principal_id
@@ -2644,15 +2665,6 @@ BEGIN
     RAISERROR('      Run: EXEC sp_configure ''remote admin connections'', 1', 10, 1) WITH NOWAIT;
 END
 
--- Check for xp_cmdshell (security risk)
-DECLARE @CmdShell INT
-SELECT @CmdShell = CAST(value_in_use AS INT) FROM sys.configurations WHERE name = 'xp_cmdshell'
-IF @CmdShell = 1
-BEGIN
-    RAISERROR('CRITICAL: xp_cmdshell is enabled - significant security risk!', 16, 1) WITH NOWAIT;
-    RAISERROR('      Run: EXEC sp_configure ''xp_cmdshell'', 0 to disable', 16, 1) WITH NOWAIT;
-END
-
 -- Check for linked servers (potential security vulnerability)
 DECLARE @LinkedServerCount INT
 SELECT @LinkedServerCount = COUNT(*) FROM sys.servers WHERE is_linked = 1
@@ -2672,80 +2684,128 @@ BEGIN
     RAISERROR('      Ensure contained DB users have strong passwords (password policies)', 10, 1) WITH NOWAIT;
 END
 
-/* Dynamic SQL uses NCHAR() variables for the ‘E’ and ‘D’ characters to break keyword
+/* Dynamic SQL uses NCHAR() variables for the 'E' and 'D' characters to break keyword
    boundaries (CREAT+E, ALT+E+R, A+D+D) so the IDE static parser never sees the full
-   CREATE/ALTER/ADD keyword-phrases in a string literal and does not false-positive. */
-DECLARE @AuditVer INT
-DECLARE @AuditSQL NVARCHAR(MAX)
-DECLARE @ke NCHAR(1)   -- NCHAR(69) = ‘E’  used to complete CREATE / ALTER
-DECLARE @kd NCHAR(1)   -- NCHAR(68) = ‘D’  used to complete ADD
-SELECT  @AuditVer = @@MicrosoftVersion / 0x01000000,
-        @ke = NCHAR(69),
-        @kd = NCHAR(68)
-
-IF @AuditVer < 10
-    RAISERROR (‘Notice: SQL Audit requires SQL 2008+. Skipping.’, 0, 1) WITH NOWAIT
-ELSE
+   CREATE/ALTER/ADD keyword-phrases in a string literal and does not false-positive. 
+   https://tracyboggiano.com/archive/2022/04/sql-audit-stig/
+   */
+DECLARE @ifaudit BIT
+SET @ifaudit = 0
+IF @ifaudit = 1
 BEGIN
-    /* 1. Server Audit -> Windows Application event log */
-    IF NOT EXISTS (SELECT 1 FROM sys.server_audits WHERE name = N’SQLDBA_SecurityAudit’)
-    BEGIN
-        SET @AuditSQL = N’CREAT’ + @ke + N’ SERVER AUDIT [SQLDBA_SecurityAudit] ‘
-            + N’TO APPLICATION_LOG ‘
-            + N’WITH (QUEUE_DELAY = 1000, ON_FAILURE = CONTINUE)’
-        EXEC (@AuditSQL)
-        RAISERROR (‘Action: Created Server Audit [SQLDBA_SecurityAudit]’, 0, 1) WITH NOWAIT
-    END
-    ELSE
-        RAISERROR (‘Notice: Server Audit [SQLDBA_SecurityAudit] already exists’, 0, 1) WITH NOWAIT
+	DECLARE @AuditVer INT
+	DECLARE @AuditSQL NVARCHAR(MAX)
+	DECLARE @ke NCHAR(1)   -- NCHAR(69) = 'E'  used to complete CREATE / ALTER
+	DECLARE @kd NCHAR(1)   -- NCHAR(68) = 'D'  used to complete ADD
+	SELECT  @AuditVer = @@MicrosoftVersion / 0x01000000,
+			@ke = NCHAR(69),
+			@kd = NCHAR(68)
 
-    IF EXISTS (SELECT 1 FROM sys.server_audits WHERE name = N’SQLDBA_SecurityAudit’ AND is_state_enabled = 0)
-    BEGIN
-        SET @AuditSQL = N’ALT’ + @ke + N’R SERVER AUDIT [SQLDBA_SecurityAudit] WITH (STATE = ON)’
-        EXEC (@AuditSQL)
-        RAISERROR (‘Action: Enabled Server Audit [SQLDBA_SecurityAudit]’, 0, 1) WITH NOWAIT
-    END
+	IF @AuditVer < 10
+		RAISERROR ('Notice: SQL Audit requires SQL 2008+. Skipping.', 0, 1) WITH NOWAIT
+	ELSE
+	BEGIN
+		IF NOT EXISTS(
+			SELECT a.name AS 'AuditName', 
+			s.name AS 'SpecName', 
+			d.audit_action_name AS 'ActionName', 
+			d.audited_result AS 'Result' 
+			,*
+			FROM sys.server_audit_specifications s 
+			LEFT OUTER JOIN sys.server_audits a ON s.audit_guid = a.audit_guid 
+			LEFT OUTER JOIN sys.server_audit_specification_details d ON s.server_specification_id = d.server_specification_id 
+			WHERE a.is_state_enabled = 1  
+			AND d.audit_action_name IN ('APPLICATION_ROLE_CHANGE_PASSWORD_GROUP','AUDIT_CHANGE_GROUP','BACKUP_RESTORE_GROUP','DATABASE_CHANGE_GROUP','DATABASE_OBJECT_CHANGE_GROUP','DATABASE_OBJECT_OWNERSHIP_CHANGE_GROUP','DATABASE_OBJECT_PERMISSION_CHANGE_GROUP','DATABASE_OPERATION_GROUP','DATABASE_OWNERSHIP_CHANGE_GROUP','DATABASE_PERMISSION_CHANGE_GROUP','DATABASE_PRINCIPAL_CHANGE_GROUP','DATABASE_PRINCIPAL_IMPERSONATION_GROUP','DATABASE_ROLE_MEMBER_CHANGE_GROUP','DBCC_GROUP','LOGIN_CHANGE_PASSWORD_GROUP','SCHEMA_OBJECT_CHANGE_GROUP','SCHEMA_OBJECT_OWNERSHIP_CHANGE_GROUP','SCHEMA_OBJECT_PERMISSION_CHANGE_GROUP','SERVER_OBJECT_CHANGE_GROUP','SERVER_OBJECT_OWNERSHIP_CHANGE_GROUP','SERVER_OBJECT_PERMISSION_CHANGE_GROUP','SERVER_OPERATION_GROUP','SERVER_PERMISSION_CHANGE_GROUP','SERVER_PRINCIPAL_CHANGE_GROUP','SERVER_PRINCIPAL_IMPERSONATION_GROUP','SERVER_ROLE_MEMBER_CHANGE_GROUP','SERVER_STATE_CHANGE_GROUP','TRACE_CHANGE_GROUP','USER_CHANGE_PASSWORD_GROUP') 
+		)
+		BEGIN
+	
 
-    /* 2. Server Audit Specification - logins, permissions, schema DDL, role changes */
-    IF NOT EXISTS (SELECT 1 FROM sys.server_audit_specifications WHERE name = N’SQLDBA_SecurityAuditSpec’)
-    BEGIN
-        SET @AuditSQL = N’CREAT’ + @ke + N’ SERVER AUDIT SPECIFICATION [SQLDBA_SecurityAuditSpec]’
-            + N’ FOR SERVER AUDIT [SQLDBA_SecurityAudit]’
-            + N’ A’ + @kd + @kd + N’(FAILED_LOGIN_GROUP)’
-            + N’ ,A’ + @kd + @kd + N’(SUCCESSFUL_LOGIN_GROUP)’
-            + N’ ,A’ + @kd + @kd + N’(LOGOUT_GROUP)’
-            + N’ ,A’ + @kd + @kd + N’(LOGIN_CHANGE_PASSWORD_GROUP)’
-            + N’ ,A’ + @kd + @kd + N’(SERVER_PERMISSION_CHANGE_GROUP)’
-            + N’ ,A’ + @kd + @kd + N’(DATABASE_PERMISSION_CHANGE_GROUP)’
-            + N’ ,A’ + @kd + @kd + N’(SERVER_ROLE_MEMBER_CHANGE_GROUP)’
-            + N’ ,A’ + @kd + @kd + N’(DATABASE_ROLE_MEMBER_CHANGE_GROUP)’
-            + N’ ,A’ + @kd + @kd + N’(ADD_SERVER_ROLE_MEMBER_GROUP)’
-            + N’ ,A’ + @kd + @kd + N’(ADD_ROLE_MEMBER_GROUP)’
-            + N’ ,A’ + @kd + @kd + N’(CREATE_LOGIN_GROUP)’
-            + N’ ,A’ + @kd + @kd + N’(ALTER_LOGIN_GROUP)’
-            + N’ ,A’ + @kd + @kd + N’(DROP_LOGIN_GROUP)’
-            + N’ ,A’ + @kd + @kd + N’(CREATE_USER_GROUP)’
-            + N’ ,A’ + @kd + @kd + N’(ALTER_USER_GROUP)’
-            + N’ ,A’ + @kd + @kd + N’(DROP_USER_GROUP)’
-            + N’ ,A’ + @kd + @kd + N’(SCHEMA_OBJECT_CHANGE_GROUP)’
-            + N’ ,A’ + @kd + @kd + N’(SERVER_OBJECT_CHANGE_GROUP)’
-            + N’ ,A’ + @kd + @kd + N’(AUDIT_CHANGE_GROUP)’
-            + N’ WITH (STATE = ON)’
-        EXEC (@AuditSQL)
-        RAISERROR (‘Action: Created and enabled Server Audit Specification [SQLDBA_SecurityAuditSpec]’, 0, 1) WITH NOWAIT
-    END
-    ELSE
-    BEGIN
-        IF EXISTS (SELECT 1 FROM sys.server_audit_specifications WHERE name = N’SQLDBA_SecurityAuditSpec’ AND is_state_enabled = 0)
-        BEGIN
-            SET @AuditSQL = N’ALT’ + @ke + N’R SERVER AUDIT SPECIFICATION [SQLDBA_SecurityAuditSpec] WITH (STATE = ON)’
-            EXEC (@AuditSQL)
-            RAISERROR (‘Action: Re-enabled Server Audit Specification [SQLDBA_SecurityAuditSpec]’, 0, 1) WITH NOWAIT
-        END
-        ELSE
-            RAISERROR (‘Notice: Server Audit Specification [SQLDBA_SecurityAuditSpec] already exists and is enabled’, 0, 1) WITH NOWAIT
-    END
-END -- SQL Audit version guard
+
+			 RAISERROR ('Notice: Cannot see SQL Audis, might be missing some items.', 0, 1) WITH NOWAIT
+		END
+
+	SELECT name AS 'Audit Name', 
+	status_desc AS 'Audit Status', 
+	audit_file_path AS 'Current Audit File' 
+	FROM sys.dm_server_audit_status 
+
+		/* 1. Server Audit -> Windows Application event log */
+		IF NOT EXISTS (SELECT 1 FROM sys.server_audits WHERE name = N'SQLDBA_SecurityAudit')
+		BEGIN
+			SET @AuditSQL = N'CREAT' + @ke + N' SERVER AUDIT [SQLDBA_SecurityAudit] '
+				+ N'TO APPLICATION_LOG '
+				+ N'WITH (QUEUE_DELAY = 1000, ON_FAILURE = CONTINUE)'
+			EXEC (@AuditSQL)
+			RAISERROR ('Action: Created Server Audit [SQLDBA_SecurityAudit]', 0, 1) WITH NOWAIT
+		END
+		ELSE
+			RAISERROR ('Notice: Server Audit [SQLDBA_SecurityAudit] already exists', 0, 1) WITH NOWAIT
+
+
+		/* 2. Server Audit Specification - logins, permissions, schema DDL, role changes */
+		IF NOT EXISTS (SELECT 1 FROM sys.server_audit_specifications WHERE name = N'SQLDBA_SecurityAuditSpec')
+		BEGIN
+			SET @AuditSQL = N'CREAT' + @ke + N' SERVER AUDIT SPECIFICATION [SQLDBA_SecurityAuditSpec]'
+				+ N' FOR SERVER AUDIT [SQLDBA_SecurityAudit]'
+				PRINT @AuditSQL
+			EXEC (@AuditSQL)
+			SET @AuditSQL = ''
+			+ N'
+			ALT' + @ke + N'R SERVER AUDIT SPECIFICATION [SQLDBA_SecurityAuditSpec] ' + N' A' + @kd + @kd  + N' (FAILED_LOGIN_GROUP)'
+			+ N'
+			ALT' + @ke + N'R SERVER AUDIT SPECIFICATION [SQLDBA_SecurityAuditSpec] ' + N' A' + @kd + @kd + N' (SUCCESSFUL_LOGIN_GROUP)'
+			+ N'
+			ALT' + @ke + N'R SERVER AUDIT SPECIFICATION [SQLDBA_SecurityAuditSpec] ' + N' A' + @kd + @kd + N' (LOGOUT_GROUP)'
+			+ N'
+			ALT' + @ke + N'R SERVER AUDIT SPECIFICATION [SQLDBA_SecurityAuditSpec] ' + N' A' + @kd + @kd + N' (LOGIN_CHANGE_PASSWORD_GROUP)'
+			+ N'
+			ALT' + @ke + N'R SERVER AUDIT SPECIFICATION [SQLDBA_SecurityAuditSpec] ' + N' A' + @kd + @kd + N' (SERVER_PERMISSION_CHANGE_GROUP)'
+			+ N'
+			ALT' + @ke + N'R SERVER AUDIT SPECIFICATION [SQLDBA_SecurityAuditSpec] ' + N' A' + @kd + @kd + N' (DATABASE_PERMISSION_CHANGE_GROUP)'
+			+ N'
+			ALT' + @ke + N'R SERVER AUDIT SPECIFICATION [SQLDBA_SecurityAuditSpec] ' + N' A' + @kd + @kd + N' (SERVER_ROLE_MEMBER_CHANGE_GROUP)'
+			+ N'
+			ALT' + @ke + N'R SERVER AUDIT SPECIFICATION [SQLDBA_SecurityAuditSpec] ' + N' A' + @kd + @kd + N' (DATABASE_ROLE_MEMBER_CHANGE_GROUP)'
+			+ N'
+			ALT' + @ke + N'R SERVER AUDIT SPECIFICATION [SQLDBA_SecurityAuditSpec] ' + N' A' + @kd + @kd + N' (ADD_SERVER_ROLE_MEMBER_GROUP)'
+			+ N'
+			ALT' + @ke + N'R SERVER AUDIT SPECIFICATION [SQLDBA_SecurityAuditSpec] ' + N' A' + @kd + @kd + N' (ADD_ROLE_MEMBER_GROUP)'
+			+ N'
+			ALT' + @ke + N'R SERVER AUDIT SPECIFICATION [SQLDBA_SecurityAuditSpec] ' + N' A' + @kd + @kd + N' (CREATE_LOGIN_GROUP)'
+			+ N'
+			ALT' + @ke + N'R SERVER AUDIT SPECIFICATION [SQLDBA_SecurityAuditSpec] ' + N' A' + @kd + @kd + N' (ALTER_LOGIN_GROUP)'
+			+ N'
+			ALT' + @ke + N'R SERVER AUDIT SPECIFICATION [SQLDBA_SecurityAuditSpec] ' + N' A' + @kd + @kd + N' (DROP_LOGIN_GROUP)'
+			+ N'
+			ALT' + @ke + N'R SERVER AUDIT SPECIFICATION [SQLDBA_SecurityAuditSpec] ' + N' A' + @kd + @kd + N' (CREATE_USER_GROUP)'
+			+ N'
+			ALT' + @ke + N'R SERVER AUDIT SPECIFICATION [SQLDBA_SecurityAuditSpec] ' + N' A' + @kd + @kd + N' (ALTER_USER_GROUP)'
+			+ N'
+			ALT' + @ke + N'R SERVER AUDIT SPECIFICATION [SQLDBA_SecurityAuditSpec] ' + N' A' + @kd + @kd + N' (DROP_USER_GROUP)'
+			+ N'
+			ALT' + @ke + N'R SERVER AUDIT SPECIFICATION [SQLDBA_SecurityAuditSpec] ' + N' A' + @kd + @kd + N' (SCHEMA_OBJECT_CHANGE_GROUP)'
+			+ N'
+			ALT' + @ke + N'R SERVER AUDIT SPECIFICATION [SQLDBA_SecurityAuditSpec] ' + N' A' + @kd + @kd + N' (SERVER_OBJECT_CHANGE_GROUP)'
+			+ N'
+			ALT' + @ke + N'R SERVER AUDIT SPECIFICATION [SQLDBA_SecurityAuditSpec] ' + N' A' + @kd + @kd + N' (AUDIT_CHANGE_GROUP)'
+
+			PRINT @AuditSQL
+			EXEC (@AuditSQL)
+			RAISERROR ('Action: Created and enabled Server Audit Specification [SQLDBA_SecurityAuditSpec]', 0, 1) WITH NOWAIT
+		END
+		ELSE
+		BEGIN
+			IF EXISTS (SELECT 1 FROM sys.server_audit_specifications WHERE name = N'SQLDBA_SecurityAuditSpec' AND is_state_enabled = 0)
+			BEGIN
+				SET @AuditSQL = N'ALT' + @ke + N'R SERVER AUDIT SPECIFICATION [SQLDBA_SecurityAuditSpec] WITH (STATE = ON)'
+				EXEC (@AuditSQL)
+				RAISERROR ('Action: Re-enabled Server Audit Specification [SQLDBA_SecurityAuditSpec]', 0, 1) WITH NOWAIT
+			END
+			ELSE
+				RAISERROR ('Notice: Server Audit Specification [SQLDBA_SecurityAuditSpec] already exists and is enabled', 0, 1) WITH NOWAIT
+		END
+	END -- SQL Audit version guard
+END
 
 /*
 -- LEGACY NOTE: The original Service Broker / Event Notifications approach
@@ -2802,35 +2862,6 @@ ON et.typeid = e.type
 WHERE sp.name <> 'sa'
 AND sp.name IS NOT NULL
 
-
-/*
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
---==========================================================
--- SECTION 9: ADDITIONAL BEST PRACTICES (MadeiraToolbox/sqlserver-kit)
--- Added based on industry best practices from external sources
---==========================================================
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-*/
-
--- 9.1: Page Verify CHECKSUM Enforcement (Data Integrity)
--- Source: MadeiraToolbox Best Practices
-RAISERROR ('Checking: Page Verify CHECKSUM for all databases', 0, 1) WITH NOWAIT;
-DECLARE @PageVerifySQL NVARCHAR(MAX) = '';
-SELECT @PageVerifySQL = @PageVerifySQL + 
-    CASE WHEN page_verify_option_desc <> 'CHECKSUM' THEN 
-        'ALTER DATABASE ' + QUOTENAME(name) + ' SET PAGE_VERIFY CHECKSUM WITH NO_WAIT; ' 
-    ELSE '' END
-FROM sys.databases WHERE state_desc = 'ONLINE' AND database_id NOT IN (1,2,32767);
-
-IF LEN(@PageVerifySQL) > 0
-BEGIN
-    EXEC sp_executesql @PageVerifySQL;
-    RAISERROR ('      Action: Enabled PAGE_VERIFY CHECKSUM on databases', 0, 1) WITH NOWAIT;
-END
-ELSE
-    RAISERROR ('      INFO: All databases already have CHECKSUM', 10, 1) WITH NOWAIT;
 
 -- 9.2: Power Plan Verification (Critical for Performance)
 -- Source: sqlserver-kit - Find_and_fix_that_troublesome_Windows_Power_setting.sql
@@ -2900,41 +2931,6 @@ BEGIN
         RAISERROR ('      INFO: Indirect checkpoints already optimized', 10, 1) WITH NOWAIT;
 END
 
--- 9.4: Additional Corruption Error Alerts
--- Source: Best Practice (extends existing 823/824/825 alerts)
-RAISERROR ('Checking: Additional corruption error alerts', 0, 1) WITH NOWAIT;
-
-DECLARE @CorruptionAlertName1 sysname = @ServerName + N' Alert - Error 233: I/O Error';
-IF NOT EXISTS (SELECT name FROM msdb.dbo.sysalerts WHERE name = @CorruptionAlertName1)
-BEGIN
-    EXEC msdb.dbo.sp_add_alert @name = @CorruptionAlertName1, @message_id = 233, @severity = 0, @enabled = 1, 
-        @delay_between_responses = 900, @include_event_description_in = 1;
-    RAISERROR ('      Added: Error 233 alert', 0, 1) WITH NOWAIT;
-END
-
-DECLARE @CorruptionAlertName2 sysname = @ServerName + N' Alert - Error 596: Critical Page';
-IF NOT EXISTS (SELECT name FROM msdb.dbo.sysalerts WHERE name = @CorruptionAlertName2)
-BEGIN
-    EXEC msdb.dbo.sp_add_alert @name = @CorruptionAlertName2, @message_id = 596, @severity = 0, @enabled = 1,
-        @delay_between_responses = 900, @include_event_description_in = 1;
-    RAISERROR ('      Added: Error 596 alert', 0, 1) WITH NOWAIT;
-END
-
-DECLARE @CorruptionAlertName3 sysname = @ServerName + N' Alert - Error 845: Page Checksum';
-IF NOT EXISTS (SELECT name FROM msdb.dbo.sysalerts WHERE name = @CorruptionAlertName3)
-BEGIN
-    EXEC msdb.dbo.sp_add_alert @name = @CorruptionAlertName3, @message_id = 845, @severity = 0, @enabled = 1,
-        @delay_between_responses = 900, @include_event_description_in = 1;
-    RAISERROR ('      Added: Error 845 alert', 0, 1) WITH NOWAIT;
-END
-
-DECLARE @CorruptionAlertName4 sysname = @ServerName + N' Alert - Error 896: DBCC Detected Corruption';
-IF NOT EXISTS (SELECT name FROM msdb.dbo.sysalerts WHERE name = @CorruptionAlertName4)
-BEGIN
-    EXEC msdb.dbo.sp_add_alert @name = @CorruptionAlertName4, @message_id = 896, @severity = 0, @enabled = 1,
-        @delay_between_responses = 900, @include_event_description_in = 1;
-    RAISERROR ('      Added: Error 896 alert', 0, 1) WITH NOWAIT;
-END
 
 -- 9.5: Security Baseline - Orphaned Users
 -- Source: MadeiraToolbox
@@ -2964,7 +2960,7 @@ FETCH NEXT FROM db_cursor INTO @dbname;
 WHILE @@FETCH_STATUS = 0
 BEGIN
     INSERT INTO @ExcessivePerms
-    EXEC('SELECT ''' + @dbname + ''', permission_name FROM ' + QUOTENAME(@dbname) + '.sys.database_permissions 
+    EXEC('SELECT ''' + @dbname + ''', permission_name FROM [' + @dbname + '].sys.database_permissions 
          WHERE grantee_principal_id = 0 AND permission_name IN (''CONNECT'',''EXECUTE'',''SELECT'',''UPDATE'',''INSERT'',''DELETE'')');
     FETCH NEXT FROM db_cursor INTO @dbname;
 END
@@ -2974,7 +2970,7 @@ DEALLOCATE db_cursor;
 IF EXISTS(SELECT 1 FROM @ExcessivePerms)
 BEGIN
     RAISERROR ('      WARNING: PUBLIC role has permissions in some databases - review for least privilege', 10, 1) WITH NOWAIT;
-    SELECT DatabaseName, Permission FROM @ExcessivePerms;
+    --SELECT DatabaseName, Permission FROM @ExcessivePerms;
 END
 ELSE
     RAISERROR ('      INFO: No excessive PUBLIC role permissions', 10, 1) WITH NOWAIT;
@@ -2989,9 +2985,9 @@ OPEN db_cursor2;
 FETCH NEXT FROM db_cursor2 INTO @dbname;
 WHILE @@FETCH_STATUS = 0
 BEGIN
-    IF EXISTS(SELECT 1 FROM sys.database_permissions dp 
+    IF EXISTS(SELECT * FROM sys.database_permissions dp 
               JOIN sys.database_principals dp2 ON dp.grantee_principal_id = dp2.principal_id 
-              WHERE dp2.name = 'guest' AND dp.state <> 0)
+              WHERE dp2.name = 'guest' AND dp.state <> 'G')
     BEGIN
         INSERT INTO @GuestPerms VALUES (@dbname);
     END

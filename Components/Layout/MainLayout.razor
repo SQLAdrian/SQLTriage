@@ -2,13 +2,38 @@
 @using Microsoft.AspNetCore.Components.Routing
 @using Microsoft.AspNetCore.Components.Web
 @using SqlHealthAssessment.Components.Shared
+@using Radzen.Blazor
+@inject SqlHealthAssessment.Data.Services.ThemeService ThemeSvc
+@implements IDisposable
 
 <!-- Skip link for screen readers -->
 <a href="#main-content" class="skip-link">Skip to main content</a>
 
+<div class="print-header" aria-hidden="true">
+    <span class="print-header-brand"><i class="fa-solid fa-heart-pulse"></i> SQL Health Assessment</span>
+    <span class="print-header-date" id="print-header-date"></span>
+</div>
+<div class="print-footer" aria-hidden="true">
+    <span class="print-footer-label">SQL Health Assessment — Internal Use Only</span>
+    <span class="print-footer-page">Page <span class="print-page-num"></span></span>
+</div>
+
+@if (_afterFirstRender)
+{
+    <ErrorBoundary>
+        <ChildContent>
+            <RadzenComponents />
+        </ChildContent>
+        <ErrorContent Context="ex">
+            @{ LogErrorToConsole(ex); }
+        </ErrorContent>
+    </ErrorBoundary>
+}
+
 <div class="app-container" tabindex="0" role="application" aria-label="SQL Health Assessment Application" @onkeydown="HandleKeyDown">
     <ToastContainer />
     <ShortcutsDialog IsVisible="@showShortcuts" OnClose="@(() => showShortcuts = false)" />
+    <ServerModeToggle />
     <Router AppAssembly="@typeof(MainLayout).Assembly">
     <Found Context="routeData">
         <div class="app-layout" role="main" aria-label="Main content area">
@@ -47,6 +72,32 @@
     [Inject] private NavigationManager Navigation { get; set; } = null!;
     [Inject] private IJSRuntime JS { get; set; } = null!;
     private bool showShortcuts = false;
+    private bool _afterFirstRender = false;
+
+    protected override void OnInitialized()
+    {
+        ThemeSvc.OnThemeChanged += OnThemeChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _afterFirstRender = true;
+            StateHasChanged();
+        }
+        await Task.CompletedTask;
+    }
+
+    private void OnThemeChanged()
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        ThemeSvc.OnThemeChanged -= OnThemeChanged;
+    }
 
     private async void LogErrorToConsole(Exception ex)
     {

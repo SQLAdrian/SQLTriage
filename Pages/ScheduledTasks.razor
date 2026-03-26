@@ -1,0 +1,504 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/scheduled-tasks"
+@using SqlHealthAssessment.Data
+@using SqlHealthAssessment.Data.Models
+@using SqlHealthAssessment.Data.Services
+@inject ScheduledTaskDefinitionService Definitions
+@inject ScheduledTaskEngine Engine
+@inject ScheduledTaskHistoryService History
+@inject ServerConnectionManager ConnectionManager
+@inject AzureBlobExportService BlobExport
+@inject ToastService Toast
+@implements IDisposable
+
+<div class="settings-page" style="max-width: 1400px;">
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+        <h2 style="margin: 0; color: var(--text-primary);">Scheduled Tasks</h2>
+        <div style="display: flex; gap: 8px; align-items: center;">
+            <span style="font-size: 12px; color: var(--text-muted);">Engine:</span>
+            @if (Engine.IsRunning)
+            {
+                <button class="btn-sm btn-danger" @onclick="ToggleEngine">Stop</button>
+            }
+            else
+            {
+                <button class="btn-sm btn-success" @onclick="ToggleEngine">Start</button>
+            }
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <div style="display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border);">
+        <button class="sched-tab @(_activeTab == "tasks" ? "active" : "")" @onclick='() => _activeTab = "tasks"'>
+            Tasks (@_tasks.Count)
+        </button>
+        <button class="sched-tab @(_activeTab == "edit" ? "active" : "")" @onclick='() => { if (_editTask == null) NewTask(); _activeTab = "edit"; }'>
+            @(_isNewTask ? "Add Task" : "Edit Task")
+        </button>
+        <button class="sched-tab @(_activeTab == "history" ? "active" : "")" @onclick='() => { LoadHistory(); _activeTab = "history"; }'>
+            Execution History
+        </button>
+    </div>
+
+    <!-- Tasks List -->
+    @if (_activeTab == "tasks")
+    {
+        <div style="margin-bottom: 12px;">
+            <button class="btn-sm btn-primary" @onclick="NewTask">+ Add Task</button>
+        </div>
+        <div class="settings-group">
+            @if (_tasks.Count == 0)
+            {
+                <p style="color: var(--text-muted); padding: 20px; text-align: center;">No scheduled tasks configured. Click "Add Task" to create one.</p>
+            }
+            else
+            {
+                <table class="results-table" style="width: 100%;">
+                    <thead>
+                        <tr>
+                            <th style="width: 40px;">On</th>
+                            <th>Name</th>
+                            <th>Schedule</th>
+                            <th>Server</th>
+                            <th>Output</th>
+                            <th>Last Run</th>
+                            <th>Status</th>
+                            <th style="width: 180px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var task in _tasks)
+                        {
+                            var lastExec = _lastExecutions.TryGetValue(task.Id, out var le) ? le : null;
+                            <tr>
+                                <td>
+                                    <input type="checkbox" checked="@task.Enabled"
+                                           @onchange="e => ToggleEnabled(task.Id, (bool)(e.Value ?? false))" />
+                                </td>
+                                <td>
+                                    <strong style="color: var(--text-primary);">@task.Name</strong>
+                                    @if (!string.IsNullOrEmpty(task.Description))
+                                    {
+                                        <br /><span style="font-size: 11px; color: var(--text-muted);">@task.Description</span>
+                                    }
+                                </td>
+                                <td style="font-size: 12px;">@FormatSchedule(task.Schedule)</td>
+                                <td style="font-size: 12px;">@(string.IsNullOrEmpty(task.ServerName) ? "All Servers" : task.ServerName)</td>
+                                <td style="font-size: 11px;">
+                                    @if (task.Output.ExportCsv) { <span class="output-badge">CSV</span> }
+                                    @if (task.Output.UploadToAzureBlob) { <span class="output-badge">Azure</span> }
+                                    @if (task.Output.SendEmail) { <span class="output-badge">Email</span> }
+                                </td>
+                                <td style="font-size: 12px; color: var(--text-muted);">
+                                    @(lastExec?.StartedAt.ToLocalTime().ToString("g") ?? "Never")
+                                </td>
+                                <td>
+                                    @if (lastExec != null)
+                                    {
+                                        <span class="status-badge status-@lastExec.Status.ToLower()">@lastExec.Status</span>
+                                    }
+                                </td>
+                                <td>
+                                    <button class="btn-xs btn-primary" @onclick="() => EditTask(task)" title="Edit">Edit</button>
+                                    <button class="btn-xs btn-success" @onclick="() => RunNow(task)" disabled="@_runningTaskIds.Contains(task.Id)" title="Run Now">
+                                        @if (_runningTaskIds.Contains(task.Id)) { <text>Running...</text> } else { <text>Run Now</text> }
+                                    </button>
+                                    <button class="btn-xs btn-danger" @onclick="() => DeleteTask(task.Id)" title="Delete">Del</button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+
+    <!-- Edit / Add Task -->
+    @if (_activeTab == "edit" && _editTask != null)
+    {
+        <div class="settings-group" style="max-width: 900px;">
+            <div class="edit-grid">
+                <label>Name</label>
+                <input type="text" class="settings-input" @bind="_editTask.Name" placeholder="e.g. Daily Index Rebuild" />
+
+                <label>Description</label>
+                <input type="text" class="settings-input" @bind="_editTask.Description" placeholder="Optional description" />
+
+                <label>Schedule</label>
+                <select class="settings-input" @bind="_editScheduleType">
+                    <option value="Daily">Daily</option>
+                    <option value="Weekly">Weekly</option>
+                    <option value="Monthly">Monthly</option>
+                    <option value="CustomInterval">Custom Interval</option>
+                </select>
+
+                @if (_editScheduleType != "CustomInterval")
+                {
+                    <label>Time (HH:mm)</label>
+                    <input type="text" class="settings-input" @bind="_editTask.Schedule.TimeOfDay" placeholder="HH:mm" />
+                }
+
+                @if (_editScheduleType == "Weekly")
+                {
+                    <label>Day of Week</label>
+                    <select class="settings-input" @bind="_editDayOfWeek">
+                        @foreach (var d in Enum.GetValues<DayOfWeek>())
+                        {
+                            <option value="@d">@d</option>
+                        }
+                    </select>
+                }
+
+                @if (_editScheduleType == "Monthly")
+                {
+                    <label>Day of Month</label>
+                    <input type="number" class="settings-input" min="1" max="28" @bind="_editDayOfMonth" />
+                }
+
+                @if (_editScheduleType == "CustomInterval")
+                {
+                    <label>Interval (minutes)</label>
+                    <input type="number" class="settings-input" min="1" @bind="_editIntervalMinutes" />
+                }
+
+                <label>Server</label>
+                <select class="settings-input" @bind="_editTask.ServerName">
+                    <option value="">All Enabled Servers</option>
+                    @foreach (var conn in ConnectionManager.GetEnabledConnections())
+                    {
+                        @foreach (var s in conn.GetServerList())
+                        {
+                            <option value="@s">@s</option>
+                        }
+                    }
+                </select>
+
+                <label>Database</label>
+                <input type="text" class="settings-input" @bind="_editTask.Database" placeholder="master" />
+
+                <label>Timeout (sec)</label>
+                <input type="number" class="settings-input" min="1" max="3600" @bind="_editTask.CommandTimeoutSeconds" />
+
+                <label>SQL Query</label>
+                <textarea class="sql-editor" rows="8" @bind="_editTask.Query" placeholder="EXEC dbo.sp_MyProcedure @@Param1 = 1"></textarea>
+
+                <label>Output Options</label>
+                <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
+                    <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text-primary);">
+                        <input type="checkbox" @bind="_editTask.Output.ExportCsv" /> Export CSV
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; color: @(BlobExport.IsConfigured ? "var(--text-primary)" : "var(--text-muted)");">
+                        <input type="checkbox" @bind="_editTask.Output.UploadToAzureBlob" disabled="@(!BlobExport.IsConfigured)" /> Upload to Azure
+                        @if (!BlobExport.IsConfigured) { <span style="font-size: 10px;">(not configured)</span> }
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text-primary);">
+                        <input type="checkbox" @bind="_editTask.Output.SendEmail" /> Send Email
+                    </label>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 8px; margin-top: 16px;">
+                <button class="btn-sm btn-primary" @onclick="SaveTask">Save</button>
+                <button class="btn-sm btn-secondary" @onclick="CancelEdit">Cancel</button>
+            </div>
+        </div>
+    }
+
+    <!-- Execution History -->
+    @if (_activeTab == "history")
+    {
+        <div class="settings-group">
+            @if (_executions.Count == 0)
+            {
+                <p style="color: var(--text-muted); padding: 20px; text-align: center;">No execution history yet.</p>
+            }
+            else
+            {
+                <table class="results-table" style="width: 100%;">
+                    <thead>
+                        <tr>
+                            <th>Task</th>
+                            <th>Server</th>
+                            <th>Status</th>
+                            <th>Started</th>
+                            <th>Duration</th>
+                            <th>Rows</th>
+                            <th>Output</th>
+                            <th>Error</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var exec in _executions)
+                        {
+                            <tr>
+                                <td style="color: var(--text-primary);">@exec.TaskName</td>
+                                <td style="font-size: 12px;">@exec.ServerName</td>
+                                <td><span class="status-badge status-@exec.Status.ToLower()">@exec.Status</span></td>
+                                <td style="font-size: 12px;">@exec.StartedAt.ToLocalTime().ToString("g")</td>
+                                <td style="font-size: 12px;">@(exec.DurationSeconds.ToString("F1"))s</td>
+                                <td>@exec.RowCount</td>
+                                <td style="font-size: 11px;">
+                                    @if (!string.IsNullOrEmpty(exec.CsvFilePath)) { <span class="output-badge">CSV</span> }
+                                    @if (!string.IsNullOrEmpty(exec.BlobUri)) { <span class="output-badge">Azure</span> }
+                                    @if (exec.EmailSent) { <span class="output-badge">Email</span> }
+                                </td>
+                                <td style="font-size: 11px; color: var(--danger, #f44336); max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="@exec.ErrorMessage">
+                                    @(exec.ErrorMessage ?? "")
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+</div>
+
+<style>
+    .sched-tab {
+        padding: 8px 16px;
+        background: transparent;
+        border: none;
+        color: var(--text-muted);
+        cursor: pointer;
+        font-size: 13px;
+        border-bottom: 2px solid transparent;
+        transition: color 0.15s;
+    }
+    .sched-tab:hover { color: var(--text-primary); }
+    .sched-tab.active {
+        color: var(--accent, #2196f3);
+        border-bottom-color: var(--accent, #2196f3);
+    }
+    .edit-grid {
+        display: grid;
+        grid-template-columns: 140px 1fr;
+        gap: 10px 16px;
+        align-items: start;
+    }
+    .edit-grid label {
+        font-size: 13px;
+        color: var(--text-secondary);
+        padding-top: 6px;
+        text-align: right;
+    }
+    .edit-grid textarea.sql-editor {
+        grid-column: 2;
+        font-family: 'Cascadia Code', 'Consolas', monospace;
+        min-height: 120px;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        color: var(--text-primary);
+        padding: 8px;
+        border-radius: 4px;
+        width: 100%;
+        resize: vertical;
+        font-size: 12px;
+    }
+    .output-badge {
+        display: inline-block;
+        padding: 1px 6px;
+        border-radius: 3px;
+        font-size: 10px;
+        font-weight: 600;
+        background: var(--accent, #2196f3);
+        color: #fff;
+        margin-right: 3px;
+    }
+    .status-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 3px;
+        font-size: 11px;
+        font-weight: 600;
+    }
+    .status-success { background: rgba(76, 175, 80, 0.2); color: #4caf50; }
+    .status-failed  { background: rgba(244, 67, 54, 0.2); color: #f44336; }
+    .status-running { background: rgba(33, 150, 243, 0.2); color: #2196f3; }
+    .btn-xs {
+        padding: 2px 8px;
+        border: none;
+        border-radius: 3px;
+        font-size: 11px;
+        cursor: pointer;
+        font-weight: 600;
+    }
+    .btn-xs.btn-primary { background: var(--accent, #2196f3); color: #fff; }
+    .btn-xs.btn-success { background: #4caf50; color: #fff; }
+    .btn-xs.btn-danger  { background: #f44336; color: #fff; }
+</style>
+
+@code {
+    private string _activeTab = "tasks";
+    private List<ScheduledTaskDefinition> _tasks = new();
+    private List<ScheduledTaskExecution> _executions = new();
+    private Dictionary<string, ScheduledTaskExecution> _lastExecutions = new();
+    private HashSet<string> _runningTaskIds = new();
+    private ScheduledTaskDefinition? _editTask;
+    private bool _isNewTask;
+
+    // Edit form binding helpers
+    private string _editScheduleType = "Daily";
+    private DayOfWeek _editDayOfWeek = DayOfWeek.Monday;
+    private int _editDayOfMonth = 1;
+    private int _editIntervalMinutes = 60;
+
+    protected override void OnInitialized()
+    {
+        LoadData();
+        Engine.OnTaskCompleted += OnTaskCompleted;
+    }
+
+    private void LoadData()
+    {
+        _tasks = Definitions.GetAllTasks();
+        _lastExecutions.Clear();
+        foreach (var task in _tasks)
+        {
+            var last = History.GetLastExecution(task.Id);
+            if (last != null) _lastExecutions[task.Id] = last;
+        }
+    }
+
+    private void LoadHistory()
+    {
+        _executions = History.GetRecentExecutions(100);
+    }
+
+    private void ToggleEngine()
+    {
+        if (Engine.IsRunning) Engine.Stop();
+        else Engine.Start();
+        StateHasChanged();
+    }
+
+    private void ToggleEnabled(string taskId, bool enabled)
+    {
+        Definitions.SetTaskEnabled(taskId, enabled);
+        LoadData();
+    }
+
+    private void NewTask()
+    {
+        _editTask = new ScheduledTaskDefinition();
+        _isNewTask = true;
+        _editScheduleType = "Daily";
+        _editDayOfWeek = DayOfWeek.Monday;
+        _editDayOfMonth = 1;
+        _editIntervalMinutes = 60;
+        _activeTab = "edit";
+    }
+
+    private void EditTask(ScheduledTaskDefinition task)
+    {
+        // Clone for editing
+        _editTask = new ScheduledTaskDefinition
+        {
+            Id = task.Id,
+            Name = task.Name,
+            Description = task.Description,
+            Enabled = task.Enabled,
+            ServerName = task.ServerName,
+            Database = task.Database,
+            Query = task.Query,
+            CommandTimeoutSeconds = task.CommandTimeoutSeconds,
+            Schedule = new TaskSchedule
+            {
+                Type = task.Schedule.Type,
+                TimeOfDay = task.Schedule.TimeOfDay,
+                DayOfWeek = task.Schedule.DayOfWeek,
+                DayOfMonth = task.Schedule.DayOfMonth,
+                IntervalMinutes = task.Schedule.IntervalMinutes
+            },
+            Output = new TaskOutputOptions
+            {
+                ExportCsv = task.Output.ExportCsv,
+                UploadToAzureBlob = task.Output.UploadToAzureBlob,
+                SendEmail = task.Output.SendEmail
+            },
+            CreatedAt = task.CreatedAt
+        };
+        _isNewTask = false;
+        _editScheduleType = task.Schedule.Type.ToString();
+        _editDayOfWeek = task.Schedule.DayOfWeek ?? DayOfWeek.Monday;
+        _editDayOfMonth = task.Schedule.DayOfMonth ?? 1;
+        _editIntervalMinutes = task.Schedule.IntervalMinutes ?? 60;
+        _activeTab = "edit";
+    }
+
+    private void SaveTask()
+    {
+        if (_editTask == null || string.IsNullOrWhiteSpace(_editTask.Name)) return;
+
+        // Map schedule type from binding
+        _editTask.Schedule.Type = Enum.Parse<ScheduleType>(_editScheduleType);
+        _editTask.Schedule.DayOfWeek = _editScheduleType == "Weekly" ? _editDayOfWeek : null;
+        _editTask.Schedule.DayOfMonth = _editScheduleType == "Monthly" ? _editDayOfMonth : null;
+        _editTask.Schedule.IntervalMinutes = _editScheduleType == "CustomInterval" ? _editIntervalMinutes : null;
+
+        if (_isNewTask)
+            Definitions.AddTask(_editTask);
+        else
+            Definitions.UpdateTask(_editTask);
+
+        _editTask = null;
+        _activeTab = "tasks";
+        LoadData();
+        Toast.ShowSuccess("Scheduled Tasks", "Task saved", 3000);
+    }
+
+    private void CancelEdit()
+    {
+        _editTask = null;
+        _activeTab = "tasks";
+    }
+
+    private void DeleteTask(string taskId)
+    {
+        Definitions.DeleteTask(taskId);
+        LoadData();
+    }
+
+    private async Task RunNow(ScheduledTaskDefinition task)
+    {
+        _runningTaskIds.Add(task.Id);
+        StateHasChanged();
+
+        try
+        {
+            await Engine.RunTaskNowAsync(task.Id);
+        }
+        finally
+        {
+            _runningTaskIds.Remove(task.Id);
+            LoadData();
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void OnTaskCompleted()
+    {
+        _ = InvokeAsync(() =>
+        {
+            LoadData();
+            StateHasChanged();
+        });
+    }
+
+    private static string FormatSchedule(TaskSchedule s)
+    {
+        return s.Type switch
+        {
+            ScheduleType.Daily => "Daily at " + s.TimeOfDay,
+            ScheduleType.Weekly => (s.DayOfWeek?.ToString() ?? "Sun") + " at " + s.TimeOfDay,
+            ScheduleType.Monthly => "Day " + (s.DayOfMonth ?? 1) + " at " + s.TimeOfDay,
+            ScheduleType.CustomInterval => "Every " + (s.IntervalMinutes ?? 60) + " min",
+            _ => "Unknown"
+        };
+    }
+
+    public void Dispose()
+    {
+        Engine.OnTaskCompleted -= OnTaskCompleted;
+    }
+}

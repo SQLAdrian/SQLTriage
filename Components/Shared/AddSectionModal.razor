@@ -1,0 +1,146 @@
+@* In the name of God, the Merciful, the Compassionate *@
+@using SqlHealthAssessment.Data.Models
+
+@if (IsVisible)
+{
+    <div class="modal-overlay" @onclick="Cancel">
+    <div class="modal add-section-modal" @onclick:stopPropagation>
+
+        <div class="modal-header">
+            <h3><i class="fa-solid fa-plus"></i> Add Section</h3>
+            <button class="modal-close" @onclick="Cancel"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+
+        <div class="sed-body" style="padding: 20px;">
+
+            <div class="add-section-choices">
+                <button class="add-section-choice @(_choice == "native" ? "add-section-choice--active" : "")"
+                        @onclick='() => _choice = "native"'>
+                    <i class="fa-solid fa-puzzle-piece"></i>
+                    <span class="asc-title">Native Slot</span>
+                    <span class="asc-desc">Re-add one of the page's built-in content blocks</span>
+                </button>
+                <button class="add-section-choice @(_choice == "panel" ? "add-section-choice--active" : "")"
+                        @onclick='() => _choice = "panel"'>
+                    <i class="fa-solid fa-chart-bar"></i>
+                    <span class="asc-title">Custom Panel</span>
+                    <span class="asc-desc">Add a new data panel with a custom SQL query</span>
+                </button>
+            </div>
+
+            @if (_choice == "native")
+            {
+                <div class="form-section" style="margin-top: 16px;">
+                    <div class="form-group">
+                        <label>Native Slot</label>
+                        <select @bind="_nativeKey">
+                            <option value="">— select —</option>
+                            @foreach (var key in NativeKeys)
+                            {
+                                <option value="@key">@key</option>
+                            }
+                        </select>
+                        <small>Each native slot can appear only once on the page.</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Display Title</label>
+                        <input type="text" @bind="_title" placeholder="@_nativeKey" />
+                    </div>
+                </div>
+            }
+
+            @if (_choice == "panel")
+            {
+                <div class="form-section" style="margin-top: 16px;">
+                    <div class="form-group">
+                        <label>Panel Type</label>
+                        <select @bind="_panelType">
+                            <option value="DataGrid">Data Grid</option>
+                            <option value="StatCard">Stat Card</option>
+                            <option value="TimeSeries">Time Series Chart</option>
+                            <option value="BarGauge">Bar Gauge</option>
+                            <option value="CheckStatus">Check Status</option>
+                            <option value="TextCard">Text Card</option>
+                            <option value="DeltaStatCard">Delta Stat Card (per/sec)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Section Title</label>
+                        <input type="text" @bind="_title" placeholder="My custom panel" />
+                    </div>
+                    <small style="color: var(--text-muted);">
+                        You can configure the SQL query and display options after adding the section.
+                    </small>
+                </div>
+            }
+        </div>
+
+        <div class="modal-footer sed-footer">
+            <button class="btn btn-secondary" @onclick="Cancel">Cancel</button>
+            <button class="btn btn-primary" @onclick="Confirm"
+                    disabled="@(!CanConfirm)">
+                <i class="fa-solid fa-plus"></i> Add Section
+            </button>
+        </div>
+    </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsVisible   { get; set; }
+    [Parameter] public List<string> NativeKeys { get; set; } = new();
+    [Parameter] public EventCallback<ReportSection> OnAdd    { get; set; }
+    [Parameter] public EventCallback               OnCancel { get; set; }
+
+    private string _choice    = "native";
+    private string _nativeKey = "";
+    private string _title     = "";
+    private string _panelType = "DataGrid";
+
+    private bool CanConfirm =>
+        _choice == "panel"
+            ? !string.IsNullOrWhiteSpace(_title)
+            : !string.IsNullOrWhiteSpace(_nativeKey);
+
+    protected override void OnParametersSet()
+    {
+        if (IsVisible)
+        {
+            _choice    = NativeKeys.Count > 0 ? "native" : "panel";
+            _nativeKey = "";
+            _title     = "";
+            _panelType = "DataGrid";
+        }
+    }
+
+    private async Task Confirm()
+    {
+        if (!CanConfirm) return;
+
+        var section = new ReportSection
+        {
+            Id          = Guid.NewGuid().ToString("N")[..8],
+            Title       = !string.IsNullOrWhiteSpace(_title) ? _title : _nativeKey,
+            SectionType = _choice,
+            NativeKey   = _choice == "native" ? _nativeKey : "",
+            Enabled     = true,
+        };
+
+        if (_choice == "panel")
+        {
+            section.PanelConfig = new PanelDefinition
+            {
+                Id        = section.Id,
+                Title     = section.Title,
+                PanelType = _panelType,
+                Height    = 300,
+                Query     = new QueryPair { SqlServer = "SELECT ..." },
+                Layout    = new PanelLayout { Column = 1, SpanColumns = true },
+            };
+        }
+
+        await OnAdd.InvokeAsync(section);
+    }
+
+    private async Task Cancel() => await OnCancel.InvokeAsync();
+}

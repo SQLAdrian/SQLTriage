@@ -1,7 +1,7 @@
 /* بسم الله الرحمن الرحيم  */
 /* In the name of God, the Merciful, the Compassionate */
 IF OBJECT_ID('dbo.sp_triage®') IS NULL
-  EXEC ('CREATE PROCEDURE dbo.sp_triage® AS RETURN 0;');
+  EXEC ('CREATE PROCEDURE dbo.[sp_triage®] AS RETURN 0;');
 GO
 
 ALTER PROCEDURE [dbo].[sp_triage®]  --@Debug = 0]
@@ -4333,6 +4333,27 @@ IF @Debug = 1
 				, Severity
 				, HoursToResolveWithTesting 
 			)
+			SELECT TOP 50 5
+			,L.ProcessInfo
+			, CONVERT(NVARCHAR(500),CONVERT(NVARCHAR(50),[EventCount]) +' events in ' + CONVERT(NVARCHAR(50), DATEDIFF(HOUR,L.[From],L.[To])) + ' hours. ' + L.LogText +'. ' + m.text)
+			--,L.[Error]
+			--,L.[From]
+			--,L.[To]
+			, @Result_Warning 
+			, 0.25
+			FROM(
+			SELECT L.ProcessInfo, L.LogText
+			,REPLACE(LEFT(L.LogText, CHARINDEX(',',L.LogText)-1),'Error: ','') [Error]
+			, COUNT(1) [EventCount]
+			,MIN(L.LogDate) [From]
+			,MAX(L.LogDate) [To]
+			FROM @SQLLogData L
+			GROUP BY L.ProcessInfo, L.LogText
+			)L
+			INNER JOIN  sys.messages M ON M.message_id = L.Error AND M.language_id = 1033
+			WHERE L.LogText LIKE 'Error:%'
+
+			UNION ALL
 			SELECT TOP 35 5, 'Date:'
 			+ CONVERT([VARCHAR](20),LogDate,120)
 			, replace(replace(replace(replace(CONVERT([NVARCHAR] (500),LogText), CHAR(9), ' '),CHAR(10),' '), CHAR(13), ' '), '  ',' ')  
@@ -4341,8 +4362,7 @@ IF @Debug = 1
 
 			FROM @SQLLogData
 			WHERE LogDate > DATEADD(MONTH,-1,GETDATE())
-			--FROM @LoginLog 
-			ORDER BY LogDate DESC
+			AND LogText NOT LIKE 'Error:%'
 			OPTION (RECOMPILE);
 		END
 	END
@@ -4395,11 +4415,13 @@ IF @Debug = 1
 			EXEC sp_executesql @dynamicSQL;
 		END 
 
+		/*Already checked before
 		BEGIN   
 			SET @dynamicSQL = 'EXEC sp_readerrorlog 1, 1, ''Error:'' '
 			INSERT @Errorlog
 			EXEC sp_executesql @dynamicSQL;
 		END
+		*/
 		IF EXISTS (SELECT * FROM @Errorlog)
 		BEGIN
 			INSERT #output_sqldba_org_sp_triage 
@@ -4424,7 +4446,7 @@ IF @Debug = 1
 				, Details
 				, HoursToResolveWithTesting  
 			)
-			SELECT 
+			SELECT TOP 100
 			6
 			, 'Date:'+ CONVERT([VARCHAR](20),LogDate ,120)
 			, 'ErrorLevel:'+ CONVERT([VARCHAR](20),ErrorLevel)
@@ -6441,7 +6463,7 @@ END
 				, mid.inequality_columns
 				, mid.included_columns
 				, ''SELECT STUFF(( SELECT '''', '''' + [Columns] 
-			FROM ( SELECT TOP 25 c1.[id], [Columns], [Count] 
+			FROM ( SELECT TOP 100 PERCENT c1.[id], [Columns], [Count] 
 			FROM (
 			SELECT ROW_NUMBER() OVER(ORDER BY [RankMe]) [id], LTRIM([Columns]) [Columns] 
 			FROM (VALUES('''''' + REPLACE(ISNULL(mid.equality_columns + ISNULL('',''+ mid.inequality_columns,''''),ISNULL(mid.inequality_columns,'''')) ,'','','''''',1),('''''') 
@@ -6449,8 +6471,8 @@ END
 			+ '' LEFT OUTER JOIN (
 			SELECT ROW_NUMBER() OVER(ORDER BY [Count]) [id] ,LTRIM([Count]) [Count] 
 			FROM (VALUES((SELECT COUNT (DISTINCT '' + REPLACE(ISNULL(mid.equality_columns + ISNULL('',''+ mid.inequality_columns,''''),ISNULL(mid.inequality_columns,'''')) ,'',''
-			,'') FROM '' + [statement] +'')),((SELECT COUNT (DISTINCT '') 
-			+'') FROM '' + [statement] +'')))t ([Count]) )c2 ON c2.id = c1.id 
+			,'') FROM '' + [statement] +'' WITH(NOLOCK)),((SELECT COUNT (DISTINCT '') 
+			+'') FROM '' + [statement] +'' WITH(NOLOCK))))t ([Count]) )c2 ON c2.id = c1.id 
 			ORDER BY c2.[Count] * 1 DESC
 			) t1 FOR XML PATH('''''''')),1,1,'''''''') AS NameValues'' [BeingClever]
 			FROM [sys].dm_db_missing_index_group_stats AS migs 
@@ -9602,7 +9624,7 @@ END CATCH
 	----------------------------------------*/
 BEGIN TRY
 	SET @CustomErrorText = 'Batch averages from perfmon'
-	/*https://learn.microsoft.com/en-us/archive/blogs/sql_pfe_blog/create-a-quick-and-easy-performance-baseline*/
+	/*https://learn.microsoft.com/en-us/archive/blogs/sql_pfe_blog/create-a-quick-and-easy-performance-baseline */
 	INSERT #output_sqldba_org_sp_triage (
 		[SectionID]
 		, [Section]
@@ -9671,7 +9693,7 @@ END CATCH
 	----------------------------------------*/
 BEGIN TRY
 	SET @CustomErrorText = 'TCP listener states'
-	/*https://learn.microsoft.com/en-us/archive/blogs/sql_pfe_blog/create-a-quick-and-easy-performance-baseline*/
+	
 	INSERT #output_sqldba_org_sp_triage (
 		[SectionID]
 		, [Section]
@@ -9739,7 +9761,7 @@ LogDate	ProcessInfo	Text
 	----------------------------------------*/
 BEGIN TRY
 	SET @CustomErrorText = 'Endpoints'
-	/*https://learn.microsoft.com/en-us/archive/blogs/sql_pfe_blog/create-a-quick-and-easy-performance-baseline*/
+	
 	INSERT #output_sqldba_org_sp_triage (
 		[SectionID]
 		, [Section]
@@ -9791,7 +9813,7 @@ END CATCH
 	----------------------------------------*/
 BEGIN TRY
 	SET @CustomErrorText = 'Connections ports and IPs'
-	/*https://learn.microsoft.com/en-us/archive/blogs/sql_pfe_blog/create-a-quick-and-easy-performance-baseline*/
+	
 	INSERT #output_sqldba_org_sp_triage (
 		[SectionID]
 		, [Section]
@@ -9841,7 +9863,7 @@ END CATCH
 	----------------------------------------*/
 BEGIN TRY
 	SET @CustomErrorText = 'Server registry'
-	/*https://learn.microsoft.com/en-us/archive/blogs/sql_pfe_blog/create-a-quick-and-easy-performance-baseline*/
+	
 	INSERT #output_sqldba_org_sp_triage (
 		[SectionID]
 		, [Section]
@@ -9884,7 +9906,7 @@ END CATCH
 	----------------------------------------*/
 BEGIN TRY
 	SET @CustomErrorText = 'Check certificates'
-	/*https://learn.microsoft.com/en-us/archive/blogs/sql_pfe_blog/create-a-quick-and-easy-performance-baseline*/
+	
 	INSERT #output_sqldba_org_sp_triage (
 		[SectionID]
 		, [Section]
@@ -9907,48 +9929,58 @@ BEGIN TRY
 		LIKE '%certificate%';
 		/*A self-generated certificate was successfully loaded for encryption.*/
 
+
+		
+		SET @dynamicSQL = 'SELECT 
+		DISTINCT 
+			109
+			, @CustomErrorText
+			,''"State":''
+			+ CASE 
+				WHEN GETDATE() > expiry_date THEN ''"!Expired!"''
+				WHEN DATEADD(MONTH,3,GETDATE()) > expiry_date THEN ''"Expiring Soon"''
+				ELSE ''"Ok"''
+			END
+			+
+			'',"CertName":"'' + ISNULL(name,'''') +''"''
+			+
+			'',"CertSubject]":"'' + ISNULL(subject,'''') +''"''
+			+
+			'',"CertIssuer]":"'' + ISNULL(issuer_name,'''') +''"''
+
+			, ''"DaysToExpire":"'' +CONVERT(VARCHAR(10),DATEDIFF(DAY,GETDATE(),expiry_date)) +''"''
+			+ 
+			'',"StartDate":"'' +CONVERT(VARCHAR,start_date,120) +''"''
+			+ 
+			'',"ExpiryDate":"'' +CONVERT(VARCHAR,expiry_date,120) +''"''
+
+			+ 
+			'',"Type":"'' + CASE
+				WHEN name LIKE ''##%'' THEN ''Internal''
+				ELSE ''External''
+			END +''"''
+			+ 
+			'',"pvt_key_encryption_type_desc":"'' + ISNULL(pvt_key_encryption_type_desc,'''')
+			'',"KeyLength":"'
+			--Does not work in SQL 2014, 12
+			+ CASE WHEN CONVERT( TINYINT ,@SQLVersion) <= 12 -- 2012- 
+			THEN '' + 'CONVERT(VARCHAR(10),ISNULL(key_length,'''')) '
+			ELSE ''
+			END
+			+' 
+			
+
+		FROM [master].sys.certificates
+		WHERE 1=1
+		AND name NOT LIKE ''##%'' '
+		
 		INSERT #output_sqldba_org_sp_triage (
 		[SectionID]
 		, [Section]
 		, [Summary]
 		, [Details]
 		)
-		SELECT 
-		DISTINCT 
-			109
-			, @CustomErrorText
-			,'"State":'
-			+ CASE 
-				WHEN GETDATE() > expiry_date THEN '"!Expired!"'
-				WHEN DATEADD(MONTH,3,GETDATE()) > expiry_date THEN '"Expiring Soon"'
-				ELSE '"Ok"'
-			END
-			+
-			',"CertName":"' + ISNULL(name,'') +'"'
-			+
-			',"CertSubject]":"' + ISNULL(subject,'') +'"'
-			+
-			',"CertIssuer]":"' + ISNULL(issuer_name,'') +'"'
-
-			, '"DaysToExpire":"' +CONVERT(VARCHAR(10),DATEDIFF(DAY,GETDATE(),expiry_date)) +'"'
-			+ 
-			',"StartDate":"' +CONVERT(VARCHAR,start_date,120) +'"'
-			+ 
-			',"ExpiryDate":"' +CONVERT(VARCHAR,expiry_date,120) +'"'
-
-			+ 
-			',"Type":"' + CASE
-				WHEN name LIKE '##%' THEN 'Internal'
-				ELSE 'External'
-			END +'"'
-			+ 
-			',"pvt_key_encryption_type_desc":"' + ISNULL(pvt_key_encryption_type_desc,'')
-			+ 
-			',"KeyLength":"' + CONVERT(VARCHAR(10),ISNULL(key_length,'')) 
-
-		FROM [master].sys.certificates
-		WHERE 1=1
-		AND name NOT LIKE '##%'
+		EXEC sp_executesql @dynamicSQL		
 
 		SET @CustomErrorText = 'Done looking at '+ @CustomErrorText
 END TRY
@@ -9974,7 +10006,7 @@ END CATCH
 	----------------------------------------*/
 BEGIN TRY
 	SET @CustomErrorText = 'Availability Group synchronization lag'
-	/*https://learn.microsoft.com/en-us/archive/blogs/sql_pfe_blog/create-a-quick-and-easy-performance-baseline*/
+	
 	INSERT #output_sqldba_org_sp_triage 
 		(
 			[SectionID]

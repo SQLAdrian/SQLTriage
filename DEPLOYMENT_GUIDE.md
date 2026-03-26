@@ -84,7 +84,7 @@ msiexec /i SqlHealthAssessment.msi INSTALLDIR="C:\CustomPath" /quiet /qn /norest
   "QueryTimeoutSeconds": 60,
   "MaxQueryRows": 10000,
   "RefreshIntervalSeconds": 35,
-  "MaxCacheSizeBytes": 524288000
+  "MaxCacheSizeMB": 500
 }
 ```
 
@@ -256,7 +256,7 @@ sqlcmd -S SERVER_NAME -E -Q "SELECT @@VERSION"
 ```json
 {
   "QueryTimeoutSeconds": 120,
-  "MaxCacheSizeBytes": 1073741824,
+  "MaxCacheSizeMB": 1024,
   "MaxQueryRows": 5000
 }
 ```
@@ -271,7 +271,7 @@ sqlcmd -S SERVER_NAME -E -Q "SELECT @@VERSION"
 **Solution:**
 ```json
 {
-  "MaxCacheSizeBytes": 268435456,
+  "MaxCacheSizeMB": 256,
   "CacheEvictionHours": 12,
   "MaxQueryRows": 5000
 }
@@ -439,5 +439,5 @@ HKEY_CURRENT_USER\SOFTWARE\SqlHealthAssessment
 ---
 
 **Document Version:** 1.0
-**Last Updated:** 2026-02-24
-**Applies To:** SQL Health Assessment v1.0+
+**Last Updated:** 2026-03-23
+**Applies To:** SQL Health Assessment v0.79.0+

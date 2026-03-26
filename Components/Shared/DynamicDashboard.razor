@@ -22,6 +22,16 @@
 @implements IDisposable
 
 
+<PanelEditorModal IsVisible="_dashEditingPanel != null"
+    Panel="_dashEditingPanel"
+    OnSave="DashSavePanel"
+    OnCancel="() => _dashEditingPanel = null" />
+
+<AddSectionModal IsVisible="_dashShowAddPanel"
+    NativeKeys="new List<string>()"
+    OnAdd="DashHandlePanelAdded"
+    OnCancel="() => _dashShowAddPanel = false" />
+
 @if (ConnectionManager.CurrentServer != null || Instances.Length > 0)
 {
     <div class="server-context-header">
@@ -62,6 +72,11 @@
     <div class="dashboard-title-header">
         <h2>@Dashboard.NavTitle</h2>
         <span class="dashboard-db-context">Database: @Dashboard.DefaultDatabase</span>
+        <button class="btn-edit-page @(_dashEditMode ? "btn-edit-page--active" : "")"
+                @onclick="() => _dashEditMode = !_dashEditMode" title="Edit dashboard panels">
+            <i class="fa-solid fa-pen-to-square"></i>
+            @(_dashEditMode ? "Done Editing" : "Edit Page")
+        </button>
     </div>
     @if (!string.IsNullOrEmpty(Dashboard.Description))
     {
@@ -73,14 +88,21 @@
 
 <DashboardToolbar @bind-TimeRangeMinutes="TimeRangeMinutes"
                   @bind-AutoRefresh="AutoRefresh"
-                  @bind-TimezoneOffsetHours="TimezoneOffsetHours"
                   DataSource="@DataSource"
                   DataSourceChanged="OnDataSourceChanged"
                   OnRefreshRequested="OnManualRefresh"
                   OnServerChanged="OnServerConnectionChanged"
                   IsLoading="@IsLoading"
                   LoadedPanels="@_loadedPanelCount"
-                  TotalPanels="@_totalPanelCount" />
+                  TotalPanels="@_totalPanelCount"
+                  DashboardName="@(Dashboard?.NavTitle ?? DashboardId)" />
+
+<EditPageToolbar EditMode="_dashEditMode"
+    PageTitle="@(Dashboard?.NavTitle ?? DashboardId)"
+    HasUnsavedChanges="false"
+    OnAddSection="() => _dashShowAddPanel = true"
+    OnDone="() => _dashEditMode = false"
+    OnReset="DashResetPanels" />
 
 <div class="dashboard-content">
 
@@ -151,95 +173,130 @@
     }
     else if (Dashboard != null && (CurrentServerHasSqlWatch || !RequiresSqlWatch))
     {
-        @* Stat cards section *@
-        @if (_statPanelsCache?.Any() == true)
+        @if (_dashEditMode)
         {
-            <div class="stat-grid">
-                @foreach (var panel in _statPanelsCache)
+            @* ── Edit mode: flat vertical list of all panels in config order ── *@
+            <div class="dash-edit-list">
+                @{
+                    var allPanels = Dashboard?.Panels ?? new();
+                }
+                @for (int i = 0; i < allPanels.Count; i++)
                 {
-                    if (panel.PanelType == "CheckStatus" && _checkResults.TryGetValue(panel.Id, out var checks))
-                    {
-                        <DynamicPanel Panel="panel" CheckData="checks" TimezoneOffsetHours="@TimezoneOffsetHours" />
-                    }
-                    else if ((panel.PanelType == "StatCard" || panel.PanelType == "DeltaStatCard") && _statResults.TryGetValue(panel.Id, out var stat))
-                    {
-                        <DynamicPanel Panel="panel" StatData="stat" TimezoneOffsetHours="@TimezoneOffsetHours" />
-                    }
+                    var panel = allPanels[i];
+                    var idx   = i;
+                    <DashboardPanelWrapper Panel="panel" EditMode="true"
+                        IsFirst="idx == 0" IsLast="idx == allPanels.Count - 1"
+                        OnMoveUp="DashMoveUp" OnMoveDown="DashMoveDown"
+                        OnDelete="DashDeletePanel" OnEdit="p => _dashEditingPanel = p" OnToggle="DashTogglePanel">
+                        @if (!panel.Enabled)
+                        {
+                            <div class="dash-hidden-placeholder">
+                                <i class="fa-solid fa-eye-slash"></i>
+                                <span>Panel hidden — toggle visibility to show on dashboard</span>
+                            </div>
+                        }
+                        else
+                        {
+                            @RenderPanelForEdit(panel)
+                        }
+                    </DashboardPanelWrapper>
                 }
             </div>
         }
-
-        @* Details section *@
-        @if (_detailsPanelsCache?.Any() == true)
+        else
         {
-            <div class="details-section">
-                @foreach (var panel in _detailsPanelsCache)
-                {
-                    if (_gridResults.TryGetValue(panel.Id, out var grid))
-                    {
-                        <DynamicPanel Panel="panel" GridData="grid" TimezoneOffsetHours="@TimezoneOffsetHours" />
-                    }
-                }
-            </div>
-        }
+            @* ── Normal mode: original grouped grid layout ──────────────────── *@
 
-        @* Bar gauge panels *@
-        @if (_gaugePanelsCache?.Any() == true)
-        {
-            @foreach (var panel in _gaugePanelsCache)
+            @* Stat cards section *@
+            @if (_statPanelsCache?.Any() == true)
             {
-                if (_barGaugeResults.TryGetValue(panel.Id, out var gaugeData))
+                <div class="stat-grid">
+                    @foreach (var panel in _statPanelsCache)
+                    {
+                        if (panel.PanelType == "CheckStatus" && _checkResults.TryGetValue(panel.Id, out var checks))
+                        {
+                            <DynamicPanel Panel="panel" CheckData="checks" TimezoneOffsetHours="@TimezoneOffsetHours" />
+                        }
+                        else if ((panel.PanelType == "StatCard" || panel.PanelType == "DeltaStatCard") && _statResults.TryGetValue(panel.Id, out var stat))
+                        {
+                            <DynamicPanel Panel="panel" StatData="stat" TimezoneOffsetHours="@TimezoneOffsetHours" />
+                        }
+                    }
+                </div>
+            }
+
+            @* Details section *@
+            @if (_detailsPanelsCache?.Any() == true)
+            {
+                <div class="details-section">
+                    @foreach (var panel in _detailsPanelsCache)
+                    {
+                        if (_gridResults.TryGetValue(panel.Id, out var grid))
+                        {
+                            <DynamicPanel Panel="panel" GridData="grid" TimezoneOffsetHours="@TimezoneOffsetHours" />
+                        }
+                    }
+                </div>
+            }
+
+            @* Bar gauge panels *@
+            @if (_gaugePanelsCache?.Any() == true)
+            {
+                @foreach (var panel in _gaugePanelsCache)
                 {
-                    <div class="chart-grid-item" style="position: relative;">
-                        <button class="panel-maximize-btn" @onclick="() => MaximizePanel(panel)" title="Maximize">⛶</button>
-                        <DynamicPanel Panel="panel" BarGaugeData="gaugeData" TimezoneOffsetHours="@TimezoneOffsetHours" />
-                    </div>
+                    if (_barGaugeResults.TryGetValue(panel.Id, out var gaugeData))
+                    {
+                        <div class="chart-grid-item" style="position: relative;">
+                            <button class="panel-maximize-btn" @onclick="() => MaximizePanel(panel)" title="Maximize">⛶</button>
+                            <DynamicPanel Panel="panel" BarGaugeData="gaugeData" TimezoneOffsetHours="@TimezoneOffsetHours" />
+                        </div>
+                    }
                 }
             }
-        }
 
-        @* Maximized panel overlay *@
-        @if (_maximizedPanel != null)
-        {
-            <div class="panel-maximize-overlay" @onclick="RestorePanel">
-                <div class="panel-maximize-content" @onclick:stopPropagation>
-                    <div class="panel-maximize-header">
-                        <span class="panel-maximize-title">@_maximizedPanel.Title</span>
-                        <button class="panel-maximize-close" @onclick="RestorePanel" title="Restore">✕</button>
-                    </div>
-                    <div class="panel-maximize-body">
-                        <DynamicPanel Panel="@_maximizedPanelExpanded"
-                                      TimeSeriesData="@(_timeSeriesResults.TryGetValue(_maximizedPanel.Id, out var mts) ? mts : null)"
-                                      GridData="@(_gridResults.TryGetValue(_maximizedPanel.Id, out var mgd) ? mgd : null)"
-                                      BarGaugeData="@(_barGaugeResults.TryGetValue(_maximizedPanel.Id, out var mbg) ? mbg : null)"
-                                      TimezoneOffsetHours="@TimezoneOffsetHours" />
+            @* Maximized panel overlay *@
+            @if (_maximizedPanel != null)
+            {
+                <div class="panel-maximize-overlay" @onclick="RestorePanel">
+                    <div class="panel-maximize-content" @onclick:stopPropagation>
+                        <div class="panel-maximize-header">
+                            <span class="panel-maximize-title">@_maximizedPanel.Title</span>
+                            <button class="panel-maximize-close" @onclick="RestorePanel" title="Restore">✕</button>
+                        </div>
+                        <div class="panel-maximize-body">
+                            <DynamicPanel Panel="@_maximizedPanelExpanded"
+                                          TimeSeriesData="@(_timeSeriesResults.TryGetValue(_maximizedPanel.Id, out var mts) ? mts : null)"
+                                          GridData="@(_gridResults.TryGetValue(_maximizedPanel.Id, out var mgd) ? mgd : null)"
+                                          BarGaugeData="@(_barGaugeResults.TryGetValue(_maximizedPanel.Id, out var mbg) ? mbg : null)"
+                                          TimezoneOffsetHours="@TimezoneOffsetHours" />
+                        </div>
                     </div>
                 </div>
-            </div>
-        }
+            }
 
-        @* Chart grid - 2 column layout *@
-        @if (_chartPanelsCache?.Any() == true)
-        {
-            <div class="chart-grid">
-                @foreach (var panel in _chartPanelsCache)
-                {
-                    @if (panel.Layout.SpanColumns)
+            @* Chart grid - 2 column layout *@
+            @if (_chartPanelsCache?.Any() == true)
+            {
+                <div class="chart-grid">
+                    @foreach (var panel in _chartPanelsCache)
                     {
-                        <div class="chart-grid-full chart-grid-item">
-                            <button class="panel-maximize-btn" @onclick="() => MaximizePanel(panel)" title="Maximize">⛶</button>
-                            @RenderChartOrGrid(panel)
-                        </div>
+                        @if (panel.Layout.SpanColumns)
+                        {
+                            <div class="chart-grid-full chart-grid-item">
+                                <button class="panel-maximize-btn" @onclick="() => MaximizePanel(panel)" title="Maximize">⛶</button>
+                                @RenderChartOrGrid(panel)
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="chart-grid-item">
+                                <button class="panel-maximize-btn" @onclick="() => MaximizePanel(panel)" title="Maximize">⛶</button>
+                                @RenderChartOrGrid(panel)
+                            </div>
+                        }
                     }
-                    else
-                    {
-                        <div class="chart-grid-item">
-                            <button class="panel-maximize-btn" @onclick="() => MaximizePanel(panel)" title="Maximize">⛶</button>
-                            @RenderChartOrGrid(panel)
-                        </div>
-                    }
-                }
-            </div>
+                </div>
+            }
         }
     }
 </div>
@@ -277,7 +334,91 @@
     private List<PanelDefinition>? _gaugePanelsCache;
     private List<PanelDefinition>? _chartPanelsCache;
 
-    // Maximize state
+    // ── Dashboard edit mode ───────────────────────────────────────────────
+    private bool               _dashEditMode;
+    private PanelDefinition?   _dashEditingPanel;
+    private bool               _dashShowAddPanel;
+
+    private void DashMoveUp(PanelDefinition panel)
+    {
+        if (Dashboard == null) return;
+        var panels = Dashboard.Panels;
+        var idx = panels.IndexOf(panel);
+        if (idx <= 0) return;
+        panels.RemoveAt(idx);
+        panels.Insert(idx - 1, panel);
+        DashSaveAndRebuild();
+    }
+
+    private void DashMoveDown(PanelDefinition panel)
+    {
+        if (Dashboard == null) return;
+        var panels = Dashboard.Panels;
+        var idx = panels.IndexOf(panel);
+        if (idx < 0 || idx >= panels.Count - 1) return;
+        panels.RemoveAt(idx);
+        panels.Insert(idx + 1, panel);
+        DashSaveAndRebuild();
+    }
+
+    private void DashDeletePanel(PanelDefinition panel)
+    {
+        if (Dashboard == null) return;
+        Dashboard.Panels.Remove(panel);
+        DashSaveAndRebuild();
+    }
+
+    private void DashTogglePanel(PanelDefinition panel)
+    {
+        panel.Enabled = !panel.Enabled;
+        DashSaveAndRebuild();
+    }
+
+    private async Task DashSavePanel(PanelDefinition updated)
+    {
+        if (Dashboard == null) { _dashEditingPanel = null; return; }
+        var idx = Dashboard.Panels.FindIndex(p => p.Id == updated.Id);
+        if (idx >= 0) Dashboard.Panels[idx] = updated;
+        _dashEditingPanel = null;
+        DashSaveAndRebuild();
+        await Task.CompletedTask;
+    }
+
+    private async Task DashHandlePanelAdded(ReportSection section)
+    {
+        if (Dashboard == null) { _dashShowAddPanel = false; return; }
+        // AddSectionModal creates a ReportSection with PanelConfig — use its PanelConfig as new panel
+        if (section.PanelConfig != null)
+        {
+            section.PanelConfig.Id = Guid.NewGuid().ToString("N")[..8];
+            section.PanelConfig.Layout ??= new PanelLayout { Column = 1, Order = Dashboard.Panels.Count };
+            Dashboard.Panels.Add(section.PanelConfig);
+            DashSaveAndRebuild();
+        }
+        _dashShowAddPanel = false;
+        await Task.CompletedTask;
+    }
+
+    private void DashResetPanels()
+    {
+        // Reload config from disk to discard unsaved changes
+        Dashboard = ConfigService.Config.Dashboards.FirstOrDefault(d => d.Id == DashboardId);
+        RefreshPanelCaches();
+        _dashEditMode = false;
+    }
+
+    private void DashSaveAndRebuild()
+    {
+        try
+        {
+            ConfigService.UpdateConfig(ConfigService.Config);
+        }
+        catch { /* SQL safety violation — changes discarded */ }
+        RefreshPanelCaches();
+        StateHasChanged();
+    }
+
+    // ── Maximize state ────────────────────────────────────────────────────
     private PanelDefinition? _maximizedPanel;
     private PanelDefinition? _maximizedPanelExpanded;
 
@@ -392,9 +533,10 @@
         Logger.LogInformation("[DynamicDashboard:{DashboardId}] Initializing dashboard", DashboardId);
         LocalLogger.LogInfo($"[DynamicDashboard:{DashboardId}] Starting initialization");
 
-        TimezoneOffsetHours = UserSettings.GetTimezoneOffset();
-        DataSource = UserSettings.GetDataSource();
-        Logger.LogDebug("[DynamicDashboard:{DashboardId}] Settings loaded - TimezoneOffset: {TimezoneOffset}, DataSource: {DataSource}", DashboardId, TimezoneOffsetHours, DataSource);
+        TimezoneOffsetHours = TimeZoneInfo.Local.GetUtcOffset(DateTime.Now).TotalHours;
+        TimeRangeMinutes    = UserSettings.GetDefaultTimeRange();
+        DataSource          = UserSettings.GetDataSource();
+        Logger.LogDebug("[DynamicDashboard:{DashboardId}] Settings loaded - TimezoneOffset: {TimezoneOffset}, TimeRange: {TimeRange}m, DataSource: {DataSource}", DashboardId, TimezoneOffsetHours, TimeRangeMinutes, DataSource);
         
         Dashboard = ConfigService.Config.Dashboards.FirstOrDefault(d => string.Equals(d.Id, DashboardId, StringComparison.OrdinalIgnoreCase));
 
@@ -958,6 +1100,47 @@
     }
 
 
+    /// <summary>Renders a panel's data for the flat edit-mode list using whatever cached results are available.</summary>
+    private RenderFragment RenderPanelForEdit(PanelDefinition panel) => builder =>
+    {
+        if (panel.PanelType == "CheckStatus" && _checkResults.TryGetValue(panel.Id, out var checks))
+        {
+            builder.OpenComponent<DynamicPanel>(0);
+            builder.AddAttribute(1, "Panel", panel);
+            builder.AddAttribute(2, "CheckData", checks);
+            builder.AddAttribute(3, "TimezoneOffsetHours", TimezoneOffsetHours);
+            builder.CloseComponent();
+        }
+        else if ((panel.PanelType == "StatCard" || panel.PanelType == "DeltaStatCard") && _statResults.TryGetValue(panel.Id, out var stat))
+        {
+            builder.OpenComponent<DynamicPanel>(0);
+            builder.AddAttribute(1, "Panel", panel);
+            builder.AddAttribute(2, "StatData", stat);
+            builder.AddAttribute(3, "TimezoneOffsetHours", TimezoneOffsetHours);
+            builder.CloseComponent();
+        }
+        else if (panel.PanelType == "BarGauge" && _barGaugeResults.TryGetValue(panel.Id, out var gauge))
+        {
+            builder.OpenComponent<DynamicPanel>(0);
+            builder.AddAttribute(1, "Panel", panel);
+            builder.AddAttribute(2, "BarGaugeData", gauge);
+            builder.AddAttribute(3, "TimezoneOffsetHours", TimezoneOffsetHours);
+            builder.CloseComponent();
+        }
+        else
+        {
+            // TimeSeries, DataGrid, TextCard, or any panel with no cached data yet
+            builder.OpenComponent<DynamicPanel>(0);
+            builder.AddAttribute(1, "Panel", panel);
+            builder.AddAttribute(2, "TimezoneOffsetHours", TimezoneOffsetHours);
+            if (panel.PanelType == "TimeSeries" && _timeSeriesResults.TryGetValue(panel.Id, out var ts))
+                builder.AddAttribute(3, "TimeSeriesData", ts);
+            else if (_gridResults.TryGetValue(panel.Id, out var grid))
+                builder.AddAttribute(3, "GridData", grid);
+            builder.CloseComponent();
+        }
+    };
+
     private RenderFragment RenderChartOrGrid(PanelDefinition panel) => builder =>
     {
         builder.OpenComponent<DynamicPanel>(0);
@@ -975,6 +1158,13 @@
                 builder.AddAttribute(6, "TopRowsValue", (int?)topRows);
                 builder.AddAttribute(7, "OnTopRowsConfigChanged",
                     EventCallback.Factory.Create<int>(this, val => OnPanelTopRowsChanged(panel.Id, val)));
+            }
+            if (!string.IsNullOrEmpty(panel.ActionColumn))
+            {
+                var mode = panel.ActionColumnMode;
+                builder.AddAttribute(8, "OnActionExecute",
+                    new Func<string, CancellationToken, Task<(bool, string)>>(
+                        (sql, ct) => ExecuteActionSqlAsync(sql, ct, mode)));
             }
         }
         else if (panel.PanelType == "TextCard" && _gridResults.TryGetValue(panel.Id, out var textData))
@@ -1004,6 +1194,73 @@
         catch (Exception ex)
         {
             _panelErrors[panelId] = $"Panel '{panelId}' error: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Executes a SQL action (e.g. CREATE INDEX) on the currently selected server.
+    /// Called by DataGrid action buttons.
+    /// When mode is "query", the cell value is a SELECT that returns the actual DDL — double-hop execution.
+    /// </summary>
+    private async Task<(bool success, string message)> ExecuteActionSqlAsync(string sql, CancellationToken ct, string? mode = null)
+    {
+        if (string.IsNullOrWhiteSpace(sql))
+            return (false, "No SQL to execute");
+
+        var conn = ConnectionManager.GetEnabledConnections().FirstOrDefault();
+        if (conn == null)
+            return (false, "No server connection available");
+
+        var serverName = SelectedInstance;
+        if (string.IsNullOrEmpty(serverName))
+            serverName = conn.GetServerList().FirstOrDefault() ?? "";
+        if (string.IsNullOrEmpty(serverName))
+            return (false, "No server selected");
+
+        try
+        {
+            var connString = conn.GetConnectionString(serverName, "master");
+            using var sqlConn = new Microsoft.Data.SqlClient.SqlConnection(connString);
+            await sqlConn.OpenAsync(ct);
+
+            var ddl = sql;
+
+            // Double-hop: cell value is a query that returns the DDL to execute
+            if (string.Equals(mode, "query", StringComparison.OrdinalIgnoreCase))
+            {
+                using var queryCmd = new Microsoft.Data.SqlClient.SqlCommand(sql, sqlConn)
+                {
+                    CommandTimeout = 60
+                };
+                ct.Register(() => { try { queryCmd.Cancel(); } catch { } });
+
+                var result = await queryCmd.ExecuteScalarAsync(ct);
+                ddl = result?.ToString();
+
+                if (string.IsNullOrWhiteSpace(ddl))
+                    return (false, "The create script query returned no result");
+
+                Logger.LogInformation("Action double-hop on {Server}: query returned {Length} chars", serverName, ddl.Length);
+            }
+
+            using var cmd = new Microsoft.Data.SqlClient.SqlCommand(ddl, sqlConn)
+            {
+                CommandTimeout = 300 // Index creation can take minutes
+            };
+            ct.Register(() => { try { cmd.Cancel(); } catch { } });
+
+            await cmd.ExecuteNonQueryAsync(ct);
+            Logger.LogInformation("Action SQL executed on {Server}: {Sql}", serverName, ddl.Length > 120 ? ddl[..120] + "..." : ddl);
+            return (true, "Executed successfully on " + serverName);
+        }
+        catch (OperationCanceledException)
+        {
+            throw; // Let DataGrid handle as Cancelled state
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Action SQL failed on {Server}", serverName);
+            return (false, ex.Message);
         }
     }
 

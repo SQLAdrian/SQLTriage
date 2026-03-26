@@ -7,6 +7,76 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.80.0] — 2026-03-26
+
+**Enterprise monitoring, multi-channel alerting, and server management release.**
+
+### Added
+- **Replication Monitor dashboard** — publications, subscriptions, undistributed commands, and distribution agent history from `distribution` database DMVs
+- **Always On AG dashboard** — AG health summary, replica status, database sync state with redo/send queue sizes, send queue trend (TimeSeries), redo queue trend (TimeSeries), AG listeners
+- **SQL Agent Job Monitor dashboard** — 4 stat cards (running/failed/succeeded/disabled), all-jobs overview with last outcome and next run, failure detail (step-level), long-running jobs, job schedules
+- **Slack notification channel** — incoming webhook with Block Kit attachments, color-coded by severity
+- **Generic Webhook channel** — HTTP POST with optional Bearer token and custom headers
+- **PagerDuty channel** — Events API v2 with dedup key and severity mapping
+- **ServiceNow channel** — REST Table API incident creation with urgency/impact mapping
+- **Server tagging** — comma-separated tags per connection, displayed as badges on server cards
+- **Server environment labels** — Production, Staging, Development, QA, DR dropdown with color-coded badges
+- **Server filter bar** — click-to-filter by environment or tag across the server inventory
+- **Blazor Circuit Handler** — logs circuit open/close/reconnect/disconnect with active circuit count for server-mode diagnostics
+- **SQLDBA.ORG quick-setup** — one-click Azure Blob Export configuration with consent modal listing shared data categories
+- **Browser print fallback** — `window.print()` PDF export when running in server mode (no WebView2)
+
+### Changed
+- **Connection pool default → 50** — increased from 20 for better multi-circuit concurrency in server mode
+- **Script timeout default → 900 s** — increased from 300 s to support long-running audit scripts (sp_Blitz, sp_triage)
+- **Full Audit row limits removed** — diagnostic scripts now return all rows without truncation
+- **Async void handlers eliminated** — CacheEvictionService timer and memory-pressure callbacks now delegate to proper `async Task` methods
+- **Teams Adaptive Card** — fixed `$schema` key using Dictionary approach (C# identifiers can't start with `$`)
+- **System tray icon** — now extracted from running exe via `Icon.ExtractAssociatedIcon` to match window/taskbar icon
+- **About page** — added Alerting & Notifications, Server Management feature cards; added Replication, Always On AG, Job Monitor to dashboard table
+- **README** — added Alerting & Notifications, Server Management, Always On AG, Replication, Job Monitor sections
+
+### Fixed
+- **Zoom event leak** — `MainWindow.xaml.cs` now unsubscribes from `OnZoomChanged` on window close
+- **Server mode DI crash** — added missing service registrations for `AlertDefinitionService`, `AlertHistoryService`, `AlertEvaluationService`, `ScheduledTaskDefinitionService`, `ScheduledTaskHistoryService`, `ScheduledTaskEngine`
+- **PDF export in server mode** — "WebView not available" error resolved with browser print fallback across Quick Check, Vulnerability Assessment, Sessions, and Dashboard Toolbar
+
+---
+
+## [0.79.0] — 2026-03-23
+
+**Build 616.** Azure Blob integration, UI consistency overhaul, and reliability fixes.
+
+### Added
+- **Azure Blob Export — connection diagnostics modal** — displays SAS token parameters (version, services, permissions, expiry), endpoint URL, auth mode, and signature (truncated) for troubleshooting 403/400 errors
+- **Azure Blob Export — toast notifications** — real-time success/failure feedback for auto-uploaded audit CSVs (previously logged silently)
+- **Azure Blob Export — AzCopy stdout capture** — AzCopy v10 writes errors to stdout, not stderr; now captures both streams concurrently to surface error details
+- **Azure Blob Export — directory-scoped SAS support** — removed `CreateIfNotExistsAsync` calls that fail with narrow SAS scopes; falls back from `GetPropertiesAsync` to blob listing
+- **Azure Blob Export — container name slash splitting** — `raw/ready` auto-splits into container `raw` with blob prefix `ready/`
+- **Settings page — 2-column layout** — small settings groups rendered in a CSS grid for better information density; wide sections (Cache, Azure Blob, Alerting) span full width below
+- **Settings page — Azure Blob diagnostics button** — one-click access to the connection diagnostics modal from the Azure Blob settings group
+- **SQL Auth error hint** — Servers and Settings pages now show a descriptive hint when SQL Server is configured for Windows-only auth mode
+- **Guide page — Alerting & Service Management cards** — new navigation cards for the Alerting Config and Service & Updates pages
+
+### Changed
+- **AlertingConfig page** — converted from Tailwind CSS to app's native CSS design system (`.settings-page`, `.settings-group`, `.settings-field`, `.settings-btn`, `.severity-badge`)
+- **ServiceManagement page** — converted from Tailwind CSS to app's native CSS design system with CSS variable–based status indicators
+- **`MaxCacheSizeBytes` → `MaxCacheSizeMB`** — config key renamed across `appsettings.Production.json`, `appsettings.Development.json`, `CacheEvictionService`, and `CachingQueryExecutor`; values now specified in megabytes
+- **Azure SDK container client** — changed from `new BlobContainerClient(sasUri)` to `BlobServiceClient` approach, fixing `InvalidUri` (400) errors
+- **AzCopy error capture** — concurrent stdout/stderr reads to prevent process deadlock
+- **Startup zoom** — default zoom level changed from 200% to 150% in `user-settings.json`
+- **About page** — added Azure Blob Export feature card; updated User Experience section
+- **Removed ExportData page** — standalone Azure export page was redundant with Settings auto-upload; removed from nav and codebase
+
+### Fixed
+- **Full Audit progress bar** — fixed calculation that showed 200% with single-server runs (1-based index math); clamped to `Math.Min(pct, 100)`
+- **Doubled blob name** — `UploadLocalCsvAsync` no longer re-decorates filenames through `BuildBlobName`; prepends blob prefix directly
+- **IAsyncDisposable crash on exit** — `App.xaml.cs` now tries `DisposeAsync()` before falling back to `IDisposable.Dispose()`, fixing `ServerModeService` shutdown error
+- **Edit server "already exists"** — duplicate-name check moved into the add-new branch only, unblocking edits of existing servers
+- **Azure Blob hostname normalization** — strips `.blob.core.windows.net` suffix from account name input
+
+---
+
 ## [0.78.6] — 2026-03-13
 
 **Build 282.** Post-release feature expansion and query plan overhaul.

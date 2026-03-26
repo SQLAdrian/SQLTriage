@@ -20,7 +20,8 @@ public class SqlAssessmentService
 {
     private readonly ILogger<SqlAssessmentService> _logger;
     private readonly ServerConnectionManager _connectionManager;
-    
+    private readonly AzureBlobExportService? _blobExport;
+
     // Track total checks executed
     public int TotalChecksRun { get; private set; }
     public int TotalChecksPassed { get; private set; }
@@ -28,19 +29,25 @@ public class SqlAssessmentService
 
     private readonly List<AssessmentCheckDefinition> _checkDefinitions;
     private readonly string _rulesetPath;
+    private Dictionary<string, AssessmentCheckDefinition> _checkDefById = new(StringComparer.OrdinalIgnoreCase);
 
-    public SqlAssessmentService(ILogger<SqlAssessmentService> logger, ServerConnectionManager connectionManager)
+    public SqlAssessmentService(ILogger<SqlAssessmentService> logger, ServerConnectionManager connectionManager, AzureBlobExportService? blobExport = null)
     {
         _logger = logger;
         _connectionManager = connectionManager;
-        
+        _blobExport = blobExport;
+
         // Find the ruleset.json path
         _rulesetPath = FindRulesetPath();
         
         // Load check definitions from ruleset.json or fallback
         _checkDefinitions = LoadCheckDefinitions();
-        
-        _logger.LogInformation("Initialized with {Count} check definitions from {Path}", 
+        _checkDefById = _checkDefinitions
+            .Where(d => !string.IsNullOrEmpty(d.CheckId))
+            .GroupBy(d => d.CheckId)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+        _logger.LogInformation("Initialized with {Count} check definitions from {Path}",
             _checkDefinitions.Count, _rulesetPath);
     }
 
@@ -55,8 +62,8 @@ public class SqlAssessmentService
             Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", ".."))
         };
         
-        var fileNames = new[] { "BPScripts/ruleset.json", "BPScripts\\ruleset.json", "ruleset.json" };
-        
+        var fileNames = new[] { "config/ruleset.json", "Config/ruleset.json", "ruleset.json" };
+
         foreach (var baseDir in baseDirs)
         {
             foreach (var fileName in fileNames)
@@ -70,11 +77,9 @@ public class SqlAssessmentService
                 }
             }
         }
-        
-        // Default to BPScripts folder in project root
-        var defaultPath = Path.Combine(Directory.GetCurrentDirectory(), "BPScripts", "ruleset.json");
+
+        var defaultPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config", "ruleset.json");
         _logger.LogWarning("Ruleset not found in any location, using default: {Path}", defaultPath);
-        _logger.LogInformation("Searched paths: {Paths}", string.Join("; ", baseDirs.SelectMany(b => fileNames.Select(f => Path.Combine(b, f)))));
         return defaultPath;
     }
 
@@ -312,6 +317,7 @@ public class SqlAssessmentService
             using var connection = new SqlConnection(connectionString);
             await connection.OpenAsync();
             var serverName = await GetServerNameAsync(connection);
+            var serverInfo = await GetServerInfoAsync(connection);
 
             _logger.LogInformation("Running SQL Assessment Engine against {Server}...", serverName);
 
@@ -416,25 +422,44 @@ public class SqlAssessmentService
                     _logger.LogDebug("Result [{CheckId}] raw severity type={Type} value={Value} → mapped={Mapped}",
                         checkId, severityVal?.GetType()?.Name ?? "null", severityStr, MapEngineSeverity(severityStr));
 
+                    var foundInRuleset = _checkDefById.TryGetValue(checkId, out var defForResult);
+                    if (!foundInRuleset)
+                        _logger.LogDebug("Engine check not in ruleset.json: [{CheckId}] \"{DisplayName}\" tags={Category}",
+                            checkId, displayName, category);
+
                     var result = new AssessmentResult
                     {
-                        CheckId     = checkId,
-                        DisplayName = displayName,
-                        Message     = r.Message,
-                        Severity    = MapEngineSeverity(severityStr),
-                        TargetName  = r.TargetPath,
-                        TargetType  = r.TargetType.ToString(),
-                        Category    = category,
-                        Description = description,
-                        Remediation = remediation,
-                        HelpLink    = helpLink,
-                        Status      = passed ? "Passed" : "Failed",
-                        RawSeverity = severityStr
+                        CheckId            = checkId,
+                        DisplayName        = displayName,
+                        Message            = r.Message,
+                        Severity           = MapEngineSeverity(severityStr),
+                        TargetName         = r.TargetPath,
+                        TargetType         = r.TargetType.ToString(),
+                        Category           = category,
+                        Description        = description,
+                        Remediation        = remediation,
+                        HelpLink           = helpLink,
+                        Status             = passed ? "Passed" : "Failed",
+                        RawSeverity        = severityStr,
+                        SqlQuery           = defForResult?.Sql ?? "",
+                        ImplementationType = defForResult?.ImplementationType ?? ""
                     };
 
                     summary.Results.Add(result);
                     if (passed) TotalChecksPassed++; else TotalChecksFailed++;
                 }
+
+                // Log a summary of engine checks not covered by ruleset.json (visible in app-.log at Debug level)
+                var noRulesetIds = summary.Results
+                    .Where(res => string.IsNullOrEmpty(res.SqlQuery) && string.IsNullOrEmpty(res.ImplementationType))
+                    .Select(res => res.CheckId)
+                    .Distinct()
+                    .OrderBy(id => id)
+                    .ToList();
+                if (noRulesetIds.Count > 0)
+                    _logger.LogInformation(
+                        "{Count} engine check(s) have no ruleset.json entry (SqlQuery unavailable): {Ids}",
+                        noRulesetIds.Count, string.Join(", ", noRulesetIds));
             }
             catch (Exception engineEx)
             {
@@ -492,6 +517,16 @@ public class SqlAssessmentService
 
             // Supplement with DMV-based missing index audit
             await RunMissingIndexAuditAsync(connectionString, summary);
+
+            // Stamp every result with the server identity gathered at the start
+            foreach (var r in summary.Results)
+            {
+                r.ThisServer  = serverInfo.ThisServer;
+                r.ThisDomain  = serverInfo.ThisDomain;
+                r.IsSQLAzure  = serverInfo.IsSQLAzure;
+                r.IsSQLMI     = serverInfo.IsSQLMI;
+                r.UTCDateTime = serverInfo.UTCDateTime;
+            }
 
             await SaveCsvToOutputFolderAsync(summary, serverName);
 
@@ -612,15 +647,17 @@ ORDER BY gs.avg_user_impact DESC;";
             hasResults = true;
             var checkResult = new AssessmentResult
             {
-                CheckId = check.CheckId,
-                Message = reader.IsDBNull(0) ? check.DisplayName : reader.GetString(0),
-                Severity = check.Severity,
-                TargetName = reader.IsDBNull(1) ? serverName : reader.GetString(1),
-                TargetType = check.TargetType,
-                Category = check.Category,
-                Description = check.Description,
-                HelpLink = check.HelpLink,
-                Status = "Failed"
+                CheckId            = check.CheckId,
+                Message            = reader.IsDBNull(0) ? check.DisplayName : reader.GetString(0),
+                Severity           = check.Severity,
+                TargetName         = reader.IsDBNull(1) ? serverName : reader.GetString(1),
+                TargetType         = check.TargetType,
+                Category           = check.Category,
+                Description        = check.Description,
+                HelpLink           = check.HelpLink,
+                Status             = "Failed",
+                SqlQuery           = check.Sql,
+                ImplementationType = "Sql"
             };
             
             summary.Results.Add(checkResult);
@@ -679,7 +716,9 @@ ORDER BY gs.avg_user_impact DESC;";
                     TargetType = "LocalMachine",
                     Category = check.Category,
                     Description = check.Description,
-                    HelpLink = check.HelpLink,
+                    HelpLink           = check.HelpLink,
+                    SqlQuery           = check.Sql,
+                    ImplementationType = check.ImplementationType,
                     Status = "Failed"
                 };
                 summary.Results.Add(checkResult);
@@ -726,7 +765,9 @@ ORDER BY gs.avg_user_impact DESC;";
                     TargetType = "LocalMachine",
                     Category = check.Category,
                     Description = check.Description,
-                    HelpLink = check.HelpLink,
+                    HelpLink           = check.HelpLink,
+                    SqlQuery           = check.Sql,
+                    ImplementationType = check.ImplementationType,
                     Status = "Failed"
                 };
                 summary.Results.Add(checkResult);
@@ -780,7 +821,9 @@ ORDER BY gs.avg_user_impact DESC;";
                     TargetType = "LocalMachine",
                     Category = check.Category,
                     Description = check.Description,
-                    HelpLink = check.HelpLink,
+                    HelpLink           = check.HelpLink,
+                    SqlQuery           = check.Sql,
+                    ImplementationType = check.ImplementationType,
                     Status = "Failed"
                 };
                 summary.Results.Add(checkResult);
@@ -901,6 +944,77 @@ ORDER BY gs.avg_user_impact DESC;";
         }
     }
 
+    private record ServerInfo(string? ThisServer, string? ThisDomain, bool IsSQLAzure, bool IsSQLMI, string UTCDateTime);
+
+    private async Task<ServerInfo> GetServerInfoAsync(SqlConnection connection)
+    {
+        const string sql = @"
+DECLARE @ThisDomain [NVARCHAR](100);
+DECLARE @dynamicSQL NVARCHAR(4000);
+DECLARE @IsSQLAzure BIT = 0;
+DECLARE @IsSQLMI    BIT = 0;
+IF (SELECT ServerProperty('EngineEdition')) = 5 SET @IsSQLAzure = 1;
+IF (SELECT ServerProperty('EngineEdition')) = 8 SET @IsSQLMI    = 1;
+
+DECLARE @ThisServer [NVARCHAR](500);
+DECLARE @CharToCheck [NVARCHAR](5) = CHAR(92);
+
+IF (SELECT CHARINDEX(@CharToCheck, @@SERVERNAME)) > 0
+    SELECT @ThisServer = @@SERVERNAME;
+IF (SELECT CHARINDEX(@CharToCheck, @@SERVERNAME)) = 0
+    SELECT @ThisServer = CAST(SERVERPROPERTY('ComputerNamePhysicalNetBIOS') AS [NVARCHAR](500));
+IF @IsSQLAzure = 1 OR @IsSQLMI = 1
+    SELECT @ThisServer = REPLACE(@@SERVERNAME, '', '');
+
+IF @IsSQLAzure = 0 OR @IsSQLMI = 0
+BEGIN
+    BEGIN TRY
+        DECLARE @ThisDomainTable TABLE (ThisDomain [NVARCHAR](100));
+        SET @dynamicSQL = N'
+DECLARE @ThisDomain [NVARCHAR](100);
+EXEC master.dbo.xp_regread ''HKEY_LOCAL_MACHINE'', ''SYSTEM\CurrentControlSet\services\Tcpip\Parameters'', N''Domain'', @ThisDomain OUTPUT;
+SELECT @ThisDomain;';
+        INSERT @ThisDomainTable EXEC sp_executesql @dynamicSQL;
+        SELECT @ThisDomain = ThisDomain FROM @ThisDomainTable;
+    END TRY
+    BEGIN CATCH
+        -- Silently ignore (Azure / permission denied)
+    END CATCH
+END
+
+IF @IsSQLAzure = 1 OR @IsSQLMI = 1
+    SELECT @ThisDomain = RIGHT(SYSTEM_USER, LEN(SYSTEM_USER) - CHARINDEX('@', SYSTEM_USER));
+
+SET @ThisDomain = ISNULL(@ThisDomain, DEFAULT_DOMAIN());
+
+SELECT @ThisDomain   [ThisDomain],
+       @ThisServer   [ThisServer],
+       @IsSQLAzure   [IsSQLAzure],
+       @IsSQLMI      [IsSQLMI],
+       CONVERT(VARCHAR, GETUTCDATE(), 120) [UTCDateTime];";
+
+        try
+        {
+            using var cmd    = new SqlCommand(sql, connection) { CommandTimeout = 30 };
+            using var reader = await cmd.ExecuteReaderAsync();
+            if (await reader.ReadAsync())
+            {
+                return new ServerInfo(
+                    reader["ThisServer"]?.ToString(),
+                    reader["ThisDomain"]?.ToString(),
+                    Convert.ToBoolean(reader["IsSQLAzure"]),
+                    Convert.ToBoolean(reader["IsSQLMI"]),
+                    reader["UTCDateTime"]?.ToString() ?? DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
+                );
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "GetServerInfoAsync failed — server identity will be omitted");
+        }
+        return new ServerInfo(null, null, false, false, DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"));
+    }
+
     /// <summary>
     /// Generate remediation SQL script for all failed assessments
     /// </summary>
@@ -934,15 +1048,16 @@ ORDER BY gs.avg_user_impact DESC;";
                 sb.AppendLine($"-- Message: {result.Message}");
                 if (!string.IsNullOrEmpty(result.Description))
                     sb.AppendLine($"-- Detail : {result.Description}");
+
+                // Remediation SQL from the engine is rarely populated — fall back to the
+                // advisory Message text, which is always the actionable recommendation.
+                var remediationText = !string.IsNullOrWhiteSpace(result.Remediation)
+                    ? result.Remediation.Trim()
+                    : result.Message.Trim();
+
+                sb.AppendLine($"-- Action : {remediationText}");
                 if (!string.IsNullOrEmpty(result.HelpLink))
                     sb.AppendLine($"-- Ref    : {result.HelpLink}");
-
-                if (!string.IsNullOrEmpty(result.Remediation))
-                {
-                    sb.AppendLine($"-- Remediation:");
-                    sb.AppendLine(result.Remediation.Trim());
-                    sb.AppendLine("GO");
-                }
 
                 sb.AppendLine();
             }
@@ -956,25 +1071,42 @@ ORDER BY gs.avg_user_impact DESC;";
     }
 
     /// <summary>
+    /// Set to true to include the SqlQuery column in CSV exports.
+    /// Internal flag — not exposed as a user setting.
+    /// </summary>
+    private const bool ExportSqlQuery = true;
+
+    /// <summary>
     /// Export results to CSV
     /// </summary>
     public string ExportToCsv(AssessmentSummary summary)
     {
         var sb = new System.Text.StringBuilder();
-        
-        sb.AppendLine("CheckId,DisplayName,Message,Severity,RawSeverity,TargetName,TargetType,Category,Description,Remediation,HelpLink,Status");
+
+        sb.AppendLine(ExportSqlQuery
+            ? "CheckId,DisplayName,Message,Severity,RawSeverity,TargetName,TargetType,Category,Description,Remediation,HelpLink,Status,ImplementationType,SqlQuery,ThisServer,ThisDomain,IsSQLAzure,IsSQLMI,UTCDateTime"
+            : "CheckId,DisplayName,Message,Severity,RawSeverity,TargetName,TargetType,Category,Description,Remediation,HelpLink,Status,ThisServer,ThisDomain,IsSQLAzure,IsSQLMI,UTCDateTime");
 
         foreach (var result in summary.Results)
         {
-            sb.AppendLine($"\"{EscapeCsv(result.CheckId)}\",\"{EscapeCsv(result.DisplayName)}\",\"{EscapeCsv(result.Message)}\",\"{result.Severity}\",\"{result.RawSeverity}\",\"{EscapeCsv(result.TargetName)}\",\"{result.TargetType}\",\"{EscapeCsv(result.Category)}\",\"{EscapeCsv(result.Description)}\",\"{EscapeCsv(result.Remediation)}\",\"{result.HelpLink}\",\"{result.Status}\"");
+            var row = $"\"{EscapeCsv(result.CheckId)}\",\"{EscapeCsv(result.DisplayName)}\",\"{EscapeCsv(result.Message)}\",\"{result.Severity}\",\"{result.RawSeverity}\",\"{EscapeCsv(result.TargetName)}\",\"{result.TargetType}\",\"{EscapeCsv(result.Category)}\",\"{EscapeCsv(result.Description)}\",\"{EscapeCsv(result.Remediation)}\",\"{result.HelpLink}\",\"{result.Status}\"";
+
+            if (ExportSqlQuery)
+                row += $",\"{result.ImplementationType}\",\"{EscapeCsv(result.SqlQuery)}\"";
+
+            row += $",\"{EscapeCsv(result.ThisServer ?? "")}\",\"{EscapeCsv(result.ThisDomain ?? "")}\",\"{(result.IsSQLAzure.HasValue ? (result.IsSQLAzure.Value ? "1" : "0") : "")}\",\"{(result.IsSQLMI.HasValue ? (result.IsSQLMI.Value ? "1" : "0") : "")}\",\"{EscapeCsv(result.UTCDateTime ?? "")}\"";
+
+            sb.AppendLine(row);
         }
-        
+
         return sb.ToString();
     }
 
     private string EscapeCsv(string value)
     {
         if (string.IsNullOrEmpty(value)) return string.Empty;
+        // Collapse newlines so multi-line values (e.g. SQL queries) don't break single-line CSV rows
+        value = value.Replace("\r\n", " ").Replace('\r', ' ').Replace('\n', ' ');
         return value.Replace("\"", "\"\"");
     }
 
@@ -985,22 +1117,328 @@ ORDER BY gs.avg_user_impact DESC;";
     {
         try
         {
-            var outputDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "output");
-            Directory.CreateDirectory(outputDir);
+            var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+            var outputDir = Path.Combine(baseDir, "output");
+            
+            // Ensure the output directory exists
+            if (!Directory.Exists(outputDir))
+            {
+                Directory.CreateDirectory(outputDir);
+                // Brief delay to allow filesystem to settle
+                await Task.Delay(100);
+            }
+            
+            // Final verification before writing
+            if (!Directory.Exists(outputDir))
+            {
+                _logger.LogError("Failed to create output directory: {OutputDir}", outputDir);
+                return;
+            }
 
-            var fileName = $"VulnerabilityAssessment_{serverName}_{DateTime.Now:yyyy-MM-dd-HHmmss}.csv";
+            var fileName = $"VulnerabilityAssessment_{SanitizeFileName(serverName)}_{DateTime.Now:yyyy-MM-dd-HHmmss}.csv";
             var filePath = Path.Combine(outputDir, fileName);
 
             var csv = ExportToCsv(summary);
             await File.WriteAllTextAsync(filePath, csv);
 
             _logger.LogInformation("CSV export saved to: {FilePath}", filePath);
+
+            // Auto-upload to Azure if enabled — fire-and-forget, never fails the export
+            if (_blobExport is { IsConfigured: true, AutoUploadCsvs: true })
+            {
+                _ = Task.Run(async () =>
+                {
+                    try { await _blobExport.UploadLocalCsvAsync(filePath, serverName); }
+                    catch (Exception uploadEx)
+                    {
+                        _logger.LogWarning(uploadEx, "Azure auto-upload failed for {FileName} (non-blocking)", fileName);
+                    }
+                });
+            }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to auto-export CSV to output folder");
         }
     }
+    
+    /// <summary>
+    /// Sanitize a string for use as a file name by removing invalid characters
+    /// </summary>
+    private static string SanitizeFileName(string fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+            return "unknown";
+
+        // Characters invalid in Windows file names: < > : " / \ | ? *
+        var invalidChars = Path.GetInvalidFileNameChars();
+        var sanitized = new string(fileName.Where(c => !invalidChars.Contains(c)).ToArray());
+
+        // Replace multiple spaces/underscores with single underscore
+        sanitized = System.Text.RegularExpressions.Regex.Replace(sanitized, @"[\s_]+", "_");
+
+        return string.IsNullOrWhiteSpace(sanitized) ? "unknown" : sanitized;
+    }
+
+    // ── Multi-server orchestration ────────────────────────────────────────────
+
+    /// <summary>
+    /// Runs assessment across multiple (connection, serverName) pairs in parallel batches,
+    /// then merges the results into a single deduplicated catch-all summary.
+    /// Checks that fire on multiple servers/databases are collapsed into one row;
+    /// the TargetName accumulates all affected instances.
+    ///   e.g. Server[@Name='MSI; PROD']/Database[@Name='DB1; DB2']
+    /// One consolidated CSV is written to .\output\ when all servers finish.
+    /// </summary>
+    public async Task<AssessmentSummary> RunMultiServerAssessmentAsync(
+        IReadOnlyList<(string ConnectionString, string ServerName)> targets,
+        int parallelism = 3,
+        IProgress<(int Completed, int Total, string CurrentServer)>? progress = null)
+    {
+        var allSummaries = new List<AssessmentSummary>(targets.Count);
+        var semaphore    = new SemaphoreSlim(parallelism);
+        var lockObj      = new object();
+        int completed    = 0;
+
+        var tasks = targets.Select(async target =>
+        {
+            await semaphore.WaitAsync();
+            try
+            {
+                progress?.Report((completed, targets.Count, target.ServerName));
+                var summary = await RunServerAssessmentAsync(target.ConnectionString);
+                lock (lockObj)
+                {
+                    allSummaries.Add(summary);
+                    completed++;
+                }
+                progress?.Report((completed, targets.Count, target.ServerName));
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        });
+
+        await Task.WhenAll(tasks);
+
+        var merged = MergeResults(allSummaries);
+
+        // Save one consolidated CSV for the whole run
+        var serverLabel = targets.Count == 1
+            ? SanitizeFileName(targets[0].ServerName)
+            : $"MultiServer_{targets.Count}";
+        await SaveCsvToOutputFolderAsync(merged, serverLabel);
+
+        return merged;
+    }
+
+    /// <summary>
+    /// Deduplicates results from multiple per-server summaries into a single catch-all summary.
+    ///
+    /// Merge key: (CheckId, Message) — Message discriminates checks that fire once per object
+    /// (e.g. BackupTables fires a separate row per backup table, each with a distinct Message).
+    ///
+    /// For rows with the same key:
+    ///   • Server-level checks: Server[@Name='MSI; PROD']
+    ///   • Database-level checks: Server[@Name='MSI; PROD']/Database[@Name='DB1; DB2']
+    ///     — when the same database name appears on two different servers it is listed once per
+    ///       server segment so the reader can tell which server owns which database.
+    /// </summary>
+    public static AssessmentSummary MergeResults(IEnumerable<AssessmentSummary> summaries)
+    {
+        // (CheckId, Message) → accumulated parsed target state
+        // Tuple comparer: case-insensitive on both elements
+        var tupleComparer = new TupleOrdinalIgnoreCaseComparer();
+        var mergeMap = new Dictionary<(string, string), MergeEntry>(tupleComparer);
+
+        foreach (var summary in summaries)
+        {
+            foreach (var r in summary.Results)
+            {
+                var key = (r.CheckId, r.Message);
+
+                if (!mergeMap.TryGetValue(key, out var entry))
+                {
+                    entry = new MergeEntry(r);
+                    mergeMap[key] = entry;
+                }
+                else
+                {
+                    entry.Merge(r.TargetName);
+                }
+            }
+        }
+
+        var merged = new AssessmentSummary();
+        foreach (var entry in mergeMap.Values)
+        {
+            var result = entry.ToResult();
+            merged.Results.Add(result);
+            merged.TotalChecks++;
+            if (result.Status == "Passed") merged.PassedChecks++;
+            else merged.FailedChecks++;
+        }
+
+        return merged;
+    }
+
+    // ── TargetName XPath-style accumulator ───────────────────────────────────
+
+    /// <summary>
+    /// Parses and accumulates XPath-style SQL Assessment target paths.
+    ///
+    /// Supported forms:
+    ///   Server[@Name='MSI']
+    ///   Server[@Name='MSI']/Database[@Name='Capitec_PowerBI']
+    ///
+    /// When the same check fires for multiple servers/databases the names are
+    /// appended within the existing @Name attribute, separated by "; ".
+    /// The final rendered form is always valid enough for display purposes:
+    ///   Server[@Name='MSI; PROD']/Database[@Name='DB1; DB2']
+    ///
+    /// Database names are tracked per-server so the mapping is never ambiguous.
+    /// </summary>
+    private sealed class MergeEntry
+    {
+        private readonly AssessmentResult _prototype;
+
+        // Ordered list of server names seen (preserves first-seen order)
+        private readonly List<string> _servers = new();
+
+        // Per-server: ordered list of database names seen on that server (or empty = server-level check)
+        private readonly Dictionary<string, List<string>> _serverDbs =
+            new(StringComparer.OrdinalIgnoreCase);
+
+        internal MergeEntry(AssessmentResult prototype)
+        {
+            _prototype = prototype;
+            ParseAndAccumulate(prototype.TargetName);
+        }
+
+        internal void Merge(string targetName) => ParseAndAccumulate(targetName);
+
+        private void ParseAndAccumulate(string targetName)
+        {
+            if (string.IsNullOrWhiteSpace(targetName))
+                return;
+
+            ParseTarget(targetName, out var serverName, out var dbName);
+
+            if (serverName == null)
+                return;
+
+            if (!_serverDbs.TryGetValue(serverName, out var dbs))
+            {
+                _servers.Add(serverName);
+                dbs = new List<string>();
+                _serverDbs[serverName] = dbs;
+            }
+
+            if (dbName != null && !dbs.Contains(dbName, StringComparer.OrdinalIgnoreCase))
+                dbs.Add(dbName);
+        }
+
+        internal AssessmentResult ToResult()
+        {
+            var r = new AssessmentResult
+            {
+                CheckId            = _prototype.CheckId,
+                DisplayName        = _prototype.DisplayName,
+                Message            = _prototype.Message,
+                Severity           = _prototype.Severity,
+                RawSeverity        = _prototype.RawSeverity,
+                TargetType         = _prototype.TargetType,
+                Category           = _prototype.Category,
+                Description        = _prototype.Description,
+                Remediation        = _prototype.Remediation,
+                HelpLink           = _prototype.HelpLink,
+                Status             = _prototype.Status,
+                TargetName         = BuildTargetName(),
+                ImplementationType = _prototype.ImplementationType,
+                SqlQuery           = _prototype.SqlQuery,
+                // ThisServer is intentionally null for multi-server merged results
+                ThisDomain         = _prototype.ThisDomain,
+                IsSQLAzure         = _prototype.IsSQLAzure,
+                IsSQLMI            = _prototype.IsSQLMI,
+                UTCDateTime        = _prototype.UTCDateTime,
+            };
+            return r;
+        }
+
+        private string BuildTargetName()
+        {
+            // All servers share the same set of database names → collapsed target
+            //   Server[@Name='MSI; PROD']/Database[@Name='DB1; DB2']
+            // If databases differ per server, build one segment per server:
+            //   Server[@Name='MSI']/Database[@Name='DB1']; Server[@Name='PROD']/Database[@Name='DB2']
+
+            // Check if all servers have identical database lists (or all server-level)
+            var allDbs = _serverDbs.Values.Select(d => string.Join("|", d)).Distinct().ToList();
+
+            if (allDbs.Count <= 1)
+            {
+                // Uniform: collapse into a single XPath expression
+                var serverPart = $"Server[@Name='{string.Join("; ", _servers)}']";
+                var dbs = _serverDbs.Values.FirstOrDefault(d => d.Count > 0);
+                return dbs != null && dbs.Count > 0
+                    ? $"{serverPart}/Database[@Name='{string.Join("; ", dbs)}']"
+                    : serverPart;
+            }
+            else
+            {
+                // Non-uniform: one segment per server
+                var segments = _servers.Select(srv =>
+                {
+                    var dbs = _serverDbs[srv];
+                    return dbs.Count > 0
+                        ? $"Server[@Name='{srv}']/Database[@Name='{string.Join("; ", dbs)}']"
+                        : $"Server[@Name='{srv}']";
+                });
+                return string.Join("; ", segments);
+            }
+        }
+
+        /// <summary>
+        /// Extracts server name and optional database name from an XPath-style target path.
+        ///   "Server[@Name='MSI']"                           → ("MSI", null)
+        ///   "Server[@Name='MSI']/Database[@Name='MyDB']"    → ("MSI", "MyDB")
+        /// </summary>
+        private static void ParseTarget(string target, out string? serverName, out string? dbName)
+        {
+            serverName = null;
+            dbName     = null;
+
+            // Extract Server name
+            var sStart = target.IndexOf("Server[@Name='", StringComparison.Ordinal);
+            if (sStart < 0) return;
+            sStart += "Server[@Name='".Length;
+            var sEnd = target.IndexOf("'", sStart, StringComparison.Ordinal);
+            if (sEnd < 0) return;
+            serverName = target[sStart..sEnd];
+
+            // Extract Database name if present
+            var dStart = target.IndexOf("/Database[@Name='", sEnd, StringComparison.Ordinal);
+            if (dStart < 0) return;
+            dStart += "/Database[@Name='".Length;
+            var dEnd = target.IndexOf("'", dStart, StringComparison.Ordinal);
+            if (dEnd < 0) return;
+            dbName = target[dStart..dEnd];
+        }
+    }
+}
+
+// Tuple equality comparer used by MergeResults
+file sealed class TupleOrdinalIgnoreCaseComparer : IEqualityComparer<(string, string)>
+{
+    public bool Equals((string, string) x, (string, string) y) =>
+        string.Equals(x.Item1, y.Item1, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(x.Item2, y.Item2, StringComparison.OrdinalIgnoreCase);
+
+    public int GetHashCode((string, string) obj) =>
+        HashCode.Combine(
+            obj.Item1?.ToUpperInvariant() ?? "",
+            obj.Item2?.ToUpperInvariant() ?? "");
 }
 
 // Model classes
@@ -1022,18 +1460,26 @@ internal class AssessmentCheckDefinition
 
 public class AssessmentResult
 {
-    public string CheckId { get; set; } = "";
-    public string DisplayName { get; set; } = "";
-    public string Message { get; set; } = "";
-    public string Severity { get; set; } = "";
-    public string TargetName { get; set; } = "";
-    public string TargetType { get; set; } = "";
-    public string Category { get; set; } = "";
-    public string Description { get; set; } = "";
-    public string HelpLink { get; set; } = "";
-    public string Remediation { get; set; } = "";
-    public string Status { get; set; } = "";
-    public string RawSeverity { get; set; } = ""; // debug: raw enum value from API
+    public string CheckId            { get; set; } = "";
+    public string DisplayName        { get; set; } = "";
+    public string Message            { get; set; } = "";
+    public string Severity           { get; set; } = "";
+    public string TargetName         { get; set; } = "";
+    public string TargetType         { get; set; } = "";
+    public string Category           { get; set; } = "";
+    public string Description        { get; set; } = "";
+    public string HelpLink           { get; set; } = "";
+    public string Remediation        { get; set; } = "";
+    public string Status             { get; set; } = "";
+    public string RawSeverity        { get; set; } = "";
+    public string SqlQuery           { get; set; } = "";
+    public string ImplementationType { get; set; } = "";
+    // Server identity — populated per-server; NULL in consolidated multi-server exports
+    public string? ThisServer        { get; set; }
+    public string? ThisDomain        { get; set; }
+    public bool?   IsSQLAzure        { get; set; }
+    public bool?   IsSQLMI           { get; set; }
+    public string? UTCDateTime       { get; set; }
 }
 
 public class AssessmentSummary

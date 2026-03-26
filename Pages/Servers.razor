@@ -12,7 +12,36 @@
     <div class="servers-toolbar">
         <button class="btn btn-primary" @onclick="ShowAddDialog"><i class="fa-solid fa-plus"></i> Add Server</button>
         <button class="btn btn-secondary" @onclick="RefreshAllConnections"><i class="fa-solid fa-rotate"></i> Refresh All</button>
+        <button class="btn btn-danger" @onclick="DeleteAllDisconnected"><i class="fa-solid fa-trash"></i> Delete Disconnected</button>
     </div>
+
+    @if (_allTags.Count > 0 || _allEnvironments.Count > 0)
+    {
+        <div class="servers-filter-bar">
+            @if (_allEnvironments.Count > 0)
+            {
+                <div class="filter-group">
+                    <span class="filter-label">Environment:</span>
+                    <button class="filter-chip @(_filterEnvironment == null ? "active" : "")" @onclick="@(() => { _filterEnvironment = null; })">All</button>
+                    @foreach (var env in _allEnvironments)
+                    {
+                        <button class="filter-chip @(_filterEnvironment == env ? "active" : "")" @onclick="@(() => { _filterEnvironment = _filterEnvironment == env ? null : env; })">@env</button>
+                    }
+                </div>
+            }
+            @if (_allTags.Count > 0)
+            {
+                <div class="filter-group">
+                    <span class="filter-label">Tag:</span>
+                    <button class="filter-chip @(_filterTag == null ? "active" : "")" @onclick="@(() => { _filterTag = null; })">All</button>
+                    @foreach (var tag in _allTags)
+                    {
+                        <button class="filter-chip @(_filterTag == tag ? "active" : "")" @onclick="@(() => { _filterTag = _filterTag == tag ? null : tag; })">@tag</button>
+                    }
+                </div>
+            }
+        </div>
+    }
 
     @if (StatusMessage != null)
     {
@@ -22,7 +51,7 @@
     }
 
     <div class="servers-grid">
-        @foreach (var conn in Connections)
+        @foreach (var conn in FilteredConnections)
         {
             <div class="server-card @(conn.IsConnected ? "connected" : "disconnected")">
                 <div class="server-header">
@@ -82,7 +111,19 @@
                     {
                         <div class="detail-row">
                             <span class="detail-label">Environment:</span>
-                            <span class="detail-value">@conn.Environment</span>
+                            <span class="detail-value env-badge env-@(conn.Environment?.ToLower())">@conn.Environment</span>
+                        </div>
+                    }
+                    @if (conn.Tags != null && conn.Tags.Count > 0)
+                    {
+                        <div class="detail-row">
+                            <span class="detail-label">Tags:</span>
+                            <span class="detail-value tag-list">
+                                @foreach (var tag in conn.Tags)
+                                {
+                                    <span class="tag-badge">@tag</span>
+                                }
+                            </span>
                         </div>
                     }
                     @if (conn.LastConnected.HasValue)
@@ -209,6 +250,24 @@
                     <input type="number" @bind="EditingConnection.ConnectionTimeout" min="1" max="60" />
                 </div>
 
+                <div class="form-group">
+                    <label>Environment</label>
+                    <select @bind="EditingConnection.Environment">
+                        <option value="">— None —</option>
+                        <option value="Production">Production</option>
+                        <option value="Staging">Staging</option>
+                        <option value="Development">Development</option>
+                        <option value="QA">QA</option>
+                        <option value="DR">DR</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Tags</label>
+                    <input type="text" @bind="_editingTagsText" placeholder="e.g. finance, critical, east-us (comma-separated)" />
+                    <small>Comma-separated tags for grouping and filtering servers</small>
+                </div>
+
                 <div class="dialog-actions">
                     <button class="btn btn-secondary" @onclick="CloseDialog">Cancel</button>
                     <button class="btn btn-primary" @onclick="SaveConnection">Save</button>
@@ -247,8 +306,19 @@
     private ServerConnection EditingConnection = new();
     private string EditingAuthType = AuthenticationTypes.Windows;
     private string EditingPassword = "";
+    private string _editingTagsText = "";
     private bool _isTestingAll = false;
     private string[] Instances = Array.Empty<string>();
+
+    // Filtering
+    private string? _filterEnvironment;
+    private string? _filterTag;
+    private HashSet<string> _allTags = new();
+    private HashSet<string> _allEnvironments = new();
+
+    private IEnumerable<ServerConnection> FilteredConnections => Connections.Where(c =>
+        (_filterEnvironment == null || string.Equals(c.Environment, _filterEnvironment, StringComparison.OrdinalIgnoreCase)) &&
+        (_filterTag == null || (c.Tags != null && c.Tags.Contains(_filterTag, StringComparer.OrdinalIgnoreCase))));
 
     private void SetAuthType(string authType)
     {
@@ -282,6 +352,13 @@
     private void LoadConnections()
     {
         Connections = ConnectionManager.GetConnections();
+        RebuildFilterOptions();
+    }
+
+    private void RebuildFilterOptions()
+    {
+        _allTags = Connections.Where(c => c.Tags != null).SelectMany(c => c.Tags).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(t => t).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        _allEnvironments = Connections.Where(c => !string.IsNullOrEmpty(c.Environment)).Select(c => c.Environment!).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(e => e).ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
     private void ShowAddDialog()
@@ -296,6 +373,7 @@
         };
         EditingAuthType = AuthenticationTypes.Windows;
         EditingPassword = "";
+        _editingTagsText = "";
         IsEditing = false;
         ShowDialog = true;
     }
@@ -321,6 +399,7 @@
         };
         EditingAuthType = conn.EffectiveAuthType;
         EditingPassword = "";
+        _editingTagsText = conn.Tags != null ? string.Join(", ", conn.Tags) : "";
         IsEditing = true;
         ShowDialog = true;
     }
@@ -346,6 +425,14 @@
             EditingConnection.AuthenticationType = EditingAuthType;
             EditingConnection.UseWindowsAuthentication = EditingAuthType == AuthenticationTypes.Windows;
 
+            // Parse tags from comma-separated text
+            EditingConnection.Tags = string.IsNullOrWhiteSpace(_editingTagsText)
+                ? new List<string>()
+                : _editingTagsText.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Where(t => !string.IsNullOrWhiteSpace(t))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
             // Set password if provided (SQL auth only)
             if (!string.IsNullOrEmpty(EditingPassword))
             {
@@ -368,24 +455,49 @@
 
             if (IsEditing)
             {
-                // For edit, update as single connection (keep existing behavior)
+                // For edit, update as single connection — no duplicate check needed
+                EditingConnection.ServerNames = string.Join("\n", serverNames);
                 ConnectionManager.UpdateConnection(EditingConnection);
                 StatusMessage = "Server connection updated successfully";
             }
             else
             {
+                // Get all existing server names to check for duplicates
+                var existingServerNames = Connections
+                    .SelectMany(c => c.GetServerList())
+                    .Select(s => s.ToLowerInvariant())
+                    .ToHashSet();
+
+                // Filter out servers that already exist
+                var newServerNames = serverNames
+                    .Where(s => !existingServerNames.Contains(s.ToLowerInvariant()))
+                    .ToList();
+
+                var skippedCount = serverNames.Count - newServerNames.Count;
+
+                if (newServerNames.Count == 0)
+                {
+                    StatusMessage = skippedCount > 0
+                        ? $"All {skippedCount} server(s) already exist - nothing to add"
+                        : "Server name is required";
+                    IsSuccess = skippedCount > 0;
+                    return;
+                }
+
                 // For new, create separate connection for each server name on separate line
-                if (serverNames.Count == 1)
+                if (newServerNames.Count == 1)
                 {
                     // Single server - create one connection
-                    EditingConnection.ServerNames = serverNames[0];
+                    EditingConnection.ServerNames = newServerNames[0];
                     ConnectionManager.AddConnection(EditingConnection);
-                    StatusMessage = "Server connection added successfully";
+                    StatusMessage = skippedCount > 0 
+                        ? $"Added 1 server ({skippedCount} skipped - already exists)" 
+                        : "Server connection added successfully";
                 }
                 else
                 {
                     // Multiple servers on separate lines - create separate connections
-                    foreach (var serverName in serverNames)
+                    foreach (var serverName in newServerNames)
                     {
                         var newConn = new ServerConnection
                         {
@@ -403,7 +515,9 @@
                         };
                         ConnectionManager.AddConnection(newConn);
                     }
-                    StatusMessage = $"Added {serverNames.Count} server connections";
+                    StatusMessage = skippedCount > 0 
+                        ? $"Added {newServerNames.Count} servers ({skippedCount} skipped - already exist)" 
+                        : $"Added {newServerNames.Count} server connections";
                 }
             }
             
@@ -510,6 +624,12 @@
             else
             {
                 StatusMessage = $"Connection failed: {ex.Message}";
+                if (ex.Message.Contains("Integrated authentication only", StringComparison.OrdinalIgnoreCase))
+                {
+                    StatusMessage += "\n\nThe SQL Server instance is configured for Windows Authentication only. " +
+                        "To use SQL Authentication, enable Mixed Mode in SQL Server Management Studio: " +
+                        "Server Properties > Security > Server Authentication > SQL Server and Windows Authentication mode, then restart the SQL Server service.";
+                }
             }
             IsSuccess = false;
             ConnectionManager.UpdateSuccessfulServers(conn.Id, new List<string>());
@@ -598,44 +718,90 @@
         var totalServers = 0;
         var successfulServers = 0;
 
+        // Build list of all server connections to test (connection object + server name)
+        var allServersToTest = new List<(ServerConnection conn, string serverName)>();
         foreach (var conn in Connections)
         {
             var serverList = conn.GetServerList();
             totalServers += serverList.Count;
-            var isMfa = conn.EffectiveAuthType == AuthenticationTypes.EntraMFA;
-
-            try
+            foreach (var serverName in serverList)
             {
-                if (isMfa) await MfaAuthenticationHelper.MfaAuthLock.WaitAsync();
+                allServersToTest.Add((conn, serverName));
+            }
+        }
 
+        // Process in batches of 10 servers in parallel
+        const int batchSize = 10;
+        const int refreshTimeout = 5; // 5 seconds timeout for refresh all
+        
+        for (int i = 0; i < allServersToTest.Count; i += batchSize)
+        {
+            var batch = allServersToTest.Skip(i).Take(batchSize).ToList();
+            var tasks = batch.Select(async item =>
+            {
+                var (conn, serverName) = item;
+                var successfulForThisConn = new List<string>();
+                var isMfa = conn.EffectiveAuthType == AuthenticationTypes.EntraMFA;
+                
                 try
                 {
-                    var successfulForThisConn = new List<string>();
-                    foreach (var serverName in serverList)
+                    if (isMfa) await MfaAuthenticationHelper.MfaAuthLock.WaitAsync();
+                    
+                    try
                     {
-                        // Use master database for connection test to allow testing before SQLWATCH is deployed
+                        // Use master database for connection test with 5-second timeout
                         var connectionString = conn.GetConnectionString(serverName, "master");
+                        // Override timeout to 5 seconds for refresh all
+                        connectionString = connectionString.Replace("Connect Timeout=", "Connection Timeout=");
+                        if (!connectionString.Contains("Connection Timeout=") && !connectionString.Contains("Connect Timeout="))
+                        {
+                            connectionString += $";Connection Timeout={refreshTimeout}";
+                        }
+                        else
+                        {
+                            // Replace existing timeout with 5 seconds
+                            connectionString = System.Text.RegularExpressions.Regex.Replace(
+                                connectionString, 
+                                @"(Connection|Connect) Timeout=\d+", 
+                                $"Connection Timeout={refreshTimeout}");
+                        }
+                        
                         using var connection = new SqlConnection(connectionString);
                         await connection.OpenAsync();
-                        successfulForThisConn.Add(serverName);
-                        successfulServers++;
+                        return (serverName, true);
                     }
-
-                    ConnectionManager.UpdateSuccessfulServers(conn.Id, successfulForThisConn);
-                    if (successfulForThisConn.Count == serverList.Count)
+                    finally
                     {
-                        successfulConnections++;
+                        if (isMfa) MfaAuthenticationHelper.MfaAuthLock.Release();
                     }
                 }
-                finally
+                catch
                 {
-                    if (isMfa) MfaAuthenticationHelper.MfaAuthLock.Release();
+                    return (serverName, false);
                 }
-            }
-            catch
+            });
+            
+            var results = await Task.WhenAll(tasks);
+            
+            // Group results by connection and update
+            var groupedByConn = results.GroupBy(r => batch.First(b => b.serverName == r.serverName).conn);
+            foreach (var group in groupedByConn)
             {
-                ConnectionManager.UpdateSuccessfulServers(conn.Id, new List<string>());
+                var conn = group.Key;
+                var successfulForThisConn = group.Where(r => r.Item2).Select(r => r.serverName).ToList();
+                ConnectionManager.UpdateSuccessfulServers(conn.Id, successfulForThisConn);
+                
+                var serverList = conn.GetServerList();
+                if (successfulForThisConn.Count == serverList.Count)
+                {
+                    successfulConnections++;
+                }
+                successfulServers += successfulForThisConn.Count;
             }
+            
+            // Update UI periodically
+            LoadConnections();
+            await InvokeAsync(StateHasChanged);
         }
 
         LoadConnections();
@@ -652,7 +818,7 @@
         }
         else
         {
-            StatusMessage = "Failed to connect to any server";
+            StatusMessage = "Failed to connect to any servers";
             IsSuccess = false;
         }
     }
@@ -687,5 +853,26 @@
             await CheckSqlWatchDatabase(conn);
             await CheckPerformanceMonitorDatabase(conn);
         }
+    }
+
+    private void DeleteAllDisconnected()
+    {
+        var disconnectedConnections = Connections.Where(c => !c.IsConnected).ToList();
+        
+        if (disconnectedConnections.Count == 0)
+        {
+            StatusMessage = "No disconnected servers to delete";
+            IsSuccess = true;
+            return;
+        }
+        
+        foreach (var conn in disconnectedConnections)
+        {
+            ConnectionManager.RemoveConnection(conn.Id);
+        }
+        
+        LoadConnections();
+        StatusMessage = $"Deleted {disconnectedConnections.Count} disconnected server(s)";
+        IsSuccess = true;
     }
 }

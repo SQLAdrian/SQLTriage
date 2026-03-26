@@ -1,0 +1,108 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using SqlHealthAssessment.Data.Models
+
+@if (_visible)
+{
+    <div class="pdf-modal-overlay" @onclick="Cancel">
+        <div class="pdf-modal" @onclick:stopPropagation="true">
+
+            <div class="pdf-modal-header">
+                <span><i class="fa-solid fa-file-pdf"></i> @Title</span>
+                <button class="btn-close-modal" @onclick="Cancel"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <div class="pdf-modal-body">
+
+                <!-- File name -->
+                <div class="pdf-field">
+                    <label class="pdf-label">File name</label>
+                    <div class="pdf-filename-row">
+                        <input class="pdf-input" type="text" @bind="_stem" @bind:event="oninput" spellcheck="false" />
+                        <span class="pdf-ext">.pdf</span>
+                    </div>
+                </div>
+
+                <!-- Orientation -->
+                <div class="pdf-field">
+                    <label class="pdf-label">Orientation</label>
+                    <div class="pdf-toggle-group">
+                        <button class="pdf-toggle @(_landscape ? "active" : "")" @onclick='() => _landscape = true'>
+                            <i class="fa-solid fa-rectangle-wide"></i> Landscape
+                        </button>
+                        <button class="pdf-toggle @(!_landscape ? "active" : "")" @onclick='() => _landscape = false'>
+                            <i class="fa-solid fa-rectangle-portrait"></i> Portrait
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Backgrounds -->
+                <div class="pdf-field">
+                    <label class="pdf-label">Theme</label>
+                    <div class="pdf-toggle-group">
+                        <button class="pdf-toggle @(_printBackgrounds ? "active" : "")" @onclick='() => _printBackgrounds = true'
+                                title="Preserves dark dashboard colours">
+                            <i class="fa-solid fa-moon"></i> Dark (print backgrounds)
+                        </button>
+                        <button class="pdf-toggle @(!_printBackgrounds ? "active" : "")" @onclick='() => _printBackgrounds = false'
+                                title="Clean white output for reports">
+                            <i class="fa-solid fa-sun"></i> Light
+                        </button>
+                    </div>
+                </div>
+
+                <p class="pdf-hint">
+                    File will be saved to <code>.\output\</code>
+                </p>
+            </div>
+
+            <div class="pdf-modal-footer">
+                <button class="btn btn-secondary" @onclick="Cancel">Cancel</button>
+                <button class="btn btn-primary" @onclick="Confirm" disabled="@string.IsNullOrWhiteSpace(_stem)">
+                    <i class="fa-solid fa-file-arrow-down"></i> Export PDF
+                </button>
+            </div>
+
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string Title               { get; set; } = "Export to PDF";
+    [Parameter] public bool   DefaultLandscape    { get; set; } = true;
+    [Parameter] public bool   DefaultBackgrounds  { get; set; } = true;
+    [Parameter] public EventCallback<PdfExportSettings> OnConfirm { get; set; }
+
+    private bool   _visible;
+    private string _stem            = "";
+    private bool   _landscape;
+    private bool   _printBackgrounds;
+
+    /// <summary>Open the modal with a pre-filled filename stem (no .pdf extension).</summary>
+    public void Show(string suggestedStem)
+    {
+        _stem             = suggestedStem;
+        _landscape        = DefaultLandscape;
+        _printBackgrounds = DefaultBackgrounds;
+        _visible          = true;
+        StateHasChanged();
+    }
+
+    private async Task Confirm()
+    {
+        if (string.IsNullOrWhiteSpace(_stem)) return;
+        _visible = false;
+        await OnConfirm.InvokeAsync(new PdfExportSettings
+        {
+            FileName           = _stem.Trim() + ".pdf",
+            LandscapeOrientation = _landscape,
+            PrintBackgrounds   = _printBackgrounds
+        });
+    }
+
+    private void Cancel()
+    {
+        _visible = false;
+        StateHasChanged();
+    }
+}
+

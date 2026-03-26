@@ -84,14 +84,6 @@
                     <div class="credit-desc">Local SQLite caching layer for offline resilience</div>
                 </div>
             </a>
-            <a class="credit-card" href="https://github.com/lkosson/reportviewercore" target="_blank">
-                <div class="credit-icon"><i class="fa-solid fa-file-invoice"></i></div>
-                <div class="credit-body">
-                    <div class="credit-name">ReportViewerCore</div>
-                    <div class="credit-author">Lars Kosson</div>
-                    <div class="credit-desc">Cross-platform ReportViewer implementation for .NET</div>
-                </div>
-            </a>
              <a class="credit-card" href="https://github.com/microsoft/tigertoolbox/tree/master" target="_blank">
                 <div class="credit-icon"><i class="fa-solid fa-dragon"></i></div>
                 <div class="credit-body">
@@ -108,7 +100,8 @@
         <p>
             <strong>SQL Health Assessment</strong> is a free, open-source SQL Server monitoring and health assessment tool
             for Windows DBAs. Built on the battle-tested SQLWATCH framework, it provides real-time monitoring, comprehensive
-            health checks, interactive query execution plans, wait statistics, and performance dashboards for multiple instances.
+            health checks, interactive query execution plans, wait statistics, Always On AG monitoring, replication health,
+            SQL Agent job tracking, multi-channel alerting, and performance dashboards for multiple instances.
         </p>
         <p>
             The application is designed to be a UI interface from various SQL Server health check scripts, with a focus on performance, security, and usability.
@@ -149,12 +142,15 @@
         <h2><i class="fa-solid fa-wand-magic-sparkles"></i> Features</h2>
         <div class="features-grid">
             <div class="feature-card">
-                <h3><i class="fa-solid fa-lock"></i> Security</h3>
+                <h3><i class="fa-solid fa-shield-halved"></i> Security Hardening</h3>
                 <ul>
-                    <li>DPAPI credential encryption</li>
+                    <li>AES-256-GCM credential encryption (DPAPI machine-key backed)</li>
+                    <li>Ephemeral session keys for in-memory data protection</li>
                     <li>Parameterised queries (SQL injection prevention)</li>
+                    <li>Assembly obfuscation (ConfuserEx2 — anti-tamper, anti-debug)</li>
+                    <li>Single-file deployment with compressed bundling</li>
                     <li>Comprehensive audit logging</li>
-                    <li>Security event tracking</li>
+                    <li>Process integrity validation</li>
                 </ul>
             </div>
             <div class="feature-card">
@@ -201,6 +197,39 @@
                 </ul>
             </div>
             <div class="feature-card">
+                <h3><i class="fa-solid fa-bell"></i> Alerting &amp; Notifications</h3>
+                <ul>
+                    <li>Timer-based alert evaluation (30 s cycle)</li>
+                    <li>6 notification channels: Email (SMTP), Teams, Slack, Webhooks, PagerDuty, ServiceNow</li>
+                    <li>Configurable severity thresholds and cooldowns</li>
+                    <li>Alert history with SQLite persistence</li>
+                    <li>Scheduled task engine (60 s cycle) with CSV/Blob output</li>
+                    <li>All credentials AES-256-GCM encrypted</li>
+                </ul>
+            </div>
+            <div class="feature-card">
+                <h3><i class="fa-solid fa-tags"></i> Server Management</h3>
+                <ul>
+                    <li>Multi-server connection management</li>
+                    <li>Server tagging and environment labels (Prod/Staging/Dev/QA/DR)</li>
+                    <li>Filter servers by tag or environment</li>
+                    <li>Windows, SQL Server, and Entra MFA authentication</li>
+                    <li>Automatic connection testing on startup</li>
+                    <li>RBAC: Admin / Operator / Viewer roles with OAuth</li>
+                </ul>
+            </div>
+            <div class="feature-card">
+                <h3><i class="fa-solid fa-cloud-arrow-up"></i> Azure Blob Export</h3>
+                <ul>
+                    <li>Auto-upload audit CSVs to Azure Blob Storage</li>
+                    <li>Dual upload: Azure SDK &amp; AzCopy fallback</li>
+                    <li>SAS token &amp; User Delegation SAS auth</li>
+                    <li>Directory-scoped SAS support</li>
+                    <li>Connection diagnostics modal</li>
+                    <li>Toast notifications for upload results</li>
+                </ul>
+            </div>
+            <div class="feature-card">
                 <h3><i class="fa-solid fa-palette"></i> User Experience</h3>
                 <ul>
                     <li>10 theme options</li>
@@ -210,6 +239,7 @@
                     <li>Cancel in-flight dashboard loads</li>
                     <li>Panel maximise / full-screen view</li>
                     <li>WCAG 2.1 AA accessibility</li>
+                    <li>2-column settings layout for quick access</li>
                 </ul>
             </div>
         </div>
@@ -297,6 +327,9 @@
                 <tr><td>Live Query Stats</td><td>Plan cache hit ratio, top CPU / IO / duration queries</td><td>—</td></tr>
                 <tr><td>Live Jobs</td><td>Running jobs, failed jobs (24 h), job history</td><td>—</td></tr>
                 <tr><td>Live TempDB</td><td>TempDB usage, version store, long transactions</td><td>—</td></tr>
+                <tr><td>Replication</td><td>Publications, subscriptions, undistributed commands, agent history</td><td>—</td></tr>
+                <tr><td>Always On AG</td><td>AG health, replica status, redo/send queue trends, listeners</td><td>—</td></tr>
+                <tr><td>Job Monitor</td><td>Agent jobs overview, failures detail, schedules, long-running jobs</td><td>—</td></tr>
                 <tr><td>Vulnerability Assessment</td><td>SQL Server security assessment results</td><td>—</td></tr>
                 <tr><td>Checks</td><td>Automated health check results</td><td>—</td></tr>
                 <tr><td>Quick Check</td><td>Instant health snapshot</td><td>Ctrl+Q</td></tr>
@@ -412,13 +445,32 @@
 
     <div class="about-section">
         <h2><i class="fa-solid fa-box"></i> Deployment</h2>
-        <p><strong>Build Type:</strong> Framework-Dependent Single File — requires .NET 8 Desktop Runtime on the target machine.</p>
+        <p><strong>Build Type:</strong> Self-contained single-file executable (win-x64).</p>
         <ul>
-            <li>ReadyToRun compilation for fast startup</li>
+            <li>ReadyToRun (R2R) pre-compilation for fast startup</li>
+            <li>All DLLs bundled into a single compressed exe</li>
+            <li>Assembly protection via ConfuserEx2 (obfuscation, anti-tamper, anti-debug)</li>
             <li>Server GC + concurrent GC for optimal throughput</li>
-            <li>Bundled .NET 8 runtime installer included</li>
+            <li>Windows Service mode for headless deployment on servers</li>
         </ul>
-        <p>Check for updates via <strong>Settings → Updates</strong>.</p>
+        <p>Manage updates via <strong>Configure → Service &amp; Updates</strong>.</p>
+    </div>
+
+    <div class="about-section">
+        <h2><i class="fa-solid fa-shield-halved"></i> Enterprise Security Architecture</h2>
+        <p>SQL Health Assessment is hardened for enterprise database environments:</p>
+        <table class="dashboards-table">
+            <thead><tr><th>Layer</th><th>Protection</th><th>Detail</th></tr></thead>
+            <tbody>
+                <tr><td>Credentials</td><td>AES-256-GCM</td><td>Machine-scoped DPAPI key file + authenticated encryption. Works for interactive and service accounts.</td></tr>
+                <tr><td>In-Memory Data</td><td>Ephemeral AES-256-GCM</td><td>Dashboard results encrypted with a per-process session key (never persisted). Memory dumps cannot recover previous sessions.</td></tr>
+                <tr><td>SQL Execution</td><td>Parameterised Queries</td><td>All SQL is parameterised — no string concatenation. Query throttling prevents abuse.</td></tr>
+                <tr><td>Assembly</td><td>ConfuserEx2 Obfuscation</td><td>Symbol renaming, string encryption, control flow obfuscation, anti-tamper, anti-debug, reference proxying.</td></tr>
+                <tr><td>Transport</td><td>TLS / Encrypted Connection</td><td>SQL connections support TLS. Server mode uses Kestrel with configurable HTTPS.</td></tr>
+                <tr><td>Audit</td><td>Structured Logging</td><td>All operations logged with Serilog. 30-day rolling retention. User + machine context on every entry.</td></tr>
+                <tr><td>Process</td><td>Resilience + Isolation</td><td>Polly retry policies, connection pooling, query timeouts, memory pressure monitoring.</td></tr>
+            </tbody>
+        </table>
     </div>
 
     <div class="about-section">

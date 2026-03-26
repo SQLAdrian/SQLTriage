@@ -1,6 +1,7 @@
 /* In the name of God, the Merciful, the Compassionate */
 
 using System;
+using Microsoft.Extensions.Logging;
 
 namespace SqlHealthAssessment.Data
 {
@@ -13,6 +14,12 @@ namespace SqlHealthAssessment.Data
     {
         private string? _selectedInstance;
         private readonly object _lock = new();
+        private readonly ILogger<GlobalInstanceSelector> _logger;
+
+        public GlobalInstanceSelector(ILogger<GlobalInstanceSelector> logger)
+        {
+            _logger = logger;
+        }
 
         /// <summary>
         /// Raised when the selected instance changes.
@@ -53,7 +60,7 @@ namespace SqlHealthAssessment.Data
 
             if (changed && instanceName != null)
             {
-                System.Diagnostics.Debug.WriteLine($"[GlobalInstanceSelector] Instance changed to: {instanceName}");
+                _logger.LogInformation("Instance changed to {InstanceName}", instanceName);
                 OnInstanceChanged?.Invoke(instanceName);
             }
         }
