@@ -27,6 +27,9 @@ namespace SqlHealthAssessment.Data.Models
 
         [JsonPropertyName("serviceNow")]
         public ServiceNowChannelConfig ServiceNow { get; set; } = new();
+
+        [JsonPropertyName("whatsApp")]
+        public WhatsAppChannelConfig WhatsApp { get; set; } = new();
     }
 
     public class SmtpChannelConfig
@@ -195,6 +198,45 @@ namespace SqlHealthAssessment.Data.Models
         /// </summary>
         [JsonPropertyName("callerId")]
         public string CallerId { get; set; } = string.Empty;
+
+        [JsonPropertyName("minimumSeverity")]
+        public string MinimumSeverity { get; set; } = "critical";
+    }
+
+    public class WhatsAppChannelConfig
+    {
+        [JsonPropertyName("enabled")]
+        public bool Enabled { get; set; }
+
+        /// <summary>
+        /// WhatsApp Business Phone Number ID (from Meta Business dashboard).
+        /// </summary>
+        [JsonPropertyName("phoneNumberId")]
+        public string PhoneNumberId { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Permanent access token for the WhatsApp Business API. Encrypted via CredentialProtector.
+        /// </summary>
+        [JsonPropertyName("accessToken")]
+        public string AccessToken { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Recipient phone numbers in E.164 format (e.g. +1234567890). Comma-separated in UI.
+        /// </summary>
+        [JsonPropertyName("recipientNumbers")]
+        public List<string> RecipientNumbers { get; set; } = new();
+
+        /// <summary>
+        /// Pre-approved message template name (e.g. "sql_alert_notification").
+        /// </summary>
+        [JsonPropertyName("templateName")]
+        public string TemplateName { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Template language code (e.g. "en_US", "en").
+        /// </summary>
+        [JsonPropertyName("templateLanguage")]
+        public string TemplateLanguage { get; set; } = "en_US";
 
         [JsonPropertyName("minimumSeverity")]
         public string MinimumSeverity { get; set; } = "critical";

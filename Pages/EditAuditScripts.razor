@@ -148,6 +148,12 @@
                     <input type="text" class="form-input" @bind="EditingScript.ScriptPath" />
                 </div>
                 <div class="form-group">
+                    <label>Execution Test:</label>
+                    <textarea class="form-input" rows="2" @bind="EditingScript.ExecutionTest"
+                              placeholder="Optional SQL returning a ToRun column (0 or 1). If 0, ExecutionParameters is skipped."></textarea>
+                    <small style="color: var(--text-muted); font-size: 11px;">Query must return a single row with a <code>ToRun</code> column. If ToRun=0, the .sql script still runs but ExecutionParameters is skipped.</small>
+                </div>
+                <div class="form-group">
                     <label>Execution Parameters:</label>
                     <input type="text" class="form-input" @bind="EditingScript.ExecutionParameters" />
                 </div>

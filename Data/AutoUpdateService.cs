@@ -297,5 +297,132 @@ del ""{scriptPath}"" 2>nul
         }
 
         public string GetCurrentVersion() => _buildNumber > 0 ? $"{_currentVersion}.{_buildNumber}" : _currentVersion;
+
+        // ──────────────── Script Updates ────────────────
+
+        /// <summary>
+        /// Checks the GitHub repo's scripts/ folder for updated .sql files.
+        /// Compares remote SHA against local file SHA to detect changes.
+        /// Returns a list of files that differ or are missing locally.
+        /// </summary>
+        public async Task<List<ScriptUpdateInfo>> CheckForScriptUpdatesAsync()
+        {
+            var results = new List<ScriptUpdateInfo>();
+            try
+            {
+                // Derive the Contents API URL from the releases URL
+                // e.g. https://api.github.com/repos/SQLAdrian/SqlHealthAssessment/releases/latest
+                //    → https://api.github.com/repos/SQLAdrian/SqlHealthAssessment/contents/scripts
+                var repoBase = _updateCheckUrl;
+                var releasesIdx = repoBase.IndexOf("/releases/", StringComparison.OrdinalIgnoreCase);
+                if (releasesIdx < 0)
+                {
+                    _logger.LogWarning("Cannot derive repo URL from updateCheckUrl: {Url}", _updateCheckUrl);
+                    return results;
+                }
+                var contentsUrl = repoBase[..releasesIdx] + "/contents/scripts";
+
+                _logger.LogInformation("Checking for script updates at {Url}", contentsUrl);
+                var response = await _httpClient.GetStringAsync(contentsUrl);
+                var files = JsonDocument.Parse(response).RootElement;
+
+                var localScriptsDir = Path.Combine(AppContext.BaseDirectory, "scripts");
+                Directory.CreateDirectory(localScriptsDir);
+
+                foreach (var file in files.EnumerateArray())
+                {
+                    var name = file.GetProperty("name").GetString() ?? "";
+                    if (!name.EndsWith(".sql", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    var remoteSha = file.GetProperty("sha").GetString() ?? "";
+                    var downloadUrl = file.GetProperty("download_url").GetString() ?? "";
+                    var remoteSize = file.TryGetProperty("size", out var sz) ? sz.GetInt64() : 0;
+
+                    var localPath = Path.Combine(localScriptsDir, name);
+                    var localExists = File.Exists(localPath);
+                    var localSha = localExists ? ComputeGitBlobSha(localPath) : "";
+
+                    if (!localExists || !string.Equals(remoteSha, localSha, StringComparison.OrdinalIgnoreCase))
+                    {
+                        results.Add(new ScriptUpdateInfo
+                        {
+                            FileName = name,
+                            DownloadUrl = downloadUrl,
+                            RemoteSha = remoteSha,
+                            LocalExists = localExists,
+                            RemoteSize = remoteSize
+                        });
+                    }
+                }
+
+                _logger.LogInformation("Script update check: {Updated} of {Total} files need updating",
+                    results.Count, files.GetArrayLength());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to check for script updates");
+            }
+            return results;
+        }
+
+        /// <summary>
+        /// Downloads updated script files to the local scripts/ folder.
+        /// </summary>
+        public async Task<(int Succeeded, int Failed)> DownloadScriptUpdatesAsync(
+            List<ScriptUpdateInfo> updates, IProgress<int>? progress = null)
+        {
+            var localScriptsDir = Path.Combine(AppContext.BaseDirectory, "scripts");
+            Directory.CreateDirectory(localScriptsDir);
+
+            int succeeded = 0, failed = 0;
+            for (int i = 0; i < updates.Count; i++)
+            {
+                var update = updates[i];
+                try
+                {
+                    var content = await _httpClient.GetStringAsync(update.DownloadUrl);
+                    var localPath = Path.Combine(localScriptsDir, update.FileName);
+                    await File.WriteAllTextAsync(localPath, content);
+                    succeeded++;
+                    _logger.LogInformation("Updated script: {FileName}", update.FileName);
+                }
+                catch (Exception ex)
+                {
+                    failed++;
+                    _logger.LogError(ex, "Failed to download script: {FileName}", update.FileName);
+                }
+
+                progress?.Report((i + 1) * 100 / updates.Count);
+            }
+
+            return (succeeded, failed);
+        }
+
+        /// <summary>
+        /// Computes the Git blob SHA1 for a local file (same algorithm GitHub uses).
+        /// Format: SHA1("blob {size}\0{content}")
+        /// </summary>
+        private static string ComputeGitBlobSha(string filePath)
+        {
+            var content = File.ReadAllBytes(filePath);
+            var header = System.Text.Encoding.UTF8.GetBytes($"blob {content.Length}\0");
+            var combined = new byte[header.Length + content.Length];
+            Buffer.BlockCopy(header, 0, combined, 0, header.Length);
+            Buffer.BlockCopy(content, 0, combined, header.Length, content.Length);
+
+            using var sha1 = System.Security.Cryptography.SHA1.Create();
+            var hash = sha1.ComputeHash(combined);
+            return Convert.ToHexString(hash).ToLowerInvariant();
+        }
+    }
+
+    public class ScriptUpdateInfo
+    {
+        public string FileName { get; set; } = "";
+        public string DownloadUrl { get; set; } = "";
+        public string RemoteSha { get; set; } = "";
+        public bool LocalExists { get; set; }
+        public long RemoteSize { get; set; }
     }
 }

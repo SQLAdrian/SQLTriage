@@ -561,6 +561,18 @@ namespace SqlHealthAssessment
             // Wait 0.8 seconds then close
             await Task.Delay(800);
 
+            // Stop server mode explicitly before shutdown to release Kestrel threads
+            try
+            {
+                var serverMode = App.Services?.GetService<ServerModeService>();
+                if (serverMode?.IsRunning == true)
+                    await serverMode.StopAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Error stopping server mode during close");
+            }
+
             // Actually close the window
             _forceClose = true;
             _trayIcon?.Dispose();

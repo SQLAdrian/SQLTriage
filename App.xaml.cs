@@ -249,28 +249,70 @@ namespace SqlHealthAssessment
                 Log.Error(ex, "Failed to apply update on exit");
             }
 
-            // Dispose the DI container — flushes timers, closes connections, releases resources
-            // Use DisposeAsync when available (some services only implement IAsyncDisposable)
-            if (Services is IAsyncDisposable asyncDisposable)
+            // ── Explicitly stop all background services before DI dispose ──
+            // This prevents deadlocks from IAsyncDisposable services waiting
+            // on active timer callbacks or Kestrel connections.
+            StopBackgroundServices();
+
+            // Dispose the DI container with a timeout to prevent hanging
+            try
             {
-                try { asyncDisposable.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
-                catch (Exception disposeEx)
+                var disposeTask = Task.Run(() =>
                 {
-                    Log.Warning(disposeEx, "Error disposing service provider");
-                }
+                    if (Services is IAsyncDisposable asyncDisposable)
+                        asyncDisposable.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                    else if (Services is IDisposable disposable)
+                        disposable.Dispose();
+                });
+
+                if (!disposeTask.Wait(TimeSpan.FromSeconds(5)))
+                    Log.Warning("Service provider dispose timed out after 5 seconds");
             }
-            else if (Services is IDisposable disposable)
+            catch (Exception disposeEx)
             {
-                try { disposable.Dispose(); }
-                catch (Exception disposeEx)
-                {
-                    Log.Warning(disposeEx, "Error disposing service provider");
-                }
+                Log.Warning(disposeEx, "Error disposing service provider");
             }
 
             Log.Information("Application exiting...");
             Log.CloseAndFlush();
             base.OnExit(e);
+
+            // Force-kill lingering threads (Kestrel, timers) that prevent clean exit
+            Environment.Exit(0);
+        }
+
+        /// <summary>
+        /// Explicitly stops all timer-based and background services so they release
+        /// their threads before the DI container is disposed. Without this, services
+        /// with active timer callbacks can keep the process alive indefinitely.
+        /// </summary>
+        private static void StopBackgroundServices()
+        {
+            try
+            {
+                // Stop server mode (Kestrel) — may already be stopped by MainWindow
+                var serverMode = Services?.GetService<Data.Services.ServerModeService>();
+                if (serverMode?.IsRunning == true)
+                {
+                    try { serverMode.StopAsync().GetAwaiter().GetResult(); }
+                    catch (Exception ex) { Log.Warning(ex, "Error stopping server mode on exit"); }
+                }
+
+                // Stop timer-based services
+                Services?.GetService<Data.Services.AlertEvaluationService>()?.Stop();
+                Services?.GetService<Data.Services.ScheduledTaskEngine>()?.Stop();
+                Services?.GetService<CacheEvictionService>()?.Stop();
+                Services?.GetService<liveQueriesMaintenanceService>()?.Stop();
+                Services?.GetService<MemoryMonitorService>()?.Dispose();
+                Services?.GetService<LogCleanupService>()?.Dispose();
+                Services?.GetService<AutoRefreshService>()?.Dispose();
+
+                Log.Information("Background services stopped");
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Error stopping background services");
+            }
         }
 
         private void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)

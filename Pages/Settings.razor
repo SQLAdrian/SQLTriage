@@ -2,6 +2,7 @@
 @page "/settings"
 
 @using Microsoft.Extensions.Configuration
+@using Microsoft.Extensions.DependencyInjection
 @using System.IO
 @using System.Text.Json
 @using Microsoft.Data.SqlClient
@@ -876,27 +877,18 @@
 
         try
         {
-            var dbPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "SqlHealthAssessment-cache.db");
-            if (System.IO.File.Exists(dbPath))
+            var cacheStore = App.Services?.GetService<SqlHealthAssessment.Data.Caching.liveQueriesCacheStore>();
+            if (cacheStore != null)
             {
-                Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-                GC.Collect();
-                GC.WaitForPendingFinalizers();
-                
-                System.IO.File.Delete(dbPath);
-                var walPath = dbPath + "-wal";
-                var shmPath = dbPath + "-shm";
-                if (System.IO.File.Exists(walPath)) System.IO.File.Delete(walPath);
-                if (System.IO.File.Exists(shmPath)) System.IO.File.Delete(shmPath);
-                
+                await cacheStore.InvalidateAllAsync();
                 FlushCacheResult = "Cache flushed successfully. All dashboard data will be recreated on next refresh.";
                 FlushCacheSuccess = true;
                 UpdateCacheFileSize();
             }
             else
             {
-                FlushCacheResult = "No cache file found.";
-                FlushCacheSuccess = true;
+                FlushCacheResult = "Cache service not available.";
+                FlushCacheSuccess = false;
             }
         }
         catch (Exception ex)
@@ -908,7 +900,6 @@
         {
             IsFlushingCache = false;
             StateHasChanged();
-            await Task.CompletedTask;
         }
     }
     

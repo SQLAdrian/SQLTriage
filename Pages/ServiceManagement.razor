@@ -186,6 +186,66 @@
                 <i class="fa-solid fa-check" style="margin-right: 4px;"></i> You are running the latest version.
             </p>
         }
+
+        <hr style="border: none; border-top: 1px solid var(--border); margin: 16px 0;" />
+
+        <h4 style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+            <i class="fa-solid fa-file-code" style="color: var(--text-secondary);"></i>
+            Diagnostic Scripts
+        </h4>
+
+        <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;">
+            Check the repository for updated SQL scripts in the <code>scripts/</code> folder (sp_Blitz, sp_triage, checklists, etc.).
+        </p>
+
+        <button class="settings-btn" style="background: var(--bg-hover); margin-bottom: 12px;"
+                @onclick="CheckForScriptUpdates" disabled="@_checkingScripts">
+            @if (_checkingScripts) { <i class="fa-solid fa-spinner fa-spin" style="margin-right: 4px;"></i> }
+            <i class="fa-solid fa-code-compare" style="margin-right: 4px;"></i> Check for Script Updates
+        </button>
+
+        @if (_scriptUpdates != null && _scriptUpdates.Count > 0)
+        {
+            <div style="padding: 12px; border-radius: 4px; background: rgba(0, 122, 204, 0.08); border: 1px solid rgba(0, 122, 204, 0.3); margin-bottom: 12px;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                    <i class="fa-solid fa-arrow-up" style="color: var(--accent);"></i>
+                    <span style="color: var(--accent); font-weight: 600; font-size: 13px;">@_scriptUpdates.Count script(s) can be updated</span>
+                </div>
+                <div style="max-height: 140px; overflow-y: auto; margin-bottom: 10px;">
+                    @foreach (var s in _scriptUpdates)
+                    {
+                        <div style="display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px;">
+                            <i class="fa-solid @(s.LocalExists ? "fa-arrows-rotate" : "fa-plus") "
+                               style="color: @(s.LocalExists ? "var(--yellow)" : "var(--green)"); width: 14px; text-align: center;"></i>
+                            <span style="font-family: monospace; color: var(--text-primary);">@s.FileName</span>
+                            <span style="color: var(--text-muted);">@(s.LocalExists ? "(modified)" : "(new)")</span>
+                            @if (s.RemoteSize > 0)
+                            {
+                                <span style="color: var(--text-muted); font-size: 11px;">@FormatFileSize(s.RemoteSize)</span>
+                            }
+                        </div>
+                    }
+                </div>
+                <button class="settings-btn" @onclick="DownloadScriptUpdates" disabled="@_downloadingScripts">
+                    @if (_downloadingScripts)
+                    {
+                        <i class="fa-solid fa-spinner fa-spin" style="margin-right: 4px;"></i>
+                        <span>Downloading...</span>
+                    }
+                    else
+                    {
+                        <i class="fa-solid fa-download" style="margin-right: 4px;"></i>
+                        <span>Download All Updates</span>
+                    }
+                </button>
+            </div>
+        }
+        else if (_scriptUpdateChecked && (_scriptUpdates == null || _scriptUpdates.Count == 0))
+        {
+            <p style="padding: 10px; border-radius: 4px; background: rgba(78, 201, 176, 0.1); border: 1px solid var(--green); color: var(--green); font-size: 13px;">
+                <i class="fa-solid fa-check" style="margin-right: 4px;"></i> All scripts are up to date.
+            </p>
+        }
     </div>
 
     @* ── Command Line Reference ── *@
@@ -222,6 +282,12 @@
     private bool _downloading;
     private int _downloadProgress;
     private bool _updateStaged;
+
+    // Script updates
+    private bool _checkingScripts;
+    private bool _scriptUpdateChecked;
+    private List<ScriptUpdateInfo>? _scriptUpdates;
+    private bool _downloadingScripts;
 
     protected override void OnInitialized()
     {
@@ -409,6 +475,72 @@
             _downloading = false;
             StateHasChanged();
         }
+    }
+
+    private async Task CheckForScriptUpdates()
+    {
+        _checkingScripts = true;
+        _scriptUpdateChecked = false;
+        _scriptUpdates = null;
+        StateHasChanged();
+
+        try
+        {
+            _scriptUpdates = await UpdateService.CheckForScriptUpdatesAsync();
+            _scriptUpdateChecked = true;
+        }
+        catch (Exception ex)
+        {
+            _actionSuccess = false;
+            _actionMessage = $"Script update check failed: {ex.Message}";
+        }
+        finally
+        {
+            _checkingScripts = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task DownloadScriptUpdates()
+    {
+        if (_scriptUpdates == null || _scriptUpdates.Count == 0) return;
+
+        _downloadingScripts = true;
+        StateHasChanged();
+
+        try
+        {
+            var (succeeded, failed) = await UpdateService.DownloadScriptUpdatesAsync(_scriptUpdates);
+
+            if (failed == 0)
+            {
+                Toast.ShowSuccess($"{succeeded} script(s) updated successfully");
+                _scriptUpdates = null;
+                _scriptUpdateChecked = false;
+            }
+            else
+            {
+                _actionSuccess = false;
+                _actionMessage = $"Scripts: {succeeded} updated, {failed} failed. Check logs for details.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _actionSuccess = false;
+            _actionMessage = $"Script download failed: {ex.Message}";
+        }
+        finally
+        {
+            _downloadingScripts = false;
+            StateHasChanged();
+        }
+    }
+
+    private static string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:N1} KB";
+        return $"{bytes / (1024.0 * 1024.0):N1} MB";
     }
 
     private static async Task<(int ExitCode, string Output)> RunCommandAsync(string fileName, string arguments)

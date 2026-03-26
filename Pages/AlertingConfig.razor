@@ -268,6 +268,57 @@
         </div>
     </div>
 
+    @* ── WhatsApp ── *@
+    <div class="settings-group">
+        <h3 style="display: flex; align-items: center; gap: 8px;">
+            <i class="fa-brands fa-whatsapp" style="color: #25D366;"></i>
+            WhatsApp (Meta Business API)
+            <label style="margin-left: auto; display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px; font-weight: normal;">
+                <input type="checkbox" @bind="_whatsApp.Enabled" style="width: auto;" />
+                <span style="color: var(--text-secondary);">Enabled</span>
+            </label>
+        </h3>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="settings-field">
+                <label>Phone Number ID <span style="color: var(--red);">*</span></label>
+                <input type="text" @bind="_whatsApp.PhoneNumberId" @bind:event="oninput" placeholder="1234567890" />
+                <small style="display: block; margin-top: 4px; color: var(--text-muted); font-size: 11px;">From Meta Business > WhatsApp > API Setup</small>
+            </div>
+            <div class="settings-field">
+                <label>Access Token <span style="color: var(--red);">*</span></label>
+                <input type="password" @bind="_whatsAppAccessToken" @bind:event="oninput"
+                       placeholder="@(_hasExistingWhatsAppToken ? "(encrypted — leave blank to keep)" : "Permanent access token")" />
+            </div>
+        </div>
+
+        <div class="settings-field">
+            <label>Recipient Numbers <span style="color: var(--red);">*</span></label>
+            <input type="text" @bind="_whatsAppRecipients" @bind:event="oninput" placeholder="+1234567890, +0987654321" />
+            <small style="display: block; margin-top: 4px; color: var(--text-muted); font-size: 11px;">Comma-separated, E.164 format (e.g. +1234567890). Recipients must have messaged your business number first.</small>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="settings-field">
+                <label>Template Name</label>
+                <input type="text" @bind="_whatsApp.TemplateName" @bind:event="oninput" placeholder="sql_alert_notification (optional)" />
+                <small style="display: block; margin-top: 4px; color: var(--text-muted); font-size: 11px;">Pre-approved template for business-initiated messages. Leave blank for plain text (24-hour window only).</small>
+            </div>
+            <div class="settings-field">
+                <label>Template Language</label>
+                <input type="text" @bind="_whatsApp.TemplateLanguage" @bind:event="oninput" placeholder="en_US" />
+            </div>
+        </div>
+
+        <div class="settings-field">
+            <label>Minimum Severity</label>
+            <select @bind="_whatsApp.MinimumSeverity">
+                <option value="warning">Warning & Critical</option>
+                <option value="critical">Critical only</option>
+            </select>
+        </div>
+    </div>
+
     @* ── Actions ── *@
     <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap;">
         <button class="settings-btn" @onclick="SaveConfig">
@@ -339,6 +390,17 @@
                 <i class="fa-solid fa-ticket" style="margin-right: 4px;"></i> <span>Test ServiceNow</span>
             }
         </button>
+
+        <button class="settings-btn" style="background: var(--bg-hover);" @onclick="TestWhatsApp" disabled="@(_testingWhatsApp || !_whatsApp.Enabled)">
+            @if (_testingWhatsApp)
+            {
+                <i class="fa-solid fa-spinner fa-spin" style="margin-right: 4px;"></i> <span>Testing...</span>
+            }
+            else
+            {
+                <i class="fa-brands fa-whatsapp" style="margin-right: 4px;"></i> <span>Test WhatsApp</span>
+            }
+        </button>
     </div>
 
     @if (!string.IsNullOrEmpty(_statusMessage))
@@ -359,6 +421,7 @@
     private WebhookChannelConfig _webhook = new();
     private PagerDutyChannelConfig _pagerDuty = new();
     private ServiceNowChannelConfig _serviceNow = new();
+    private WhatsAppChannelConfig _whatsApp = new();
 
     private string _smtpPassword = "";
     private string _smtpToAddresses = "";
@@ -369,6 +432,8 @@
     private string _pagerDutyRoutingKey = "";
     private string _serviceNowUsername = "";
     private string _serviceNowPassword = "";
+    private string _whatsAppAccessToken = "";
+    private string _whatsAppRecipients = "";
 
     private bool _hasExistingSmtpPassword;
     private bool _hasExistingTeamsUrl;
@@ -378,6 +443,7 @@
     private bool _hasExistingPagerDutyKey;
     private bool _hasExistingServiceNowUser;
     private bool _hasExistingServiceNowPass;
+    private bool _hasExistingWhatsAppToken;
 
     // Status
     private string? _statusMessage;
@@ -388,6 +454,7 @@
     private bool _testingWebhook;
     private bool _testingPagerDuty;
     private bool _testingServiceNow;
+    private bool _testingWhatsApp;
 
     protected override void OnInitialized()
     {
@@ -459,6 +526,19 @@
         _hasExistingServiceNowUser = !string.IsNullOrEmpty(config.ServiceNow.Username);
         _hasExistingServiceNowPass = !string.IsNullOrEmpty(config.ServiceNow.Password);
 
+        // Deep copy WhatsApp config
+        _whatsApp = new WhatsAppChannelConfig
+        {
+            Enabled = config.WhatsApp.Enabled,
+            PhoneNumberId = config.WhatsApp.PhoneNumberId,
+            TemplateName = config.WhatsApp.TemplateName,
+            TemplateLanguage = config.WhatsApp.TemplateLanguage,
+            MinimumSeverity = config.WhatsApp.MinimumSeverity,
+            RecipientNumbers = new List<string>(config.WhatsApp.RecipientNumbers)
+        };
+        _hasExistingWhatsAppToken = !string.IsNullOrEmpty(config.WhatsApp.AccessToken);
+        _whatsAppRecipients = string.Join(", ", _whatsApp.RecipientNumbers);
+
         ChannelService.OnConfigChanged += OnConfigChanged;
     }
 
@@ -516,6 +596,17 @@
         else if (_hasExistingServiceNowPass)
             _serviceNow.Password = ChannelService.Config.ServiceNow.Password;
 
+        // ── WhatsApp access token + recipients ──
+        _whatsApp.RecipientNumbers = _whatsAppRecipients
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(n => !string.IsNullOrWhiteSpace(n))
+            .ToList();
+
+        if (!string.IsNullOrEmpty(_whatsAppAccessToken))
+            _whatsApp.AccessToken = CredentialProtector.Encrypt(_whatsAppAccessToken);
+        else if (_hasExistingWhatsAppToken)
+            _whatsApp.AccessToken = ChannelService.Config.WhatsApp.AccessToken;
+
         var config = new NotificationChannelConfig
         {
             Smtp = _smtp,
@@ -523,7 +614,8 @@
             Slack = _slack,
             Webhook = _webhook,
             PagerDuty = _pagerDuty,
-            ServiceNow = _serviceNow
+            ServiceNow = _serviceNow,
+            WhatsApp = _whatsApp
         };
 
         ChannelService.UpdateConfig(config);
@@ -536,6 +628,7 @@
         _hasExistingPagerDutyKey = !string.IsNullOrEmpty(_pagerDuty.RoutingKey);
         _hasExistingServiceNowUser = !string.IsNullOrEmpty(_serviceNow.Username);
         _hasExistingServiceNowPass = !string.IsNullOrEmpty(_serviceNow.Password);
+        _hasExistingWhatsAppToken = !string.IsNullOrEmpty(_whatsApp.AccessToken);
 
         _smtpPassword = "";
         _teamsWebhookUrl = "";
@@ -545,6 +638,7 @@
         _pagerDutyRoutingKey = "";
         _serviceNowUsername = "";
         _serviceNowPassword = "";
+        _whatsAppAccessToken = "";
 
         _statusSuccess = true;
         _statusMessage = "Configuration saved successfully.";
@@ -634,6 +728,14 @@
         try { SaveConfig(); var (s, m) = await ChannelService.TestServiceNowAsync(); _statusSuccess = s; _statusMessage = m; }
         catch (Exception ex) { _statusSuccess = false; _statusMessage = $"ServiceNow test error: {ex.Message}"; }
         finally { _testingServiceNow = false; StateHasChanged(); }
+    }
+
+    private async Task TestWhatsApp()
+    {
+        _testingWhatsApp = true; _statusMessage = null; StateHasChanged();
+        try { SaveConfig(); var (s, m) = await ChannelService.TestWhatsAppAsync(); _statusSuccess = s; _statusMessage = m; }
+        catch (Exception ex) { _statusSuccess = false; _statusMessage = $"WhatsApp test error: {ex.Message}"; }
+        finally { _testingWhatsApp = false; StateHasChanged(); }
     }
 
     private void OnConfigChanged()

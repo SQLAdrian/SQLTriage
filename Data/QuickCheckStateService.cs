@@ -10,10 +10,14 @@ namespace SqlHealthAssessment.Data
     /// Persists run results, progress, and diagnostic log across navigation.
     /// Also owns the CheckExecutor.OnCheckCompleted subscription so diagnostic
     /// entries continue to be captured even when the page is not mounted.
+    /// DiagLog is capped to prevent unbounded memory growth.
     /// </summary>
     public class QuickCheckStateService : IDisposable
     {
         private readonly CheckExecutionService _checkExecutor;
+
+        /// <summary>Maximum diagnostic log entries retained.</summary>
+        private const int MaxDiagLogEntries = 2000;
 
         // ── Run state ────────────────────────────────────────────────────────
         public List<CheckResult>          Results        { get; set; } = new();
@@ -62,13 +66,22 @@ namespace SqlHealthAssessment.Data
                       $"(val={result.ActualValue}, exp={result.ExpectedValue}, {result.DurationMs}ms)" +
                       (!string.IsNullOrEmpty(result.ErrorMessage) ? $" - {result.ErrorMessage}" : "");
 
-            DiagLog.Add(new DiagLogEntry { Timestamp = DateTime.Now, Message = msg, Level = level });
-            NotifyStateChanged();
+            AppendDiagEntry(msg, level);
         }
 
         public void AddDiagEntry(string message, string level = "info")
         {
+            AppendDiagEntry(message, level);
+        }
+
+        private void AppendDiagEntry(string message, string level)
+        {
             DiagLog.Add(new DiagLogEntry { Timestamp = DateTime.Now, Message = message, Level = level });
+
+            // Evict oldest entries to prevent unbounded growth
+            if (DiagLog.Count > MaxDiagLogEntries)
+                DiagLog.RemoveRange(0, DiagLog.Count - MaxDiagLogEntries);
+
             NotifyStateChanged();
         }
 

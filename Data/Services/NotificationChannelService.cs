@@ -57,9 +57,9 @@ namespace SqlHealthAssessment.Data.Services
             try
             {
                 _config = ConfigFileHelper.Load<NotificationChannelConfig>(_configFilePath);
-                _logger.LogInformation("Loaded notification channel config: SMTP={SmtpEnabled}, Teams={TeamsEnabled}, Slack={SlackEnabled}, Webhook={WebhookEnabled}, PagerDuty={PagerDutyEnabled}, ServiceNow={ServiceNowEnabled}",
+                _logger.LogInformation("Loaded notification channel config: SMTP={SmtpEnabled}, Teams={TeamsEnabled}, Slack={SlackEnabled}, Webhook={WebhookEnabled}, PagerDuty={PagerDutyEnabled}, ServiceNow={ServiceNowEnabled}, WhatsApp={WhatsAppEnabled}",
                     _config.Smtp.Enabled, _config.TeamsWebhook.Enabled, _config.Slack.Enabled,
-                    _config.Webhook.Enabled, _config.PagerDuty.Enabled, _config.ServiceNow.Enabled);
+                    _config.Webhook.Enabled, _config.PagerDuty.Enabled, _config.ServiceNow.Enabled, _config.WhatsApp.Enabled);
             }
             catch (Exception ex)
             {
@@ -94,6 +94,9 @@ namespace SqlHealthAssessment.Data.Services
                     _config.ServiceNow.Username = CredentialProtector.Encrypt(_config.ServiceNow.Username);
                 if (!string.IsNullOrEmpty(_config.ServiceNow.Password) && !CredentialProtector.IsEncrypted(_config.ServiceNow.Password))
                     _config.ServiceNow.Password = CredentialProtector.Encrypt(_config.ServiceNow.Password);
+
+                if (!string.IsNullOrEmpty(_config.WhatsApp.AccessToken) && !CredentialProtector.IsEncrypted(_config.WhatsApp.AccessToken))
+                    _config.WhatsApp.AccessToken = CredentialProtector.Encrypt(_config.WhatsApp.AccessToken);
 
                 ConfigFileHelper.Save(_configFilePath, _config, _jsonOptions);
                 _logger.LogInformation("Saved notification channel config");
@@ -142,6 +145,11 @@ namespace SqlHealthAssessment.Data.Services
             if (_config.ServiceNow.Enabled && MeetsSeverity(notification.Severity, _config.ServiceNow.MinimumSeverity))
             {
                 tasks.Add(SendServiceNowAsync(notification));
+            }
+
+            if (_config.WhatsApp.Enabled && MeetsSeverity(notification.Severity, _config.WhatsApp.MinimumSeverity))
+            {
+                tasks.Add(SendWhatsAppAsync(notification));
             }
 
             if (tasks.Count > 0)
@@ -791,6 +799,152 @@ namespace SqlHealthAssessment.Data.Services
             catch (Exception ex)
             {
                 return (false, $"ServiceNow test failed: {ex.Message}");
+            }
+        }
+
+        // ──────────────── WhatsApp ────────────────
+
+        private async Task SendWhatsAppAsync(AlertNotification notification)
+        {
+            try
+            {
+                var cfg = _config.WhatsApp;
+                var accessToken = DecryptIfNeeded(cfg.AccessToken);
+
+                if (string.IsNullOrEmpty(cfg.PhoneNumberId) || string.IsNullOrEmpty(accessToken))
+                {
+                    _logger.LogWarning("WhatsApp not fully configured — skipping");
+                    return;
+                }
+
+                if (cfg.RecipientNumbers.Count == 0)
+                {
+                    _logger.LogWarning("No WhatsApp recipient numbers configured — skipping");
+                    return;
+                }
+
+                var url = $"https://graph.facebook.com/v21.0/{cfg.PhoneNumberId}/messages";
+
+                foreach (var recipient in cfg.RecipientNumbers.Where(n => !string.IsNullOrWhiteSpace(n)))
+                {
+                    try
+                    {
+                        var payload = BuildWhatsAppPayload(cfg, notification, recipient.Trim());
+                        var json = JsonSerializer.Serialize(payload);
+
+                        using var request = new HttpRequestMessage(HttpMethod.Post, url)
+                        {
+                            Content = new StringContent(json, Encoding.UTF8, "application/json")
+                        };
+                        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+
+                        var response = await _httpClient.SendAsync(request);
+                        if (response.IsSuccessStatusCode)
+                        {
+                            _logger.LogInformation("WhatsApp alert sent: {AlertName} to {Recipient}",
+                                notification.AlertName, recipient);
+                        }
+                        else
+                        {
+                            var body = await response.Content.ReadAsStringAsync();
+                            _logger.LogWarning("WhatsApp API returned {StatusCode} for {Recipient}: {Body}",
+                                (int)response.StatusCode, recipient, body);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Failed to send WhatsApp alert to {Recipient}", recipient);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to send WhatsApp alert: {AlertName}", notification.AlertName);
+            }
+        }
+
+        private static object BuildWhatsAppPayload(WhatsAppChannelConfig cfg, AlertNotification notification, string recipient)
+        {
+            if (!string.IsNullOrEmpty(cfg.TemplateName))
+            {
+                // Template message — required for business-initiated conversations
+                return new
+                {
+                    messaging_product = "whatsapp",
+                    to = recipient,
+                    type = "template",
+                    template = new
+                    {
+                        name = cfg.TemplateName,
+                        language = new { code = string.IsNullOrEmpty(cfg.TemplateLanguage) ? "en_US" : cfg.TemplateLanguage },
+                        components = new[]
+                        {
+                            new
+                            {
+                                type = "body",
+                                parameters = new object[]
+                                {
+                                    new { type = "text", text = notification.Severity.ToUpper() },
+                                    new { type = "text", text = notification.AlertName },
+                                    new { type = "text", text = notification.Metric },
+                                    new { type = "text", text = notification.CurrentValue.ToString("N2") },
+                                    new { type = "text", text = notification.ThresholdValue.ToString("N2") },
+                                    new { type = "text", text = notification.InstanceName ?? Environment.MachineName },
+                                    new { type = "text", text = notification.TriggeredAt.ToString("yyyy-MM-dd HH:mm:ss") }
+                                }
+                            }
+                        }
+                    }
+                };
+            }
+            else
+            {
+                // Plain text message — only works within 24-hour customer-service window
+                var text = $"*[{notification.Severity.ToUpper()}] {notification.AlertName}*\n\n" +
+                           $"Metric: {notification.Metric}\n" +
+                           $"Value: {notification.CurrentValue:N2} (threshold: {notification.ThresholdValue:N2})\n" +
+                           $"Instance: {notification.InstanceName ?? "N/A"}\n" +
+                           $"Time: {notification.TriggeredAt:yyyy-MM-dd HH:mm:ss} UTC\n\n" +
+                           notification.Message;
+
+                return new
+                {
+                    messaging_product = "whatsapp",
+                    to = recipient,
+                    type = "text",
+                    text = new { body = text }
+                };
+            }
+        }
+
+        public async Task<(bool Success, string Message)> TestWhatsAppAsync()
+        {
+            var cfg = _config.WhatsApp;
+            var accessToken = DecryptIfNeeded(cfg.AccessToken);
+
+            if (string.IsNullOrEmpty(cfg.PhoneNumberId))
+                return (false, "WhatsApp Phone Number ID is not configured.");
+            if (string.IsNullOrEmpty(accessToken))
+                return (false, "WhatsApp Access Token is not configured.");
+            if (cfg.RecipientNumbers.Count == 0)
+                return (false, "No recipient phone numbers configured.");
+
+            try
+            {
+                var test = new AlertNotification
+                {
+                    AlertName = "WhatsApp Test",
+                    Metric = "test",
+                    Severity = "info",
+                    Message = "This is a test notification from SQL Health Assessment. If you received this message, WhatsApp is configured correctly.",
+                    InstanceName = Environment.MachineName
+                };
+                await SendWhatsAppAsync(test);
+                return (true, $"Test message sent to {cfg.RecipientNumbers.Count} recipient(s).");
+            }
+            catch (Exception ex)
+            {
+                return (false, $"WhatsApp test failed: {ex.Message}");
             }
         }
 

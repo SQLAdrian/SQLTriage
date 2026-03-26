@@ -194,7 +194,11 @@ namespace SqlHealthAssessment.Data
                         scopeResult.Reason);
                 }
 
-                // Also validate ExecutionParameters and SqlQueryForOutput
+                // Also validate ExecutionTest, ExecutionParameters and SqlQueryForOutput
+                if (!string.IsNullOrEmpty(config.ExecutionTest))
+                {
+                    SqlSafetyValidator.ValidateOrThrow(config.ExecutionTest, $"{config.Name} (ExecutionTest)");
+                }
                 if (!string.IsNullOrEmpty(config.ExecutionParameters))
                 {
                     SqlSafetyValidator.ValidateOrThrow(config.ExecutionParameters, $"{config.Name} (ExecutionParameters)");
@@ -247,9 +251,40 @@ namespace SqlHealthAssessment.Data
                     }
                 }
 
+                // Run ExecutionTest to decide whether ExecutionParameters should run
+                bool shouldRunExecParams = true;
+                if (!string.IsNullOrEmpty(config.ExecutionTest))
+                {
+                    try
+                    {
+                        using var testCmd = dbConnection.CreateCommand();
+                        testCmd.CommandText = config.ExecutionTest;
+                        testCmd.CommandTimeout = config.TimeoutSeconds;
+                        testCmd.CommandType = CommandType.Text;
+                        using var testReader = await testCmd.ExecuteReaderAsync(cancellationToken);
+
+                        if (await testReader.ReadAsync(cancellationToken))
+                        {
+                            var toRunOrdinal = testReader.GetOrdinal("ToRun");
+                            var toRun = Convert.ToInt32(testReader.GetValue(toRunOrdinal));
+                            shouldRunExecParams = toRun == 1;
+                        }
+
+                        _logger.LogInformation("ExecutionTest for {Name} on {Server}: ToRun={ToRun}",
+                            config.Name, targetServer, shouldRunExecParams ? 1 : 0);
+                    }
+                    catch (OperationCanceledException) { throw; }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "ExecutionTest failed for {Name} on {Server} — defaulting to run ExecutionParameters",
+                            config.Name, targetServer);
+                        shouldRunExecParams = true;
+                    }
+                }
+
                 // Execute the stored procedure / execution parameters
                 // A failure here is non-fatal — we still attempt SqlQueryForOutput below
-                if (!string.IsNullOrEmpty(config.ExecutionParameters))
+                if (shouldRunExecParams && !string.IsNullOrEmpty(config.ExecutionParameters))
                 {
                     try
                     {
@@ -266,9 +301,17 @@ namespace SqlHealthAssessment.Data
                         _logger.LogWarning(ex, "ExecutionParameters failed for script {Name} on {Server} — continuing to SqlQueryForOutput", config.Name, targetServer);
                     }
                 }
+                else if (!shouldRunExecParams)
+                {
+                    _logger.LogInformation("ExecutionParameters skipped for {Name} on {Server} (ExecutionTest returned ToRun=0)",
+                        config.Name, targetServer);
+                }
 
-                // Select the results
-                if (!string.IsNullOrEmpty(config.SqlQueryForOutput))
+                // Select the results:
+                // - If ExecutionParameters ran (or was empty): always run SqlQueryForOutput
+                // - If ExecutionParameters was skipped (ToRun=0): only run SqlQueryForOutput when ExportToCsv is true
+                bool shouldRunOutputQuery = shouldRunExecParams || config.ExportToCsv;
+                if (shouldRunOutputQuery && !string.IsNullOrEmpty(config.SqlQueryForOutput))
                 {
                     using var command = dbConnection.CreateCommand();
                     command.CommandText = config.SqlQueryForOutput;

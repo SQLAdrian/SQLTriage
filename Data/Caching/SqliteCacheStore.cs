@@ -71,6 +71,12 @@ namespace SqlHealthAssessment.Data.Caching
 
         // ──────────────────────────── Schema ────────────────────────────
 
+        /// <summary>
+        /// Re-creates cache tables if the database file was deleted externally.
+        /// Safe to call multiple times (uses CREATE TABLE IF NOT EXISTS).
+        /// </summary>
+        public void EnsureSchema() => InitializeSchema();
+
         private void InitializeSchema()
         {
             using var conn = CreateConnection();
@@ -619,18 +625,24 @@ namespace SqlHealthAssessment.Data.Caching
         /// </summary>
         public async Task EnforceSizeLimitAsync(long maxSizeBytes)
         {
-            var currentSize = await GetCacheSizeBytes();
-            if (currentSize > maxSizeBytes)
+            try
             {
-                // Evict oldest 25% of data
-                var cutoff = DateTime.UtcNow.AddHours(-6);
-                await EvictOlderThanAsync(TimeSpan.FromHours(6));
-                await RunMaintenanceAsync(includeIntegrityCheck: false);
+                var currentSize = await GetCacheSizeBytes();
+                if (currentSize > maxSizeBytes)
+                {
+                    await EvictOlderThanAsync(TimeSpan.FromHours(6));
+                    await RunMaintenanceAsync(includeIntegrityCheck: false);
+                }
+            }
+            catch (SqliteException ex) when (ex.SqliteErrorCode == 1)
+            {
+                InitializeSchema(); // Recover from missing tables
             }
         }
 
         /// <summary>
         /// Removes all cached data older than the specified age across all tables.
+        /// If the schema is missing (DB file was recreated externally), re-creates it automatically.
         /// </summary>
         public async Task EvictOlderThanAsync(TimeSpan maxAge)
         {
@@ -642,22 +654,15 @@ namespace SqlHealthAssessment.Data.Caching
                 using var conn = CreateConnection();
                 await conn.OpenAsync();
 
-                var tables = new[] { "cache_timeseries", "cache_stat", "cache_bargauge",
-                                     "cache_datatable", "cache_checkstatus" };
-
-                foreach (var table in tables)
+                try
                 {
-                    using var cmd = conn.CreateCommand();
-                    cmd.CommandText = $"DELETE FROM {table} WHERE fetched_at < @cutoff";
-                    cmd.Parameters.AddWithValue("@cutoff", cutoff);
-                    await cmd.ExecuteNonQueryAsync();
+                    await EvictOlderThanCore(conn, cutoff);
                 }
-
-                // Also clean metadata for queries with no remaining data
-                using var metaCmd = conn.CreateCommand();
-                metaCmd.CommandText = "DELETE FROM cache_metadata WHERE last_fetch < @cutoff";
-                metaCmd.Parameters.AddWithValue("@cutoff", cutoff);
-                await metaCmd.ExecuteNonQueryAsync();
+                catch (SqliteException ex) when (ex.SqliteErrorCode == 1) // SQLITE_ERROR (no such table)
+                {
+                    InitializeSchema();
+                    await EvictOlderThanCore(conn, cutoff);
+                }
             }
             finally
             {
@@ -665,14 +670,34 @@ namespace SqlHealthAssessment.Data.Caching
             }
         }
 
+        private static async Task EvictOlderThanCore(SqliteConnection conn, string cutoff)
+        {
+            var tables = new[] { "cache_timeseries", "cache_stat", "cache_bargauge",
+                                 "cache_datatable", "cache_checkstatus" };
+
+            foreach (var table in tables)
+            {
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = $"DELETE FROM {table} WHERE fetched_at < @cutoff";
+                cmd.Parameters.AddWithValue("@cutoff", cutoff);
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            // Also clean metadata for queries with no remaining data
+            using var metaCmd = conn.CreateCommand();
+            metaCmd.CommandText = "DELETE FROM cache_metadata WHERE last_fetch < @cutoff";
+            metaCmd.Parameters.AddWithValue("@cutoff", cutoff);
+            await metaCmd.ExecuteNonQueryAsync();
+        }
+
         /// <summary>
         /// Hard retention purge: deletes all data older than the specified age
         /// across every cache table and returns the total number of rows removed.
+        /// If the schema is missing, re-creates it automatically.
         /// </summary>
         public async Task<long> PurgeOlderThanAsync(TimeSpan maxAge)
         {
             var cutoff = DateTime.UtcNow.Subtract(maxAge).ToString("o");
-            long totalDeleted = 0;
 
             await _globalWriteLock.WaitAsync();
             try
@@ -680,27 +705,40 @@ namespace SqlHealthAssessment.Data.Caching
                 using var conn = CreateConnection();
                 await conn.OpenAsync();
 
-                var tables = new[] { "cache_timeseries", "cache_stat", "cache_bargauge",
-                                     "cache_datatable", "cache_checkstatus" };
-
-                foreach (var table in tables)
+                try
                 {
-                    using var cmd = conn.CreateCommand();
-                    cmd.CommandText = $"DELETE FROM {table} WHERE fetched_at < @cutoff";
-                    cmd.Parameters.AddWithValue("@cutoff", cutoff);
-                    totalDeleted += await cmd.ExecuteNonQueryAsync();
+                    return await PurgeOlderThanCore(conn, cutoff);
                 }
-
-                using var metaCmd = conn.CreateCommand();
-                metaCmd.CommandText = "DELETE FROM cache_metadata WHERE last_fetch < @cutoff";
-                metaCmd.Parameters.AddWithValue("@cutoff", cutoff);
-                totalDeleted += await metaCmd.ExecuteNonQueryAsync();
+                catch (SqliteException ex) when (ex.SqliteErrorCode == 1)
+                {
+                    InitializeSchema();
+                    return await PurgeOlderThanCore(conn, cutoff);
+                }
             }
             finally
             {
                 _globalWriteLock.Release();
             }
+        }
 
+        private static async Task<long> PurgeOlderThanCore(SqliteConnection conn, string cutoff)
+        {
+            long totalDeleted = 0;
+            var tables = new[] { "cache_timeseries", "cache_stat", "cache_bargauge",
+                                 "cache_datatable", "cache_checkstatus" };
+
+            foreach (var table in tables)
+            {
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = $"DELETE FROM {table} WHERE fetched_at < @cutoff";
+                cmd.Parameters.AddWithValue("@cutoff", cutoff);
+                totalDeleted += await cmd.ExecuteNonQueryAsync();
+            }
+
+            using var metaCmd = conn.CreateCommand();
+            metaCmd.CommandText = "DELETE FROM cache_metadata WHERE last_fetch < @cutoff";
+            metaCmd.Parameters.AddWithValue("@cutoff", cutoff);
+            totalDeleted += await metaCmd.ExecuteNonQueryAsync();
             return totalDeleted;
         }
 
@@ -736,6 +774,7 @@ namespace SqlHealthAssessment.Data.Caching
 
         /// <summary>
         /// Clears all cache tables. Called when the user changes time range or instance.
+        /// If the schema is missing (DB file was recreated externally), re-creates it automatically.
         /// </summary>
         public async Task InvalidateAllAsync()
         {
@@ -745,18 +784,31 @@ namespace SqlHealthAssessment.Data.Caching
                 using var conn = CreateConnection();
                 await conn.OpenAsync();
 
-                var tables = new[] { "cache_timeseries", "cache_stat", "cache_bargauge",
-                                     "cache_datatable", "cache_checkstatus", "cache_metadata" };
-                foreach (var table in tables)
+                try
                 {
-                    using var cmd = conn.CreateCommand();
-                    cmd.CommandText = $"DELETE FROM {table}";
-                    await cmd.ExecuteNonQueryAsync();
+                    await InvalidateAllCore(conn);
+                }
+                catch (SqliteException ex) when (ex.SqliteErrorCode == 1)
+                {
+                    InitializeSchema();
+                    // Tables are now empty after re-creation — no need to DELETE again
                 }
             }
             finally
             {
                 _globalWriteLock.Release();
+            }
+        }
+
+        private static async Task InvalidateAllCore(SqliteConnection conn)
+        {
+            var tables = new[] { "cache_timeseries", "cache_stat", "cache_bargauge",
+                                 "cache_datatable", "cache_checkstatus", "cache_metadata" };
+            foreach (var table in tables)
+            {
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = $"DELETE FROM {table}";
+                await cmd.ExecuteNonQueryAsync();
             }
         }
 
