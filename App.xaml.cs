@@ -6,6 +6,7 @@ using Radzen;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Serilog;
+using Serilog.Core;
 using SqlHealthAssessment.Data;
 using SqlHealthAssessment.Data.Caching;
 using SqlHealthAssessment.Data.Models;
@@ -19,6 +20,9 @@ namespace SqlHealthAssessment
         public static bool WebView2Available { get; private set; } = true;
         public static string? WebView2ErrorMessage { get; private set; }
 
+        /// <summary>Runtime-switchable Serilog minimum level. Toggle via Settings → Enable Debug Logging.</summary>
+        public static readonly LoggingLevelSwitch LogLevelSwitch = new(Serilog.Events.LogEventLevel.Information);
+
         protected override async void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
@@ -30,7 +34,7 @@ namespace SqlHealthAssessment
 
             // Configure Serilog - Single consolidated log file
             Log.Logger = new LoggerConfiguration()
-                .MinimumLevel.Information()
+                .MinimumLevel.ControlledBy(LogLevelSwitch)
                 .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
                 .Enrich.FromLogContext()
                 .Enrich.WithProperty("Application", "SqlHealthAssessment")
@@ -174,6 +178,22 @@ namespace SqlHealthAssessment
             services.AddSingleton<liveQueriesMaintenanceService>();
 
             Services = services.BuildServiceProvider();
+
+            // Wire up debug logging toggle — switches Serilog level at runtime without restart
+            var userSettings = Services.GetService<UserSettingsService>();
+            if (userSettings != null)
+            {
+                if (userSettings.GetDebugLogging())
+                    LogLevelSwitch.MinimumLevel = Serilog.Events.LogEventLevel.Debug;
+
+                userSettings.OnDebugLoggingChanged += enabled =>
+                {
+                    LogLevelSwitch.MinimumLevel = enabled
+                        ? Serilog.Events.LogEventLevel.Debug
+                        : Serilog.Events.LogEventLevel.Information;
+                    Log.Information("Debug logging {State}", enabled ? "enabled" : "disabled");
+                };
+            }
 
             // Validate configuration
             var configValidator = Services.GetService<ConfigurationValidator>();

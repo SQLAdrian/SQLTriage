@@ -148,7 +148,7 @@ namespace SqlHealthAssessment.Data
                 var fileInfo = new FileInfo(KeyFilePath);
                 fileInfo.Attributes |= FileAttributes.Hidden;
             }
-            catch { }
+            catch (Exception ex) { Serilog.Log.Debug(ex, "[CredentialProtector] Failed to set hidden attribute on key file"); }
 
             return newKey;
         }

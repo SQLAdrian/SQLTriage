@@ -55,6 +55,7 @@ namespace SqlHealthAssessment.Data.Models
         public string ServerName { get; set; } = string.Empty;
         public bool Success { get; set; }
         public string? ErrorMessage { get; set; }
+        public string? StatusMessage { get; set; }
         public int RowsAffected { get; set; }
         public List<Dictionary<string, object>>? Results { get; set; }
         public TimeSpan ExecutionTime { get; set; }

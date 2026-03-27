@@ -601,7 +601,7 @@ namespace SqlHealthAssessment.Data.Services
             }
             finally
             {
-                try { File.Delete(tempFile); } catch { }
+                try { File.Delete(tempFile); } catch (Exception ex) { _logger.LogDebug(ex, "[AzureBlob] Failed to delete temp file: {Path}", tempFile); }
             }
         }
 
@@ -655,7 +655,7 @@ namespace SqlHealthAssessment.Data.Services
                     if (File.Exists(full)) return full;
                 }
             }
-            catch { }
+            catch (Exception ex) { _logger.LogDebug(ex, "[AzureBlob] Error scanning PATH for azcopy"); }
 
             return null;
         }
@@ -762,7 +762,7 @@ namespace SqlHealthAssessment.Data.Services
                     return doc.RootElement.GetProperty("version").GetString() ?? "unknown";
                 }
             }
-            catch { }
+            catch (Exception ex) { Serilog.Log.Debug(ex, "[AzureBlob] Failed to read version.json"); }
             return "unknown";
         }
 

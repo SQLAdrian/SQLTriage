@@ -3505,7 +3505,11 @@
           "dataGridMaxRows": 50,
           "dataGridTopRows": 0,
           "actionColumn": "Create Script",
-          "actionColumnMode": "query"
+          "actionColumnMode": "query",
+          "dataGridColumnColors": [
+            { "column": "Cost Saving %", "mode": "higher-is-better" },
+            { "column": "Impact Score", "mode": "higher-is-worse" }
+          ]
         },
         {
           "id": "liveindexes.fragmentation",

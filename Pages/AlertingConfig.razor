@@ -411,6 +411,14 @@
         </p>
     }
 
+    @if (ChannelService.Config.LastModified.HasValue)
+    {
+        <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 16px;">
+            <i class="fa-solid fa-clock" style="margin-right: 4px;"></i>
+            Last modified: @ChannelService.Config.LastModified.Value.ToString("dd MMM yyyy HH:mm:ss")
+        </p>
+    }
+
 </div>
 
 @code {

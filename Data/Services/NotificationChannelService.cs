@@ -98,6 +98,7 @@ namespace SqlHealthAssessment.Data.Services
                 if (!string.IsNullOrEmpty(_config.WhatsApp.AccessToken) && !CredentialProtector.IsEncrypted(_config.WhatsApp.AccessToken))
                     _config.WhatsApp.AccessToken = CredentialProtector.Encrypt(_config.WhatsApp.AccessToken);
 
+                _config.LastModified = DateTime.Now;
                 ConfigFileHelper.Save(_configFilePath, _config, _jsonOptions);
                 _logger.LogInformation("Saved notification channel config");
             }

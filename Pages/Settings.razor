@@ -175,6 +175,17 @@
     </div>
 
     <div class="settings-group">
+        <h3>Diagnostics</h3>
+        <div class="settings-field" style="display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" id="enableDebugLogging" checked="@_debugLogging"
+                   @onchange="ToggleDebugLogging" style="width: auto;" />
+            <label for="enableDebugLogging" style="margin: 0; font-weight: normal;">
+                Enable Debug Logging (verbose output to log file — no restart required)
+            </label>
+        </div>
+    </div>
+
+    <div class="settings-group">
         <h3>Default Dashboard</h3>
         <div class="settings-field">
             <label>Dashboard to Display First</label>
@@ -551,6 +562,7 @@
     private string? SaveResult;
     private bool SaveSuccess;
     private bool ShowDiagnosticPane;
+    private bool _debugLogging;
     private string DefaultDashboardId = "";
     private string? DashboardSaveResult;
     private string? ConfigValidationResult;
@@ -613,6 +625,7 @@
         SqlServerConnectionString = MaskConnectionStringPassword(connStr);
         // Load user settings
         ShowDiagnosticPane = UserSettings.GetShowDiagnosticPane();
+        _debugLogging = UserSettings.GetDebugLogging();
         DefaultDashboardId = UserSettings.GetDefaultDashboardId();
         _zoomLevel = UserSettings.GetZoomLevel();
 
@@ -655,6 +668,12 @@
     {
         ShowDiagnosticPane = (bool)(e.Value ?? false);
         UserSettings.SetShowDiagnosticPane(ShowDiagnosticPane);
+    }
+
+    private void ToggleDebugLogging(ChangeEventArgs e)
+    {
+        _debugLogging = (bool)(e.Value ?? false);
+        UserSettings.SetDebugLogging(_debugLogging);
     }
 
     private void SaveDefaultDashboard()

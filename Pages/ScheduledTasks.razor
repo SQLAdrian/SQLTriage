@@ -12,23 +12,21 @@
 @implements IDisposable
 
 <div class="settings-page" style="max-width: 1400px;">
-    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
-        <h2 style="margin: 0; color: var(--text-primary);">Scheduled Tasks</h2>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h2 style="margin: 0;">Scheduled Tasks</h2>
         <div style="display: flex; gap: 8px; align-items: center;">
-            <span style="font-size: 12px; color: var(--text-muted);">Engine:</span>
-            @if (Engine.IsRunning)
-            {
-                <button class="btn-sm btn-danger" @onclick="ToggleEngine">Stop</button>
-            }
-            else
-            {
-                <button class="btn-sm btn-success" @onclick="ToggleEngine">Start</button>
-            }
+            <span class="severity-badge @(Engine.IsRunning ? "severity-info" : "")"
+                  style="font-size: 12px; padding: 4px 10px;">
+                @(Engine.IsRunning ? "Engine Running" : "Engine Stopped")
+            </span>
+            <button class="settings-btn" @onclick="ToggleEngine">
+                @(Engine.IsRunning ? "Stop" : "Start")
+            </button>
         </div>
     </div>
 
     <!-- Tabs -->
-    <div style="display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border);">
+    <div style="display: flex; gap: 2px; margin-bottom: 16px; border-bottom: 1px solid var(--border);">
         <button class="sched-tab @(_activeTab == "tasks" ? "active" : "")" @onclick='() => _activeTab = "tasks"'>
             Tasks (@_tasks.Count)
         </button>
@@ -44,7 +42,7 @@
     @if (_activeTab == "tasks")
     {
         <div style="margin-bottom: 12px;">
-            <button class="btn-sm btn-primary" @onclick="NewTask">+ Add Task</button>
+            <button class="settings-btn" @onclick="NewTask">+ Add Task</button>
         </div>
         <div class="settings-group">
             @if (_tasks.Count == 0)
@@ -99,11 +97,11 @@
                                     }
                                 </td>
                                 <td>
-                                    <button class="btn-xs btn-primary" @onclick="() => EditTask(task)" title="Edit">Edit</button>
-                                    <button class="btn-xs btn-success" @onclick="() => RunNow(task)" disabled="@_runningTaskIds.Contains(task.Id)" title="Run Now">
+                                    <button class="settings-btn" style="font-size: 10px; padding: 2px 8px;" @onclick="() => EditTask(task)" title="Edit">Edit</button>
+                                    <button class="settings-btn" style="font-size: 10px; padding: 2px 8px;" @onclick="() => RunNow(task)" disabled="@_runningTaskIds.Contains(task.Id)" title="Run Now">
                                         @if (_runningTaskIds.Contains(task.Id)) { <text>Running...</text> } else { <text>Run Now</text> }
                                     </button>
-                                    <button class="btn-xs btn-danger" @onclick="() => DeleteTask(task.Id)" title="Delete">Del</button>
+                                    <button class="settings-btn" style="font-size: 10px; padding: 2px 8px; background: var(--red);" @onclick="() => DeleteTask(task.Id)" title="Delete">Del</button>
                                 </td>
                             </tr>
                         }
@@ -119,13 +117,13 @@
         <div class="settings-group" style="max-width: 900px;">
             <div class="edit-grid">
                 <label>Name</label>
-                <input type="text" class="settings-input" @bind="_editTask.Name" placeholder="e.g. Daily Index Rebuild" />
+                <input type="text" @bind="_editTask.Name" placeholder="e.g. Daily Index Rebuild" />
 
                 <label>Description</label>
-                <input type="text" class="settings-input" @bind="_editTask.Description" placeholder="Optional description" />
+                <input type="text" @bind="_editTask.Description" placeholder="Optional description" />
 
                 <label>Schedule</label>
-                <select class="settings-input" @bind="_editScheduleType">
+                <select @bind="_editScheduleType">
                     <option value="Daily">Daily</option>
                     <option value="Weekly">Weekly</option>
                     <option value="Monthly">Monthly</option>
@@ -135,13 +133,13 @@
                 @if (_editScheduleType != "CustomInterval")
                 {
                     <label>Time (HH:mm)</label>
-                    <input type="text" class="settings-input" @bind="_editTask.Schedule.TimeOfDay" placeholder="HH:mm" />
+                    <input type="text" @bind="_editTask.Schedule.TimeOfDay" placeholder="HH:mm" />
                 }
 
                 @if (_editScheduleType == "Weekly")
                 {
                     <label>Day of Week</label>
-                    <select class="settings-input" @bind="_editDayOfWeek">
+                    <select @bind="_editDayOfWeek">
                         @foreach (var d in Enum.GetValues<DayOfWeek>())
                         {
                             <option value="@d">@d</option>
@@ -152,17 +150,17 @@
                 @if (_editScheduleType == "Monthly")
                 {
                     <label>Day of Month</label>
-                    <input type="number" class="settings-input" min="1" max="28" @bind="_editDayOfMonth" />
+                    <input type="number" min="1" max="28" @bind="_editDayOfMonth" />
                 }
 
                 @if (_editScheduleType == "CustomInterval")
                 {
                     <label>Interval (minutes)</label>
-                    <input type="number" class="settings-input" min="1" @bind="_editIntervalMinutes" />
+                    <input type="number" min="1" @bind="_editIntervalMinutes" />
                 }
 
                 <label>Server</label>
-                <select class="settings-input" @bind="_editTask.ServerName">
+                <select @bind="_editTask.ServerName">
                     <option value="">All Enabled Servers</option>
                     @foreach (var conn in ConnectionManager.GetEnabledConnections())
                     {
@@ -174,32 +172,32 @@
                 </select>
 
                 <label>Database</label>
-                <input type="text" class="settings-input" @bind="_editTask.Database" placeholder="master" />
+                <input type="text" @bind="_editTask.Database" placeholder="master" />
 
                 <label>Timeout (sec)</label>
-                <input type="number" class="settings-input" min="1" max="3600" @bind="_editTask.CommandTimeoutSeconds" />
+                <input type="number" min="1" max="3600" @bind="_editTask.CommandTimeoutSeconds" />
 
                 <label>SQL Query</label>
                 <textarea class="sql-editor" rows="8" @bind="_editTask.Query" placeholder="EXEC dbo.sp_MyProcedure @@Param1 = 1"></textarea>
 
                 <label>Output Options</label>
                 <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
-                    <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text-primary);">
+                    <label class="toggle-label">
                         <input type="checkbox" @bind="_editTask.Output.ExportCsv" /> Export CSV
                     </label>
-                    <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; color: @(BlobExport.IsConfigured ? "var(--text-primary)" : "var(--text-muted)");">
+                    <label class="toggle-label" style="color: @(BlobExport.IsConfigured ? "var(--text-primary)" : "var(--text-muted)");">
                         <input type="checkbox" @bind="_editTask.Output.UploadToAzureBlob" disabled="@(!BlobExport.IsConfigured)" /> Upload to Azure
                         @if (!BlobExport.IsConfigured) { <span style="font-size: 10px;">(not configured)</span> }
                     </label>
-                    <label style="display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text-primary);">
+                    <label class="toggle-label">
                         <input type="checkbox" @bind="_editTask.Output.SendEmail" /> Send Email
                     </label>
                 </div>
             </div>
 
             <div style="display: flex; gap: 8px; margin-top: 16px;">
-                <button class="btn-sm btn-primary" @onclick="SaveTask">Save</button>
-                <button class="btn-sm btn-secondary" @onclick="CancelEdit">Cancel</button>
+                <button class="settings-btn" style="background: var(--accent); color: #fff;" @onclick="SaveTask">Save</button>
+                <button class="settings-btn" style="background: var(--bg-hover);" @onclick="CancelEdit">Cancel</button>
             </div>
         </div>
     }
@@ -256,19 +254,19 @@
 
 <style>
     .sched-tab {
-        padding: 8px 16px;
         background: transparent;
         border: none;
-        color: var(--text-muted);
+        color: var(--text-secondary);
+        padding: 8px 16px;
         cursor: pointer;
-        font-size: 13px;
         border-bottom: 2px solid transparent;
-        transition: color 0.15s;
+        font-size: 14px;
+        transition: all 0.2s;
     }
     .sched-tab:hover { color: var(--text-primary); }
     .sched-tab.active {
-        color: var(--accent, #2196f3);
-        border-bottom-color: var(--accent, #2196f3);
+        color: var(--accent);
+        border-bottom-color: var(--accent);
     }
     .edit-grid {
         display: grid;
@@ -301,7 +299,7 @@
         border-radius: 3px;
         font-size: 10px;
         font-weight: 600;
-        background: var(--accent, #2196f3);
+        background: var(--accent);
         color: #fff;
         margin-right: 3px;
     }
@@ -315,17 +313,13 @@
     .status-success { background: rgba(76, 175, 80, 0.2); color: #4caf50; }
     .status-failed  { background: rgba(244, 67, 54, 0.2); color: #f44336; }
     .status-running { background: rgba(33, 150, 243, 0.2); color: #2196f3; }
-    .btn-xs {
-        padding: 2px 8px;
-        border: none;
-        border-radius: 3px;
-        font-size: 11px;
+    .toggle-label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
         cursor: pointer;
-        font-weight: 600;
+        font-size: 13px;
     }
-    .btn-xs.btn-primary { background: var(--accent, #2196f3); color: #fff; }
-    .btn-xs.btn-success { background: #4caf50; color: #fff; }
-    .btn-xs.btn-danger  { background: #f44336; color: #fff; }
 </style>
 
 @code {

@@ -39,7 +39,7 @@ namespace SqlHealthAssessment.Data
         {
             _logger = logger;
             _notificationChannels = notificationChannels;
-            _alertsFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config", "alert-configurations.json");
+            _alertsFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config", "alert-definitions.json");
             LoadThresholds();
         }
 

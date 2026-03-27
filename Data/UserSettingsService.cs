@@ -49,6 +49,10 @@ namespace SqlHealthAssessment.Data
             public bool AutoExportQuickCheckPdf { get; set; } = true;
             public bool AutoExportVulnerabilityAssessmentCsv { get; set; } = true;
             public bool AutoExportVulnerabilityAssessmentPdf { get; set; } = false;
+
+            // ── Diagnostics ──
+            /// <summary>When true, silent catch blocks emit warnings to the log file. No restart required.</summary>
+            public bool EnableDebugLogging { get; set; } = false;
         }
 
         private UserSettings LoadSettings() => ConfigFileHelper.Load<UserSettings>(_settingsFilePath);
@@ -142,6 +146,19 @@ namespace SqlHealthAssessment.Data
         /// Fired when zoom level changes so MainWindow can apply it to WebView2.
         /// </summary>
         public event Action<int>? OnZoomChanged;
+
+        // ── Debug Logging ──
+        public bool GetDebugLogging() { lock (_lock) return _settings.EnableDebugLogging; }
+
+        public void SetDebugLogging(bool enabled)
+        {
+            lock (_lock) _settings.EnableDebugLogging = enabled;
+            SaveSettings();
+            OnDebugLoggingChanged?.Invoke(enabled);
+        }
+
+        /// <summary>Fired when debug logging is toggled so App can adjust Serilog level at runtime.</summary>
+        public event Action<bool>? OnDebugLoggingChanged;
 
         // ── Auto-Export Accessors ──
         public UserSettings GetSettings() { lock (_lock) return _settings; }

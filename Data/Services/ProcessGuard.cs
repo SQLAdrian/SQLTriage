@@ -106,7 +106,7 @@ namespace SqlHealthAssessment.Data.Services
 
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                try { debuggerNow |= IsDebuggerPresent(); } catch { }
+                try { debuggerNow |= IsDebuggerPresent(); } catch (Exception ex) { _logger.LogDebug(ex, "[ProcessGuard] P/Invoke IsDebuggerPresent failed"); }
             }
 
             if (debuggerNow && !DebuggerDetected)

@@ -162,6 +162,13 @@ namespace SqlHealthAssessment.Data.Models
         [JsonPropertyName("actionColumnMode")]
         public string? ActionColumnMode { get; set; }
 
+        /// <summary>
+        /// Column-level color gradient rules for DataGrid cells.
+        /// Each rule maps a column name to a color gradient based on the cell's numeric value.
+        /// </summary>
+        [JsonPropertyName("dataGridColumnColors")]
+        public List<DataGridColumnColorRule>? DataGridColumnColors { get; set; }
+
         /// <summary>Gets the effective source, inheriting from dashboard if not specified.</summary>
         public string GetEffectiveSource(string dashboardSource)
         {
@@ -256,6 +263,29 @@ namespace SqlHealthAssessment.Data.Models
                 _    => actual >= Value
             };
         }
+    }
+
+    /// <summary>
+    /// Defines a color gradient for a DataGrid column based on numeric values.
+    /// The gradient interpolates between minColor and maxColor across the data range.
+    /// </summary>
+    public class DataGridColumnColorRule
+    {
+        /// <summary>Column name to apply the gradient to (case-insensitive match).</summary>
+        [JsonPropertyName("column")]
+        public string Column { get; set; } = "";
+
+        /// <summary>"higher-is-better" (green at top) or "higher-is-worse" (red at top).</summary>
+        [JsonPropertyName("mode")]
+        public string Mode { get; set; } = "higher-is-better";
+
+        /// <summary>Color for the low end of the range. Default: muted/neutral.</summary>
+        [JsonPropertyName("minColor")]
+        public string MinColor { get; set; } = "";
+
+        /// <summary>Color for the high end of the range. Default: bright green or red based on mode.</summary>
+        [JsonPropertyName("maxColor")]
+        public string MaxColor { get; set; } = "";
     }
 
     public class QueryPair

@@ -546,7 +546,7 @@ namespace SqlHealthAssessment
 
             if (_forceClose)
             {
-                // Tray "Exit" was clicked — shut down for real
+                // Tray "Exit" was clicked or second pass — shut down for real
                 _trayIcon?.Dispose();
                 _trayIcon = null;
                 return;
@@ -555,18 +555,23 @@ namespace SqlHealthAssessment
             // Show the closing dialog
             ClosingOverlay.Visibility = Visibility.Visible;
 
-            // Cancel the close to allow dialog to show
+            // Cancel the close to allow overlay to render
             e.Cancel = true;
 
-            // Wait 0.8 seconds then close
+            // Brief delay so the user sees the closing overlay
             await Task.Delay(800);
 
-            // Stop server mode explicitly before shutdown to release Kestrel threads
+            // Stop server mode with a timeout — StopAsync can hang if Kestrel
+            // has active connections, which would prevent the app from ever exiting
             try
             {
                 var serverMode = App.Services?.GetService<ServerModeService>();
                 if (serverMode?.IsRunning == true)
-                    await serverMode.StopAsync();
+                {
+                    var stopTask = serverMode.StopAsync();
+                    if (!stopTask.Wait(TimeSpan.FromSeconds(3)))
+                        _logger?.LogWarning("Server mode stop timed out after 3 seconds");
+                }
             }
             catch (Exception ex)
             {

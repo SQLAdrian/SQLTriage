@@ -53,9 +53,7 @@
                 @NavIcon(dashboard.NavIcon) @dashboard.NavTitle
             </NavLink>
         }
-        <NavLink href="/bestpractice" class="nav-link">
-            <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-list-check"></i></span> BP Checks
-        </NavLink>
+
 
         <br />
         <div class="px-3 py-1 text-xs font-bold uppercase tracking-wider text-app-text-secondary mt-2 border-t border-app-border">SQLWATCH</div>
@@ -110,6 +108,9 @@
         <br />
         <NavLink href="/plan-analysis" class="nav-link">
             <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-diagram-project"></i></span> Plan Analyzer
+        </NavLink>
+        <NavLink href="/bestpractice" class="nav-link">
+            <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-list-check"></i></span> BP Scripts
         </NavLink>
         @if (ShowToolsSection)
         {
@@ -206,8 +207,11 @@
 
     private async Task RefreshDbFlags()
     {
-        _performanceMonitorExists = await DbAvailability.DatabaseExistsAsync("PerformanceMonitor");
-        _SQLWATCHExists = await DbAvailability.DatabaseExistsAsync("SQLWATCH");
+        var pmTask = DbAvailability.DatabaseExistsAsync("PerformanceMonitor");
+        var swTask = DbAvailability.DatabaseExistsAsync("SQLWATCH");
+        await Task.WhenAll(pmTask, swTask);
+        _performanceMonitorExists = pmTask.Result;
+        _SQLWATCHExists = swTask.Result;
     }
 
     private RenderFragment NavIcon(string? icon) => builder =>

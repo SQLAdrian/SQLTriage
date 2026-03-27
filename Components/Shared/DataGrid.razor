@@ -130,7 +130,9 @@
                                 @if ((HiddenColumns == null || !HiddenColumns.Contains(col.ColumnName))
                                 && !(col.ColumnName == ActionColumn && OnActionExecute != null))
                                 {
-                                    <td role="cell" class="px-3 py-2 border-b border-app-border text-app-text-primary max-w-xs overflow-hidden text-ellipsis whitespace-nowrap" title="@row[col]?.ToString()">
+                                    <td role="cell" class="px-3 py-2 border-b border-app-border text-app-text-primary max-w-xs overflow-hidden text-ellipsis whitespace-nowrap"
+                                        style="@(GetCellStyle(col.ColumnName, row[col]))"
+                                        title="@row[col]?.ToString()">
                                         @try
                                         {
                                             @FormatCell(row[col], col.ColumnName)
@@ -185,6 +187,9 @@
 
     /// <summary>Callback: receives the SQL string and a CancellationToken, returns (success, message).</summary>
     [Parameter] public Func<string, CancellationToken, Task<(bool success, string message)>>? OnActionExecute { get; set; }
+
+    /// <summary>Column-level color gradient rules. Applies color to cell text based on numeric value within the column's data range.</summary>
+    [Parameter] public List<SqlHealthAssessment.Data.Models.DataGridColumnColorRule>? ColumnColorRules { get; set; }
 
     private enum ActionRowState { Idle, Executing, Success, Failed, Cancelled }
     private readonly Dictionary<int, ActionRowState> _actionStates = new();
@@ -332,6 +337,81 @@
     {
         if (_actionCts.TryGetValue(rowIndex, out var cts))
             cts.Cancel();
+    }
+
+    // ── Column color gradient ──────────────────────────────────────────
+
+    // Cache of min/max per column (rebuilt when data changes)
+    private Dictionary<string, (double min, double max)>? _columnRanges;
+    private DataTable? _rangesBuiltFor;
+
+    private void EnsureColumnRanges()
+    {
+        if (_columnRanges != null && _rangesBuiltFor == Data) return;
+        _columnRanges = new(StringComparer.OrdinalIgnoreCase);
+        _rangesBuiltFor = Data;
+        if (Data == null || ColumnColorRules == null) return;
+
+        foreach (var rule in ColumnColorRules)
+        {
+            if (!Data.Columns.Contains(rule.Column)) continue;
+            double min = double.MaxValue, max = double.MinValue;
+            foreach (DataRow row in Data.Rows)
+            {
+                if (double.TryParse(row[rule.Column]?.ToString(), out var v))
+                {
+                    if (v < min) min = v;
+                    if (v > max) max = v;
+                }
+            }
+            if (min < max) _columnRanges[rule.Column] = (min, max);
+        }
+    }
+
+    private string GetCellStyle(string columnName, object? value)
+    {
+        var color = GetCellColor(columnName, value);
+        return color != null ? $"color: {color}; font-weight: 500;" : "";
+    }
+
+    private string? GetCellColor(string columnName, object? value)
+    {
+        if (ColumnColorRules == null || value == null || value == DBNull.Value) return null;
+        if (!double.TryParse(value.ToString(), out var v)) return null;
+
+        var rule = ColumnColorRules.FirstOrDefault(r => r.Column.Equals(columnName, StringComparison.OrdinalIgnoreCase));
+        if (rule == null) return null;
+
+        EnsureColumnRanges();
+        if (_columnRanges == null || !_columnRanges.TryGetValue(columnName, out var range)) return null;
+
+        // Normalize 0..1
+        var t = (v - range.min) / (range.max - range.min);
+        t = Math.Clamp(t, 0, 1);
+
+        // Determine color endpoints based on mode
+        // higher-is-better: low=muted gray, high=green
+        // higher-is-worse:  low=muted gray, high=red
+        var (lowR, lowG, lowB) = !string.IsNullOrEmpty(rule.MinColor) ? ParseHex(rule.MinColor) : (120, 120, 120);
+        var (hiR, hiG, hiB) = !string.IsNullOrEmpty(rule.MaxColor)
+            ? ParseHex(rule.MaxColor)
+            : rule.Mode == "higher-is-worse" ? (244, 67, 54) : (76, 175, 80);
+
+        var r = (int)(lowR + (hiR - lowR) * t);
+        var g = (int)(lowG + (hiG - lowG) * t);
+        var b = (int)(lowB + (hiB - lowB) * t);
+        return $"rgb({r},{g},{b})";
+    }
+
+    private static (int r, int g, int b) ParseHex(string hex)
+    {
+        hex = hex.TrimStart('#');
+        if (hex.Length != 6) return (120, 120, 120);
+        return (
+            Convert.ToInt32(hex[..2], 16),
+            Convert.ToInt32(hex[2..4], 16),
+            Convert.ToInt32(hex[4..6], 16)
+        );
     }
 
     private string FormatCell(object? value, string columnName)

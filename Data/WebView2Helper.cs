@@ -55,7 +55,7 @@ namespace SqlHealthAssessment.Data
                 {
                     version = env.BrowserVersionString;
                 }
-                catch { }
+                catch (Exception ex) { _logger?.LogDebug(ex, "[WebView2] Failed to get BrowserVersionString from environment"); }
 
                 if (string.IsNullOrEmpty(version))
                 {
@@ -69,7 +69,7 @@ namespace SqlHealthAssessment.Data
                                 version = Path.GetFileName(folders[0]);
                         }
                     }
-                    catch { }
+                    catch (Exception ex) { _logger?.LogDebug(ex, "[WebView2] Failed to scan EdgeWebView folder for version"); }
                 }
 
                 _logger?.LogInformation("WebView2 runtime found. Version: {Version}", version ?? "unknown");
@@ -199,7 +199,7 @@ namespace SqlHealthAssessment.Data
                 progress?.Report(100);
 
                 // Clean up installer
-                try { File.Delete(tempPath); } catch { }
+                try { File.Delete(tempPath); } catch (Exception ex) { _logger?.LogDebug(ex, "[WebView2] Failed to delete temp installer: {Path}", tempPath); }
 
                 _logger?.LogInformation("WebView2 installer completed with exit code {ExitCode}", process.ExitCode);
 

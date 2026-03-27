@@ -234,7 +234,7 @@
                                 var result = GetResultForScript(script.Name)!;
                                 <div class="script-result @(result.Success ? "success" : "error")">
                                     <div class="result-header">
-                                        <span class="status">@(result.Success ? "✓ Success" : "✗ Error")</span>
+                                        <span class="status">@(result.Success ? (result.StatusMessage ?? "✓ Success") : "✗ Error")</span>
                                         <span class="execution-time">@result.ExecutionTime.TotalSeconds.ToString("F2")s</span>
                                         <span class="rows">@result.RowsAffected rows</span>
                                     </div>
@@ -312,7 +312,7 @@
                                 <tr>
                                     <td>@result.ServerName</td>
                                     <td>@result.ScriptName</td>
-                                    <td>@(result.Success ? "✓ Success" : "✗ Error")</td>
+                                    <td>@(result.Success ? (result.StatusMessage ?? "✓ Success") : "✗ Error")</td>
                                     <td>@result.ExecutionTime.TotalSeconds.ToString("F2")s</td>
                                     <td>@result.RowsAffected</td>
                                     <td>

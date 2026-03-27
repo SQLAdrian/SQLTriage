@@ -62,7 +62,7 @@ namespace SqlHealthAssessment.Data
                 else
                 {
                     // Connection is stale or closed, dispose it
-                    try { pooled.Connection.Dispose(); } catch { }
+                    try { pooled.Connection.Dispose(); } catch (Exception ex) { _logger.LogDebug(ex, "[ConnPool] Dispose stale connection failed"); }
                     _connectionCounts.AddOrUpdate(connectionKey, 0, (k, v) => Math.Max(0, v - 1));
                 }
             }
@@ -91,7 +91,7 @@ namespace SqlHealthAssessment.Data
         {
             if (_disposed || connection == null || connection.State != ConnectionState.Open)
             {
-                try { connection?.Dispose(); } catch { }
+                try { connection?.Dispose(); } catch (Exception ex) { _logger.LogDebug(ex, "[ConnPool] Dispose returned connection failed"); }
                 return;
             }
 
@@ -110,7 +110,7 @@ namespace SqlHealthAssessment.Data
             }
             else
             {
-                try { connection.Dispose(); } catch { }
+                try { connection.Dispose(); } catch (Exception ex) { _logger.LogDebug(ex, "[ConnPool] Dispose excess connection failed"); }
                 _connectionCounts.AddOrUpdate(connectionKey, 0, (k, v) => Math.Max(0, v - 1));
             }
         }
@@ -154,7 +154,7 @@ namespace SqlHealthAssessment.Data
                     var key = GetConnectionKey(connection.ConnectionString);
                     _connectionCounts.AddOrUpdate(key, 0, (k, v) => Math.Max(0, v - 1));
                 } 
-                catch { }
+                catch (Exception ex) { _logger.LogDebug(ex, "[ConnPool] Dispose during cleanup failed"); }
             }
 
             _logger.LogDebug("Connection pool cleanup completed: kept {KeptCount}, disposed {DisposedCount}", connectionsToKeep.Count, connectionsToDispose.Count);
@@ -186,7 +186,7 @@ namespace SqlHealthAssessment.Data
             // Dispose all pooled connections
             while (_availableConnections.TryDequeue(out var pooled))
             {
-                try { pooled.Connection.Dispose(); } catch { }
+                try { pooled.Connection.Dispose(); } catch (Exception ex) { _logger.LogDebug(ex, "[ConnPool] Dispose during shutdown failed"); }
             }
 
             _connectionCounts.Clear();

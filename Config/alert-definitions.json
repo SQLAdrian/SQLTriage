@@ -19,7 +19,7 @@
     },
     {
       "id": "storage",
-      "name": "Storage & Disk",
+      "name": "Storage \u0026 Disk",
       "icon": "storage"
     },
     {
@@ -29,17 +29,17 @@
     },
     {
       "id": "blocking",
-      "name": "Blocking & Locking",
+      "name": "Blocking \u0026 Locking",
       "icon": "lock"
     },
     {
       "id": "availability",
-      "name": "Availability & Services",
+      "name": "Availability \u0026 Services",
       "icon": "power"
     },
     {
       "id": "backup",
-      "name": "Backup & Recovery",
+      "name": "Backup \u0026 Recovery",
       "icon": "backup"
     },
     {
@@ -49,12 +49,12 @@
     },
     {
       "id": "logging",
-      "name": "Error Logging & Security",
+      "name": "Error Logging \u0026 Security",
       "icon": "warning"
     },
     {
       "id": "maintenance",
-      "name": "Index & Maintenance",
+      "name": "Index \u0026 Maintenance",
       "icon": "build"
     }
   ],
@@ -66,13 +66,15 @@
       "category": "performance",
       "enabled": true,
       "severity": "High",
-      "thresholds": { "warning": 80, "critical": 90 },
+      "thresholds": {
+        "warning": 80,
+        "critical": 90
+      },
       "unit": "percent",
+      "operator": "greater_than",
       "durationSeconds": 300,
       "frequencySeconds": 60,
-      "cooldownMinutes": null,
-      "query": "SELECT record.value('(./Record/SchedulerMonitorEvent/SystemHealth/ProcessUtilization)[1]', 'int') AS value FROM (SELECT TOP 1 CONVERT(XML, record) AS record FROM sys.dm_os_ring_buffers WHERE ring_buffer_type = N'RING_BUFFER_SCHEDULER_MONITOR' ORDER BY timestamp DESC) AS x",
-      "remediation": null
+      "query": "SELECT record.value(\u0027(./Record/SchedulerMonitorEvent/SystemHealth/ProcessUtilization)[1]\u0027, \u0027int\u0027) AS value FROM (SELECT TOP 1 CONVERT(XML, record) AS record FROM sys.dm_os_ring_buffers WHERE ring_buffer_type = N\u0027RING_BUFFER_SCHEDULER_MONITOR\u0027 ORDER BY timestamp DESC) AS x"
     },
     {
       "id": "cpu_os_usage",
@@ -81,13 +83,15 @@
       "category": "performance",
       "enabled": true,
       "severity": "High",
-      "thresholds": { "warning": 90, "critical": 95 },
+      "thresholds": {
+        "warning": 90,
+        "critical": 95
+      },
       "unit": "percent",
+      "operator": "greater_than",
       "durationSeconds": 300,
       "frequencySeconds": 60,
-      "cooldownMinutes": null,
-      "query": "SELECT 100 - record.value('(./Record/SchedulerMonitorEvent/SystemHealth/SystemIdle)[1]', 'int') AS value FROM (SELECT TOP 1 CONVERT(XML, record) AS record FROM sys.dm_os_ring_buffers WHERE ring_buffer_type = N'RING_BUFFER_SCHEDULER_MONITOR' ORDER BY timestamp DESC) AS x",
-      "remediation": null
+      "query": "SELECT 100 - record.value(\u0027(./Record/SchedulerMonitorEvent/SystemHealth/SystemIdle)[1]\u0027, \u0027int\u0027) AS value FROM (SELECT TOP 1 CONVERT(XML, record) AS record FROM sys.dm_os_ring_buffers WHERE ring_buffer_type = N\u0027RING_BUFFER_SCHEDULER_MONITOR\u0027 ORDER BY timestamp DESC) AS x"
     },
     {
       "id": "long_running_query",
@@ -96,13 +100,15 @@
       "category": "performance",
       "enabled": true,
       "severity": "Medium",
-      "thresholds": { "warning": 300, "critical": 600 },
+      "thresholds": {
+        "warning": 300,
+        "critical": 600
+      },
       "unit": "seconds",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 60,
-      "cooldownMinutes": null,
-      "query": "SELECT MAX(DATEDIFF(SECOND, start_time, GETDATE())) AS value FROM sys.dm_exec_requests WHERE session_id > 50 AND start_time IS NOT NULL AND status IN ('running','suspended','runnable')",
-      "remediation": null
+      "query": "SELECT MAX(DATEDIFF(SECOND, start_time, GETDATE())) AS value FROM sys.dm_exec_requests WHERE session_id \u003E 50 AND start_time IS NOT NULL AND status IN (\u0027running\u0027,\u0027suspended\u0027,\u0027runnable\u0027)"
     },
     {
       "id": "query_recompilations",
@@ -111,13 +117,15 @@
       "category": "performance",
       "enabled": false,
       "severity": "Low",
-      "thresholds": { "warning": 10, "critical": 50 },
+      "thresholds": {
+        "warning": 10,
+        "critical": 50
+      },
       "unit": "per_second",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 300,
-      "cooldownMinutes": null,
-      "query": "SELECT cntr_value AS value FROM sys.dm_os_performance_counters WHERE object_name LIKE '%SQL Statistics%' AND counter_name = 'SQL Re-Compilations/sec'",
-      "remediation": null
+      "query": "SELECT cntr_value AS value FROM sys.dm_os_performance_counters WHERE object_name LIKE \u0027%SQL Statistics%\u0027 AND counter_name = \u0027SQL Re-Compilations/sec\u0027"
     },
     {
       "id": "batch_requests",
@@ -126,13 +134,15 @@
       "category": "performance",
       "enabled": false,
       "severity": "Info",
-      "thresholds": { "warning": 5000, "critical": 10000 },
+      "thresholds": {
+        "warning": 5000,
+        "critical": 10000
+      },
       "unit": "per_second",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 300,
-      "cooldownMinutes": null,
-      "query": "SELECT cntr_value AS value FROM sys.dm_os_performance_counters WHERE object_name LIKE '%SQL Statistics%' AND counter_name = 'Batch Requests/sec'",
-      "remediation": null
+      "query": "SELECT cntr_value AS value FROM sys.dm_os_performance_counters WHERE object_name LIKE \u0027%SQL Statistics%\u0027 AND counter_name = \u0027Batch Requests/sec\u0027"
     },
     {
       "id": "io_stall_time",
@@ -141,13 +151,15 @@
       "category": "performance",
       "enabled": true,
       "severity": "Medium",
-      "thresholds": { "warning": 50, "critical": 100 },
+      "thresholds": {
+        "warning": 50,
+        "critical": 100
+      },
       "unit": "milliseconds",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 60,
-      "cooldownMinutes": null,
-      "query": "SELECT MAX(CASE WHEN num_of_reads + num_of_writes > 0 THEN (io_stall) / (num_of_reads + num_of_writes) ELSE 0 END) AS value FROM sys.dm_io_virtual_file_stats(NULL, NULL)",
-      "remediation": null
+      "query": "SELECT MAX(CASE WHEN num_of_reads \u002B num_of_writes \u003E 0 THEN (io_stall) / (num_of_reads \u002B num_of_writes) ELSE 0 END) AS value FROM sys.dm_io_virtual_file_stats(NULL, NULL)"
     },
     {
       "id": "page_splits",
@@ -156,13 +168,15 @@
       "category": "performance",
       "enabled": false,
       "severity": "Low",
-      "thresholds": { "warning": 100, "critical": 500 },
+      "thresholds": {
+        "warning": 100,
+        "critical": 500
+      },
       "unit": "per_second",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 300,
-      "cooldownMinutes": null,
-      "query": "SELECT cntr_value AS value FROM sys.dm_os_performance_counters WHERE object_name LIKE '%Access Methods%' AND counter_name = 'Page Splits/sec'",
-      "remediation": null
+      "query": "SELECT cntr_value AS value FROM sys.dm_os_performance_counters WHERE object_name LIKE \u0027%Access Methods%\u0027 AND counter_name = \u0027Page Splits/sec\u0027"
     },
     {
       "id": "wait_time_anomaly",
@@ -171,13 +185,15 @@
       "category": "performance",
       "enabled": false,
       "severity": "Medium",
-      "thresholds": { "warning": 5000, "critical": 15000 },
+      "thresholds": {
+        "warning": 5000,
+        "critical": 15000
+      },
       "unit": "milliseconds",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 300,
-      "cooldownMinutes": null,
-      "query": "SELECT SUM(wait_time_ms) AS value FROM sys.dm_os_wait_stats WHERE wait_type NOT IN ('SLEEP_TASK','LAZYWRITER_SLEEP','SQLTRACE_BUFFER_FLUSH','CLR_AUTO_EVENT','CLR_SEMAPHORE','BROKER_EVENTHANDLER','BROKER_RECEIVE_WAITFOR','BROKER_TASK_STOP','BROKER_TO_FLUSH','CHECKPOINT_QUEUE','DBMIRROR_DBM_EVENT','DBMIRRORING_CMD','DIRTY_PAGE_POLL','DISPATCHER_QUEUE_SEMAPHORE','FT_IFTS_SCHEDULER_IDLE_WAIT','HADR_FILESTREAM_IOMGR_IOCOMPLETION','HADR_WORK_QUEUE','LOGMGR_QUEUE','ONDEMAND_TASK_QUEUE','REQUEST_FOR_DEADLOCK_SEARCH','RESOURCE_QUEUE','SERVER_IDLE_CHECK','SP_SERVER_DIAGNOSTICS_SLEEP','SQLTRACE_INCREMENTAL_FLUSH_SLEEP','TRACEWRITE','WAIT_XTP_HOST_WAIT','WAITFOR','XE_DISPATCHER_WAIT','XE_TIMER_EVENT')",
-      "remediation": null
+      "query": "SELECT SUM(wait_time_ms) AS value FROM sys.dm_os_wait_stats WHERE wait_type NOT IN (\u0027SLEEP_TASK\u0027,\u0027LAZYWRITER_SLEEP\u0027,\u0027SQLTRACE_BUFFER_FLUSH\u0027,\u0027CLR_AUTO_EVENT\u0027,\u0027CLR_SEMAPHORE\u0027,\u0027BROKER_EVENTHANDLER\u0027,\u0027BROKER_RECEIVE_WAITFOR\u0027,\u0027BROKER_TASK_STOP\u0027,\u0027BROKER_TO_FLUSH\u0027,\u0027CHECKPOINT_QUEUE\u0027,\u0027DBMIRROR_DBM_EVENT\u0027,\u0027DBMIRRORING_CMD\u0027,\u0027DIRTY_PAGE_POLL\u0027,\u0027DISPATCHER_QUEUE_SEMAPHORE\u0027,\u0027FT_IFTS_SCHEDULER_IDLE_WAIT\u0027,\u0027HADR_FILESTREAM_IOMGR_IOCOMPLETION\u0027,\u0027HADR_WORK_QUEUE\u0027,\u0027LOGMGR_QUEUE\u0027,\u0027ONDEMAND_TASK_QUEUE\u0027,\u0027REQUEST_FOR_DEADLOCK_SEARCH\u0027,\u0027RESOURCE_QUEUE\u0027,\u0027SERVER_IDLE_CHECK\u0027,\u0027SP_SERVER_DIAGNOSTICS_SLEEP\u0027,\u0027SQLTRACE_INCREMENTAL_FLUSH_SLEEP\u0027,\u0027TRACEWRITE\u0027,\u0027WAIT_XTP_HOST_WAIT\u0027,\u0027WAITFOR\u0027,\u0027XE_DISPATCHER_WAIT\u0027,\u0027XE_TIMER_EVENT\u0027)"
     },
     {
       "id": "sql_response_time",
@@ -186,13 +202,15 @@
       "category": "performance",
       "enabled": true,
       "severity": "Medium",
-      "thresholds": { "warning": 1000, "critical": 2000 },
+      "thresholds": {
+        "warning": 1000,
+        "critical": 2000
+      },
       "unit": "milliseconds",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 60,
-      "cooldownMinutes": null,
-      "query": "DECLARE @t DATETIME = GETDATE(); SELECT 1; SELECT DATEDIFF(MILLISECOND, @t, GETDATE()) AS value",
-      "remediation": null
+      "query": "DECLARE @t DATETIME = GETDATE(); SELECT 1; SELECT DATEDIFF(MILLISECOND, @t, GETDATE()) AS value"
     },
     {
       "id": "page_life_expectancy",
@@ -201,14 +219,15 @@
       "category": "memory",
       "enabled": true,
       "severity": "High",
-      "thresholds": { "warning": 300, "critical": 120 },
+      "thresholds": {
+        "warning": 300,
+        "critical": 120
+      },
       "unit": "seconds",
       "operator": "less_than",
       "durationSeconds": 0,
       "frequencySeconds": 60,
-      "cooldownMinutes": null,
-      "query": "SELECT cntr_value AS value FROM sys.dm_os_performance_counters WHERE object_name LIKE '%Buffer Manager%' AND counter_name = 'Page life expectancy'",
-      "remediation": null
+      "query": "SELECT cntr_value AS value FROM sys.dm_os_performance_counters WHERE object_name LIKE \u0027%Buffer Manager%\u0027 AND counter_name = \u0027Page life expectancy\u0027"
     },
     {
       "id": "buffer_cache_hit",
@@ -217,14 +236,15 @@
       "category": "memory",
       "enabled": true,
       "severity": "Medium",
-      "thresholds": { "warning": 95, "critical": 90 },
+      "thresholds": {
+        "warning": 95,
+        "critical": 90
+      },
       "unit": "percent",
       "operator": "less_than",
       "durationSeconds": 0,
       "frequencySeconds": 300,
-      "cooldownMinutes": null,
-      "query": "SELECT CAST(a.cntr_value AS FLOAT) / NULLIF(b.cntr_value, 0) * 100 AS value FROM sys.dm_os_performance_counters a CROSS JOIN sys.dm_os_performance_counters b WHERE a.object_name LIKE '%Buffer Manager%' AND a.counter_name = 'Buffer cache hit ratio' AND b.object_name LIKE '%Buffer Manager%' AND b.counter_name = 'Buffer cache hit ratio base'",
-      "remediation": null
+      "query": "SELECT CAST(a.cntr_value AS FLOAT) / NULLIF(b.cntr_value, 0) * 100 AS value FROM sys.dm_os_performance_counters a CROSS JOIN sys.dm_os_performance_counters b WHERE a.object_name LIKE \u0027%Buffer Manager%\u0027 AND a.counter_name = \u0027Buffer cache hit ratio\u0027 AND b.object_name LIKE \u0027%Buffer Manager%\u0027 AND b.counter_name = \u0027Buffer cache hit ratio base\u0027"
     },
     {
       "id": "os_memory_usage",
@@ -233,13 +253,15 @@
       "category": "memory",
       "enabled": true,
       "severity": "High",
-      "thresholds": { "warning": 90, "critical": 95 },
+      "thresholds": {
+        "warning": 90,
+        "critical": 95
+      },
       "unit": "percent",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 60,
-      "cooldownMinutes": null,
-      "query": "SELECT (total_physical_memory_kb - available_physical_memory_kb) * 100.0 / NULLIF(total_physical_memory_kb, 0) AS value FROM sys.dm_os_sys_memory",
-      "remediation": null
+      "query": "SELECT (total_physical_memory_kb - available_physical_memory_kb) * 100.0 / NULLIF(total_physical_memory_kb, 0) AS value FROM sys.dm_os_sys_memory"
     },
     {
       "id": "sql_memory_usage",
@@ -248,13 +270,15 @@
       "category": "memory",
       "enabled": false,
       "severity": "Medium",
-      "thresholds": { "warning": 90, "critical": 95 },
+      "thresholds": {
+        "warning": 90,
+        "critical": 95
+      },
       "unit": "percent",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 300,
-      "cooldownMinutes": null,
-      "query": "SELECT CAST(physical_memory_in_use_kb AS FLOAT) / NULLIF(committed_target_kb, 0) * 100 AS value FROM sys.dm_os_process_memory",
-      "remediation": null
+      "query": "SELECT CAST(physical_memory_in_use_kb AS FLOAT) / NULLIF(committed_target_kb, 0) * 100 AS value FROM sys.dm_os_process_memory"
     },
     {
       "id": "os_paging",
@@ -263,13 +287,15 @@
       "category": "memory",
       "enabled": false,
       "severity": "Medium",
-      "thresholds": { "warning": 10, "critical": 50 },
+      "thresholds": {
+        "warning": 10,
+        "critical": 50
+      },
       "unit": "per_second",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 60,
-      "cooldownMinutes": null,
-      "query": "SELECT cntr_value AS value FROM sys.dm_os_performance_counters WHERE object_name LIKE '%Buffer Manager%' AND counter_name = 'Page reads/sec'",
-      "remediation": null
+      "query": "SELECT cntr_value AS value FROM sys.dm_os_performance_counters WHERE object_name LIKE \u0027%Buffer Manager%\u0027 AND counter_name = \u0027Page reads/sec\u0027"
     },
     {
       "id": "database_space_full",
@@ -278,13 +304,15 @@
       "category": "storage",
       "enabled": true,
       "severity": "High",
-      "thresholds": { "warning": 85, "critical": 90 },
+      "thresholds": {
+        "warning": 85,
+        "critical": 90
+      },
       "unit": "percent",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 300,
-      "cooldownMinutes": null,
-      "query": "SELECT TOP 1 CAST(FILEPROPERTY(name, 'SpaceUsed') AS FLOAT) * 100.0 / NULLIF(size, 0) AS value FROM sys.database_files WHERE type = 0 ORDER BY CAST(FILEPROPERTY(name, 'SpaceUsed') AS FLOAT) / NULLIF(size, 0) DESC",
-      "remediation": null
+      "query": "SELECT TOP 1 CAST(FILEPROPERTY(name, \u0027SpaceUsed\u0027) AS FLOAT) * 100.0 / NULLIF(size, 0) AS value FROM sys.database_files WHERE type = 0 ORDER BY CAST(FILEPROPERTY(name, \u0027SpaceUsed\u0027) AS FLOAT) / NULLIF(size, 0) DESC"
     },
     {
       "id": "log_space_full",
@@ -293,13 +321,15 @@
       "category": "storage",
       "enabled": true,
       "severity": "High",
-      "thresholds": { "warning": 80, "critical": 90 },
+      "thresholds": {
+        "warning": 80,
+        "critical": 90
+      },
       "unit": "percent",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 300,
-      "cooldownMinutes": null,
-      "query": "SELECT TOP 1 CAST(FILEPROPERTY(name, 'SpaceUsed') AS FLOAT) * 100.0 / NULLIF(size, 0) AS value FROM sys.database_files WHERE type = 1 ORDER BY CAST(FILEPROPERTY(name, 'SpaceUsed') AS FLOAT) / NULLIF(size, 0) DESC",
-      "remediation": null
+      "query": "SELECT TOP 1 CAST(FILEPROPERTY(name, \u0027SpaceUsed\u0027) AS FLOAT) * 100.0 / NULLIF(size, 0) AS value FROM sys.database_files WHERE type = 1 ORDER BY CAST(FILEPROPERTY(name, \u0027SpaceUsed\u0027) AS FLOAT) / NULLIF(size, 0) DESC"
     },
     {
       "id": "disk_space_low",
@@ -308,14 +338,15 @@
       "category": "storage",
       "enabled": true,
       "severity": "High",
-      "thresholds": { "warning": 5120, "critical": 2048 },
+      "thresholds": {
+        "warning": 5120,
+        "critical": 2048
+      },
       "unit": "megabytes",
       "operator": "less_than",
       "durationSeconds": 0,
       "frequencySeconds": 300,
-      "cooldownMinutes": null,
-      "query": "SELECT MIN(available_bytes / 1048576) AS value FROM sys.dm_os_volume_stats(DB_ID(), 1)",
-      "remediation": null
+      "query": "SELECT MIN(available_bytes / 1048576) AS value FROM sys.dm_os_volume_stats(DB_ID(), 1)"
     },
     {
       "id": "data_file_autogrow",
@@ -324,13 +355,15 @@
       "category": "storage",
       "enabled": true,
       "severity": "Low",
-      "thresholds": { "warning": 1, "critical": null },
+      "thresholds": {
+        "warning": 1
+      },
       "unit": "event",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 60,
       "cooldownMinutes": 30,
-      "query": "SELECT COUNT(*) AS value FROM sys.fn_xe_file_target_read_file('system_health*.xel', NULL, NULL, NULL) WHERE object_name = 'database_file_size_change' AND CONVERT(XML, event_data).value('(event/data[@name=\"file_type\"]/text)[1]','varchar(10)') = 'Data' AND CONVERT(XML, event_data).value('(event/@timestamp)[1]','datetime2') > DATEADD(MINUTE, -5, SYSUTCDATETIME())",
-      "remediation": null
+      "query": "SELECT COUNT(*) AS value FROM sys.fn_xe_file_target_read_file(\u0027system_health*.xel\u0027, NULL, NULL, NULL) WHERE object_name = \u0027database_file_size_change\u0027 AND CONVERT(XML, event_data).value(\u0027(event/data[@name=\u0022file_type\u0022]/text)[1]\u0027,\u0027varchar(10)\u0027) = \u0027Data\u0027 AND CONVERT(XML, event_data).value(\u0027(event/@timestamp)[1]\u0027,\u0027datetime2\u0027) \u003E DATEADD(MINUTE, -5, SYSUTCDATETIME())"
     },
     {
       "id": "log_file_autogrow",
@@ -339,13 +372,15 @@
       "category": "storage",
       "enabled": true,
       "severity": "Medium",
-      "thresholds": { "warning": 1, "critical": null },
+      "thresholds": {
+        "warning": 1
+      },
       "unit": "event",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 60,
       "cooldownMinutes": 30,
-      "query": "SELECT COUNT(*) AS value FROM sys.fn_xe_file_target_read_file('system_health*.xel', NULL, NULL, NULL) WHERE object_name = 'database_file_size_change' AND CONVERT(XML, event_data).value('(event/data[@name=\"file_type\"]/text)[1]','varchar(10)') = 'Log' AND CONVERT(XML, event_data).value('(event/@timestamp)[1]','datetime2') > DATEADD(MINUTE, -5, SYSUTCDATETIME())",
-      "remediation": null
+      "query": "SELECT COUNT(*) AS value FROM sys.fn_xe_file_target_read_file(\u0027system_health*.xel\u0027, NULL, NULL, NULL) WHERE object_name = \u0027database_file_size_change\u0027 AND CONVERT(XML, event_data).value(\u0027(event/data[@name=\u0022file_type\u0022]/text)[1]\u0027,\u0027varchar(10)\u0027) = \u0027Log\u0027 AND CONVERT(XML, event_data).value(\u0027(event/@timestamp)[1]\u0027,\u0027datetime2\u0027) \u003E DATEADD(MINUTE, -5, SYSUTCDATETIME())"
     },
     {
       "id": "vlf_count",
@@ -354,13 +389,16 @@
       "category": "storage",
       "enabled": true,
       "severity": "Medium",
-      "thresholds": { "warning": 500, "critical": 1000 },
+      "thresholds": {
+        "warning": 500,
+        "critical": 1000
+      },
       "unit": "count",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 3600,
       "cooldownMinutes": 60,
-      "query": "SELECT COUNT(*) AS value FROM sys.dm_db_log_info(DB_ID())",
-      "remediation": null
+      "query": "SELECT COUNT(*) AS value FROM sys.dm_db_log_info(DB_ID())"
     },
     {
       "id": "filegroup_space",
@@ -369,13 +407,15 @@
       "category": "storage",
       "enabled": false,
       "severity": "High",
-      "thresholds": { "warning": 85, "critical": 90 },
+      "thresholds": {
+        "warning": 85,
+        "critical": 90
+      },
       "unit": "percent",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 300,
-      "cooldownMinutes": null,
-      "query": "SELECT TOP 1 SUM(CAST(FILEPROPERTY(f.name, 'SpaceUsed') AS FLOAT)) * 100.0 / NULLIF(SUM(CAST(f.size AS FLOAT)), 0) AS value FROM sys.database_files f WHERE f.type = 0 GROUP BY f.data_space_id ORDER BY SUM(CAST(FILEPROPERTY(f.name, 'SpaceUsed') AS FLOAT)) * 100.0 / NULLIF(SUM(CAST(f.size AS FLOAT)), 0) DESC",
-      "remediation": null
+      "query": "SELECT TOP 1 SUM(CAST(FILEPROPERTY(f.name, \u0027SpaceUsed\u0027) AS FLOAT)) * 100.0 / NULLIF(SUM(CAST(f.size AS FLOAT)), 0) AS value FROM sys.database_files f WHERE f.type = 0 GROUP BY f.data_space_id ORDER BY SUM(CAST(FILEPROPERTY(f.name, \u0027SpaceUsed\u0027) AS FLOAT)) * 100.0 / NULLIF(SUM(CAST(f.size AS FLOAT)), 0) DESC"
     },
     {
       "id": "disk_latency_read",
@@ -384,13 +424,15 @@
       "category": "storage",
       "enabled": true,
       "severity": "Medium",
-      "thresholds": { "warning": 30, "critical": 50 },
+      "thresholds": {
+        "warning": 30,
+        "critical": 50
+      },
       "unit": "milliseconds",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 60,
-      "cooldownMinutes": null,
-      "query": "SELECT MAX(CASE WHEN num_of_reads > 0 THEN io_stall_read_ms / num_of_reads ELSE 0 END) AS value FROM sys.dm_io_virtual_file_stats(NULL, NULL)",
-      "remediation": null
+      "query": "SELECT MAX(CASE WHEN num_of_reads \u003E 0 THEN io_stall_read_ms / num_of_reads ELSE 0 END) AS value FROM sys.dm_io_virtual_file_stats(NULL, NULL)"
     },
     {
       "id": "disk_latency_write",
@@ -399,13 +441,15 @@
       "category": "storage",
       "enabled": true,
       "severity": "Medium",
-      "thresholds": { "warning": 30, "critical": 50 },
+      "thresholds": {
+        "warning": 30,
+        "critical": 50
+      },
       "unit": "milliseconds",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 60,
-      "cooldownMinutes": null,
-      "query": "SELECT MAX(CASE WHEN num_of_writes > 0 THEN io_stall_write_ms / num_of_writes ELSE 0 END) AS value FROM sys.dm_io_virtual_file_stats(NULL, NULL)",
-      "remediation": null
+      "query": "SELECT MAX(CASE WHEN num_of_writes \u003E 0 THEN io_stall_write_ms / num_of_writes ELSE 0 END) AS value FROM sys.dm_io_virtual_file_stats(NULL, NULL)"
     },
     {
       "id": "tempdb_space_used",
@@ -414,13 +458,15 @@
       "category": "tempdb",
       "enabled": true,
       "severity": "Medium",
-      "thresholds": { "warning": 80, "critical": 90 },
+      "thresholds": {
+        "warning": 80,
+        "critical": 90
+      },
       "unit": "percent",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 300,
-      "cooldownMinutes": null,
-      "query": "SELECT SUM(CAST(unallocated_extent_page_count AS FLOAT)) * 100.0 / NULLIF(SUM(CAST(total_page_count AS FLOAT)), 0) AS value FROM tempdb.sys.dm_db_file_space_usage",
-      "remediation": null
+      "query": "SELECT SUM(CAST(allocated_extent_page_count AS FLOAT)) * 100.0 / NULLIF(SUM(CAST(total_page_count AS FLOAT)), 0) AS value FROM tempdb.sys.dm_db_file_space_usage"
     },
     {
       "id": "tempdb_contention",
@@ -429,13 +475,15 @@
       "category": "tempdb",
       "enabled": true,
       "severity": "Medium",
-      "thresholds": { "warning": 50, "critical": 100 },
+      "thresholds": {
+        "warning": 50,
+        "critical": 100
+      },
       "unit": "milliseconds",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 60,
-      "cooldownMinutes": null,
-      "query": "SELECT SUM(wait_time_ms) / NULLIF(SUM(waiting_requests_count), 0) AS value FROM sys.dm_os_wait_stats WHERE wait_type LIKE 'PAGELATCH%' AND wait_type NOT LIKE '%IO%'",
-      "remediation": null
+      "query": "SELECT SUM(wait_time_ms) / NULLIF(SUM(waiting_tasks_count), 0) AS value FROM sys.dm_os_wait_stats WHERE wait_type LIKE \u0027PAGELATCH%\u0027 AND wait_type NOT LIKE \u0027%IO%\u0027"
     },
     {
       "id": "tempdb_autogrow",
@@ -444,28 +492,32 @@
       "category": "tempdb",
       "enabled": true,
       "severity": "Low",
-      "thresholds": { "warning": 1, "critical": null },
+      "thresholds": {
+        "warning": 1
+      },
       "unit": "event",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 60,
       "cooldownMinutes": 30,
-      "query": "SELECT COUNT(*) AS value FROM sys.fn_xe_file_target_read_file('system_health*.xel', NULL, NULL, NULL) WHERE object_name = 'database_file_size_change' AND CONVERT(XML, event_data).value('(event/data[@name=\"database_id\"]/value)[1]','int') = 2 AND CONVERT(XML, event_data).value('(event/@timestamp)[1]','datetime2') > DATEADD(MINUTE, -5, SYSUTCDATETIME())",
-      "remediation": null
+      "query": "SELECT COUNT(*) AS value FROM sys.fn_xe_file_target_read_file(\u0027system_health*.xel\u0027, NULL, NULL, NULL) WHERE object_name = \u0027database_file_size_change\u0027 AND CONVERT(XML, event_data).value(\u0027(event/data[@name=\u0022database_id\u0022]/value)[1]\u0027,\u0027int\u0027) = 2 AND CONVERT(XML, event_data).value(\u0027(event/@timestamp)[1]\u0027,\u0027datetime2\u0027) \u003E DATEADD(MINUTE, -5, SYSUTCDATETIME())"
     },
     {
       "id": "tempdb_files_unequal",
       "name": "TempDB Files Different Sizes",
       "description": "TempDB data files have different sizes, causing uneven round-robin allocation",
       "category": "tempdb",
-      "enabled": false,
+      "enabled": true,
       "severity": "Low",
-      "thresholds": { "warning": 10, "critical": null },
+      "thresholds": {
+        "warning": 1
+      },
       "unit": "percent",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 3600,
       "cooldownMinutes": 60,
-      "query": "SELECT CASE WHEN MAX(size) > 0 THEN (MAX(size) - MIN(size)) * 100.0 / MAX(size) ELSE 0 END AS value FROM tempdb.sys.database_files WHERE type = 0",
-      "remediation": null
+      "query": "SELECT CASE WHEN MAX(size) \u003E 0 THEN (MAX(size) - MIN(size)) * 100.0 / MAX(size) ELSE 0 END AS value FROM tempdb.sys.database_files WHERE type = 0"
     },
     {
       "id": "tempdb_version_store",
@@ -474,13 +526,15 @@
       "category": "tempdb",
       "enabled": true,
       "severity": "Medium",
-      "thresholds": { "warning": 1024, "critical": 4096 },
+      "thresholds": {
+        "warning": 1024,
+        "critical": 4096
+      },
       "unit": "megabytes",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 300,
-      "cooldownMinutes": null,
-      "query": "SELECT SUM(version_store_reserved_page_count) * 8 / 1024 AS value FROM tempdb.sys.dm_db_file_space_usage",
-      "remediation": null
+      "query": "SELECT SUM(version_store_reserved_page_count) * 8 / 1024 AS value FROM tempdb.sys.dm_db_file_space_usage"
     },
     {
       "id": "deadlock",
@@ -489,13 +543,14 @@
       "category": "blocking",
       "enabled": true,
       "severity": "High",
-      "thresholds": { "warning": 1, "critical": null },
+      "thresholds": {
+        "warning": 1
+      },
       "unit": "event",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 30,
-      "cooldownMinutes": null,
-      "query": "SELECT cntr_value AS value FROM sys.dm_os_performance_counters WHERE object_name LIKE '%Locks%' AND counter_name = 'Number of Deadlocks/sec'",
-      "remediation": null
+      "query": "SELECT cntr_value AS value FROM sys.dm_os_performance_counters WHERE object_name LIKE \u0027%Locks%\u0027 AND counter_name = \u0027Number of Deadlocks/sec\u0027"
     },
     {
       "id": "deadlock_rate",
@@ -504,13 +559,15 @@
       "category": "blocking",
       "enabled": false,
       "severity": "High",
-      "thresholds": { "warning": 3, "critical": 5 },
+      "thresholds": {
+        "warning": 3,
+        "critical": 5
+      },
       "unit": "per_minute",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 60,
-      "cooldownMinutes": null,
-      "query": "SELECT cntr_value AS value FROM sys.dm_os_performance_counters WHERE object_name LIKE '%Locks%' AND counter_name = 'Number of Deadlocks/sec'",
-      "remediation": null
+      "query": "SELECT cntr_value AS value FROM sys.dm_os_performance_counters WHERE object_name LIKE \u0027%Locks%\u0027 AND counter_name = \u0027Number of Deadlocks/sec\u0027"
     },
     {
       "id": "blocking_process",
@@ -519,13 +576,15 @@
       "category": "blocking",
       "enabled": true,
       "severity": "Medium",
-      "thresholds": { "warning": 60, "critical": 300 },
+      "thresholds": {
+        "warning": 60,
+        "critical": 300
+      },
       "unit": "seconds",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 30,
-      "cooldownMinutes": null,
-      "query": "SELECT MAX(wait_time / 1000) AS value FROM sys.dm_exec_requests WHERE blocking_session_id > 0",
-      "remediation": null
+      "query": "SELECT MAX(wait_time / 1000) AS value FROM sys.dm_exec_requests WHERE blocking_session_id \u003E 0"
     },
     {
       "id": "blocked_sessions_count",
@@ -534,13 +593,15 @@
       "category": "blocking",
       "enabled": true,
       "severity": "Medium",
-      "thresholds": { "warning": 5, "critical": 15 },
+      "thresholds": {
+        "warning": 5,
+        "critical": 15
+      },
       "unit": "count",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 60,
-      "cooldownMinutes": null,
-      "query": "SELECT COUNT(*) AS value FROM sys.dm_exec_requests WHERE blocking_session_id > 0",
-      "remediation": null
+      "query": "SELECT COUNT(*) AS value FROM sys.dm_exec_requests WHERE blocking_session_id \u003E 0"
     },
     {
       "id": "instance_unreachable",
@@ -549,14 +610,15 @@
       "category": "availability",
       "enabled": true,
       "severity": "Critical",
-      "thresholds": { "warning": 1, "critical": null },
+      "thresholds": {
+        "warning": 1
+      },
       "unit": "event",
+      "operator": "greater_than",
       "durationSeconds": 30,
       "frequencySeconds": 30,
-      "cooldownMinutes": null,
       "query": "SELECT 1 AS value",
-      "queryMode": "connectivity_check",
-      "remediation": null
+      "queryMode": "connectivity_check"
     },
     {
       "id": "database_unavailable",
@@ -565,13 +627,14 @@
       "category": "availability",
       "enabled": true,
       "severity": "Critical",
-      "thresholds": { "warning": 1, "critical": null },
+      "thresholds": {
+        "warning": 1
+      },
       "unit": "event",
+      "operator": "greater_than",
       "durationSeconds": 30,
       "frequencySeconds": 30,
-      "cooldownMinutes": null,
-      "query": "SELECT COUNT(*) AS value FROM sys.databases WHERE database_id > 4 AND state <> 0",
-      "remediation": null
+      "query": "SELECT COUNT(*) AS value FROM sys.databases WHERE database_id \u003E 4 AND state \u003C\u003E 0"
     },
     {
       "id": "agent_stopped",
@@ -580,13 +643,14 @@
       "category": "availability",
       "enabled": true,
       "severity": "High",
-      "thresholds": { "warning": 1, "critical": null },
+      "thresholds": {
+        "warning": 1
+      },
       "unit": "event",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 60,
-      "cooldownMinutes": null,
-      "query": "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.dm_server_services WHERE servicename LIKE '%Agent%' AND status <> 4) THEN 1 ELSE 0 END AS value",
-      "remediation": null
+      "query": "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.dm_server_services WHERE servicename LIKE \u0027%Agent%\u0027 AND status \u003C\u003E 4) THEN 1 ELSE 0 END AS value"
     },
     {
       "id": "agent_job_failure",
@@ -595,13 +659,14 @@
       "category": "availability",
       "enabled": true,
       "severity": "Medium",
-      "thresholds": { "warning": 1, "critical": null },
+      "thresholds": {
+        "warning": 1
+      },
       "unit": "event",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 60,
-      "cooldownMinutes": null,
-      "query": "SELECT COUNT(*) AS value FROM msdb.dbo.sysjobhistory h JOIN msdb.dbo.sysjobs j ON j.job_id = h.job_id WHERE h.step_id = 0 AND h.run_status = 0 AND msdb.dbo.agent_datetime(h.run_date, h.run_time) > DATEADD(MINUTE, -5, GETDATE())",
-      "remediation": null
+      "query": "SELECT COUNT(*) AS value FROM msdb.dbo.sysjobhistory h JOIN msdb.dbo.sysjobs j ON j.job_id = h.job_id WHERE h.step_id = 0 AND h.run_status = 0 AND msdb.dbo.agent_datetime(h.run_date, h.run_time) \u003E DATEADD(MINUTE, -5, GETDATE())"
     },
     {
       "id": "agent_job_long_running",
@@ -610,13 +675,15 @@
       "category": "availability",
       "enabled": false,
       "severity": "Low",
-      "thresholds": { "warning": 200, "critical": 500 },
+      "thresholds": {
+        "warning": 200,
+        "critical": 500
+      },
       "unit": "percent_of_average",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 300,
-      "cooldownMinutes": null,
-      "query": "SELECT MAX(DATEDIFF(SECOND, ja.start_execution_date, GETDATE())) AS value FROM msdb.dbo.sysjobactivity ja WHERE ja.start_execution_date IS NOT NULL AND ja.stop_execution_date IS NULL AND ja.session_id = (SELECT MAX(session_id) FROM msdb.dbo.sysjobactivity)",
-      "remediation": null
+      "query": "SELECT MAX(DATEDIFF(SECOND, ja.start_execution_date, GETDATE())) AS value FROM msdb.dbo.sysjobactivity ja WHERE ja.start_execution_date IS NOT NULL AND ja.stop_execution_date IS NULL AND ja.session_id = (SELECT MAX(session_id) FROM msdb.dbo.sysjobactivity)"
     },
     {
       "id": "agent_job_completion",
@@ -625,13 +692,14 @@
       "category": "availability",
       "enabled": false,
       "severity": "Info",
-      "thresholds": { "warning": 1, "critical": null },
+      "thresholds": {
+        "warning": 1
+      },
       "unit": "event",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 60,
-      "cooldownMinutes": null,
-      "query": "SELECT COUNT(*) AS value FROM msdb.dbo.sysjobhistory h WHERE h.step_id = 0 AND h.run_status = 1 AND msdb.dbo.agent_datetime(h.run_date, h.run_time) > DATEADD(MINUTE, -5, GETDATE())",
-      "remediation": null
+      "query": "SELECT COUNT(*) AS value FROM msdb.dbo.sysjobhistory h WHERE h.step_id = 0 AND h.run_status = 1 AND msdb.dbo.agent_datetime(h.run_date, h.run_time) \u003E DATEADD(MINUTE, -5, GETDATE())"
     },
     {
       "id": "fulltext_stopped",
@@ -640,13 +708,14 @@
       "category": "availability",
       "enabled": false,
       "severity": "Medium",
-      "thresholds": { "warning": 1, "critical": null },
+      "thresholds": {
+        "warning": 1
+      },
       "unit": "event",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 300,
-      "cooldownMinutes": null,
-      "query": "SELECT CASE WHEN FULLTEXTSERVICEPROPERTY('IsFullTextInstalled') = 1 AND NOT EXISTS (SELECT 1 FROM sys.dm_server_services WHERE servicename LIKE '%Full-Text%' AND status = 4) THEN 1 ELSE 0 END AS value",
-      "remediation": null
+      "query": "SELECT CASE WHEN FULLTEXTSERVICEPROPERTY(\u0027IsFullTextInstalled\u0027) = 1 AND NOT EXISTS (SELECT 1 FROM sys.dm_server_services WHERE servicename LIKE \u0027%Full-Text%\u0027 AND status = 4) THEN 1 ELSE 0 END AS value"
     },
     {
       "id": "dtc_stopped",
@@ -655,13 +724,14 @@
       "category": "availability",
       "enabled": false,
       "severity": "Medium",
-      "thresholds": { "warning": 1, "critical": null },
+      "thresholds": {
+        "warning": 1
+      },
       "unit": "event",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 300,
-      "cooldownMinutes": null,
-      "query": "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.dm_server_services WHERE servicename LIKE '%DTC%' AND status <> 4) THEN 1 ELSE 0 END AS value",
-      "remediation": null
+      "query": "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.dm_server_services WHERE servicename LIKE \u0027%DTC%\u0027 AND status \u003C\u003E 4) THEN 1 ELSE 0 END AS value"
     },
     {
       "id": "browser_stopped",
@@ -670,13 +740,14 @@
       "category": "availability",
       "enabled": false,
       "severity": "Low",
-      "thresholds": { "warning": 1, "critical": null },
+      "thresholds": {
+        "warning": 1
+      },
       "unit": "event",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 300,
-      "cooldownMinutes": null,
-      "query": "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.dm_server_services WHERE servicename LIKE '%Browser%' AND status <> 4) THEN 1 ELSE 0 END AS value",
-      "remediation": null
+      "query": "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.dm_server_services WHERE servicename LIKE \u0027%Browser%\u0027 AND status \u003C\u003E 4) THEN 1 ELSE 0 END AS value"
     },
     {
       "id": "ssis_stopped",
@@ -685,13 +756,14 @@
       "category": "availability",
       "enabled": false,
       "severity": "Medium",
-      "thresholds": { "warning": 1, "critical": null },
+      "thresholds": {
+        "warning": 1
+      },
       "unit": "event",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 300,
-      "cooldownMinutes": null,
-      "query": "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.dm_server_services WHERE servicename LIKE '%Integration%' AND status <> 4) THEN 1 ELSE 0 END AS value",
-      "remediation": null
+      "query": "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.dm_server_services WHERE servicename LIKE \u0027%Integration%\u0027 AND status \u003C\u003E 4) THEN 1 ELSE 0 END AS value"
     },
     {
       "id": "backup_full_overdue",
@@ -700,13 +772,16 @@
       "category": "backup",
       "enabled": true,
       "severity": "High",
-      "thresholds": { "warning": 168, "critical": 336 },
+      "thresholds": {
+        "warning": 168,
+        "critical": 336
+      },
       "unit": "hours",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 3600,
       "cooldownMinutes": 60,
-      "query": "SELECT MAX(ISNULL(DATEDIFF(HOUR, b.backup_finish_date, GETDATE()), 9999)) AS value FROM sys.databases d LEFT JOIN msdb.dbo.backupset b ON d.name = b.database_name AND b.type = 'D' WHERE d.database_id > 4 AND d.state = 0 GROUP BY d.name ORDER BY value DESC",
-      "remediation": null
+      "query": "SELECT MAX(ISNULL(DATEDIFF(HOUR, b.backup_finish_date, GETDATE()), 9999)) AS value FROM sys.databases d LEFT JOIN msdb.dbo.backupset b ON d.name = b.database_name AND b.type = \u0027D\u0027 WHERE d.database_id \u003E 4 AND d.state = 0 GROUP BY d.name ORDER BY value DESC"
     },
     {
       "id": "backup_diff_overdue",
@@ -715,13 +790,16 @@
       "category": "backup",
       "enabled": false,
       "severity": "Medium",
-      "thresholds": { "warning": 24, "critical": 48 },
+      "thresholds": {
+        "warning": 24,
+        "critical": 48
+      },
       "unit": "hours",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 3600,
       "cooldownMinutes": 60,
-      "query": "SELECT MAX(ISNULL(DATEDIFF(HOUR, b.backup_finish_date, GETDATE()), 9999)) AS value FROM sys.databases d LEFT JOIN msdb.dbo.backupset b ON d.name = b.database_name AND b.type = 'I' WHERE d.database_id > 4 AND d.state = 0 AND d.recovery_model_desc <> 'SIMPLE' GROUP BY d.name ORDER BY value DESC",
-      "remediation": null
+      "query": "SELECT MAX(ISNULL(DATEDIFF(HOUR, b.backup_finish_date, GETDATE()), 9999)) AS value FROM sys.databases d LEFT JOIN msdb.dbo.backupset b ON d.name = b.database_name AND b.type = \u0027I\u0027 WHERE d.database_id \u003E 4 AND d.state = 0 AND d.recovery_model_desc \u003C\u003E \u0027SIMPLE\u0027 GROUP BY d.name ORDER BY value DESC"
     },
     {
       "id": "backup_log_overdue",
@@ -730,13 +808,16 @@
       "category": "backup",
       "enabled": true,
       "severity": "Medium",
-      "thresholds": { "warning": 60, "critical": 240 },
+      "thresholds": {
+        "warning": 60,
+        "critical": 240
+      },
       "unit": "minutes",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 3600,
       "cooldownMinutes": 60,
-      "query": "SELECT MAX(ISNULL(DATEDIFF(MINUTE, b.backup_finish_date, GETDATE()), 99999)) AS value FROM sys.databases d LEFT JOIN msdb.dbo.backupset b ON d.name = b.database_name AND b.type = 'L' WHERE d.database_id > 4 AND d.state = 0 AND d.recovery_model_desc <> 'SIMPLE' GROUP BY d.name ORDER BY value DESC",
-      "remediation": null
+      "query": "SELECT MAX(ISNULL(DATEDIFF(MINUTE, b.backup_finish_date, GETDATE()), 99999)) AS value FROM sys.databases d LEFT JOIN msdb.dbo.backupset b ON d.name = b.database_name AND b.type = \u0027L\u0027 WHERE d.database_id \u003E 4 AND d.state = 0 AND d.recovery_model_desc \u003C\u003E \u0027SIMPLE\u0027 GROUP BY d.name ORDER BY value DESC"
     },
     {
       "id": "integrity_check_overdue",
@@ -745,13 +826,16 @@
       "category": "backup",
       "enabled": false,
       "severity": "Medium",
-      "thresholds": { "warning": 336, "critical": 672 },
+      "thresholds": {
+        "warning": 336,
+        "critical": 672
+      },
       "unit": "hours",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 3600,
       "cooldownMinutes": 60,
-      "query": "SELECT MAX(DATEDIFF(HOUR, DBCC_LastKnownGood, GETDATE())) AS value FROM (SELECT d.name, DATABASEPROPERTYEX(d.name, 'LastGoodCheckDbTime') AS DBCC_LastKnownGood FROM sys.databases d WHERE d.database_id > 4 AND d.state = 0) x WHERE DBCC_LastKnownGood IS NOT NULL",
-      "remediation": null
+      "query": "SELECT MAX(DATEDIFF(HOUR, DBCC_LastKnownGood, GETDATE())) AS value FROM (SELECT d.name, DATABASEPROPERTYEX(d.name, \u0027LastGoodCheckDbTime\u0027) AS DBCC_LastKnownGood FROM sys.databases d WHERE d.database_id \u003E 4 AND d.state = 0) x WHERE DBCC_LastKnownGood IS NOT NULL"
     },
     {
       "id": "ag_failover",
@@ -760,13 +844,14 @@
       "category": "ha",
       "enabled": true,
       "severity": "High",
-      "thresholds": { "warning": 1, "critical": null },
+      "thresholds": {
+        "warning": 1
+      },
       "unit": "event",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 30,
-      "cooldownMinutes": null,
-      "query": "SELECT COUNT(*) AS value FROM sys.dm_hadr_availability_group_states WHERE primary_recovery_health_desc <> 'ONLINE' OR secondary_recovery_health_desc <> 'ONLINE'",
-      "remediation": null
+      "query": "SELECT COUNT(*) AS value FROM sys.dm_hadr_availability_group_states WHERE primary_recovery_health_desc \u003C\u003E \u0027ONLINE\u0027 OR secondary_recovery_health_desc \u003C\u003E \u0027ONLINE\u0027"
     },
     {
       "id": "ag_replica_unhealthy",
@@ -775,13 +860,14 @@
       "category": "ha",
       "enabled": true,
       "severity": "Critical",
-      "thresholds": { "warning": 1, "critical": null },
+      "thresholds": {
+        "warning": 1
+      },
       "unit": "event",
+      "operator": "greater_than",
       "durationSeconds": 30,
       "frequencySeconds": 30,
-      "cooldownMinutes": null,
-      "query": "SELECT COUNT(*) AS value FROM sys.dm_hadr_availability_replica_states WHERE connected_state_desc = 'DISCONNECTED' OR synchronization_health_desc <> 'HEALTHY'",
-      "remediation": null
+      "query": "SELECT COUNT(*) AS value FROM sys.dm_hadr_availability_replica_states WHERE connected_state_desc = \u0027DISCONNECTED\u0027 OR synchronization_health_desc \u003C\u003E \u0027HEALTHY\u0027"
     },
     {
       "id": "ag_sync_behind",
@@ -790,13 +876,15 @@
       "category": "ha",
       "enabled": true,
       "severity": "Medium",
-      "thresholds": { "warning": 100, "critical": 500 },
+      "thresholds": {
+        "warning": 100,
+        "critical": 500
+      },
       "unit": "megabytes",
+      "operator": "greater_than",
       "durationSeconds": 120,
       "frequencySeconds": 60,
-      "cooldownMinutes": null,
-      "query": "SELECT MAX(ISNULL(log_send_queue_size, 0) + ISNULL(redo_queue_size, 0)) / 1024 AS value FROM sys.dm_hadr_database_replica_states WHERE is_local = 0",
-      "remediation": null
+      "query": "SELECT MAX(ISNULL(log_send_queue_size, 0) \u002B ISNULL(redo_queue_size, 0)) / 1024 AS value FROM sys.dm_hadr_database_replica_states WHERE is_local = 0"
     },
     {
       "id": "ag_estimated_data_loss",
@@ -805,13 +893,15 @@
       "category": "ha",
       "enabled": false,
       "severity": "High",
-      "thresholds": { "warning": 30, "critical": 60 },
+      "thresholds": {
+        "warning": 30,
+        "critical": 60
+      },
       "unit": "seconds",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 60,
-      "cooldownMinutes": null,
-      "query": "SELECT MAX(DATEDIFF(SECOND, last_hardened_time, GETDATE())) AS value FROM sys.dm_hadr_database_replica_states WHERE is_local = 0 AND last_hardened_time IS NOT NULL",
-      "remediation": null
+      "query": "SELECT MAX(DATEDIFF(SECOND, last_hardened_time, GETDATE())) AS value FROM sys.dm_hadr_database_replica_states WHERE is_local = 0 AND last_hardened_time IS NOT NULL"
     },
     {
       "id": "ag_redo_queue",
@@ -820,13 +910,15 @@
       "category": "ha",
       "enabled": false,
       "severity": "Medium",
-      "thresholds": { "warning": 100, "critical": 500 },
+      "thresholds": {
+        "warning": 100,
+        "critical": 500
+      },
       "unit": "megabytes",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 60,
-      "cooldownMinutes": null,
-      "query": "SELECT MAX(ISNULL(redo_queue_size, 0)) / 1024 AS value FROM sys.dm_hadr_database_replica_states WHERE is_local = 0",
-      "remediation": null
+      "query": "SELECT MAX(ISNULL(redo_queue_size, 0)) / 1024 AS value FROM sys.dm_hadr_database_replica_states WHERE is_local = 0"
     },
     {
       "id": "ag_listener_offline",
@@ -835,13 +927,14 @@
       "category": "ha",
       "enabled": true,
       "severity": "Critical",
-      "thresholds": { "warning": 1, "critical": null },
+      "thresholds": {
+        "warning": 1
+      },
       "unit": "event",
+      "operator": "greater_than",
       "durationSeconds": 30,
       "frequencySeconds": 30,
-      "cooldownMinutes": null,
-      "query": "SELECT COUNT(*) AS value FROM sys.availability_group_listeners agl LEFT JOIN sys.dm_tcp_listener_states tls ON agl.listener_id = tls.listener_id WHERE tls.state <> 0 OR tls.listener_id IS NULL",
-      "remediation": null
+      "query": "SELECT COUNT(*) AS value FROM sys.availability_group_listeners agl LEFT JOIN sys.dm_tcp_listener_states tls ON agl.listener_id = tls.listener_id WHERE tls.state \u003C\u003E 0 OR tls.listener_id IS NULL"
     },
     {
       "id": "cluster_failover",
@@ -850,13 +943,14 @@
       "category": "ha",
       "enabled": true,
       "severity": "High",
-      "thresholds": { "warning": 1, "critical": null },
+      "thresholds": {
+        "warning": 1
+      },
       "unit": "event",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 30,
-      "cooldownMinutes": null,
-      "query": "SELECT CASE WHEN SERVERPROPERTY('IsClustered') = 1 AND NodeName <> (SELECT TOP 1 NodeName FROM sys.dm_os_cluster_nodes WHERE is_current_owner = 1) THEN 1 ELSE 0 END AS value FROM sys.dm_os_cluster_nodes WHERE is_current_owner = 1",
-      "remediation": null
+      "query": "SELECT CASE WHEN SERVERPROPERTY(\u0027IsClustered\u0027) = 1 AND NodeName \u003C\u003E (SELECT TOP 1 NodeName FROM sys.dm_os_cluster_nodes WHERE is_current_owner = 1) THEN 1 ELSE 0 END AS value FROM sys.dm_os_cluster_nodes WHERE is_current_owner = 1"
     },
     {
       "id": "mirror_status_change",
@@ -865,76 +959,85 @@
       "category": "ha",
       "enabled": false,
       "severity": "Medium",
-      "thresholds": { "warning": 1, "critical": null },
+      "thresholds": {
+        "warning": 1
+      },
       "unit": "event",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 60,
-      "cooldownMinutes": null,
-      "query": "SELECT COUNT(*) AS value FROM sys.database_mirroring WHERE mirroring_state IS NOT NULL AND mirroring_state <> 4",
-      "remediation": null
+      "query": "SELECT COUNT(*) AS value FROM sys.database_mirroring WHERE mirroring_state IS NOT NULL AND mirroring_state \u003C\u003E 4"
     },
     {
       "id": "error_log_severity",
-      "name": "Error Log Entry (Sev >= 17)",
+      "name": "Error Log Entry (Sev \u003E= 17)",
       "description": "A high-severity error has been logged in the SQL Server error log",
       "category": "logging",
       "enabled": true,
       "severity": "High",
-      "thresholds": { "warning": 1, "critical": null },
+      "thresholds": {
+        "warning": 1
+      },
       "unit": "event",
+      "operator": "greater_than",
       "durationSeconds": 0,
-      "frequencySeconds": 60,
+      "frequencySeconds": 300,
       "cooldownMinutes": 15,
-      "query": "EXEC sp_readerrorlog 0, 1, NULL, NULL, DATEADD(MINUTE, -5, GETDATE()), NULL; -- post-process for severity >= 17",
-      "queryMode": "error_log_scan",
-      "remediation": null
+      "query": "DECLARE @logFileType SMALLINT= 1;\nDECLARE @start DATETIME;\nDECLARE @end DATETIME;\nDECLARE @logno INT= 0;\nSET @start = DATEADD(MINUTE, -5, GETDATE());\nSET @end = GETDATE();\nDECLARE @searchString1 NVARCHAR(256)= \u0027Severity:\u0027;\nDECLARE @searchString2 NVARCHAR(256)= \u0027MSDB\u0027;\nSET @searchString2 = NULL;\nDECLARE @logtable TABLE(LogDate DATETIME2, ProcessInfo NVARCHAR(250), [Text] NVARCHAR(500))\nINSERT INTO @logtable\nEXEC master.dbo.xp_readerrorlog\n     @logno,\n     @logFileType,\n     @searchString1,\n     @searchString2,\n     @start,\n     @end;\nSELECT COUNT(*) [value] \nFROM @logtable\nWHERE [Text] LIKE \u0027%Severity: 1[7-9]%\u0027\nOR [Text] LIKE \u0027%Severity: 2%\u0027",
+      "queryMode": "error_log_scan"
     },
     {
       "id": "error_log_fatal",
       "name": "Error Log Fatal Entry",
-      "description": "A fatal error (severity >= 20) has been logged",
+      "description": "A fatal error (severity \u003E= 20) has been logged",
       "category": "logging",
       "enabled": true,
       "severity": "Critical",
-      "thresholds": { "warning": 1, "critical": null },
+      "thresholds": {
+        "warning": 1
+      },
       "unit": "event",
+      "operator": "greater_than",
       "durationSeconds": 0,
-      "frequencySeconds": 30,
-      "cooldownMinutes": null,
-      "query": "EXEC sp_readerrorlog 0, 1, NULL, NULL, DATEADD(MINUTE, -5, GETDATE()), NULL; -- post-process for severity >= 20",
-      "queryMode": "error_log_scan",
-      "remediation": null
+      "frequencySeconds": 300,
+      "query": "DECLARE @logFileType SMALLINT= 1;\nDECLARE @start DATETIME;\nDECLARE @end DATETIME;\nDECLARE @logno INT= 0;\nSET @start = DATEADD(MINUTE, -5, GETDATE());\nSET @end = GETDATE();\nDECLARE @searchString1 NVARCHAR(256)= \u0027Severity:\u0027;\nDECLARE @searchString2 NVARCHAR(256)= \u0027MSDB\u0027;\nSET @searchString2 = NULL;\nDECLARE @logtable TABLE(LogDate DATETIME2, ProcessInfo NVARCHAR(250), [Text] NVARCHAR(500))\nINSERT INTO @logtable\nEXEC master.dbo.xp_readerrorlog\n     @logno,\n     @logFileType,\n     @searchString1,\n     @searchString2,\n     @start,\n     @end;\nSELECT COUNT(*) [value] \nFROM @logtable\nWHERE [Text] LIKE \u0027%Severity: 2%\u0027",
+      "queryMode": "error_log_scan"
     },
     {
       "id": "logon_failure",
       "name": "Login Failure Detected",
       "description": "Failed login attempts detected in the error log",
       "category": "logging",
-      "enabled": false,
+      "enabled": true,
       "severity": "Low",
-      "thresholds": { "warning": 5, "critical": 20 },
+      "thresholds": {
+        "warning": 5,
+        "critical": 20
+      },
       "unit": "count",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 300,
       "cooldownMinutes": 30,
-      "query": "EXEC sp_readerrorlog 0, 1, 'Login failed', NULL, DATEADD(MINUTE, -5, GETDATE()), NULL; -- count rows",
-      "queryMode": "error_log_scan",
-      "remediation": null
+      "query": "DECLARE @logFileType SMALLINT= 1;\nDECLARE @start DATETIME;\nDECLARE @end DATETIME;\nDECLARE @logno INT= 0;\nSET @start = DATEADD(MINUTE, -5, GETDATE());\nSET @end = GETDATE();\nDECLARE @searchString1 NVARCHAR(256)= \u0027Login:\u0027;\nDECLARE @searchString2 NVARCHAR(256)= \u0027MSDB\u0027;\nSET @searchString2 = NULL;\nDECLARE @logtable TABLE(LogDate DATETIME2, ProcessInfo NVARCHAR(250), [Text] NVARCHAR(500))\nINSERT INTO @logtable\nEXEC master.dbo.xp_readerrorlog\n     @logno,\n     @logFileType,\n     @searchString1,\n     @searchString2,\n     @start,\n     @end;\nSELECT COUNT(*) [value] \nFROM @logtable",
+      "queryMode": "error_log_scan"
     },
     {
       "id": "config_change",
       "name": "Configuration Change",
       "description": "A SQL Server configuration option has been changed",
       "category": "logging",
-      "enabled": true,
+      "enabled": false,
       "severity": "Medium",
-      "thresholds": { "warning": 1, "critical": null },
+      "thresholds": {
+        "warning": 1
+      },
       "unit": "event",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 300,
       "cooldownMinutes": 30,
-      "query": "SELECT COUNT(*) AS value FROM sys.configurations WHERE value <> value_in_use",
-      "remediation": null
+      "query": "SELECT COUNT(*) AS value FROM sys.configurations WHERE value \u003C\u003E value_in_use"
     },
     {
       "id": "io_error",
@@ -943,29 +1046,33 @@
       "category": "logging",
       "enabled": true,
       "severity": "Critical",
-      "thresholds": { "warning": 1, "critical": null },
+      "thresholds": {
+        "warning": 1
+      },
       "unit": "event",
+      "operator": "greater_than",
       "durationSeconds": 0,
-      "frequencySeconds": 30,
-      "cooldownMinutes": null,
-      "query": "SELECT SUM(num_of_bytes_read + num_of_bytes_written) AS value FROM sys.dm_io_virtual_file_stats(NULL, NULL) WHERE io_stall_queued_read_ms > 0 OR io_stall_queued_write_ms > 0",
-      "queryMode": "io_error_check",
-      "remediation": null
+      "frequencySeconds": 300,
+      "query": "SELECT SUM(num_of_bytes_read \u002B num_of_bytes_written) AS value FROM sys.dm_io_virtual_file_stats(NULL, NULL) WHERE io_stall_queued_read_ms \u003E 0 OR io_stall_queued_write_ms \u003E 0",
+      "queryMode": "io_error_check"
     },
     {
       "id": "index_fragmentation",
       "name": "Index Fragmentation",
       "description": "Significant index fragmentation detected on large tables",
       "category": "maintenance",
-      "enabled": false,
+      "enabled": true,
       "severity": "Low",
-      "thresholds": { "warning": 30, "critical": 60 },
+      "thresholds": {
+        "warning": 30,
+        "critical": 60
+      },
       "unit": "percent",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 86400,
       "cooldownMinutes": 1440,
-      "query": "SELECT MAX(avg_fragmentation_in_percent) AS value FROM sys.dm_db_index_physical_stats(DB_ID(), NULL, NULL, NULL, 'LIMITED') WHERE page_count > 1000 AND avg_fragmentation_in_percent > 10",
-      "remediation": null
+      "query": "DECLARE @frag TABLE([value] MONEY)\nINSERT INTO @frag\nEXEC sp_MSforeachdb N\u0027USE [?];SELECT MAX(avg_fragmentation_in_percent) AS value FROM sys.dm_db_index_physical_stats(DB_ID(), NULL, NULL, NULL, \u0027\u0027LIMITED\u0027\u0027) WHERE page_count \u003E 1000 AND avg_fragmentation_in_percent \u003E 10\u0027\nSELECT MAX([value]) [value] FROM @frag"
     },
     {
       "id": "connection_count",
@@ -974,90 +1081,15 @@
       "category": "availability",
       "enabled": true,
       "severity": "Medium",
-      "thresholds": { "warning": 80, "critical": 90 },
+      "thresholds": {
+        "warning": 80,
+        "critical": 90
+      },
       "unit": "percent",
+      "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 60,
-      "cooldownMinutes": null,
-      "query": "SELECT CAST(COUNT(*) AS FLOAT) * 100.0 / NULLIF(CAST(SERVERPROPERTY('MaxConnections') AS FLOAT), 0) AS value FROM sys.dm_exec_sessions WHERE is_user_process = 1",
-      "remediation": null
-    }
-  ],
-  "channels": [
-    {
-      "id": "email",
-      "name": "Email (SMTP)",
-      "type": "email",
-      "priority": 0,
-      "enabled": false,
-      "config": {
-        "smtpServer": "",
-        "smtpPort": 587,
-        "useSsl": true,
-        "username": "",
-        "password": "",
-        "fromAddress": "",
-        "toAddresses": []
-      }
-    },
-    {
-      "id": "webhook",
-      "name": "Webhook (Generic)",
-      "type": "webhook",
-      "priority": 0,
-      "enabled": false,
-      "config": {
-        "url": "",
-        "method": "POST",
-        "headers": {},
-        "bodyTemplate": "{\"alert\": \"{{alertName}}\", \"server\": \"{{server}}\", \"severity\": \"{{severity}}\", \"value\": \"{{value}}\", \"message\": \"{{message}}\"}"
-      }
-    },
-    {
-      "id": "slack",
-      "name": "Slack",
-      "type": "webhook",
-      "priority": 1,
-      "enabled": false,
-      "config": {
-        "webhookUrl": "",
-        "channel": "",
-        "username": "SQL Health Assessment",
-        "iconEmoji": ":rotating_light:"
-      }
-    },
-    {
-      "id": "teams",
-      "name": "Microsoft Teams",
-      "type": "webhook",
-      "priority": 1,
-      "enabled": false,
-      "config": {
-        "webhookUrl": ""
-      }
-    },
-    {
-      "id": "eventlog",
-      "name": "Windows Event Log",
-      "type": "eventlog",
-      "priority": 2,
-      "enabled": false,
-      "config": {
-        "logName": "Application",
-        "source": "SQLHealthAssessment"
-      }
-    },
-    {
-      "id": "sql_script",
-      "name": "T-SQL Remediation Script",
-      "type": "sql_script",
-      "priority": 2,
-      "enabled": false,
-      "config": {
-        "dryRunMode": true,
-        "timeoutSeconds": 30,
-        "requireAcknowledgment": true
-      }
+      "query": "SELECT CAST(COUNT(*) AS FLOAT) * 100.0 / NULLIF(CAST(SERVERPROPERTY(\u0027MaxConnections\u0027) AS FLOAT), 0) AS value FROM sys.dm_exec_sessions WHERE is_user_process = 1"
     }
   ]
 }

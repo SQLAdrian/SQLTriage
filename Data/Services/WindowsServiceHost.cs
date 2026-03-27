@@ -91,7 +91,7 @@ namespace SqlHealthAssessment.Data.Services
                 builder.Environment.ContentRootPath = AppContext.BaseDirectory;
 
                 // Try to use static web assets (dev mode)
-                try { builder.WebHost.UseStaticWebAssets(); } catch { }
+                try { builder.WebHost.UseStaticWebAssets(); } catch (Exception ex) { Log.Debug(ex, "[ServiceHost] UseStaticWebAssets not available"); }
 
                 // Configure Kestrel — HTTP + HTTPS with ephemeral self-signed cert
                 var httpsPort = FindAvailablePort(port + 1);
@@ -276,7 +276,7 @@ namespace SqlHealthAssessment.Data.Services
                     var endIdx = json.IndexOf("\"", startIdx);
                     return json.Substring(startIdx, endIdx - startIdx).Replace("\\\\", "\\").TrimEnd('\\');
                 }
-                catch { }
+                catch (Exception ex) { Log.Debug(ex, "[ServiceHost] Failed to parse static web assets manifest"); }
             }
             return Path.Combine(AppContext.BaseDirectory, "wwwroot");
         }
@@ -296,7 +296,7 @@ namespace SqlHealthAssessment.Data.Services
                 foreach (var addr in hostEntry.AddressList)
                     sanBuilder.AddIpAddress(addr);
             }
-            catch { }
+            catch (Exception ex) { Log.Debug(ex, "[ServiceHost] Failed to resolve host addresses for SAN"); }
 
             using var rsa = RSA.Create(2048);
             var request = new CertificateRequest(
@@ -340,7 +340,7 @@ namespace SqlHealthAssessment.Data.Services
                     listener.Stop();
                     return port;
                 }
-                catch { }
+                catch (Exception ex) { Log.Debug(ex, "[ServiceHost] Port {Port} unavailable", port); }
             }
             using var tmp = new TcpListener(IPAddress.Loopback, 0);
             tmp.Start();
@@ -447,7 +447,7 @@ namespace SqlHealthAssessment.Data.Services
                         }
                     }
                 }
-                catch { }
+                catch (Exception ex) { Log.Debug(ex, "[ServiceHost] Failed to parse service account from sc qc output"); }
 
                 return (true, running, account);
             }

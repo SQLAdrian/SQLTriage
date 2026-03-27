@@ -84,7 +84,8 @@
                   TopRowsConfig="@(Panel.DataGridTopRows > 0 ? TopRowsValue : null)"
                   OnTopRowsConfigChanged="@OnTopRowsConfigChanged"
                   ActionColumn="@Panel.ActionColumn"
-                  OnActionExecute="@OnActionExecute" />
+                  OnActionExecute="@OnActionExecute"
+                  ColumnColorRules="@Panel.DataGridColumnColors" />
         @if (!string.IsNullOrEmpty(Panel.Description))
         {
             <div class="panel-description">@Panel.Description</div>

@@ -303,6 +303,7 @@ namespace SqlHealthAssessment.Data
                 }
                 else if (!shouldRunExecParams)
                 {
+                    result.StatusMessage = "✓ Loaded previous execution";
                     _logger.LogInformation("ExecutionParameters skipped for {Name} on {Server} (ExecutionTest returned ToRun=0)",
                         config.Name, targetServer);
                 }
