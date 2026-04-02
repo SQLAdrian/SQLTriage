@@ -4,6 +4,7 @@
 @using SqlHealthAssessment.Data.Models
 @using SqlHealthAssessment.Data.Services
 @inject NotificationChannelService ChannelService
+@inject UserSettingsService UserSettings
 @implements IDisposable
 
 <div class="settings-page" style="max-width: 900px;">
@@ -82,6 +83,8 @@
         </div>
     </div>
 
+    @if (UserSettings.GetExperimentalMode())
+    {
     @* ── Teams Webhook Channel ── *@
     <div class="settings-group">
         <h3 style="display: flex; align-items: center; gap: 8px;">
@@ -318,6 +321,7 @@
             </select>
         </div>
     </div>
+    } @* end experimental *@
 
     @* ── Actions ── *@
     <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap;">
@@ -336,6 +340,8 @@
             }
         </button>
 
+        @if (UserSettings.GetExperimentalMode())
+        {
         <button class="settings-btn" style="background: var(--bg-hover);" @onclick="TestTeams" disabled="@(_testingTeams || !_teams.Enabled)">
             @if (_testingTeams)
             {
@@ -401,6 +407,7 @@
                 <i class="fa-brands fa-whatsapp" style="margin-right: 4px;"></i> <span>Test WhatsApp</span>
             }
         </button>
+        } @* end experimental buttons *@
     </div>
 
     @if (!string.IsNullOrEmpty(_statusMessage))

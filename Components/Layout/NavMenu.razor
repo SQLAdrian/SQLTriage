@@ -31,6 +31,12 @@
         <NavLink href="/vulnerabilityassessment" class="nav-link">
             <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-shield-halved"></i></span> Vulnerability Assessment
         </NavLink>
+        @if (_experimentalMode)
+        {
+            <NavLink href="/bpcheck" class="nav-link">
+                <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-flask"></i></span> BP Check
+            </NavLink>
+        }
         @* Config-driven Audits dashboards *@
         @foreach (var dashboard in DashboardConfig.Config.Dashboards
             .Where(d => d.Enabled && d.NavCategory == "Audits")
@@ -38,6 +44,46 @@
         {
             <NavLink href="@dashboard.Route" class="nav-link">
                 @NavIcon(dashboard.NavIcon) @dashboard.NavTitle
+            </NavLink>
+        }
+
+        <br />
+        <div class="px-3 py-1 text-xs font-bold uppercase tracking-wider text-app-text-secondary mt-2 border-t border-app-border">Tools</div>
+        <br />
+        @if (_experimentalMode)
+        {
+            <NavLink href="/plan-analysis" class="nav-link">
+                <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-diagram-project"></i></span> Plan Analyzer
+            </NavLink>
+        }
+        @if (_experimentalMode)
+        {
+            <NavLink href="/bestpractice" class="nav-link">
+                <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-list-check"></i></span> BP Scripts
+            </NavLink>
+        }
+        @if (_noPantsMode)
+        {
+            <NavLink href="/dbatools" class="nav-link">
+                <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-brands fa-windows"></i></span> dbatools
+            </NavLink>
+        }
+        <NavLink href="/environment" class="nav-link">
+            <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-network-wired"></i></span> Environment View
+        </NavLink>
+        @if (_experimentalMode)
+        {
+            <NavLink href="/capacity" class="nav-link">
+                <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-chart-line"></i></span> Capacity Planning
+            </NavLink>
+        }
+        <NavLink href="/diagnostics-roadmap" class="nav-link">
+            <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-road"></i></span> Maturity Roadmap
+        </NavLink>
+        @if (ShowToolsSection)
+        {
+            <NavLink href="/xevents" class="nav-link">
+                <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-list-check"></i></span> XEvent / Profiler
             </NavLink>
         }
 
@@ -105,38 +151,6 @@
         </NavLink>
 
         <br />
-        <div class="px-3 py-1 text-xs font-bold uppercase tracking-wider text-app-text-secondary mt-2 border-t border-app-border">Tools</div>
-        <br />
-        <NavLink href="/plan-analysis" class="nav-link">
-            <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-diagram-project"></i></span> Plan Analyzer
-        </NavLink>
-        @if (_noPantsMode)
-        {
-            <NavLink href="/bestpractice" class="nav-link">
-                <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-list-check"></i></span> BP Scripts
-            </NavLink>
-            <NavLink href="/dbatools" class="nav-link">
-                <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-brands fa-windows"></i></span> dbatools
-            </NavLink>
-        }
-        <NavLink href="/environment" class="nav-link">
-            <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-network-wired"></i></span> Environment View
-        </NavLink>
-        <NavLink href="/capacity" class="nav-link">
-            <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-chart-line"></i></span> Capacity Planning
-        </NavLink>
-        <NavLink href="/diagnostics-roadmap" class="nav-link">
-            <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-road"></i></span> Maturity Roadmap
-        </NavLink>
-        @if (ShowToolsSection)
-        {
-            <NavLink href="/xevents" class="nav-link">
-                <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-list-check"></i></span> XEvent / Profiler
-            </NavLink>
-        }
-
-        <br />
-        <br />
         <div class="px-3 py-1 text-xs font-bold uppercase tracking-wider text-app-text-secondary mt-2 border-t border-app-border">Configure</div>
         <br />
 
@@ -155,11 +169,14 @@
         <NavLink href="/alerts" class="nav-link">
             <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-bell"></i></span> Alerting
         </NavLink>
-        @if (_noPantsMode)
+        @if (_experimentalMode)
         {
             <NavLink href="/alerting-config" class="nav-link">
                 <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-envelope"></i></span> Notifications
             </NavLink>
+        }
+        @if (_noPantsMode)
+        {
             <NavLink href="/scheduled-tasks" class="nav-link">
                 <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-clock"></i></span> Scheduled Tasks
             </NavLink>
@@ -175,18 +192,29 @@
         </NavLink>
     </nav>
     <div class="mt-auto border-t border-app-border">
-        <div class="px-3 py-2 flex items-center justify-between">
-            <label class="flex items-center gap-2 cursor-pointer select-none" title="No-Pants Mode: show dangerous server controls">
-                <span class="no-pants-icon @(_noPantsMode ? "no-pants-active" : "")">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                        <path d="M4 4h16v2l-2 14h-4l-1-8h-2l-1 8H6L4 6V4zm2 2v.5l1.8 12.5h2.4l1-8h1.6l1 8h2.4L18 6.5V6H6z"/>
-                    </svg>
-                </span>
-                <span class="text-2xs text-app-text-secondary">No Pants</span>
-            </label>
-            <div class="no-pants-toggle" @onclick="ToggleNoPantsMode">
+        <div class="nav-toggle-row">
+            <span class="no-pants-icon @(_noPantsMode ? "no-pants-active" : "")">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                    <path d="M4 4h16v2l-2 14h-4l-1-8h-2l-1 8H6L4 6V4zm2 2v.5l1.8 12.5h2.4l1-8h1.6l1 8h2.4L18 6.5V6H6z"/>
+                </svg>
+            </span>
+            <span class="nav-toggle-label">No Pants</span>
+            <div class="nav-toggle-spacer"></div>
+            <div class="no-pants-toggle" @onclick="ToggleNoPantsMode" title="No-Pants Mode: show dangerous server controls">
                 <div class="no-pants-track @(_noPantsMode ? "no-pants-track-on" : "")">
                     <div class="no-pants-thumb @(_noPantsMode ? "no-pants-thumb-on" : "")"></div>
+                </div>
+            </div>
+        </div>
+        <div class="nav-toggle-row">
+            <span class="experimental-icon @(_experimentalMode ? "experimental-active" : "")">
+                <i class="fa-solid fa-flask" style="font-size:13px;"></i>
+            </span>
+            <span class="nav-toggle-label">Experimental</span>
+            <div class="nav-toggle-spacer"></div>
+            <div class="no-pants-toggle" @onclick="ToggleExperimentalMode" title="Experimental Mode: show preview features">
+                <div class="no-pants-track @(_experimentalMode ? "experimental-track-on" : "")">
+                    <div class="no-pants-thumb @(_experimentalMode ? "no-pants-thumb-on" : "")"></div>
                 </div>
             </div>
         </div>
@@ -302,6 +330,15 @@
         _showNoPantsModal = false;
     }
 
+    // ── Experimental Mode ─────────────────────────────────────────────────
+    private bool _experimentalMode = false;
+
+    private void ToggleExperimentalMode()
+    {
+        _experimentalMode = !_experimentalMode;
+        UserSettings.SetExperimentalMode(_experimentalMode);
+    }
+
     // ── Radzen theme ──────────────────────────────────────────────────────
     private string _radzenTheme = "dark";
 
@@ -316,7 +353,8 @@
     protected override async Task OnInitializedAsync()
     {
         _radzenTheme = UserSettings.GetRadzenUiTheme();
-        _noPantsMode = UserSettings.GetNoPantsMode();
+        _noPantsMode      = UserSettings.GetNoPantsMode();
+        _experimentalMode = UserSettings.GetExperimentalMode();
         ThemeSvc.SetTheme(_radzenTheme);
         ConnectionManager.OnConnectionChanged += OnServerChanged;
         await RefreshDbFlags();

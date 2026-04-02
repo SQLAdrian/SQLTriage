@@ -182,12 +182,7 @@ namespace SqlHealthAssessment
 
         private void OnStateChanged(object? sender, EventArgs e)
         {
-            // Minimize to tray
-            if (WindowState == WindowState.Minimized)
-            {
-                Hide();
-                _trayIcon?.ShowBalloonTip(1500, "SQL Health Assessment", "Minimized to system tray", System.Windows.Forms.ToolTipIcon.Info);
-            }
+            // Normal minimize stays in taskbar — tray-hide is only via tray menu
         }
 
         private void OnWindowLoaded(object sender, RoutedEventArgs e)

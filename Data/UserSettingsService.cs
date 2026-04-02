@@ -53,6 +53,8 @@ namespace SqlHealthAssessment.Data
             // ── Diagnostics ──
             /// <summary>When true, silent catch blocks emit warnings to the log file. No restart required.</summary>
             public bool EnableDebugLogging { get; set; } = false;
+            /// <summary>When true, real server names are replaced with SRV-001 aliases in log output.</summary>
+            public bool AnonymiseServerNames { get; set; } = false;
 
             // ── Query Plan Icons ──
             /// <summary>When true, uses high-res individual PNG icons for query plans. When false, uses coloured sprite sheet (v1).</summary>
@@ -63,6 +65,10 @@ namespace SqlHealthAssessment.Data
             public bool NoPantsMode { get; set; } = false;
             /// <summary>Whether the user has accepted the no-pants disclaimer at least once.</summary>
             public bool NoPantsDisclaimerAccepted { get; set; } = false;
+
+            // ── Experimental Mode ──
+            /// <summary>When true, shows experimental/preview features that are not yet production-ready.</summary>
+            public bool ExperimentalMode { get; set; } = false;
         }
 
         private UserSettings LoadSettings() => ConfigFileHelper.Load<UserSettings>(_settingsFilePath);
@@ -170,6 +176,15 @@ namespace SqlHealthAssessment.Data
         /// <summary>Fired when debug logging is toggled so App can adjust Serilog level at runtime.</summary>
         public event Action<bool>? OnDebugLoggingChanged;
 
+        // ── Anonymise Server Names in Logs ──
+        public bool GetAnonymiseServerNames() { lock (_lock) return _settings.AnonymiseServerNames; }
+
+        public void SetAnonymiseServerNames(bool enabled)
+        {
+            lock (_lock) _settings.AnonymiseServerNames = enabled;
+            SaveSettings();
+        }
+
         // ── Query Plan Icons ──
         public bool GetUseV2PlanIcons() { lock (_lock) return _settings.UseV2PlanIcons; }
 
@@ -199,6 +214,19 @@ namespace SqlHealthAssessment.Data
 
         /// <summary>Fired when no-pants mode is toggled so dashboard components can show/hide dangerous controls.</summary>
         public event Action<bool>? OnNoPantsModeChanged;
+
+        // ── Experimental Mode ──
+        public bool GetExperimentalMode() { lock (_lock) return _settings.ExperimentalMode; }
+
+        public void SetExperimentalMode(bool enabled)
+        {
+            lock (_lock) _settings.ExperimentalMode = enabled;
+            SaveSettings();
+            OnExperimentalModeChanged?.Invoke(enabled);
+        }
+
+        /// <summary>Fired when experimental mode is toggled.</summary>
+        public event Action<bool>? OnExperimentalModeChanged;
 
         // ── Auto-Export Accessors ──
         public UserSettings GetSettings() { lock (_lock) return _settings; }

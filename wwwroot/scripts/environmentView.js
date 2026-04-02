@@ -1,181 +1,57 @@
 /* In the name of God, the Merciful, the Compassionate */
 
 /**
- * Environment View — Interactive visualization of SQL Server connection topology.
- * Renders server nodes with connected host nodes, SVG edge lines, zoom/pan viewport,
- * cross-server links, and a click-to-inspect detail pane.
+ * Environment View — Mini topology renderer for a single selected SQL Server.
+ * Shows the server at center with host nodes radiating out, plus cross-server arrows.
+ * Host nodes are clickable — raises a Blazor callback to show the detail panel.
  */
 window.environmentView = (function () {
     'use strict';
 
-    // ── Layout constants ─────────────────────────────────────────────────────
-    const SERVER_W   = 220;
-    const SERVER_H   = 160;
-    const HOST_W     = 180;
-    const HOST_H     = 56;
-    const H_GAP      = 40;      // horizontal gap between host columns
-    const V_GAP      = 24;      // vertical gap between host rows
-    const SERVER_GAP = 120;     // gap between server clusters (multi-server)
-    const TOP_PAD    = 40;      // top padding above servers
-    const HOST_TOP   = 240;     // top of host row (below server node)
-    const HOSTS_PER_ROW = 6;    // max hosts per row before wrapping
-    const PAD        = 30;      // canvas padding
+    // ── Layout constants ─────────────────────────────────────────────────
+    const SRV_R    = 44;    // server circle radius
+    const HOST_W   = 130;
+    const HOST_H   = 46;
+    const XSRV_W   = 110;
+    const XSRV_H   = 36;
+    const MIN_ORBIT = 160;  // min px from center to host
+    const MAX_ORBIT = 280;
 
-    // ── Helpers ──────────────────────────────────────────────────────────────
     function esc(s) {
         var d = document.createElement('div');
-        d.textContent = s;
+        d.textContent = String(s || '');
         return d.innerHTML;
     }
 
-    // ── Detail pane ──────────────────────────────────────────────────────────
-    function createDetailPane(container) {
-        var pane = document.createElement('div');
-        pane.className = 'env-detail-pane';
-        pane.style.display = 'none';
-        container.appendChild(pane);
-        return pane;
-    }
-
-    function showHostDetail(pane, host, serverName) {
-        var html = '<div class="env-detail-header">' +
-            '<i class="fa-solid fa-desktop"></i> ' + esc(host.hostname) +
-            '<button class="env-detail-close" onclick="this.parentElement.parentElement.style.display=\'none\'">✕</button>' +
-            '</div>';
-
-        html += '<div class="env-detail-badges">' +
-            '<span class="env-badge"><i class="fa-solid fa-plug"></i> ' + host.connectionCount + ' conn</span>' +
-            '<span class="env-badge"><i class="fa-solid fa-cube"></i> ' + host.uniqueApps + ' apps</span>' +
-            '<span class="env-badge"><i class="fa-solid fa-user"></i> ' + host.uniqueUsers + ' users</span>' +
-            '<span class="env-badge"><i class="fa-solid fa-database"></i> ' + host.uniqueDbs + ' DBs</span>' +
-            '</div>';
-
-        html += '<div class="env-detail-server">Connected to: <strong>' + esc(serverName) + '</strong></div>';
-
-        html += '<table class="env-detail-table"><thead><tr>' +
-            '<th>Application</th><th>User</th><th>Database</th><th>IP</th><th>Driver</th><th>Protocol</th><th>Auth</th><th>Encrypt</th>' +
-            '</tr></thead><tbody>';
-
-        (host.connections || []).forEach(function (c) {
-            html += '<tr>' +
-                '<td>' + esc(c.app) + '</td>' +
-                '<td>' + esc(c.user) + '</td>' +
-                '<td>' + esc(c.database) + '</td>' +
-                '<td>' + esc(c.ip) + '</td>' +
-                '<td>' + esc(c.driverVersion) + '</td>' +
-                '<td>' + esc(c.protocolVersion) + '</td>' +
-                '<td>' + esc(c.authScheme) + '</td>' +
-                '<td>' + esc(c.encryptOption) + '</td>' +
-                '</tr>';
-        });
-
-        html += '</tbody></table>';
-        pane.innerHTML = html;
-        pane.style.display = 'block';
-    }
-
-    function showServerDetail(pane, server) {
-        var html = '<div class="env-detail-header">' +
-            '<i class="fa-solid fa-server"></i> ' + esc(server.name) +
-            '<button class="env-detail-close" onclick="this.parentElement.parentElement.style.display=\'none\'">✕</button>' +
-            '</div>';
-
-        if (server.error) {
-            html += '<div style="color:#f87171;padding:8px;">Error: ' + esc(server.error) + '</div>';
-        } else {
-            // Server info section - extensible for future CPU/memory/edition data
-            if (server.serverInfo) {
-                html += '<div class="env-server-info-grid">';
-                var info = server.serverInfo;
-                if (info.edition)      html += '<div class="env-info-item"><span class="env-info-label">Edition</span><span class="env-info-value">' + esc(info.edition) + '</span></div>';
-                if (info.version)      html += '<div class="env-info-item"><span class="env-info-label">Version</span><span class="env-info-value">' + esc(info.version) + '</span></div>';
-                if (info.cpuCount)     html += '<div class="env-info-item"><span class="env-info-label">CPUs</span><span class="env-info-value">' + info.cpuCount + '</span></div>';
-                if (info.memoryMB)     html += '<div class="env-info-item"><span class="env-info-label">Memory</span><span class="env-info-value">' + info.memoryMB + ' MB</span></div>';
-                html += '</div>';
-            }
-
-            html += '<div class="env-detail-badges">' +
-                '<span class="env-badge env-badge-green"><i class="fa-solid fa-desktop"></i> ' + server.counts.hosts + ' Hosts</span>' +
-                '<span class="env-badge env-badge-green"><i class="fa-solid fa-cube"></i> ' + server.counts.apps + ' Apps</span>' +
-                '<span class="env-badge env-badge-green"><i class="fa-solid fa-user"></i> ' + server.counts.users + ' Users</span>' +
-                '<span class="env-badge env-badge-green"><i class="fa-solid fa-database"></i> ' + server.counts.dbs + ' DBs</span>' +
-                '<span class="env-badge"><i class="fa-solid fa-network-wired"></i> ' + server.counts.ips + ' IPs</span>' +
-                '<span class="env-badge"><i class="fa-solid fa-shield-halved"></i> ' + server.counts.auth + ' Auth</span>' +
-                '<span class="env-badge"><i class="fa-solid fa-lock"></i> ' + server.counts.encr + ' Encr</span>' +
-                '</div>';
-
-            // Host summary list
-            html += '<div class="env-detail-hosts-list"><strong>Connected Hosts:</strong><ul>';
-            (server.hosts || []).forEach(function (h) {
-                html += '<li><strong>' + esc(h.hostname) + '</strong> — ' +
-                    h.connectionCount + ' conn, ' + h.uniqueApps + ' apps, ' + h.uniqueUsers + ' users</li>';
-            });
-            html += '</ul></div>';
-        }
-
-        pane.innerHTML = html;
-        pane.style.display = 'block';
-    }
-
-    // ── Main render ──────────────────────────────────────────────────────────
-    function render(containerId, jsonData) {
+    // ── Main entry point ─────────────────────────────────────────────────
+    function renderMini(containerId, jsonData) {
         var container = document.getElementById(containerId);
         if (!container) return;
         container.innerHTML = '';
 
         var data;
-        try {
-            data = typeof jsonData === 'string' ? JSON.parse(jsonData) : jsonData;
-        } catch (e) {
-            container.innerHTML = '<p style="color:#f44336;padding:16px;">Failed to parse environment data: ' + e.message + '</p>';
-            return;
-        }
+        try { data = typeof jsonData === 'string' ? JSON.parse(jsonData) : jsonData; }
+        catch (e) { container.innerHTML = '<p style="color:#f44;">Parse error: ' + e.message + '</p>'; return; }
 
-        var servers = data.servers || [];
-        if (servers.length === 0) {
-            container.innerHTML = '<p style="color:var(--text-secondary);padding:16px;">No server data to display.</p>';
-            return;
-        }
+        var hosts    = data.hosts    || [];
+        var crossIn  = data.crossIn  || [];
+        var crossOut = data.crossOut || [];
+        var server   = data.server   || { name: '?', counts: {} };
 
-        // ── Compute layout positions ─────────────────────────────────────────
-        var serverPositions = [];   // {x, y, server, hostPositions: [{x, y, host}]}
-        var currentX = PAD;
+        // ── Canvas sizing ────────────────────────────────────────────────
+        var n = hosts.length;
+        // Orbit radius scales with host count, clamped
+        var orbit = Math.min(MAX_ORBIT, Math.max(MIN_ORBIT, 60 + n * 18));
+        // Cross-server nodes sit further out
+        var xOrbit = orbit + 90;
 
-        servers.forEach(function (server) {
-            var hosts = server.hosts || [];
-            var hostCount = hosts.length;
-            var cols = Math.min(hostCount, HOSTS_PER_ROW);
-            var rows = Math.ceil(hostCount / HOSTS_PER_ROW) || 1;
+        var canvasSize = (xOrbit + XSRV_W + 20) * 2;
+        var cx = canvasSize / 2;
+        var cy = canvasSize / 2;
 
-            var clusterW = Math.max(SERVER_W, cols * (HOST_W + H_GAP) - H_GAP);
-            var serverX = currentX + (clusterW - SERVER_W) / 2;
-            var serverY = TOP_PAD;
-
-            var sp = { x: serverX, y: serverY, server: server, hostPositions: [], clusterW: clusterW, clusterX: currentX };
-
-            // Position hosts below server
-            var hostStartX = currentX;
-            hosts.forEach(function (host, i) {
-                var col = i % HOSTS_PER_ROW;
-                var row = Math.floor(i / HOSTS_PER_ROW);
-                sp.hostPositions.push({
-                    x: hostStartX + col * (HOST_W + H_GAP),
-                    y: HOST_TOP + row * (HOST_H + V_GAP),
-                    host: host
-                });
-            });
-
-            serverPositions.push(sp);
-            currentX += clusterW + SERVER_GAP;
-        });
-
-        var totalHostRows = Math.max(1, ...servers.map(function (s) { return Math.ceil((s.hosts || []).length / HOSTS_PER_ROW); }));
-        var canvasW = currentX - SERVER_GAP + PAD * 2;
-        var canvasH = HOST_TOP + totalHostRows * (HOST_H + V_GAP) + PAD + 80;
-
-        // ── Zoom/pan viewport ────────────────────────────────────────────────
+        // ── Viewport with zoom/pan ───────────────────────────────────────
         var viewport = document.createElement('div');
-        viewport.className = 'env-viewport';
+        viewport.className = 'env-topo-viewport';
         container.appendChild(viewport);
 
         // Toolbar
@@ -184,291 +60,225 @@ window.environmentView = (function () {
         toolbar.innerHTML =
             '<button class="qp-v2-tb-btn" data-action="zoomin"  title="Zoom in">+</button>' +
             '<button class="qp-v2-tb-btn" data-action="zoomout" title="Zoom out">\u2212</button>' +
-            '<button class="qp-v2-tb-btn" data-action="fit"     title="Fit / reset">\u2922</button>';
+            '<button class="qp-v2-tb-btn" data-action="fit"     title="Fit">\u2922</button>';
         viewport.appendChild(toolbar);
 
-        // Canvas wrapper
         var wrap = document.createElement('div');
-        wrap.className = 'env-canvas';
-        wrap.style.width = canvasW + 'px';
-        wrap.style.height = canvasH + 'px';
+        wrap.className = 'env-topo-wrap';
+        wrap.style.width  = canvasSize + 'px';
+        wrap.style.height = canvasSize + 'px';
         viewport.appendChild(wrap);
 
-        // ── SVG edge layer ───────────────────────────────────────────────────
+        // ── SVG layer ────────────────────────────────────────────────────
         var SVG_NS = 'http://www.w3.org/2000/svg';
         var svg = document.createElementNS(SVG_NS, 'svg');
-        svg.setAttribute('width', canvasW);
-        svg.setAttribute('height', canvasH);
+        svg.setAttribute('width',  canvasSize);
+        svg.setAttribute('height', canvasSize);
         svg.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;overflow:visible;';
         wrap.appendChild(svg);
 
-        // Arrow marker def
+        // Arrow marker
         var defs = document.createElementNS(SVG_NS, 'defs');
-        var marker = document.createElementNS(SVG_NS, 'marker');
-        marker.setAttribute('id', 'env-arrow');
-        marker.setAttribute('viewBox', '0 0 10 10');
-        marker.setAttribute('refX', '9');
-        marker.setAttribute('refY', '5');
-        marker.setAttribute('markerWidth', '6');
-        marker.setAttribute('markerHeight', '6');
-        marker.setAttribute('orient', 'auto-start-reverse');
-        var arrowPath = document.createElementNS(SVG_NS, 'path');
-        arrowPath.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
-        arrowPath.setAttribute('fill', '#5a5a5a');
-        marker.appendChild(arrowPath);
-        defs.appendChild(marker);
+        function makeMarker(id, color) {
+            var m = document.createElementNS(SVG_NS, 'marker');
+            m.setAttribute('id', id);
+            m.setAttribute('viewBox', '0 0 10 10');
+            m.setAttribute('refX', '9'); m.setAttribute('refY', '5');
+            m.setAttribute('markerWidth', '6'); m.setAttribute('markerHeight', '6');
+            m.setAttribute('orient', 'auto-start-reverse');
+            var p = document.createElementNS(SVG_NS, 'path');
+            p.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
+            p.setAttribute('fill', color);
+            m.appendChild(p);
+            return m;
+        }
+        defs.appendChild(makeMarker('env-arr-in',  '#f59e0b'));
+        defs.appendChild(makeMarker('env-arr-out', '#38bdf8'));
         svg.appendChild(defs);
 
-        // Detail pane
-        var pane = createDetailPane(container);
+        // ── Draw host spokes ─────────────────────────────────────────────
+        hosts.forEach(function (host, i) {
+            var angle = (2 * Math.PI * i / n) - Math.PI / 2;
+            var hx = cx + orbit * Math.cos(angle);
+            var hy = cy + orbit * Math.sin(angle);
 
-        // ── Draw server → host edges ─────────────────────────────────────────
-        serverPositions.forEach(function (sp) {
-            var sx = sp.x + SERVER_W / 2;
-            var sy = sp.y + SERVER_H;
-
-            sp.hostPositions.forEach(function (hp) {
-                var hx = hp.x + HOST_W / 2;
-                var hy = hp.y;
-
-                var my = (sy + hy) / 2;
-
-                var path = document.createElementNS(SVG_NS, 'path');
-                path.setAttribute('d', 'M ' + sx + ' ' + sy + ' C ' + sx + ' ' + my + ' ' + hx + ' ' + my + ' ' + hx + ' ' + hy);
-                path.setAttribute('fill', 'none');
-                path.setAttribute('stroke', '#4a5568');
-                path.setAttribute('stroke-width', Math.max(1.5, Math.min(6, 1 + Math.log2(hp.host.connectionCount + 1))));
-                path.setAttribute('stroke-linecap', 'round');
-                path.setAttribute('opacity', '0.6');
-                svg.appendChild(path);
-
-                // Connection count label on edge
-                if (hp.host.connectionCount > 1) {
-                    var txt = document.createElementNS(SVG_NS, 'text');
-                    txt.setAttribute('x', (sx + hx) / 2);
-                    txt.setAttribute('y', my - 4);
-                    txt.setAttribute('text-anchor', 'middle');
-                    txt.setAttribute('font-size', '9');
-                    txt.setAttribute('fill', '#718096');
-                    txt.textContent = hp.host.connectionCount;
-                    svg.appendChild(txt);
-                }
-            });
+            // Line from server center to host
+            var thick = Math.max(1.5, Math.min(5, 1 + Math.log2((host.connectionCount || 1) + 1)));
+            var line = document.createElementNS(SVG_NS, 'line');
+            line.setAttribute('x1', cx); line.setAttribute('y1', cy);
+            line.setAttribute('x2', hx); line.setAttribute('y2', hy);
+            line.setAttribute('stroke', 'rgba(100,116,139,0.5)');
+            line.setAttribute('stroke-width', thick);
+            svg.appendChild(line);
         });
 
-        // ── Draw cross-server links ──────────────────────────────────────────
-        (data.crossLinks || []).forEach(function (link) {
-            var fromSp = serverPositions.find(function (sp) { return sp.server.name === link.fromServer; });
-            var toSp   = serverPositions.find(function (sp) { return sp.server.name === link.toServer; });
-            if (!fromSp || !toSp) return;
+        // ── Draw cross-server IN arrows ──────────────────────────────────
+        crossIn.forEach(function (lnk, i) {
+            var angle = (2 * Math.PI * i / Math.max(1, crossIn.length)) + Math.PI / 4;
+            var nx = cx + xOrbit * Math.cos(angle);
+            var ny = cy + xOrbit * Math.sin(angle);
 
-            var x1 = fromSp.x + SERVER_W / 2;
-            var y1 = fromSp.y + SERVER_H / 2;
-            var x2 = toSp.x + SERVER_W / 2;
-            var y2 = toSp.y + SERVER_H / 2;
+            // Dashed arrow pointing toward server
+            var dx = cx - nx, dy = cy - ny, dist = Math.sqrt(dx*dx + dy*dy);
+            var ex = cx - (SRV_R / dist) * dx;
+            var ey = cy - (SRV_R / dist) * dy;
 
-            // Dashed line between servers
             var line = document.createElementNS(SVG_NS, 'line');
-            line.setAttribute('x1', x1);
-            line.setAttribute('y1', y1);
-            line.setAttribute('x2', x2);
-            line.setAttribute('y2', y2);
+            line.setAttribute('x1', nx); line.setAttribute('y1', ny);
+            line.setAttribute('x2', ex); line.setAttribute('y2', ey);
             line.setAttribute('stroke', '#f59e0b');
             line.setAttribute('stroke-width', '2');
-            line.setAttribute('stroke-dasharray', '8,4');
-            line.setAttribute('opacity', '0.7');
-            line.setAttribute('marker-end', 'url(#env-arrow)');
+            line.setAttribute('stroke-dasharray', '6,3');
+            line.setAttribute('marker-end', 'url(#env-arr-in)');
             svg.appendChild(line);
 
-            // Label
-            var lbl = document.createElementNS(SVG_NS, 'text');
-            lbl.setAttribute('x', (x1 + x2) / 2);
-            lbl.setAttribute('y', (y1 + y2) / 2 - 8);
-            lbl.setAttribute('text-anchor', 'middle');
-            lbl.setAttribute('font-size', '10');
-            lbl.setAttribute('fill', '#f59e0b');
-            lbl.textContent = link.viaHost + ' (' + link.connectionCount + ')';
-            svg.appendChild(lbl);
+            // Cross-server node box
+            var div = document.createElement('div');
+            div.className = 'env-xsrv-node env-xsrv-in';
+            div.style.left = (nx - XSRV_W / 2) + 'px';
+            div.style.top  = (ny - XSRV_H / 2) + 'px';
+            div.innerHTML = '<i class="fa-solid fa-server"></i> ' + esc(shortName(lnk.server)) +
+                '<span class="env-xsrv-count">' + (lnk.count || '') + '</span>';
+            div.title = lnk.server + ' connects here';
+            wrap.appendChild(div);
         });
 
-        // ── Draw shared host indicators ──────────────────────────────────────
-        (data.sharedHosts || []).forEach(function (sh) {
-            // Find all host positions for this hostname across servers
-            var positions = [];
-            serverPositions.forEach(function (sp) {
-                sp.hostPositions.forEach(function (hp) {
-                    if (hp.host.hostname.toLowerCase() === sh.hostname.toLowerCase()) {
-                        positions.push(hp);
-                    }
+        // ── Draw cross-server OUT arrows ─────────────────────────────────
+        crossOut.forEach(function (lnk, i) {
+            var angle = (2 * Math.PI * i / Math.max(1, crossOut.length)) + Math.PI * 5 / 4;
+            var nx = cx + xOrbit * Math.cos(angle);
+            var ny = cy + xOrbit * Math.sin(angle);
+
+            var dx = nx - cx, dy = ny - cy, dist = Math.sqrt(dx*dx + dy*dy);
+            var sx = cx + (SRV_R / dist) * dx;
+            var sy = cy + (SRV_R / dist) * dy;
+
+            var line = document.createElementNS(SVG_NS, 'line');
+            line.setAttribute('x1', sx); line.setAttribute('y1', sy);
+            line.setAttribute('x2', nx); line.setAttribute('y2', ny);
+            line.setAttribute('stroke', '#38bdf8');
+            line.setAttribute('stroke-width', '2');
+            line.setAttribute('stroke-dasharray', '6,3');
+            line.setAttribute('marker-end', 'url(#env-arr-out)');
+            svg.appendChild(line);
+
+            var div = document.createElement('div');
+            div.className = 'env-xsrv-node env-xsrv-out';
+            div.style.left = (nx - XSRV_W / 2) + 'px';
+            div.style.top  = (ny - XSRV_H / 2) + 'px';
+            div.innerHTML = '<i class="fa-solid fa-server"></i> ' + esc(shortName(lnk.server)) +
+                '<span class="env-xsrv-count">' + (lnk.count || '') + '</span>';
+            div.title = 'This server connects to ' + lnk.server;
+            wrap.appendChild(div);
+        });
+
+        // ── Server center node ───────────────────────────────────────────
+        var srvDiv = document.createElement('div');
+        srvDiv.className = 'env-topo-server';
+        srvDiv.style.left   = (cx - SRV_R) + 'px';
+        srvDiv.style.top    = (cy - SRV_R) + 'px';
+        srvDiv.style.width  = (SRV_R * 2) + 'px';
+        srvDiv.style.height = (SRV_R * 2) + 'px';
+        var c = server.counts || {};
+        srvDiv.innerHTML =
+            '<i class="fa-solid fa-server" style="font-size:20px;color:var(--accent);"></i>' +
+            '<div style="font-size:10px;font-weight:700;margin-top:4px;word-break:break-all;text-align:center;">' + esc(shortName(server.name)) + '</div>' +
+            '<div style="font-size:9px;color:var(--text-secondary);margin-top:2px;">' +
+                (c.hosts||0) + 'h · ' + (c.apps||0) + 'a · ' + (c.users||0) + 'u' +
+            '</div>';
+        wrap.appendChild(srvDiv);
+
+        // ── Host nodes ───────────────────────────────────────────────────
+        hosts.forEach(function (host, i) {
+            var angle = (2 * Math.PI * i / n) - Math.PI / 2;
+            var hx = cx + orbit * Math.cos(angle);
+            var hy = cy + orbit * Math.sin(angle);
+
+            var hn = host.hostname || '(unknown)';
+            var display = hn.length > 18 ? hn.substring(0, 16) + '…' : hn;
+
+            var div = document.createElement('div');
+            div.className = 'env-topo-host';
+            div.style.left = (hx - HOST_W / 2) + 'px';
+            div.style.top  = (hy - HOST_H / 2) + 'px';
+            div.title = hn;
+            div.innerHTML =
+                '<div class="env-topo-host-name">' + esc(display) + '</div>' +
+                '<div class="env-topo-host-meta">' +
+                    (host.connectionCount || 0) + ' conn · ' + (host.uniqueApps || 0) + ' apps' +
+                '</div>';
+
+            div.addEventListener('click', function () {
+                // Highlight
+                document.querySelectorAll('.env-topo-host').forEach(function (el) {
+                    el.classList.remove('env-topo-host-active');
                 });
+                div.classList.add('env-topo-host-active');
+
+                // Raise to Blazor
+                if (window._envDotNetRef) {
+                    window._envDotNetRef.invokeMethodAsync('OnHostNodeClicked', hn);
+                }
             });
 
-            // Draw dashed connector between same hosts on different servers
-            for (var i = 0; i < positions.length - 1; i++) {
-                var p1 = positions[i];
-                var p2 = positions[i + 1];
-                var line = document.createElementNS(SVG_NS, 'line');
-                line.setAttribute('x1', p1.x + HOST_W / 2);
-                line.setAttribute('y1', p1.y + HOST_H / 2);
-                line.setAttribute('x2', p2.x + HOST_W / 2);
-                line.setAttribute('y2', p2.y + HOST_H / 2);
-                line.setAttribute('stroke', '#38bdf8');
-                line.setAttribute('stroke-width', '1.5');
-                line.setAttribute('stroke-dasharray', '5,3');
-                line.setAttribute('opacity', '0.5');
-                svg.appendChild(line);
-            }
+            wrap.appendChild(div);
         });
 
-        // ── Render server nodes ──────────────────────────────────────────────
-        serverPositions.forEach(function (sp) {
-            var server = sp.server;
-
-            var node = document.createElement('div');
-            node.className = 'env-server-node' + (server.error ? ' env-server-error' : '');
-            node.style.left = sp.x + 'px';
-            node.style.top  = sp.y + 'px';
-
-            var icon = '<div class="env-server-icon"><i class="fa-solid fa-server"></i></div>';
-            var title = '<div class="env-server-name">' + esc(server.name) + '</div>';
-
-            var badges = '';
-            if (!server.error) {
-                badges = '<div class="env-server-badges">' +
-                    '<span class="env-sbadge" title="Hosts"><i class="fa-solid fa-desktop"></i> ' + server.counts.hosts + '</span>' +
-                    '<span class="env-sbadge" title="Apps"><i class="fa-solid fa-cube"></i> ' + server.counts.apps + '</span>' +
-                    '<span class="env-sbadge" title="Users"><i class="fa-solid fa-user"></i> ' + server.counts.users + '</span>' +
-                    '<span class="env-sbadge" title="DBs"><i class="fa-solid fa-database"></i> ' + server.counts.dbs + '</span>' +
-                    '<span class="env-sbadge" title="IPs"><i class="fa-solid fa-network-wired"></i> ' + server.counts.ips + '</span>' +
-                    '</div>';
-            } else {
-                badges = '<div class="env-server-error-msg"><i class="fa-solid fa-circle-exclamation"></i> ' + esc(server.error) + '</div>';
-            }
-
-            node.innerHTML = icon + title + badges;
-            wrap.appendChild(node);
-
-            node.addEventListener('click', function (e) {
-                e.stopPropagation();
-                showServerDetail(pane, server);
-            });
-        });
-
-        // ── Render host nodes ────────────────────────────────────────────────
-        serverPositions.forEach(function (sp) {
-            sp.hostPositions.forEach(function (hp) {
-                var host = hp.host;
-                var isShared = (data.sharedHosts || []).some(function (sh) {
-                    return sh.hostname.toLowerCase() === host.hostname.toLowerCase();
-                });
-
-                var node = document.createElement('div');
-                node.className = 'env-host-node' + (isShared ? ' env-host-shared' : '');
-                node.style.left = hp.x + 'px';
-                node.style.top  = hp.y + 'px';
-
-                var hostName = host.hostname || '(unknown)';
-                if (hostName.length > 20) hostName = hostName.substring(0, 18) + '\u2026';
-
-                node.innerHTML =
-                    '<div class="env-host-icon"><i class="fa-solid fa-desktop"></i></div>' +
-                    '<div class="env-host-info">' +
-                        '<div class="env-host-name" title="' + esc(host.hostname) + '">' + esc(hostName) + '</div>' +
-                        '<div class="env-host-meta">' + host.connectionCount + ' conn \u00b7 ' + host.uniqueApps + ' apps</div>' +
-                    '</div>';
-
-                wrap.appendChild(node);
-
-                node.addEventListener('click', function (e) {
-                    e.stopPropagation();
-                    showHostDetail(pane, host, sp.server.name);
-                });
-            });
-        });
-
-        // ── Pan / zoom ───────────────────────────────────────────────────────
+        // ── Pan / zoom ───────────────────────────────────────────────────
         var _tx = 0, _ty = 0, _scale = 1;
-        var _dragging = false, _lastX = 0, _lastY = 0;
+        var _drag = false, _lx = 0, _ly = 0;
 
         function applyXform() {
             wrap.style.transform = 'translate(' + _tx + 'px,' + _ty + 'px) scale(' + _scale + ')';
         }
-
-        function clampScale(s) { return Math.max(0.12, Math.min(5, s)); }
-
-        function zoomAt(vx, vy, factor) {
-            var ns = clampScale(_scale * factor);
+        function clamp(s) { return Math.max(0.15, Math.min(4, s)); }
+        function zoomAt(vx, vy, f) {
+            var ns = clamp(_scale * f);
             _tx = vx - (vx - _tx) * (ns / _scale);
             _ty = vy - (vy - _ty) * (ns / _scale);
-            _scale = ns;
+            _scale = ns; applyXform();
+        }
+        function fit() {
+            var vw = viewport.clientWidth || 600;
+            var vh = viewport.clientHeight || 260;
+            var s = clamp(Math.min(vw / canvasSize, vh / canvasSize) * 0.9);
+            _scale = s;
+            _tx = (vw - canvasSize * s) / 2;
+            _ty = (vh - canvasSize * s) / 2;
             applyXform();
         }
 
-        function resetFit() {
-            // Auto-fit to viewport
-            var vw = viewport.clientWidth || viewport.offsetWidth || 800;
-            var vh = viewport.clientHeight || viewport.offsetHeight || 600;
-            var sw = canvasW || 800;
-            var sh = canvasH || 600;
-            var fitScale = Math.min(vw / sw, vh / sh, 1);
-            _scale = clampScale(fitScale * 0.95);
-            _tx = (vw - sw * _scale) / 2;
-            _ty = 10;
-            applyXform();
-        }
-
-        // Wheel zoom
         viewport.addEventListener('wheel', function (e) {
             e.preventDefault();
             var r = viewport.getBoundingClientRect();
-            var f = e.deltaY < 0 ? 1.12 : 1 / 1.12;
-            zoomAt(e.clientX - r.left, e.clientY - r.top, f);
+            zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.12 : 1/1.12);
         }, { passive: false });
 
-        // Drag pan
         viewport.addEventListener('mousedown', function (e) {
             if (e.button !== 0) return;
-            _dragging = true;
-            _lastX = e.clientX;
-            _lastY = e.clientY;
-            viewport.style.cursor = 'grabbing';
-            e.preventDefault();
+            _drag = true; _lx = e.clientX; _ly = e.clientY;
+            viewport.style.cursor = 'grabbing'; e.preventDefault();
         });
-
         var onMove = function (e) {
-            if (!_dragging) return;
-            _tx += e.clientX - _lastX;
-            _ty += e.clientY - _lastY;
-            _lastX = e.clientX;
-            _lastY = e.clientY;
-            applyXform();
+            if (!_drag) return;
+            _tx += e.clientX - _lx; _ty += e.clientY - _ly;
+            _lx = e.clientX; _ly = e.clientY; applyXform();
         };
-        var onUp = function () {
-            if (_dragging) { _dragging = false; viewport.style.cursor = ''; }
-        };
+        var onUp = function () { if (_drag) { _drag = false; viewport.style.cursor = ''; } };
         window.addEventListener('mousemove', onMove);
         window.addEventListener('mouseup', onUp);
+        viewport.addEventListener('dblclick', fit);
 
-        // Double-click to reset fit
-        viewport.addEventListener('dblclick', resetFit);
-
-        // Toolbar buttons
         toolbar.addEventListener('click', function (e) {
             var btn = e.target.closest('[data-action]');
             if (!btn) return;
             var r = viewport.getBoundingClientRect();
-            var cx = r.width / 2, cy = r.height / 2;
-            if      (btn.dataset.action === 'zoomin')  zoomAt(cx, cy, 1.25);
-            else if (btn.dataset.action === 'zoomout') zoomAt(cx, cy, 1 / 1.25);
-            else if (btn.dataset.action === 'fit')     resetFit();
+            var vx = r.width / 2, vy = r.height / 2;
+            if      (btn.dataset.action === 'zoomin')  zoomAt(vx, vy, 1.25);
+            else if (btn.dataset.action === 'zoomout') zoomAt(vx, vy, 1/1.25);
+            else if (btn.dataset.action === 'fit')     fit();
         });
 
-        // Click on empty space to close detail pane
-        wrap.addEventListener('click', function () {
-            pane.style.display = 'none';
-        });
-
-        // Cleanup on container re-use
         var obs = new MutationObserver(function () {
             if (!viewport.isConnected) {
                 window.removeEventListener('mousemove', onMove);
@@ -478,12 +288,21 @@ window.environmentView = (function () {
         });
         obs.observe(container, { childList: true });
 
-        // Initial fit
-        requestAnimationFrame(resetFit);
+        requestAnimationFrame(fit);
     }
 
-    // ── Public API ───────────────────────────────────────────────────────────
-    return {
-        render: render
-    };
+    function shortName(name) {
+        if (!name) return '';
+        if (name.length <= 18) return name;
+        var parts = name.split('\\');
+        var m = parts[0].length > 13 ? parts[0].substring(0, 11) + '…' : parts[0];
+        return parts.length > 1 ? m + '\\' + parts[1] : m;
+    }
+
+    // Register DotNet reference for Blazor callbacks
+    function setHostCallback(dotNetRef) {
+        window._envDotNetRef = dotNetRef;
+    }
+
+    return { renderMini: renderMini, setHostCallback: setHostCallback };
 })();

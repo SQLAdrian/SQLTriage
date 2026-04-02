@@ -7,6 +7,31 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.82.0] — 2026-04-02
+
+**Diagnostics Maturity Roadmap, multi-file audit aggregation, experimental mode, and UX improvements.**
+
+### Added
+- **Diagnostics Maturity Roadmap** — maps sp_triage (`SectionID`) and sp_Blitz (`CheckID`) CSV output to a 5-level maturity framework (Foundation → Hardened → Performant → Observable → Optimised); category tag badges on each check row; PDF export
+- **Multi-file audit selection** — checkbox list replaces single dropdown; select multiple servers/files simultaneously; maturity scores aggregated across all selected files
+- **sp_Blitz CSV support** — output folder now detects `*blitz*.csv` files in addition to `*sp_triage*.csv`; uses `CheckID` and `ServerName` columns automatically
+- **Items Impacted counter** — total occurrence count of fired checks (mapped, non-informational) shown in the maturity summary panel
+- **Experimental mode toggle** — amber flask icon in nav footer; gates preview features (Plan Analyzer, BP Scripts, Capacity Planning, notification channels); persisted to user settings; global event broadcast
+- **WhatsApp notification channel** — added to multi-channel alerting
+
+### Changed
+- **Nav order** — Tools section moved directly under Audits
+- **Azure Blob connection test** — three-tier probe (GetProperties → ListBlobs → write probe) handles write-only and directory-scoped SAS tokens without false 403 failures
+- **Taskbar icon** — minimising no longer hides app from taskbar; tray-hide is tray-menu only
+- **PDF export** — removed dark cover page that caused blank/black first page in WebView2; export now starts directly with maturity content
+
+### Fixed
+- **sp_Blitz files not appearing** — `ServerName` column lookup (was looking for `SQLInstance`); date column index 4 (empty header)
+- **Items Impacted inflation** — previously summed all CSV rows including unmapped and informational IDs; now only counts IDs present in roadmap-mapping.json after exclusions
+- **Build version stamping** — `StampVersionFromJson` now runs `AfterTargets="IncrementBuildNumber"` to guarantee it reads the incremented value
+
+---
+
 ## [0.80.0] — 2026-03-26
 
 **Enterprise monitoring, multi-channel alerting, and server management release.**

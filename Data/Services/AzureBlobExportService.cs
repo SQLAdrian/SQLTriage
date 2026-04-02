@@ -227,24 +227,37 @@ namespace SqlHealthAssessment.Data.Services
             {
                 var containerClient = GetContainerClient();
 
-                // Try GetProperties first (works with account/container-level SAS)
+                // 1. Try GetProperties — works with full account/container SAS
                 try
                 {
                     var properties = await containerClient.GetPropertiesAsync(cancellationToken: ct);
                     return (true, $"Connected to container '{_containerName}' ({AuthMode}). Last modified: {properties.Value.LastModified:u}");
                 }
-                catch (Azure.RequestFailedException)
+                catch (Azure.RequestFailedException) { /* SAS may not have read/list — try next */ }
+
+                // 2. Try listing — works with list-scoped SAS
+                try
                 {
-                    // SAS may be directory-scoped — fall back to listing blobs (works with narrower SAS)
                     var prefix = string.IsNullOrEmpty(_blobPrefix) ? null : _blobPrefix.TrimEnd('/') + "/";
                     int count = 0;
                     await foreach (var blob in containerClient.GetBlobsAsync(BlobTraits.None, BlobStates.None, prefix, ct))
                     {
                         count++;
-                        if (count >= 1) break; // only need to confirm access
+                        if (count >= 1) break;
                     }
                     return (true, $"Connected to container '{_containerName}'{(prefix != null ? $"/{_blobPrefix}" : "")} ({AuthMode}). Listed {count} blob(s).");
                 }
+                catch (Azure.RequestFailedException) { /* SAS may be write-only — try probe upload */ }
+
+                // 3. Write-only SAS: upload a tiny probe blob then delete it
+                var probeName = string.IsNullOrEmpty(_blobPrefix)
+                    ? ".test-probe"
+                    : _blobPrefix.TrimEnd('/') + "/.test-probe";
+                var blobClient = containerClient.GetBlobClient(probeName);
+                using var probeStream = new System.IO.MemoryStream(System.Text.Encoding.UTF8.GetBytes("probe"));
+                await blobClient.UploadAsync(probeStream, overwrite: true, ct);
+                try { await blobClient.DeleteIfExistsAsync(cancellationToken: ct); } catch { /* best-effort */ }
+                return (true, $"Connected to container '{_containerName}' ({AuthMode}). Write access confirmed.");
             }
             catch (Exception ex)
             {

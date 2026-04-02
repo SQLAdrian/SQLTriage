@@ -1,0 +1,2994 @@
+{
+  "_comment": "sp_Blitz CheckID to maturity category/level mapping. Exported from DiagnosticsRoadmap CategoryLevelMap + sql-checks.json. Edit this file to reclassify findings — do NOT commit if it contains confidential server/org info.",
+  "categoryLevelMap": {
+    "Backup": 1,
+    "Reliability": 1,
+    "Integrity": 1,
+    "Security": 2,
+    "Security checks": 2,
+    "Configuration": 2,
+    "Performance": 3,
+    "Indexes": 3,
+    "I/O": 3,
+    "TempDB": 3,
+    "Monitoring": 4,
+    "Maintenance Monitoring checks": 4,
+    "Informational": 4,
+    "Custom": 5,
+    "Naming checks": 5,
+    "Availability": 5,
+    "Database": 5
+  },
+  "blitzCheckMap": [
+    {
+      "checkId": 1,
+      "blitzId": "BLITZ_1",
+      "findingName": "Databases Not Being Backed Up",
+      "category": "Reliability",
+      "Roadmap": "Data Protection & Backup",
+      "level": 1,
+      "IsBad": 1
+    },
+    {
+      "checkId": 2,
+      "blitzId": "BLITZ_2",
+      "findingName": "Full Recovery Model Without Log Backups",
+      "category": "Reliability",
+      "Roadmap": "Data Protection & Backup",
+      "level": 1,
+      "IsBad": 1
+    },
+    {
+      "checkId": 3,
+      "blitzId": "BLITZ_3",
+      "findingName": "MSDB Backup History Not Purged",
+      "category": "Reliability",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 0
+    },
+    {
+      "checkId": 4,
+      "blitzId": "BLITZ_4",
+      "findingName": "Sysadmins on SQL server",
+      "category": "Security",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 5,
+      "blitzId": "BLITZ_5",
+      "findingName": "Security Admins on SQL server",
+      "category": "Security",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 6,
+      "blitzId": "BLITZ_6",
+      "findingName": "Jobs owned by users",
+      "category": "Security",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 7,
+      "blitzId": "BLITZ_7",
+      "findingName": "Stored Procedures running at startup",
+      "category": "Security",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 8,
+      "blitzId": "BLITZ_8",
+      "findingName": "Server Audits Running",
+      "category": "Security",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 0
+    },
+    {
+      "checkId": 9,
+      "blitzId": "BLITZ_9",
+      "findingName": "Endpoints Configured, Review Required",
+      "category": "Security",
+      "Roadmap": "Security & Compliance",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 10,
+      "blitzId": "BLITZ_10",
+      "findingName": "Resource Governor Enabled",
+      "category": "Performance",
+      "Roadmap": "Configuration impacting Performance",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 11,
+      "blitzId": "BLITZ_11",
+      "findingName": "Server triggers enabled",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 12,
+      "blitzId": "BLITZ_12",
+      "findingName": "Database Auto-Close enabled",
+      "category": "Performance",
+      "Roadmap": "Configuration impacting Performance",
+      "level": 1,
+      "IsBad": 1
+    },
+    {
+      "checkId": 13,
+      "blitzId": "BLITZ_13",
+      "findingName": "Database Auto-Shrink enabled",
+      "category": "Performance",
+      "Roadmap": "Configuration impacting Performance",
+      "level": 1,
+      "IsBad": 1
+    },
+    {
+      "checkId": 14,
+      "blitzId": "BLITZ_14",
+      "findingName": "Corruption checks not optimal",
+      "category": "Reliability",
+      "Roadmap": "Data Protection & Backup",
+      "level": 1,
+      "IsBad": 1
+    },
+    {
+      "checkId": 15,
+      "blitzId": "BLITZ_15",
+      "findingName": "Auto-Create Statistics Disabled",
+      "category": "Performance",
+      "Roadmap": "Configuration impacting Performance",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 16,
+      "blitzId": "BLITZ_16",
+      "findingName": "Auto-Update Stats Disabled",
+      "category": "Performance",
+      "Roadmap": "Configuration impacting Performance",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 17,
+      "blitzId": "BLITZ_17",
+      "findingName": "Stats Updated Asynchronously",
+      "category": "Performance",
+      "Roadmap": "Configuration impacting Performance",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 19,
+      "blitzId": "BLITZ_19",
+      "findingName": "Replication in use",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 20,
+      "blitzId": "BLITZ_20",
+      "findingName": "Date correlation",
+      "category": "Information",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 21,
+      "blitzId": "BLITZ_21",
+      "findingName": "Database Encrypted",
+      "category": "Security",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 24,
+      "blitzId": "BLITZ_24",
+      "findingName": "System Database on C Drive",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 0
+    },
+    {
+      "checkId": 25,
+      "blitzId": "BLITZ_25",
+      "findingName": "TempDB on C Drive",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 1
+    },
+    {
+      "checkId": 26,
+      "blitzId": "BLITZ_26",
+      "findingName": "User Database on C Drive",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 1
+    },
+    {
+      "checkId": 27,
+      "blitzId": "BLITZ_27",
+      "findingName": "Tables in the Master Database",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 28,
+      "blitzId": "BLITZ_28",
+      "findingName": "Tables in the MSDB Database",
+      "category": "Information",
+      "Roadmap": "Configuration",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 29,
+      "blitzId": "BLITZ_29",
+      "findingName": "Tables in the Model Database",
+      "category": "Information",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 30,
+      "blitzId": "BLITZ_30",
+      "findingName": "Not All Alerts Configured",
+      "category": "Monitoring/Alerting",
+      "Roadmap": "Monitoring",
+      "level": 2,
+      "IsBad": 1
+    },
+    {
+      "checkId": 31,
+      "blitzId": "BLITZ_31",
+      "findingName": "No Operators Configured/Enabled",
+      "category": "Monitoring/Alerting",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 1
+    },
+    {
+      "checkId": 32,
+      "blitzId": "BLITZ_32",
+      "findingName": "Triggers on Tables",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 0
+    },
+    {
+      "checkId": 33,
+      "blitzId": "BLITZ_33",
+      "findingName": "Enterprise Edition Features In Use",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 0
+    },
+    {
+      "checkId": 34,
+      "blitzId": "BLITZ_34",
+      "findingName": "Database Corruption Detected",
+      "category": "Reliability",
+      "Roadmap": "Configuration",
+      "level": 1,
+      "IsBad": 1
+    },
+    {
+      "checkId": 35,
+      "blitzId": "BLITZ_35",
+      "findingName": "Single-Use Plans in Procedure Cache",
+      "category": "Performance",
+      "Roadmap": "Performance",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 36,
+      "blitzId": "BLITZ_36",
+      "findingName": "Slow Storage Reads on Drive",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 37,
+      "blitzId": "BLITZ_37",
+      "findingName": "Slow Storage Writes on Drive",
+      "category": "Performance",
+      "Roadmap": "Configuration impacting Performance",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 38,
+      "blitzId": "BLITZ_38",
+      "findingName": "Heap Tables. No Clustered Index",
+      "category": "Performance",
+      "Roadmap": "Performance & Capacity",
+      "level": 5,
+      "IsBad": 1
+    },
+    {
+      "checkId": 39,
+      "blitzId": "BLITZ_39",
+      "findingName": "Possible Stale Backup/Shadow Tables",
+      "category": "Performance",
+      "Roadmap": "Database Housekeeping",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 40,
+      "blitzId": "BLITZ_40",
+      "findingName": "Multiple TempDB Data Files Required",
+      "category": "Configuration",
+      "Roadmap": "Configuration impacting Performance",
+      "level": 2,
+      "IsBad": 1
+    },
+    {
+      "checkId": 41,
+      "blitzId": "BLITZ_41",
+      "findingName": "Multiple Log Files on One Drive",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 42,
+      "blitzId": "BLITZ_42",
+      "findingName": "Uneven File Growth Settings in One Filegroup",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 44,
+      "blitzId": "BLITZ_44",
+      "findingName": "Queries Forcing Order Hints",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 45,
+      "blitzId": "BLITZ_45",
+      "findingName": "Queries Forcing Join Hints",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 46,
+      "blitzId": "BLITZ_46",
+      "findingName": "Leftover Fake Indexes From Wizards",
+      "category": "Performance",
+      "Roadmap": "Performance",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 47,
+      "blitzId": "BLITZ_47",
+      "findingName": "Indexes Disabled",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 48,
+      "blitzId": "BLITZ_48",
+      "findingName": "Foreign Keys Not Trusted",
+      "category": "Performance",
+      "Roadmap": "Performance",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 49,
+      "blitzId": "BLITZ_49",
+      "findingName": "Linked Server Configured",
+      "category": "Information",
+      "Roadmap": "Informational",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 50,
+      "blitzId": "BLITZ_50",
+      "findingName": "Max Memory Set Too High",
+      "category": "Performance",
+      "Roadmap": "Configuration impacting Performance",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 51,
+      "blitzId": "BLITZ_51",
+      "findingName": "Max Memory Set Too Low",
+      "category": "Performance",
+      "Roadmap": "Configuration impacting Performance",
+      "level": 2,
+      "IsBad": 1
+    },
+    {
+      "checkId": 52,
+      "blitzId": "BLITZ_52",
+      "findingName": "Cluster Failover History Detected",
+      "category": "Configuration",
+      "Roadmap": "Operational Reliability",
+      "level": 2,
+      "IsBad": 1
+    },
+    {
+      "checkId": 53,
+      "blitzId": "BLITZ_53",
+      "findingName": "Cluster Node",
+      "category": "Informational",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 55,
+      "blitzId": "BLITZ_55",
+      "findingName": "Interesting Database Owner",
+      "category": "Security",
+      "Roadmap": "Security",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 56,
+      "blitzId": "BLITZ_56",
+      "findingName": "Check Constraint Not Trusted",
+      "category": "Performance",
+      "Roadmap": "Performance",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 57,
+      "blitzId": "BLITZ_57",
+      "findingName": "SQL Agent Job Runs at Startup",
+      "category": "Security",
+      "Roadmap": "Security",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 59,
+      "blitzId": "BLITZ_59",
+      "findingName": "Alerts Configured without Follow Up",
+      "category": "Monitoring/Alerting",
+      "Roadmap": "Monitoring",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 60,
+      "blitzId": "BLITZ_60",
+      "findingName": "Fill Factor Changed",
+      "category": "Performance",
+      "Roadmap": "Performance",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 61,
+      "blitzId": "BLITZ_61",
+      "findingName": "No Alerts for Sev 19-25",
+      "category": "Monitoring/Alerting",
+      "Roadmap": "Monitoring",
+      "level": 1,
+      "IsBad": 1
+    },
+    {
+      "checkId": 62,
+      "blitzId": "BLITZ_62",
+      "findingName": "Old Compatibility Level",
+      "category": "Performance",
+      "Roadmap": "Performance",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 63,
+      "blitzId": "BLITZ_63",
+      "findingName": "Implicit Conversion",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 0
+    },
+    {
+      "checkId": 64,
+      "blitzId": "BLITZ_64",
+      "findingName": "Implicit Conversion Affecting Cardinality",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 65,
+      "blitzId": "BLITZ_65",
+      "findingName": "Missing Index",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 1,
+      "IsBad": 1
+    },
+    {
+      "checkId": 66,
+      "blitzId": "BLITZ_66",
+      "findingName": "Cursor",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 1
+    },
+    {
+      "checkId": 67,
+      "blitzId": "BLITZ_67",
+      "findingName": "Scalar UDFs",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 0
+    },
+    {
+      "checkId": 68,
+      "blitzId": "BLITZ_68",
+      "findingName": "DBCC CHECKDB Not Performed Recently",
+      "category": "Reliability",
+      "Roadmap": "Reliability",
+      "level": 1,
+      "IsBad": 1
+    },
+    {
+      "checkId": 69,
+      "blitzId": "BLITZ_69",
+      "findingName": "High VLF Count",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 70,
+      "blitzId": "BLITZ_70",
+      "findingName": "@@Servername Not Set or Not Correct",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 1
+    },
+    {
+      "checkId": 72,
+      "blitzId": "BLITZ_72",
+      "findingName": "The partitioned database may have non-aligned indexes",
+      "category": "Performance",
+      "Roadmap": "Performance",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 73,
+      "blitzId": "BLITZ_73",
+      "findingName": "No Failsafe Operator Configured",
+      "category": "Monitoring/Alerting",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 1
+    },
+    {
+      "checkId": 74,
+      "blitzId": "BLITZ_74",
+      "findingName": "Trace Flag On",
+      "category": "Configuration",
+      "Roadmap": "Performance",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 75,
+      "blitzId": "BLITZ_75",
+      "findingName": "Transaction Log Larger than Data File",
+      "category": "Reliability",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 76,
+      "blitzId": "BLITZ_76",
+      "findingName": "Collation differences",
+      "category": "Information",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 77,
+      "blitzId": "BLITZ_77",
+      "findingName": "Database Snapshot Online",
+      "category": "Reliability",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 78,
+      "blitzId": "BLITZ_78",
+      "findingName": "Stored Procedure WITH RECOMPILE",
+      "category": "Performance",
+      "Roadmap": "Performance",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 79,
+      "blitzId": "BLITZ_79",
+      "findingName": "Shrink Database Job",
+      "category": "Performance",
+      "Roadmap": "Configuration impacting Performance",
+      "level": 2,
+      "IsBad": 1
+    },
+    {
+      "checkId": 80,
+      "blitzId": "BLITZ_80",
+      "findingName": "Max File Size Set",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 81,
+      "blitzId": "BLITZ_81",
+      "findingName": "dynamic (cr.name)",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 82,
+      "blitzId": "BLITZ_82",
+      "findingName": "File growth set to percent",
+      "category": "Configuration",
+      "Roadmap": "Configuration impacting Performance",
+      "level": 1,
+      "IsBad": 1
+    },
+    {
+      "checkId": 83,
+      "blitzId": "BLITZ_83",
+      "findingName": "Services",
+      "category": "Server Info",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 84,
+      "blitzId": "BLITZ_84",
+      "findingName": "Hardware",
+      "category": "Server Info",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 85,
+      "blitzId": "BLITZ_85",
+      "findingName": "SQL Server Service",
+      "category": "Server Info",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 86,
+      "blitzId": "BLITZ_86",
+      "findingName": "Elevated Permissions on a Database",
+      "category": "Security",
+      "Roadmap": "Configuration",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 88,
+      "blitzId": "BLITZ_88",
+      "findingName": "SQL Server Last Restart",
+      "category": "Server Info",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 89,
+      "blitzId": "BLITZ_89",
+      "findingName": "Availability Groups has automatically repaired corruption",
+      "category": "Reliability",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 1
+    },
+    {
+      "checkId": 90,
+      "blitzId": "BLITZ_90",
+      "findingName": "Database Corruption Detected",
+      "category": "Reliability",
+      "Roadmap": "Data Protection & Backup",
+      "level": 1,
+      "IsBad": 1
+    },
+    {
+      "checkId": 91,
+      "blitzId": "BLITZ_91",
+      "findingName": "Server Last Restart",
+      "category": "Server Info",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 0
+    },
+    {
+      "checkId": 92,
+      "blitzId": "BLITZ_92",
+      "findingName": "Drive Space",
+      "category": "Server Info",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 0
+    },
+    {
+      "checkId": 93,
+      "blitzId": "BLITZ_93",
+      "findingName": "Backing Up to Same Drive Where Databases Reside",
+      "category": "Reliability",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 94,
+      "blitzId": "BLITZ_94",
+      "findingName": "Agent Jobs Without Failure Emails",
+      "category": "Monitoring/Alerting",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 1
+    },
+    {
+      "checkId": 95,
+      "blitzId": "BLITZ_95",
+      "findingName": "Plan Guides Enabled",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 96,
+      "blitzId": "BLITZ_96",
+      "findingName": "No Alerts for Corruption",
+      "category": "Monitoring/Alerting",
+      "Roadmap": "Monitoring",
+      "level": 1,
+      "IsBad": 1
+    },
+    {
+      "checkId": 97,
+      "blitzId": "BLITZ_97",
+      "findingName": "Unusual SQL Server Edition",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 98,
+      "blitzId": "BLITZ_98",
+      "findingName": "Alerts Disabled",
+      "category": "Monitoring/Alerting",
+      "Roadmap": "Monitoring",
+      "level": 2,
+      "IsBad": 1
+    },
+    {
+      "checkId": 99,
+      "blitzId": "BLITZ_99",
+      "findingName": "Infinite merge replication metadata retention period",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 100,
+      "blitzId": "BLITZ_100",
+      "findingName": "Remote DAC Disabled",
+      "category": "Reliability",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 1
+    },
+    {
+      "checkId": 101,
+      "blitzId": "BLITZ_101",
+      "findingName": "CPU Schedulers Offline",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 102,
+      "blitzId": "BLITZ_102",
+      "findingName": "Unusual Database State",
+      "category": "Reliability",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 103,
+      "blitzId": "BLITZ_103",
+      "findingName": "Virtual Server",
+      "category": "Server Info",
+      "Roadmap": "Server Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 104,
+      "blitzId": "BLITZ_104",
+      "findingName": "Login Can Control Server",
+      "category": "Security",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 105,
+      "blitzId": "BLITZ_105",
+      "findingName": "Extended Stored Procedures in Master",
+      "category": "Configuration",
+      "Roadmap": "Reliability",
+      "level": 5,
+      "IsBad": 1
+    },
+    {
+      "checkId": 106,
+      "blitzId": "BLITZ_106",
+      "findingName": "Default Trace Contents",
+      "category": "Server Info",
+      "Roadmap": "Configuration",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 107,
+      "blitzId": "BLITZ_107",
+      "findingName": "Poison Wait Detected",
+      "category": "Performance",
+      "Roadmap": "Performance",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 110,
+      "blitzId": "BLITZ_110",
+      "findingName": "Memory Nodes Offline",
+      "category": "Performance",
+      "Roadmap": "Configuration impacting Performance",
+      "level": 1,
+      "IsBad": 1
+    },
+    {
+      "checkId": 111,
+      "blitzId": "BLITZ_111",
+      "findingName": "Possibly Broken Log Shipping",
+      "category": "Reliability",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 112,
+      "blitzId": "BLITZ_112",
+      "findingName": "Change Tracking Enabled",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 113,
+      "blitzId": "BLITZ_113",
+      "findingName": "Full Text Indexes Not Updating",
+      "category": "Reliability",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 114,
+      "blitzId": "BLITZ_114",
+      "findingName": "Hardware - NUMA Config",
+      "category": "Server Info",
+      "Roadmap": "Configuration",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 115,
+      "blitzId": "BLITZ_115",
+      "findingName": "Parallelism Rocket Surgery",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 116,
+      "blitzId": "BLITZ_116",
+      "findingName": "Backup Compression Default Off",
+      "category": "Information",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 1
+    },
+    {
+      "checkId": 117,
+      "blitzId": "BLITZ_117",
+      "findingName": "Memory Pressure Affecting Queries",
+      "category": "Performance",
+      "Roadmap": "Performance",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 118,
+      "blitzId": "BLITZ_118",
+      "findingName": "RID or Key Lookups",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 1
+    },
+    {
+      "checkId": 119,
+      "blitzId": "BLITZ_119",
+      "findingName": "TDE Certificate Not Backed Up Recently",
+      "category": "Reliability",
+      "Roadmap": "Backup",
+      "level": 1,
+      "IsBad": 1
+    },
+    {
+      "checkId": 121,
+      "blitzId": "BLITZ_121",
+      "findingName": "Poison Wait Detected: Serializable Locking",
+      "category": "Performance",
+      "Roadmap": "Configuration impacting Performance",
+      "level": 2,
+      "IsBad": 1
+    },
+    {
+      "checkId": 122,
+      "blitzId": "BLITZ_122",
+      "findingName": "User-Created Statistics In Place",
+      "category": "Performance",
+      "Roadmap": "Performance",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 123,
+      "blitzId": "BLITZ_123",
+      "findingName": "Agent Jobs Starting Simultaneously",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 0
+    },
+    {
+      "checkId": 124,
+      "blitzId": "BLITZ_124",
+      "findingName": "Deadlocks Happening Daily",
+      "category": "Performance",
+      "Roadmap": "Performance",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 125,
+      "blitzId": "BLITZ_125",
+      "findingName": "Plan Cache Erased Recently",
+      "category": "Performance",
+      "Roadmap": "Performance",
+      "level": 5,
+      "IsBad": 1
+    },
+    {
+      "checkId": 126,
+      "blitzId": "BLITZ_126",
+      "findingName": "Priority Boost Enabled",
+      "category": "Reliability",
+      "Roadmap": "Configuration impacting Performance",
+      "level": 5,
+      "IsBad": 1
+    },
+    {
+      "checkId": 127,
+      "blitzId": "BLITZ_127",
+      "findingName": "Cumulative Update Available",
+      "category": "Reliability",
+      "Roadmap": "Server Configuration",
+      "level": 2,
+      "IsBad": 0
+    },
+    {
+      "checkId": 128,
+      "blitzId": "BLITZ_128",
+      "findingName": "SQL Server Version Out of Support",
+      "category": "Reliability",
+      "Roadmap": "Reliability",
+      "level": 1,
+      "IsBad": 1
+    },
+    {
+      "checkId": 129,
+      "blitzId": "BLITZ_129",
+      "findingName": "Dangerous Build of SQL Server (Corruption)",
+      "category": "Reliability",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 130,
+      "blitzId": "BLITZ_130",
+      "findingName": "Server Name",
+      "category": "Server Info",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 131,
+      "blitzId": "BLITZ_131",
+      "findingName": "Non-Default DB Option: Supplemental Logging",
+      "category": "Configuration",
+      "Roadmap": "Server Configuration",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 132,
+      "blitzId": "BLITZ_132",
+      "findingName": "Non-Default DB Option: Snapshot Isolation Enabled",
+      "category": "Configuration",
+      "Roadmap": "Server Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 133,
+      "blitzId": "BLITZ_133",
+      "findingName": "Non-Default DB Option: RCSI Enabled",
+      "category": "Configuration",
+      "Roadmap": "Server Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 134,
+      "blitzId": "BLITZ_134",
+      "findingName": "Non-Default DB Option: Auto Create Stats Incremental",
+      "category": "Configuration",
+      "Roadmap": "Server Configuration",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 135,
+      "blitzId": "BLITZ_135",
+      "findingName": "Non-Default DB Option: ANSI NULL Default",
+      "category": "Configuration",
+      "Roadmap": "Server Configuration",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 136,
+      "blitzId": "BLITZ_136",
+      "findingName": "Non-Default DB Option: Recursive Triggers",
+      "category": "Configuration",
+      "Roadmap": "Server Configuration",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 137,
+      "blitzId": "BLITZ_137",
+      "findingName": "Trustworthy Database Setting Enabled",
+      "category": "Configuration",
+      "Roadmap": "Security & Compliance",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 138,
+      "blitzId": "BLITZ_138",
+      "findingName": "Non-Default DB Option: Forced Parameterization",
+      "category": "Configuration",
+      "Roadmap": "Server Configuration",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 139,
+      "blitzId": "BLITZ_139",
+      "findingName": "Non-Default DB Option: Query Store Enabled",
+      "category": "Configuration",
+      "Roadmap": "Monitoring & Observability",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 140,
+      "blitzId": "BLITZ_140",
+      "findingName": "Non-Default DB Option: CDC Enabled",
+      "category": "Configuration",
+      "Roadmap": "Server Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 141,
+      "blitzId": "BLITZ_141",
+      "findingName": "Contained Database Authentication Enabled",
+      "category": "Configuration",
+      "Roadmap": "Security & Compliance",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 142,
+      "blitzId": "BLITZ_142",
+      "findingName": "Target Recovery Time Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 143,
+      "blitzId": "BLITZ_143",
+      "findingName": "Delayed Durability Enabled, Accepted Data Loss Risk",
+      "category": "Configuration",
+      "Roadmap": "Data Protection & Backup",
+      "level": 2,
+      "IsBad": 1
+    },
+    {
+      "checkId": 144,
+      "blitzId": "BLITZ_144",
+      "findingName": "Non-Default DB Option: In-Memory OLTP Enabled",
+      "category": "Configuration",
+      "Roadmap": "Server Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 145,
+      "blitzId": "BLITZ_145",
+      "findingName": "High Memory Use for In-Memory OLTP (Hekaton)",
+      "category": "Performance",
+      "Roadmap": "Performance",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 146,
+      "blitzId": "BLITZ_146",
+      "findingName": "In-Memory OLTP (Hekaton) In Use",
+      "category": "Performance",
+      "Roadmap": "Performance",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 147,
+      "blitzId": "BLITZ_147",
+      "findingName": "In-Memory OLTP (Hekaton) Transaction Errors",
+      "category": "Reliability",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 1
+    },
+    {
+      "checkId": 148,
+      "blitzId": "BLITZ_148",
+      "findingName": "Database Files on Network File Shares",
+      "category": "Reliability",
+      "Roadmap": "Reliability",
+      "level": 1,
+      "IsBad": 1
+    },
+    {
+      "checkId": 149,
+      "blitzId": "BLITZ_149",
+      "findingName": "Database Files Stored in Azure",
+      "category": "Reliability",
+      "Roadmap": "Reliability",
+      "level": 1,
+      "IsBad": 1
+    },
+    {
+      "checkId": 150,
+      "blitzId": "BLITZ_150",
+      "findingName": "Errors Logged Recently in the Default Trace",
+      "category": "Reliability",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 151,
+      "blitzId": "BLITZ_151",
+      "findingName": "File Growths Slow",
+      "category": "Performance",
+      "Roadmap": "Configuration impacting Performance",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 152,
+      "blitzId": "BLITZ_152",
+      "findingName": "Top Wait Stats (ranked)",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 153,
+      "blitzId": "BLITZ_153",
+      "findingName": "No Significant Waits Detected",
+      "category": "Performance",
+      "Roadmap": "Performance & Capacity",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 154,
+      "blitzId": "BLITZ_154",
+      "findingName": "32-bit SQL Server Installed",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 1,
+      "IsBad": 1
+    },
+    {
+      "checkId": 155,
+      "blitzId": "BLITZ_155",
+      "findingName": "Outdated sp_Blitz",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 156,
+      "blitzId": "BLITZ_156",
+      "findingName": "Rundate",
+      "category": "Rundate",
+      "Roadmap": "Monitoring & Observability",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 157,
+      "blitzId": "BLITZ_157",
+      "findingName": "Dangerous Build of SQL Server (Security)",
+      "category": "Reliability",
+      "Roadmap": "Configuration",
+      "level": 1,
+      "IsBad": 1
+    },
+    {
+      "checkId": 158,
+      "blitzId": "BLITZ_158",
+      "findingName": "File growth set to 1MB",
+      "category": "Configuration",
+      "Roadmap": "Configuration impacting Performance",
+      "level": 1,
+      "IsBad": 1
+    },
+    {
+      "checkId": 159,
+      "blitzId": "BLITZ_159",
+      "findingName": "Memory Dangerously Low in NUMA Nodes",
+      "category": "Performance",
+      "Roadmap": "Configuration impacting Performance",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 160,
+      "blitzId": "BLITZ_160",
+      "findingName": "Many Plans for One Query",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 161,
+      "blitzId": "BLITZ_161",
+      "findingName": "High Number of Cached Plans",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 5,
+      "IsBad": 1
+    },
+    {
+      "checkId": 162,
+      "blitzId": "BLITZ_162",
+      "findingName": "Poison Wait Detected: CMEMTHREAD and NUMA",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 5,
+      "IsBad": 1
+    },
+    {
+      "checkId": 163,
+      "blitzId": "BLITZ_163",
+      "findingName": "Query Store Disabled",
+      "category": "Performance",
+      "Roadmap": "Performance",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 164,
+      "blitzId": "BLITZ_164",
+      "findingName": "Plan Guides Failing",
+      "category": "Reliability",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 165,
+      "blitzId": "BLITZ_165",
+      "findingName": "Too Much Free Memory",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 5,
+      "IsBad": 1
+    },
+    {
+      "checkId": 166,
+      "blitzId": "BLITZ_166",
+      "findingName": "Locked Pages In Memory Enabled",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 167,
+      "blitzId": "BLITZ_167",
+      "findingName": "Agent is Currently Offline",
+      "category": "Monitoring/Alerting",
+      "Roadmap": "Configuration",
+      "level": 1,
+      "IsBad": 1
+    },
+    {
+      "checkId": 168,
+      "blitzId": "BLITZ_168",
+      "findingName": "Full-text Filter Daemon Launcher is Currently Offline",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 169,
+      "blitzId": "BLITZ_169",
+      "findingName": "SQL Server is running under an NT Service account",
+      "category": "Security",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 170,
+      "blitzId": "BLITZ_170",
+      "findingName": "SQL Server Agent is running under an NT Service account",
+      "category": "Security",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 171,
+      "blitzId": "BLITZ_171",
+      "findingName": "Memory Dumps Have Occurred",
+      "category": "Reliability",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 172,
+      "blitzId": "BLITZ_172",
+      "findingName": "Accelerated Database Recovery (ADR) Enabled",
+      "category": "Server Info",
+      "Roadmap": "Configuration",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 173,
+      "blitzId": "BLITZ_173",
+      "findingName": "Non-Production License",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 174,
+      "blitzId": "BLITZ_174",
+      "findingName": "Buffer Pool Extensions Enabled",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 1
+    },
+    {
+      "checkId": 175,
+      "blitzId": "BLITZ_175",
+      "findingName": "TempDB Has >16 Data Files",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 1
+    },
+    {
+      "checkId": 176,
+      "blitzId": "BLITZ_176",
+      "findingName": "Extended Events Hyperextension",
+      "category": "Monitoring/Alerting",
+      "Roadmap": "Configuration",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 177,
+      "blitzId": "BLITZ_177",
+      "findingName": "Disabled Internal Monitoring Features",
+      "category": "Monitoring/Alerting",
+      "Roadmap": "Monitoring",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 178,
+      "blitzId": "BLITZ_178",
+      "findingName": "Snapshot Backups Occurring",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 0
+    },
+    {
+      "checkId": 179,
+      "blitzId": "BLITZ_179",
+      "findingName": "Dangerous Third Party Modules",
+      "category": "Reliability",
+      "Roadmap": "Reliability",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 180,
+      "blitzId": "BLITZ_180",
+      "findingName": "Shrink Database Step In Maintenance Plan",
+      "category": "Performance",
+      "Roadmap": "Performance",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 181,
+      "blitzId": "BLITZ_181",
+      "findingName": "Repetitive Steps In Maintenance Plans",
+      "category": "Configuration",
+      "Roadmap": "Performance",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 182,
+      "blitzId": "BLITZ_182",
+      "findingName": "Query Store Cleanup Disabled",
+      "category": "Reliability",
+      "Roadmap": "Reliability",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 183,
+      "blitzId": "BLITZ_183",
+      "findingName": "TempDB Unevenly Sized Data Files",
+      "category": "Configuration",
+      "Roadmap": "Configuration impacting Performance",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 184,
+      "blitzId": "BLITZ_184",
+      "findingName": "No Failover Cluster Nodes Available",
+      "category": "Reliability",
+      "Roadmap": "Reliability",
+      "level": 1,
+      "IsBad": 1
+    },
+    {
+      "checkId": 185,
+      "blitzId": "BLITZ_185",
+      "findingName": "Wait Statistics Cleared",
+      "category": "Performance",
+      "Roadmap": "Monitoring & Observability",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 186,
+      "blitzId": "BLITZ_186",
+      "findingName": "MSDB Backup History Purged Too Frequently",
+      "category": "Reliability",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 187,
+      "blitzId": "BLITZ_187",
+      "findingName": "Endpoints Owned by Users",
+      "category": "Security",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 188,
+      "blitzId": "BLITZ_188",
+      "findingName": "Cost threshold for parallelism",
+      "category": "Performance",
+      "Roadmap": "Configuration impacting Performance",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 189,
+      "blitzId": "BLITZ_189",
+      "findingName": "Missing Features",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 190,
+      "blitzId": "BLITZ_190",
+      "findingName": "Non-Dynamic Memory",
+      "category": "Performance",
+      "Roadmap": "Performance",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 191,
+      "blitzId": "BLITZ_191",
+      "findingName": "TempDB File Error",
+      "category": "Configuration",
+      "Roadmap": "Reliability",
+      "level": 1,
+      "IsBad": 1
+    },
+    {
+      "checkId": 192,
+      "blitzId": "BLITZ_192",
+      "findingName": "Instant File Initialization Not Enabled",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 193,
+      "blitzId": "BLITZ_193",
+      "findingName": "Instant File Initialization Enabled",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 194,
+      "blitzId": "BLITZ_194",
+      "findingName": "Database-Level MAXDOP Override",
+      "category": "Configuration",
+      "Roadmap": "Performance & Capacity",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 195,
+      "blitzId": "BLITZ_195",
+      "findingName": "Legacy Cardinality Estimator Forced",
+      "category": "Configuration",
+      "Roadmap": "Performance & Capacity",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 196,
+      "blitzId": "BLITZ_196",
+      "findingName": "Parameter Sniffing Disabled at Database Level",
+      "category": "Configuration",
+      "Roadmap": "Performance & Capacity",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 197,
+      "blitzId": "BLITZ_197",
+      "findingName": "Query Optimizer Hotfixes Enabled",
+      "category": "Configuration",
+      "Roadmap": "Performance & Capacity",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 198,
+      "blitzId": "BLITZ_198",
+      "findingName": "CPU w/Odd Number of Cores",
+      "category": "Performance",
+      "Roadmap": "Performance",
+      "level": 1,
+      "IsBad": 1
+    },
+    {
+      "checkId": 199,
+      "blitzId": "BLITZ_199",
+      "findingName": "There Is An Error With The Default Trace",
+      "category": "Reliability",
+      "Roadmap": "Reliability",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 202,
+      "blitzId": "BLITZ_202",
+      "findingName": "Encryption Certificate Not Backed Up Recently",
+      "category": "Reliability",
+      "Roadmap": "Backup",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 203,
+      "blitzId": "BLITZ_203",
+      "findingName": "DBCC Events",
+      "category": "Reliability",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 205,
+      "blitzId": "BLITZ_205",
+      "findingName": "Wait Stats Cleared Recently",
+      "category": "Performance",
+      "Roadmap": "Performance",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 206,
+      "blitzId": "BLITZ_206",
+      "findingName": "Auto-Shrink Ran Recently",
+      "category": "Performance",
+      "Roadmap": "Performance",
+      "level": 5,
+      "IsBad": 1
+    },
+    {
+      "checkId": 207,
+      "blitzId": "BLITZ_207",
+      "findingName": "DBCC DROPCLEANBUFFERS Ran Recently",
+      "category": "Performance",
+      "Roadmap": "Performance",
+      "level": 5,
+      "IsBad": 1
+    },
+    {
+      "checkId": 208,
+      "blitzId": "BLITZ_208",
+      "findingName": "DBCC FREEPROCCACHE Ran Recently",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 209,
+      "blitzId": "BLITZ_209",
+      "findingName": "DBCC WRITEPAGE Used Recently",
+      "category": "Reliability",
+      "Roadmap": "Reliability",
+      "level": 1,
+      "IsBad": 1
+    },
+    {
+      "checkId": 210,
+      "blitzId": "BLITZ_210",
+      "findingName": "DBCC SHRINK% Ran Recently",
+      "category": "Performance",
+      "Roadmap": "Performance",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 211,
+      "blitzId": "BLITZ_211",
+      "findingName": "Power Plan",
+      "category": "Server Info",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 212,
+      "blitzId": "BLITZ_212",
+      "findingName": "Instance Stacking",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 0
+    },
+    {
+      "checkId": 213,
+      "blitzId": "BLITZ_213",
+      "findingName": "Database Owner is Unknown",
+      "category": "Security",
+      "Roadmap": "Security",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 214,
+      "blitzId": "BLITZ_214",
+      "findingName": "Container",
+      "category": "Server Info",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 215,
+      "blitzId": "BLITZ_215",
+      "findingName": "Implicit Transactions",
+      "category": "Performance",
+      "Roadmap": "Performance",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 216,
+      "blitzId": "BLITZ_216",
+      "findingName": "Missing Features",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 217,
+      "blitzId": "BLITZ_217",
+      "findingName": "Cumulative Update Available",
+      "category": "Reliability",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 1
+    },
+    {
+      "checkId": 218,
+      "blitzId": "BLITZ_218",
+      "findingName": "Objects created with dangerous SET Options",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 1
+    },
+    {
+      "checkId": 219,
+      "blitzId": "BLITZ_219",
+      "findingName": "Alerts Without Event Descriptions",
+      "category": "Monitoring/Alerting",
+      "Roadmap": "Monitoring",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 220,
+      "blitzId": "BLITZ_220",
+      "findingName": "Statistics Without Histograms",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 221,
+      "blitzId": "BLITZ_221",
+      "findingName": "Server restarted in last 24 hours",
+      "category": "Reliability",
+      "Roadmap": "Reliability",
+      "level": 2,
+      "IsBad": 0
+    },
+    {
+      "checkId": 222,
+      "blitzId": "BLITZ_222",
+      "findingName": "Azure Managed Instance",
+      "category": "Server Info",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 223,
+      "blitzId": "BLITZ_223",
+      "findingName": "Some Checks Skipped",
+      "category": "Server Info",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 0
+    },
+    {
+      "checkId": 224,
+      "blitzId": "BLITZ_224",
+      "findingName": "SSAS/SSIS/SSRS Installed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 225,
+      "blitzId": "BLITZ_225",
+      "findingName": "Resumable Index Operation Paused",
+      "category": "Reliability",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 226,
+      "blitzId": "BLITZ_226",
+      "findingName": "First Responder Kit",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 229,
+      "blitzId": "BLITZ_229",
+      "findingName": "Evaluation Edition",
+      "category": "Reliability",
+      "Roadmap": "Reliability",
+      "level": 1,
+      "IsBad": 1
+    },
+    {
+      "checkId": 230,
+      "blitzId": "BLITZ_230",
+      "findingName": "Non-Default DB Option: Service Broker Enabled",
+      "category": "Configuration",
+      "Roadmap": "Server Configuration",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 231,
+      "blitzId": "BLITZ_231",
+      "findingName": "Non-Default DB Option: Service Broker Priority",
+      "category": "Configuration",
+      "Roadmap": "Server Configuration",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 232,
+      "blitzId": "BLITZ_232",
+      "findingName": "Data Size",
+      "category": "Server Info",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 233,
+      "blitzId": "BLITZ_233",
+      "findingName": "Memory Leak in USERSTORE_TOKENPERM Cache",
+      "category": "Performance",
+      "Roadmap": "Performance",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 234,
+      "blitzId": "BLITZ_234",
+      "findingName": "SQL Server Update May Fail",
+      "category": "Reliability",
+      "Roadmap": "Reliability",
+      "level": 1,
+      "IsBad": 1
+    },
+    {
+      "checkId": 235,
+      "blitzId": "BLITZ_235",
+      "findingName": "Inconsistent Query Store metadata",
+      "category": "Performance",
+      "Roadmap": "Performance",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 236,
+      "blitzId": "BLITZ_236",
+      "findingName": "Snapshotting Too Many Databases",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 237,
+      "blitzId": "BLITZ_237",
+      "findingName": "Identity Cache Disabled",
+      "category": "Configuration",
+      "Roadmap": "Performance & Capacity",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 238,
+      "blitzId": "BLITZ_238",
+      "findingName": "Interleaved Execution for MSTVFs Disabled",
+      "category": "Configuration",
+      "Roadmap": "Performance & Capacity",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 239,
+      "blitzId": "BLITZ_239",
+      "findingName": "Batch Mode Memory Grant Feedback Disabled",
+      "category": "Configuration",
+      "Roadmap": "Performance & Capacity",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 240,
+      "blitzId": "BLITZ_240",
+      "findingName": "Batch Mode Adaptive Joins Disabled",
+      "category": "Configuration",
+      "Roadmap": "Performance & Capacity",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 241,
+      "blitzId": "BLITZ_241",
+      "findingName": "Scalar UDF Inlining Disabled",
+      "category": "Configuration",
+      "Roadmap": "Performance & Capacity",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 242,
+      "blitzId": "BLITZ_242",
+      "findingName": "Non-Default DB Option: Elevate Online Operations",
+      "category": "Configuration",
+      "Roadmap": "Server Configuration",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 243,
+      "blitzId": "BLITZ_243",
+      "findingName": "Non-Default DB Option: Elevate Resumable Operations",
+      "category": "Configuration",
+      "Roadmap": "Server Configuration",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 244,
+      "blitzId": "BLITZ_244",
+      "findingName": "Optimized Plan Forcing",
+      "category": "Configuration",
+      "Roadmap": "Performance & Capacity",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 245,
+      "blitzId": "BLITZ_245",
+      "findingName": "Non-Default DB Option: XTP Module Statistics Collection",
+      "category": "Configuration",
+      "Roadmap": "Monitoring & Observability",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 246,
+      "blitzId": "BLITZ_246",
+      "findingName": "Non-Default DB Option: XTP Statement Statistics Collection",
+      "category": "Configuration",
+      "Roadmap": "Monitoring & Observability",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 247,
+      "blitzId": "BLITZ_247",
+      "findingName": "Row Mode Memory Grant Feedback Disabled",
+      "category": "Configuration",
+      "Roadmap": "Performance & Capacity",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 248,
+      "blitzId": "BLITZ_248",
+      "findingName": "Row-Level Security Enabled",
+      "category": "Configuration",
+      "Roadmap": "Security & Compliance",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 249,
+      "blitzId": "BLITZ_249",
+      "findingName": "Batch Mode on Rowstore Disabled",
+      "category": "Configuration",
+      "Roadmap": "Performance & Capacity",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 250,
+      "blitzId": "BLITZ_250",
+      "findingName": "Table Variable Deferred Compilation Disabled",
+      "category": "Configuration",
+      "Roadmap": "Performance & Capacity",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 251,
+      "blitzId": "BLITZ_251",
+      "findingName": "Non-Default DB Option: Optimized Plan Forcing",
+      "category": "Configuration",
+      "Roadmap": "Performance & Capacity",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 252,
+      "blitzId": "BLITZ_252",
+      "findingName": "Non-Default DB Option: Global Temp Table Auto-Drop",
+      "category": "Configuration",
+      "Roadmap": "Server Configuration",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 253,
+      "blitzId": "BLITZ_253",
+      "findingName": "Non-Default DB Option: Lightweight Query Profiling",
+      "category": "Configuration",
+      "Roadmap": "Monitoring & Observability",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 254,
+      "blitzId": "BLITZ_254",
+      "findingName": "Non-Default DB Option: Verbose Truncation Warnings",
+      "category": "Configuration",
+      "Roadmap": "Server Configuration",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 255,
+      "blitzId": "BLITZ_255",
+      "findingName": "Non-Default DB Option: Last Query Plan Statistics",
+      "category": "Configuration",
+      "Roadmap": "Monitoring & Observability",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 256,
+      "blitzId": "BLITZ_256",
+      "findingName": "Log Backups to NUL",
+      "category": "Reliability",
+      "Roadmap": "Backup",
+      "level": 1,
+      "IsBad": 1
+    },
+    {
+      "checkId": 257,
+      "blitzId": "BLITZ_257",
+      "findingName": "Recovery Interval Not Optimal",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 258,
+      "blitzId": "BLITZ_258",
+      "findingName": "Dangerous Service Account - SYSTEM",
+      "category": "Security",
+      "Roadmap": "Security",
+      "level": 2,
+      "IsBad": 1
+    },
+    {
+      "checkId": 259,
+      "blitzId": "BLITZ_259",
+      "findingName": "Dangerous Agent Service Account - SYSTEM",
+      "category": "Security",
+      "Roadmap": "Security",
+      "level": 2,
+      "IsBad": 1
+    },
+    {
+      "checkId": 260,
+      "blitzId": "BLITZ_260",
+      "findingName": "Dangerous Service Account - ADMIN",
+      "category": "Security",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 1
+    },
+    {
+      "checkId": 261,
+      "blitzId": "BLITZ_261",
+      "findingName": "Dangerous Agent Service Account  - ADMIN",
+      "category": "Security",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 1
+    },
+    {
+      "checkId": 262,
+      "blitzId": "BLITZ_262",
+      "findingName": "Query Store Wait Stats Disabled",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 263,
+      "blitzId": "BLITZ_263",
+      "findingName": "Query Store Effectively Disabled",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 264,
+      "blitzId": "BLITZ_264",
+      "findingName": "Undesired Query Store State",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 265,
+      "blitzId": "BLITZ_265",
+      "findingName": "Query Store Unusually Configured",
+      "category": "Performance",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 1
+    },
+    {
+      "checkId": 266,
+      "blitzId": "BLITZ_266",
+      "findingName": "Server Info",
+      "category": "Server Info",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 0
+    },
+    {
+      "checkId": 268,
+      "blitzId": "BLITZ_268",
+      "findingName": "AG Replica Falling Behind",
+      "category": "Availability",
+      "Roadmap": "Availability",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 270,
+      "blitzId": "BLITZ_270",
+      "findingName": "Memory Dangerous Low Recently",
+      "category": "Performance",
+      "Roadmap": "Performance",
+      "level": 2,
+      "IsBad": 1
+    },
+    {
+      "checkId": 271,
+      "blitzId": "BLITZ_271",
+      "findingName": "TempDB Governor Config Problem",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 272,
+      "blitzId": "BLITZ_272",
+      "findingName": "Optimized Locking Not Fully Set Up",
+      "category": "Performance",
+      "Roadmap": "Performance",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 999,
+      "blitzId": "BLITZ_999",
+      "findingName": "Third-Party Backup Tool Detected, Native Backup History Missing",
+      "category": "Reliability",
+      "Roadmap": "Data Protection & Backup",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1001,
+      "blitzId": "BLITZ_1001",
+      "findingName": "Non-Default Config: Access Check Cache Bucket Count",
+      "category": "Configuration",
+      "Roadmap": "Server Configuration",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1002,
+      "blitzId": "BLITZ_1002",
+      "findingName": "Non-Default Config: Access Check Cache Quota",
+      "category": "Configuration",
+      "Roadmap": "Server Configuration",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1003,
+      "blitzId": "BLITZ_1003",
+      "findingName": "Non-Default Config: Ad Hoc Distributed Queries Enabled",
+      "category": "Configuration",
+      "Roadmap": "Security & Compliance",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1004,
+      "blitzId": "BLITZ_1004",
+      "findingName": "Non-Default Config: CPU Affinity I/O Mask Set",
+      "category": "Configuration",
+      "Roadmap": "Server Configuration",
+      "level": 5,
+      "IsBad": 1
+    },
+    {
+      "checkId": 1005,
+      "blitzId": "BLITZ_1005",
+      "findingName": "Non-Default Config: CPU Affinity Mask Set",
+      "category": "Configuration",
+      "Roadmap": "Server Configuration",
+      "level": 5,
+      "IsBad": 1
+    },
+    {
+      "checkId": 1007,
+      "blitzId": "BLITZ_1007",
+      "findingName": "Non-Default Config: Allow Updates (Deprecated)",
+      "category": "Configuration",
+      "Roadmap": "Server Configuration",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1008,
+      "blitzId": "BLITZ_1008",
+      "findingName": "Non-Default Config: AWE Enabled (32-bit Legacy)",
+      "category": "Configuration",
+      "Roadmap": "Server Configuration",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1009,
+      "blitzId": "BLITZ_1009",
+      "findingName": "Non-Default Config: Blocked Process Threshold Set",
+      "category": "Configuration",
+      "Roadmap": "Monitoring & Observability",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1010,
+      "blitzId": "BLITZ_1010",
+      "findingName": "Non-Default Config: C2 Audit Mode Enabled",
+      "category": "Configuration",
+      "Roadmap": "Security & Compliance",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1011,
+      "blitzId": "BLITZ_1011",
+      "findingName": "Non-Default Config: CLR Enabled",
+      "category": "Configuration",
+      "Roadmap": "Security & Compliance",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1012,
+      "blitzId": "BLITZ_1012",
+      "findingName": "Non-Default Config: Cost Threshold for Parallelism Changed",
+      "category": "Configuration",
+      "Roadmap": "Performance & Capacity",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 1013,
+      "blitzId": "BLITZ_1013",
+      "findingName": "Non-Default Config: Cross DB Ownership Chaining",
+      "category": "Configuration",
+      "Roadmap": "Security & Compliance",
+      "level": 2,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1014,
+      "blitzId": "BLITZ_1014",
+      "findingName": "Non-Default Config: Cursor Threshold Changed",
+      "category": "Configuration",
+      "Roadmap": "Performance & Capacity",
+      "level": 5,
+      "IsBad": 1
+    },
+    {
+      "checkId": 1016,
+      "blitzId": "BLITZ_1016",
+      "findingName": "Non-Default Config: Default Full-Text Language",
+      "category": "Configuration",
+      "Roadmap": "Server Configuration",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1017,
+      "blitzId": "BLITZ_1017",
+      "findingName": "Non-Default Config: Default Language Changed",
+      "category": "Configuration",
+      "Roadmap": "Server Configuration",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1018,
+      "blitzId": "BLITZ_1018",
+      "findingName": "Non-Default Config: Default Trace Disabled",
+      "category": "Configuration",
+      "Roadmap": "Monitoring & Observability",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1019,
+      "blitzId": "BLITZ_1019",
+      "findingName": "Non-Default Config: Disallow Results From Triggers",
+      "category": "Configuration",
+      "Roadmap": "Server Configuration",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1020,
+      "blitzId": "BLITZ_1020",
+      "findingName": "fill factor (%) Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 5,
+      "IsBad": 1
+    },
+    {
+      "checkId": 1021,
+      "blitzId": "BLITZ_1021",
+      "findingName": "ft crawl bandwidth (max) Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1022,
+      "blitzId": "BLITZ_1022",
+      "findingName": "ft crawl bandwidth (min) Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1023,
+      "blitzId": "BLITZ_1023",
+      "findingName": "ft notify bandwidth (max) Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1024,
+      "blitzId": "BLITZ_1024",
+      "findingName": "ft notify bandwidth (min) Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1025,
+      "blitzId": "BLITZ_1025",
+      "findingName": "index create memory (KB) Changed",
+      "category": "Configuration",
+      "Roadmap": "Performance",
+      "level": 5,
+      "IsBad": 1
+    },
+    {
+      "checkId": 1026,
+      "blitzId": "BLITZ_1026",
+      "findingName": "in-doubt xact resolution Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1027,
+      "blitzId": "BLITZ_1027",
+      "findingName": "lightweight pooling Changed",
+      "category": "Configuration",
+      "Roadmap": "Performance",
+      "level": 4,
+      "IsBad": 1
+    },
+    {
+      "checkId": 1028,
+      "blitzId": "BLITZ_1028",
+      "findingName": "locks Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1029,
+      "blitzId": "BLITZ_1029",
+      "findingName": "max degree of parallelism Changed",
+      "category": "Configuration",
+      "Roadmap": "Performance",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1030,
+      "blitzId": "BLITZ_1030",
+      "findingName": "max full-text crawl range Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1031,
+      "blitzId": "BLITZ_1031",
+      "findingName": "max server memory (MB) Changed",
+      "category": "Configuration",
+      "Roadmap": "Performance",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 1032,
+      "blitzId": "BLITZ_1032",
+      "findingName": "max text repl size (B) Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1033,
+      "blitzId": "BLITZ_1033",
+      "findingName": "max worker threads Changed",
+      "category": "Configuration",
+      "Roadmap": "Performance",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1034,
+      "blitzId": "BLITZ_1034",
+      "findingName": "media retention Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1035,
+      "blitzId": "BLITZ_1035",
+      "findingName": "min memory per query (KB) Changed",
+      "category": "Configuration",
+      "Roadmap": "Performance",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1036,
+      "blitzId": "BLITZ_1036",
+      "findingName": "Non-Default Config: Min Server Memory Set",
+      "category": "Configuration",
+      "Roadmap": "Performance & Capacity",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1037,
+      "blitzId": "BLITZ_1037",
+      "findingName": "nested triggers Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1038,
+      "blitzId": "BLITZ_1038",
+      "findingName": "network packet size (B) Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1039,
+      "blitzId": "BLITZ_1039",
+      "findingName": "Ole Automation Procedures Changed",
+      "category": "Configuration",
+      "Roadmap": "Security",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1040,
+      "blitzId": "BLITZ_1040",
+      "findingName": "open objects Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1041,
+      "blitzId": "BLITZ_1041",
+      "findingName": "optimize for ad hoc workloads Changed",
+      "category": "Performance",
+      "Roadmap": "Configuration impacting Performance",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 1042,
+      "blitzId": "BLITZ_1042",
+      "findingName": "PH timeout (s) Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1043,
+      "blitzId": "BLITZ_1043",
+      "findingName": "precompute rank Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1044,
+      "blitzId": "BLITZ_1044",
+      "findingName": "priority boost Changed",
+      "category": "Configuration",
+      "Roadmap": "Performance",
+      "level": 3,
+      "IsBad": 1
+    },
+    {
+      "checkId": 1045,
+      "blitzId": "BLITZ_1045",
+      "findingName": "query governor cost limit Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1046,
+      "blitzId": "BLITZ_1046",
+      "findingName": "query wait (s) Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1047,
+      "blitzId": "BLITZ_1047",
+      "findingName": "recovery interval (min) Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1048,
+      "blitzId": "BLITZ_1048",
+      "findingName": "remote access Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1049,
+      "blitzId": "BLITZ_1049",
+      "findingName": "remote admin connections Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1050,
+      "blitzId": "BLITZ_1050",
+      "findingName": "remote proc trans Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1051,
+      "blitzId": "BLITZ_1051",
+      "findingName": "remote query timeout (s) Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1052,
+      "blitzId": "BLITZ_1052",
+      "findingName": "Replication XPs Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1053,
+      "blitzId": "BLITZ_1053",
+      "findingName": "RPC parameter data validation Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1054,
+      "blitzId": "BLITZ_1054",
+      "findingName": "scan for startup procs Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1055,
+      "blitzId": "BLITZ_1055",
+      "findingName": "server trigger recursion Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1056,
+      "blitzId": "BLITZ_1056",
+      "findingName": "set working set size Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1057,
+      "blitzId": "BLITZ_1057",
+      "findingName": "show advanced options Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1058,
+      "blitzId": "BLITZ_1058",
+      "findingName": "SMO and DMO XPs Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1059,
+      "blitzId": "BLITZ_1059",
+      "findingName": "SQL Mail XPs Changed",
+      "category": "Configuration",
+      "Roadmap": "Security",
+      "level": 2,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1060,
+      "blitzId": "BLITZ_1060",
+      "findingName": "transform noise words Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 2,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1061,
+      "blitzId": "BLITZ_1061",
+      "findingName": "two digit year cutoff Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1062,
+      "blitzId": "BLITZ_1062",
+      "findingName": "user connections Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1063,
+      "blitzId": "BLITZ_1063",
+      "findingName": "user options Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1064,
+      "blitzId": "BLITZ_1064",
+      "findingName": "Web Assistant Procedures Changed",
+      "category": "Configuration",
+      "Roadmap": "Security",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1065,
+      "blitzId": "BLITZ_1065",
+      "findingName": "xp_cmdshell Changed",
+      "category": "Configuration",
+      "Roadmap": "Security",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1066,
+      "blitzId": "BLITZ_1066",
+      "findingName": "Non-Default Config: Affinity64 Mask Set",
+      "category": "Configuration",
+      "Roadmap": "Server Configuration",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1067,
+      "blitzId": "BLITZ_1067",
+      "findingName": "Non-Default Config: Affinity64 I/O Mask Set",
+      "category": "Configuration",
+      "Roadmap": "Server Configuration",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1068,
+      "blitzId": "BLITZ_1068",
+      "findingName": "Non-Default Config: Contained Database Authentication",
+      "category": "Configuration",
+      "Roadmap": "Security & Compliance",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1069,
+      "blitzId": "BLITZ_1069",
+      "findingName": "Non-Default Config: Remote Login Timeout",
+      "category": "Configuration",
+      "Roadmap": "Server Configuration",
+      "level": 5,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1070,
+      "blitzId": "BLITZ_1070",
+      "findingName": "Non-Default Config: Backup Checksum Default Enabled",
+      "category": "Configuration",
+      "Roadmap": "Data Protection & Backup",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1071,
+      "blitzId": "BLITZ_1071",
+      "findingName": "Non-Default Config: Agent XPs Changed",
+      "category": "Configuration",
+      "Roadmap": "Monitoring & Observability",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1072,
+      "blitzId": "BLITZ_1072",
+      "findingName": "Non-Default Config: Database Mail XPs Enabled",
+      "category": "Configuration",
+      "Roadmap": "Monitoring & Observability",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1073,
+      "blitzId": "BLITZ_1073",
+      "findingName": "Backup Compression Disabled",
+      "category": "Reliability",
+      "Roadmap": "Data Protection & Backup",
+      "level": 2,
+      "IsBad": 1
+    },
+    {
+      "checkId": 1074,
+      "blitzId": "BLITZ_1074",
+      "findingName": "Non-Default Config: Common Criteria Compliance Enabled",
+      "category": "Configuration",
+      "Roadmap": "Security & Compliance",
+      "level": 4,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1075,
+      "blitzId": "BLITZ_1075",
+      "findingName": "Non-Default Config: EKM Provider Enabled",
+      "category": "Configuration",
+      "Roadmap": "Security & Compliance",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 1076,
+      "blitzId": "BLITZ_1076",
+      "findingName": "filestream access level Changed",
+      "category": "Configuration",
+      "Roadmap": "Configuration",
+      "level": 3,
+      "IsBad": 0
+    },
+    {
+      "checkId": 2301,
+      "blitzId": "BLITZ_2301",
+      "findingName": "Invalid login defined with Windows Authentication",
+      "category": "Security",
+      "Roadmap": "Configuration",
+      "level": 4,
+      "IsBad": 1
+    }
+  ]
+}

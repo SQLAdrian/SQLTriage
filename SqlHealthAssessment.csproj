@@ -274,8 +274,8 @@
     <RemoveDir Directories="@(LanguageFolders)" ContinueOnError="true" />
   </Target>
 
-  <!-- Increment build number on Release builds only -->
-  <Target Name="IncrementBuildNumber" BeforeTargets="BeforeBuild" Condition="'$(Configuration)' == 'Release'">
+  <!-- Increment build number on every build -->
+  <Target Name="IncrementBuildNumber" BeforeTargets="BeforeBuild">
     <Exec Command="powershell -ExecutionPolicy Bypass -File increment-build.ps1" />
   </Target>
 
@@ -283,6 +283,20 @@
   <Target Name="UpdatePerformanceStudio" BeforeTargets="BeforeBuild" Condition="'$(Configuration)' == 'Release'">
     <Exec Command="git submodule update --remote lib/PerformanceStudio" ContinueOnError="true" />
     <Message Importance="high" Text="PerformanceStudio submodule updated to latest" />
+  </Target>
+
+  <!-- Stamp exe file version from Config\version.json on every build -->
+  <Target Name="StampVersionFromJson" AfterTargets="IncrementBuildNumber">
+    <PropertyGroup>
+      <VersionJson>$([System.IO.File]::ReadAllText('Config\version.json'))</VersionJson>
+      <VersionNumber>$([System.Text.RegularExpressions.Regex]::Match($(VersionJson), '"version"\s*:\s*"([^"]+)"').Groups[1].Value)</VersionNumber>
+      <BuildNumber>$([System.Text.RegularExpressions.Regex]::Match($(VersionJson), '"buildNumber"\s*:\s*(\d+)').Groups[1].Value)</BuildNumber>
+      <Version>$(VersionNumber).$(BuildNumber)</Version>
+      <AssemblyVersion>$(VersionNumber).$(BuildNumber)</AssemblyVersion>
+      <FileVersion>$(VersionNumber).$(BuildNumber)</FileVersion>
+      <InformationalVersion>v$(VersionNumber) build $(BuildNumber)</InformationalVersion>
+    </PropertyGroup>
+    <Message Importance="high" Text="Version stamped: $(FileVersion)" />
   </Target>
 
   <!-- Create release ZIP after publish -->

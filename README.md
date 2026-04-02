@@ -5,7 +5,7 @@
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078d4.svg)](https://github.com/SQLAdrian/SqlHealthAssessment/releases)
 [![SQL Server 2016+](https://img.shields.io/badge/SQL%20Server-2016%2B-red.svg)](https://www.microsoft.com/en-us/sql-server)
 
-> Free, open-source SQL Server monitoring, health assessment, and performance analysis tool for Windows DBAs.
+> Free, open-source SQL Server audit, health assessment, and performance analysis tool for Windows DBAs. v0.82.0
 > A lightweight alternative to expensive commercial SQL monitoring tools like SolarWinds DPA, Redgate SQL Monitor, SentryOne, and Idera SQL Diagnostic Manager.
 
 **SQL Health Assessment** is a self-contained Windows desktop application that monitors multiple SQL Server instances in real time. It provides live dashboards, health checks, blocking chain analysis, interactive query execution plan viewing, wait-event statistics, vulnerability assessments, and comprehensive audit reports — all from a single executable with no agent installation required on your SQL Servers.
@@ -45,13 +45,14 @@ Built on the battle-tested [SQLWATCH](https://github.com/marcingminski/sqlwatch)
 - **Quick Check** (`Ctrl+Q`) — instant assessment: CPU, memory, blocking, missing/unused indexes
 - **Full Audit** (`Ctrl+4`) — deep-dive covering configuration, security, backups, fragmentation
 - **Vulnerability Assessment** — SQL Server security assessment with exportable results
+- **Diagnostics Maturity Roadmap** — maps sp_triage and sp_Blitz audit output to a 5-level maturity framework (Foundation → Hardened → Performant → Observable → Optimised); multi-server, multi-file, PDF export
 - **Interactive Execution Plan Viewer (V2)** — graphical plan with hover detail pane (object path, cost breakdown, predicate, copy button); root operator always shows 100%; pane fades after 1.5 s with hover-cancel
 - **Long Query Detection** — surface queries exceeding configurable duration thresholds
 - **Wait Statistics** — categorised wait event history and trends, including locking-waits %
 
 ### Alerting & Notifications
 - **Timer-based evaluation** — 30-second alert cycle with configurable severity thresholds and cooldowns
-- **6 notification channels** — Email (SMTP), Microsoft Teams, Slack, generic Webhooks, PagerDuty, ServiceNow
+- **7 notification channels** — Email (SMTP), Microsoft Teams, Slack, generic Webhooks, PagerDuty, ServiceNow, WhatsApp
 - **Alert history** — SQLite-backed alert log with acknowledgement and auto-resolution
 - **Scheduled tasks** — automated task engine with CSV export, Azure Blob upload, and email delivery
 
@@ -179,6 +180,7 @@ Or deploy `Dacpacs\SQLWATCH.dacpac` via SSMS (right-click Databases → Deploy D
 | Vulnerability Assessment | SQL Server security assessment results | — |
 | Checks | Automated health check results | — |
 | Quick Check | Instant health snapshot | `Ctrl+Q` |
+| Diagnostics Maturity Roadmap | Multi-server maturity scoring from sp_triage / sp_Blitz output, 5-level framework, PDF export | — |
 
 Press `?` at any time to see the full keyboard shortcut reference.
 
