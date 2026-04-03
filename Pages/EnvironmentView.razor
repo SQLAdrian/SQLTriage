@@ -25,10 +25,13 @@
             @if (!_runAllServers)
             {
                 <select @bind="_selectedConnectionId" class="server-select" style="max-width:320px;">
-                    <option value="">-- Select connection --</option>
-                    @foreach (var conn in _connections)
+                    <option value="">-- Select server --</option>
+                    @foreach (var conn in _enabledConnections)
                     {
-                        <option value="@conn.Id">@conn.ServerNames (@conn.AuthenticationDisplay)</option>
+                        @foreach (var srv in conn.GetServerList())
+                        {
+                            <option value="@(conn.Id + "|" + srv)">@srv</option>
+                        }
                     }
                 </select>
             }
@@ -257,10 +260,14 @@
             }
             else
             {
-                var conn = _connections.FirstOrDefault(c => c.Id == _selectedConnectionId);
+                var parts = _selectedConnectionId.Split('|', 2);
+                var conn  = _connections.FirstOrDefault(c => c.Id == parts[0]);
                 if (conn != null)
-                    foreach (var s in conn.GetServerList())
-                        targets.Add((conn, s));
+                {
+                    var srv = parts.Length > 1 ? parts[1] : conn.GetServerList().FirstOrDefault();
+                    if (!string.IsNullOrEmpty(srv))
+                        targets.Add((conn, srv));
+                }
             }
 
             if (targets.Count == 0) { _errorMessage = "No servers selected."; return; }
@@ -554,6 +561,6 @@ FROM (
     LEFT OUTER JOIN [sys].dm_exec_requests R WITH(NOLOCK) ON R.session_id = T.session_id
     LEFT OUTER JOIN [sys].dm_server_services AS [services] WITH(NOLOCK) ON T.original_login_name = [services].service_account
     WHERE T.client_version > 0 AND [services].service_account IS NULL
-    AND (T.nt_user_name <> 'SQLTELEMETRY' AND client_net_address = '<local machine>')
+    --AND (T.nt_user_name <> 'SQLTELEMETRY' AND client_net_address = '<local machine>')
 ) C1";
 }

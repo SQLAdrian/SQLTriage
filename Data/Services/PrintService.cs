@@ -45,7 +45,9 @@ namespace SqlHealthAssessment.Data.Services
         public async Task<(bool Success, string? Path, string? Error)> PrintToPdfAsync(
             string fileName = "Report.pdf",
             bool printBackgrounds = false,
-            CoreWebView2PrintOrientation orientation = CoreWebView2PrintOrientation.Landscape)
+            CoreWebView2PrintOrientation orientation = CoreWebView2PrintOrientation.Landscape,
+            string? headerTitle = null,
+            string? footerUri = null)
         {
             if (_webView == null)
             {
@@ -69,12 +71,14 @@ namespace SqlHealthAssessment.Data.Services
                     var settings = _webView.Environment.CreatePrintSettings();
                     settings.Orientation            = orientation;
                     settings.ShouldPrintBackgrounds = printBackgrounds;
-                    // Margins in inches — CSS @page margins take precedence for named pages;
-                    // these serve as the fallback and keep margins consistently narrow.
+                    settings.ShouldPrintHeaderAndFooter = headerTitle != null || footerUri != null;
+                    if (headerTitle != null) settings.HeaderTitle = headerTitle;
+                    if (footerUri  != null) settings.FooterUri   = footerUri;
+                    // 5 mm margins all round (~0.2 in); bottom slightly taller for DOM footer bar
                     settings.MarginTop    = 0.2;
-                    settings.MarginBottom = 0.2;
-                    settings.MarginLeft   = 0.3;
-                    settings.MarginRight  = 0.3;
+                    settings.MarginBottom = 0.25;
+                    settings.MarginLeft   = 0.2;
+                    settings.MarginRight  = 0.2;
 
                     await _webView.PrintToPdfAsync(filePath, settings);
                     tcs.TrySetResult(true);

@@ -69,6 +69,68 @@ namespace SqlHealthAssessment.Data
             // ── Experimental Mode ──
             /// <summary>When true, shows experimental/preview features that are not yet production-ready.</summary>
             public bool ExperimentalMode { get; set; } = false;
+
+            // ── Vulnerability Assessment Scheduled PDF ──
+            public bool     VaScheduledPdfEnabled    { get; set; } = false;
+            public string   VaScheduledPdfType       { get; set; } = "Weekly";
+            public string   VaScheduledPdfTime       { get; set; } = "07:30";
+            public int      VaScheduledPdfDayOfWeek  { get; set; } = 1;
+            public int      VaScheduledPdfDayOfMonth { get; set; } = 1;
+            public DateTime VaScheduledPdfLastRun    { get; set; } = DateTime.MinValue;
+
+            // ── Roadmap Scheduled PDF ──
+            /// <summary>When true, the Diagnostics Roadmap page auto-exports a PDF on the configured schedule.</summary>
+            public bool RoadmapScheduledPdfEnabled { get; set; } = false;
+            /// <summary>Schedule type: "Daily", "Weekly", "Monthly".</summary>
+            public string RoadmapScheduledPdfType { get; set; } = "Weekly";
+            /// <summary>Time of day in HH:mm for the scheduled export.</summary>
+            public string RoadmapScheduledPdfTime { get; set; } = "07:00";
+            /// <summary>Day of week (0=Sun…6=Sat) for Weekly schedule.</summary>
+            public int RoadmapScheduledPdfDayOfWeek { get; set; } = 1; // Monday
+            /// <summary>Day of month (1-28) for Monthly schedule.</summary>
+            public int RoadmapScheduledPdfDayOfMonth { get; set; } = 1;
+            /// <summary>When true, exports one PDF per domain instead of a combined PDF.</summary>
+            public bool RoadmapScheduledPdfSplitByDomain { get; set; } = false;
+            /// <summary>Last time the scheduled roadmap PDF was exported (UTC).</summary>
+            public DateTime RoadmapScheduledPdfLastRun { get; set; } = DateTime.MinValue;
+
+            /// <summary>Immutable snapshot of VA schedule settings for thread-safe reads.</summary>
+            public record VaScheduleSnapshot(
+                bool     Enabled,
+                string   Type,
+                string   Time,
+                int      DayOfWeek,
+                int      DayOfMonth,
+                DateTime LastRun)
+            {
+                public VaScheduleSnapshot(UserSettings s) : this(
+                    s.VaScheduledPdfEnabled,
+                    s.VaScheduledPdfType,
+                    s.VaScheduledPdfTime,
+                    s.VaScheduledPdfDayOfWeek,
+                    s.VaScheduledPdfDayOfMonth,
+                    s.VaScheduledPdfLastRun) { }
+            }
+
+            /// <summary>Immutable snapshot of roadmap schedule settings for thread-safe reads.</summary>
+            public record RoadmapScheduleSnapshot(
+                bool    Enabled,
+                string  Type,
+                string  Time,
+                int     DayOfWeek,
+                int     DayOfMonth,
+                bool    SplitByDomain,
+                DateTime LastRun)
+            {
+                public RoadmapScheduleSnapshot(UserSettings s) : this(
+                    s.RoadmapScheduledPdfEnabled,
+                    s.RoadmapScheduledPdfType,
+                    s.RoadmapScheduledPdfTime,
+                    s.RoadmapScheduledPdfDayOfWeek,
+                    s.RoadmapScheduledPdfDayOfMonth,
+                    s.RoadmapScheduledPdfSplitByDomain,
+                    s.RoadmapScheduledPdfLastRun) { }
+            }
         }
 
         private UserSettings LoadSettings() => ConfigFileHelper.Load<UserSettings>(_settingsFilePath);
@@ -246,6 +308,57 @@ namespace SqlHealthAssessment.Data
                 _settings.AutoExportVulnerabilityAssessmentCsv = vaCsv;
                 _settings.AutoExportVulnerabilityAssessmentPdf = vaPdf;
             }
+            SaveSettings();
+        }
+
+        // ── VA Scheduled PDF ──
+        public UserSettings.VaScheduleSnapshot GetVaSchedule()
+        {
+            lock (_lock) return new UserSettings.VaScheduleSnapshot(_settings);
+        }
+
+        public void SaveVaSchedule(bool enabled, string type, string time, int dayOfWeek, int dayOfMonth)
+        {
+            lock (_lock)
+            {
+                _settings.VaScheduledPdfEnabled    = enabled;
+                _settings.VaScheduledPdfType       = type;
+                _settings.VaScheduledPdfTime       = time;
+                _settings.VaScheduledPdfDayOfWeek  = dayOfWeek;
+                _settings.VaScheduledPdfDayOfMonth = dayOfMonth;
+            }
+            SaveSettings();
+        }
+
+        public void UpdateVaScheduleLastRun(DateTime utcNow)
+        {
+            lock (_lock) _settings.VaScheduledPdfLastRun = utcNow;
+            SaveSettings();
+        }
+
+        // ── Roadmap Scheduled PDF ──
+        public UserSettings.RoadmapScheduleSnapshot GetRoadmapSchedule()
+        {
+            lock (_lock) return new UserSettings.RoadmapScheduleSnapshot(_settings);
+        }
+
+        public void SaveRoadmapSchedule(bool enabled, string type, string time, int dayOfWeek, int dayOfMonth, bool splitByDomain)
+        {
+            lock (_lock)
+            {
+                _settings.RoadmapScheduledPdfEnabled     = enabled;
+                _settings.RoadmapScheduledPdfType        = type;
+                _settings.RoadmapScheduledPdfTime        = time;
+                _settings.RoadmapScheduledPdfDayOfWeek   = dayOfWeek;
+                _settings.RoadmapScheduledPdfDayOfMonth  = dayOfMonth;
+                _settings.RoadmapScheduledPdfSplitByDomain = splitByDomain;
+            }
+            SaveSettings();
+        }
+
+        public void UpdateRoadmapScheduleLastRun(DateTime utcNow)
+        {
+            lock (_lock) _settings.RoadmapScheduledPdfLastRun = utcNow;
             SaveSettings();
         }
     }

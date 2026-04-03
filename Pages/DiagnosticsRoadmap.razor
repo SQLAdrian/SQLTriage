@@ -1,5 +1,6 @@
 <!--/* In the name of God, the Merciful, the Compassionate */-->
 @page "/diagnostics-roadmap"
+@implements IDisposable
 
 @using SqlHealthAssessment.Data
 @using SqlHealthAssessment.Data.Models
@@ -11,12 +12,66 @@
 @inject PrintService PrintSvc
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject UserSettingsService UserSettings
 
 @* ══════════════════════════════════════════════════════
    Print / PDF styles — enterprise report look
    Toasts are suppressed during print via .printing-active
    ══════════════════════════════════════════════════════ *@
 <style>
+    /* Slightly smaller font during print to fit more content per page */
+    body.printing-active #roadmap-print-region {
+        font-size: 11px;
+    }
+    body.printing-active #roadmap-print-region .print-cat-card {
+        font-size: 10px;
+        padding: 6px 8px !important;
+    }
+    body.printing-active #roadmap-print-region .print-level-header {
+        font-size: 12px;
+        padding: 6px 10px !important;
+    }
+    /* Tighten level card margins, grid gaps, and detail padding */
+    body.printing-active #roadmap-print-region .print-level-card {
+        margin-bottom: 6px !important;
+    }
+    body.printing-active #roadmap-print-region .level-detail {
+        padding: 6px 10px !important;
+    }
+    body.printing-active #roadmap-print-region .print-cat-grid {
+        gap: 6px !important;
+    }
+    /* Tighten the failed/passed divider and progress bar spacing */
+    body.printing-active #roadmap-print-region .print-passed-section {
+        margin-top: 2px !important;
+        padding-top: 2px !important;
+        max-height: none !important;
+        overflow-y: visible !important;
+    }
+    /* Remove overflow clipping on failed checks list during print */
+    body.printing-active #roadmap-print-region .print-cat-card > div[style*="max-height:80px"] {
+        max-height: none !important;
+        overflow-y: visible !important;
+    }
+
+    /* Suppress the global MainLayout print-header/footer — roadmap has its own DOM footer */
+    body.printing-active .print-header,
+    body.printing-active .print-footer,
+    body.printing-active .roadmap-toolbar {
+        display: none !important;
+    }
+    /* Remove the body/layout padding that media-print reserves for the global header/footer */
+    body.printing-active,
+    body.printing-active .app-layout,
+    body.printing-active .app-container,
+    body.printing-active .app-content,
+    body.printing-active .settings-page {
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+    }
+
     /* Hide toast container while printing */
     body.printing-active .rz-notification,
     body.printing-active [class*="toast"],
@@ -24,84 +79,6 @@
     body.printing-active .mud-snackbar-container,
     body.printing-active .notification-container {
         display: none !important;
-    }
-
-    @@media print {
-        /* Hide everything except the roadmap report */
-        body > * { display: none !important; }
-        body > app,
-        body > app > * { display: none !important; }
-        #roadmap-print-region { display: block !important; }
-
-        /* Toast suppression in print */
-        .rz-notification,
-        [class*="toast"], [class*="Toast"],
-        .mud-snackbar-container,
-        .notification-container { display: none !important; }
-
-        @@page {
-            size: A4 portrait;
-            margin: 15mm 12mm 18mm 12mm;
-        }
-        @@page :first {
-            margin-top: 0;
-        }
-
-
-        /* Section headers */
-        .print-section-header {
-            background: #0a1628 !important;
-            color: #fff !important;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-            padding: 4mm 6mm;
-            margin: 6mm 0 3mm 0;
-            page-break-after: avoid;
-        }
-
-        /* Cards */
-        .print-level-card {
-            border: 1pt solid #ccc;
-            border-radius: 3pt;
-            margin-bottom: 4mm;
-            page-break-inside: avoid;
-        }
-        .print-level-header {
-            padding: 3mm 5mm;
-            border-bottom: 1pt solid #eee;
-            display: flex;
-            align-items: center;
-            gap: 8pt;
-        }
-        .print-cat-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 3mm;
-            padding: 3mm 5mm;
-        }
-        .print-cat-card {
-            border: 0.5pt solid #ddd;
-            border-radius: 2pt;
-            padding: 2mm 3mm;
-            font-size: 8pt;
-        }
-
-        /* Summary table */
-        .print-summary-table { width: 100%; border-collapse: collapse; font-size: 9pt; }
-        .print-summary-table th { background: #0a1628 !important; color: #fff !important; padding: 2mm 3mm; text-align: left; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        .print-summary-table td { padding: 2mm 3mm; border-bottom: 0.5pt solid #eee; }
-        .print-summary-table tr:nth-child(even) td { background: #f8f9fa !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-
-
-        /* Colour coding */
-        .badge-pass  { background: #e8f5e9 !important; color: #2e7d32 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        .badge-warn  { background: #fff8e1 !important; color: #f57f17 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        .badge-fail  { background: #ffebee !important; color: #c62828 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        .level-l1    { color: #c62828 !important; }
-        .level-l2    { color: #e65100 !important; }
-        .level-l3    { color: #f57f17 !important; }
-        .level-l4    { color: #2e7d32 !important; }
-        .level-l5    { color: #4527a0 !important; }
     }
 
     @@media screen {
@@ -112,47 +89,172 @@
 <div class="settings-page" style="max-width: 1400px;">
 
     @* ── Toolbar ── *@
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:8px;">
+    <div class="roadmap-toolbar" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:8px;">
         <h2 style="margin:0;">Diagnostics Maturity Roadmap</h2>
         <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
             @if (_availableServers.Count > 0)
             {
-                <div style="background:var(--bg-primary); border:1px solid var(--border); border-radius:4px; padding:4px 8px; min-width:260px; max-height:160px; overflow-y:auto; font-size:12px;">
-                    @foreach (var s in _availableServers)
+                <div style="background:var(--bg-primary); border:1px solid var(--border); border-radius:4px; padding:4px 8px; min-width:280px; max-height:200px; overflow-y:auto; font-size:12px;">
+                    @foreach (var domainGroup in _domainGroups)
                     {
-                        var srv = s;
-                        <label style="display:flex; align-items:center; gap:6px; padding:3px 2px; cursor:pointer; white-space:nowrap; color:var(--text-primary);">
-                            <input type="checkbox" checked="@srv.IsSelected"
-                                   @onchange="async e => await OnServerToggled(srv, (bool)(e.Value ?? false))" />
-                            <span>@srv.SqlInstance</span>
-                            <span style="color:var(--text-muted); font-size:10px;">@(srv.FileType == AuditFileType.SpBlitz ? "sp_Blitz" : "sp_triage") @srv.AuditDate.ToString("yyyy-MM-dd")</span>
-                        </label>
+                        var dg = domainGroup;
+                        var preferredInDomain = PreferredInDomain(dg).ToList();
+                        bool hasDomain = !string.IsNullOrEmpty(dg.Key);
+
+                        @if (hasDomain)
+                        {
+                            <div style="display:flex; align-items:center; gap:6px; padding:4px 2px 2px; border-top:1px solid var(--border); margin-top:2px;">
+                                <input type="checkbox" checked="@IsDomainAllSelected(dg)"
+                                       @onchange="async e => await ToggleDomain(dg, (bool)(e.Value ?? false))" />
+                                <span style="font-weight:600; color:var(--text-secondary); font-size:11px; text-transform:uppercase; letter-spacing:.04em;">
+                                    <i class="fa-solid fa-building" style="color:var(--text-muted); margin-right:3px; font-size:10px;"></i>@dg.Key
+                                </span>
+                                <span style="color:var(--text-muted); font-size:10px;">@preferredInDomain.Count server@(preferredInDomain.Count == 1 ? "" : "s")</span>
+                            </div>
+                        }
+
+                        @foreach (var srv in _availableServers.Where(s =>
+                            string.Equals(s.Domain, dg.Key, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            var s = srv;
+                            bool isPreferred = preferredInDomain.Any(p => p.FilePath == s.FilePath);
+                            <label style="display:flex; align-items:center; gap:6px; padding:2px 2px 2px @(hasDomain ? "16px" : "2px"); cursor:pointer; white-space:nowrap; color:var(--text-primary); @(!isPreferred ? "opacity:0.6;" : "")">
+                                <input type="checkbox" checked="@s.IsSelected"
+                                       @onchange="async e => await OnServerToggled(s, (bool)(e.Value ?? false))" />
+                                <span>@s.SqlInstance</span>
+                                <span style="color:var(--text-muted); font-size:10px;">@(s.FileType == AuditFileType.SpBlitz ? "sp_Blitz" : "sp_triage") @s.AuditDate.ToString("yyyy-MM-dd")</span>
+                                @if (!isPreferred)
+                                {
+                                    <span style="color:var(--text-muted); font-size:9px;" title="A triage file is available for this server — prefer that one">alt</span>
+                                }
+                            </label>
+                        }
                     }
                 </div>
             }
+            <button class="settings-btn" title="Deselect all servers"
+                    disabled="@(!_availableServers.Any(s => s.IsSelected))"
+                    style="@(!_availableServers.Any(s => s.IsSelected) ? "opacity:0.4;cursor:not-allowed;" : "")"
+                    @onclick="async () => { foreach (var s in _availableServers) { s.IsSelected = false; s.CheckCounts.Clear(); } await RecalculateFromSelected(); }">
+                <i class="fa-solid fa-square-minus"></i> Clear
+            </button>
             <button class="settings-btn" @onclick="RefreshOutputFolder" title="Rescan output folder">
                 <i class="fa-solid fa-rotate"></i>
             </button>
             <button class="settings-btn" @onclick='() => Navigation.NavigateTo("/fullaudit")'>
                 <i class="fa-solid fa-stethoscope"></i> Run Full Audit
             </button>
-            @if (_anySelected)
+            <button class="settings-btn" @onclick="ExportCsv" title="Export failed checks to CSV"
+                    disabled="@(!_anySelected || !_maturityLevels.Any())"
+                    style="@(!_anySelected || !_maturityLevels.Any() ? "opacity:0.4;cursor:not-allowed;" : "")">
+                <i class="fa-solid fa-file-csv"></i> Export CSV
+            </button>
+            @if (_domainGroups.Count() > 1)
             {
-                <button class="settings-btn settings-btn-primary" @onclick="ExportPdf" disabled="@_exporting">
-                    @if (_exporting)
-                    {
-                        <i class="fa-solid fa-spinner fa-spin"></i>
-                        <span>Exporting…</span>
-                    }
-                    else
-                    {
-                        <i class="fa-solid fa-file-pdf"></i>
-                        <span>Export PDF</span>
-                    }
-                </button>
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);cursor:pointer;user-select:none;">
+                    <input type="checkbox" @bind="_splitByDomain" style="cursor:pointer;" />
+                    PDF per domain
+                </label>
             }
+            <button class="settings-btn settings-btn-primary" @onclick="ExportPdf"
+                    disabled="@(!_anySelected || _exporting)"
+                    style="@(!_anySelected ? "opacity:0.4;cursor:not-allowed;" : "")">
+                @if (_exporting)
+                {
+                    <i class="fa-solid fa-spinner fa-spin"></i>
+                    <span>Exporting…</span>
+                }
+                else
+                {
+                    <i class="fa-solid fa-file-pdf"></i>
+                    <span>@(_splitByDomain ? "Export PDF per Domain" : "Export PDF")</span>
+                }
+            </button>
+            <button class="settings-btn @(_scheduleEnabled ? "settings-btn-primary" : "")"
+                    title="@(_scheduleEnabled ? $"Scheduled PDF: {_scheduleType} at {_scheduleTime}" : "Configure scheduled PDF export")"
+                    @onclick="() => _showScheduleModal = true">
+                <i class="fa-solid @(_scheduleEnabled ? "fa-clock" : "fa-clock")"></i>
+                @if (_scheduleEnabled) { <span style="font-size:10px;">Scheduled</span> }
+            </button>
         </div>
     </div>
+
+    @* ── Schedule Modal ── *@
+    @if (_showScheduleModal)
+    {
+        <div style="position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:1000;display:flex;align-items:center;justify-content:center;" @onclick="() => _showScheduleModal = false">
+            <div style="background:var(--bg-primary);border:1px solid var(--border);border-radius:10px;padding:28px 32px;min-width:380px;max-width:460px;box-shadow:0 8px 40px rgba(0,0,0,0.4);" @onclick:stopPropagation>
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;border-bottom:1px solid var(--border);padding-bottom:14px;">
+                    <i class="fa-solid fa-clock" style="color:var(--primary);font-size:18px;"></i>
+                    <span style="font-size:15px;font-weight:700;color:var(--text-primary);">Scheduled PDF Export</span>
+                </div>
+
+                <label style="display:flex;align-items:center;gap:10px;margin-bottom:18px;cursor:pointer;">
+                    <input type="checkbox" @bind="_scheduleEnabled" style="width:16px;height:16px;cursor:pointer;" />
+                    <span style="font-size:13px;font-weight:600;color:var(--text-primary);">Enable scheduled export</span>
+                </label>
+
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
+                    <div>
+                        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em;">Frequency</div>
+                        <select @bind="_scheduleType" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:5px;background:var(--bg-secondary);color:var(--text-primary);font-size:12px;">
+                            <option value="Daily">Daily</option>
+                            <option value="Weekly">Weekly</option>
+                            <option value="Monthly">Monthly</option>
+                        </select>
+                    </div>
+                    <div>
+                        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em;">Time</div>
+                        <input type="time" value="@_scheduleTime" @onchange="e => _scheduleTime = e.Value?.ToString() ?? _scheduleTime"
+                               style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:5px;background:var(--bg-secondary);color:var(--text-primary);font-size:12px;" />
+                    </div>
+                </div>
+
+                @if (_scheduleType == "Weekly")
+                {
+                    <div style="margin-bottom:14px;">
+                        <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em;">Day of Week</div>
+                        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                            @foreach (var (label, val) in new[]{("Sun",0),("Mon",1),("Tue",2),("Wed",3),("Thu",4),("Fri",5),("Sat",6)})
+                            {
+                                var v = val;
+                                <button style="padding:4px 10px;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:@(_scheduleDayOfWeek==v?"var(--primary)":"var(--bg-secondary)");color:@(_scheduleDayOfWeek==v?"#fff":"var(--text-primary)");"
+                                        @onclick="() => _scheduleDayOfWeek = v">@label</button>
+                            }
+                        </div>
+                    </div>
+                }
+                @if (_scheduleType == "Monthly")
+                {
+                    <div style="margin-bottom:14px;">
+                        <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em;">Day of Month</div>
+                        <input type="number" min="1" max="28" @bind="_scheduleDayOfMonth"
+                               style="width:80px;padding:6px 8px;border:1px solid var(--border);border-radius:5px;background:var(--bg-secondary);color:var(--text-primary);font-size:12px;" />
+                    </div>
+                }
+
+                <label style="display:flex;align-items:center;gap:8px;margin-bottom:20px;cursor:pointer;">
+                    <input type="checkbox" @bind="_scheduleSplitByDomain" style="cursor:pointer;" />
+                    <span style="font-size:12px;color:var(--text-secondary);">Export one PDF per domain</span>
+                </label>
+
+                @if (_scheduleLastRun > DateTime.MinValue)
+                {
+                    <div style="font-size:11px;color:var(--text-muted);margin-bottom:16px;">
+                        <i class="fa-solid fa-check-circle" style="color:var(--green);"></i>
+                        Last run: @_scheduleLastRun.ToLocalTime().ToString("dd MMM yyyy HH:mm")
+                    </div>
+                }
+
+                <div style="display:flex;gap:10px;justify-content:flex-end;">
+                    <button class="settings-btn" @onclick="() => _showScheduleModal = false">Cancel</button>
+                    <button class="settings-btn settings-btn-primary" @onclick="SaveSchedule">
+                        <i class="fa-solid fa-floppy-disk"></i> Save Schedule
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
 
     @* ── Loading / empty states ── *@
     @if (_loading)
@@ -192,6 +294,45 @@
     {
         <div id="roadmap-print-region">
 
+            @* ── PDF Cover Page (print-only) ── *@
+            <div class="pdf-cover-page" style="display:none; page-break-after:always; min-height:90vh; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:60px 40px;">
+                <div style="margin-bottom:32px;">
+                    <i class="fa-solid fa-heart-pulse" style="font-size:64px; color:#e2583e;"></i>
+                </div>
+                <div style="font-size:11px; font-weight:700; letter-spacing:0.15em; text-transform:uppercase; color:#888; margin-bottom:8px;">SQL Health Assessment</div>
+                <div style="font-size:32px; font-weight:800; color:#222; margin-bottom:8px; line-height:1.2;">Diagnostics Maturity Roadmap</div>
+                @{ var coverDomains = _availableServers.Where(s => s.IsSelected).Select(s => s.Domain).Where(d => !string.IsNullOrEmpty(d)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(d => d); }
+                <div style="font-size:15px; color:#555; margin-bottom:40px;">@string.Join(" · ", coverDomains)</div>
+
+                @* Big maturity badge *@
+                <div style="width:140px; height:140px; border-radius:50%; display:flex; flex-direction:column; align-items:center; justify-content:center; border:5px solid @GetMaturityColor(_overallLevel); margin:0 auto 32px; background:@(GetMaturityColor(_overallLevel))15;">
+                    <div style="font-size:48px; font-weight:800; color:@GetMaturityColor(_overallLevel); line-height:1;">L@(_overallLevel)</div>
+                    <div style="font-size:12px; font-weight:600; color:@GetMaturityColor(_overallLevel);">@GetMaturityName(_overallLevel)</div>
+                </div>
+
+                @* Level progress dots *@
+                <div style="display:flex; gap:24px; align-items:center; justify-content:center; margin-bottom:40px;">
+                    @for (int ci = 1; ci <= 5; ci++)
+                    {
+                        var lv = ci;
+                        <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
+                            <i class="fa-solid @(lv <= _overallLevel ? "fa-circle-check" : "fa-circle")"
+                               style="font-size:22px; color:@(lv <= _overallLevel ? GetMaturityColor(lv) : "#ddd");"></i>
+                            <span style="font-size:9px; color:@(lv <= _overallLevel ? "#444" : "#bbb"); font-weight:600; text-transform:uppercase; letter-spacing:0.04em;">@GetMaturityName(lv)</span>
+                        </div>
+                    }
+                </div>
+
+                @* Stats row *@
+                <div style="display:flex; gap:48px; justify-content:center; margin-bottom:48px;">
+                    <div><div style="font-size:28px; font-weight:700; color:#222;">@(_overallScore.ToString("N0"))%</div><div style="font-size:11px; color:#888; text-transform:uppercase; letter-spacing:0.06em;">Overall Score</div></div>
+                    <div><div style="font-size:28px; font-weight:700; color:#222;">@_availableServers.Count(s => s.IsSelected)</div><div style="font-size:11px; color:#888; text-transform:uppercase; letter-spacing:0.06em;">Servers</div></div>
+                    <div><div style="font-size:28px; font-weight:700; color:#222;">@_passedFindings / @_totalFindings</div><div style="font-size:11px; color:#888; text-transform:uppercase; letter-spacing:0.06em;">Checks Passed</div></div>
+                    <div><div style="font-size:28px; font-weight:700; color:@(_totalItemsImpacted > 0 ? "#e2583e" : "#22c55e");">@_totalItemsImpacted</div><div style="font-size:11px; color:#888; text-transform:uppercase; letter-spacing:0.06em;">Items Impacted</div></div>
+                </div>
+
+                <div style="margin-top:48px; font-size:10px; color:#aaa;">Generated @DateTime.Now.ToString("dd MMM yyyy HH:mm") · Compliments of sqldba.org</div>
+            </div>
 
             @* ── Overall Maturity Score ── *@
             <div style="background:var(--bg-secondary); border:1px solid var(--border); border-radius:8px; padding:20px; margin-bottom:20px;">
@@ -277,7 +418,7 @@
                 var isCurrentLevel = level.Level == _overallLevel;
                 var isCompleted    = level.Level < _overallLevel;
 
-                <div class="print-level-card" style="border:1px solid @(isCurrentLevel ? GetMaturityColor(level.Level) : "var(--border)"); border-radius:8px; margin-bottom:12px; overflow:hidden;
+                <div class="print-level-card level-section" style="border:1px solid @(isCurrentLevel ? GetMaturityColor(level.Level) : "var(--border)"); border-radius:8px; margin-bottom:12px; overflow:hidden;
                             @(isCurrentLevel ? $"box-shadow: 0 0 0 1px {GetMaturityColor(level.Level)}20;" : "")">
 
                     @* Level Header *@
@@ -313,10 +454,8 @@
                            style="color:var(--text-muted);"></i>
                     </div>
 
-                    @* Level Details (screen: collapsible; print: always shown) *@
-                    @if (_expandedLevels.Contains(level.Level))
-                    {
-                        <div style="padding:12px 16px; border-top:1px solid var(--border);">
+                    @* Level Details — always in DOM, hidden via CSS so JS can show instantly for print *@
+                    <div class="level-detail" style="@(_expandedLevels.Contains(level.Level) ? "" : "display:none;")padding:12px 16px; border-top:1px solid var(--border);">
                             <div class="print-cat-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(260px,1fr)); gap:10px;">
                                 @foreach (var cat in level.Categories)
                                 {
@@ -337,7 +476,7 @@
                                         @if (cat.FailedChecks.Count > 0)
                                         {
                                             <div style="font-size:10px; color:var(--text-muted); max-height:80px; overflow-y:auto;">
-                                                @foreach (var (name, tag) in cat.FailedChecks.Take(5))
+                                                @foreach (var (_, name, tag) in cat.FailedChecks.Take(5))
                                                 {
                                                     <div style="padding:1px 0; display:flex; gap:4px; align-items:center;">
                                                         <i class="fa-solid fa-xmark" style="color:var(--red); font-size:9px; flex-shrink:0;"></i>
@@ -367,7 +506,7 @@
                                         @* DEBUG: passed checks from audit file *@
                                         @if (cat.PassedChecks.Count > 0)
                                         {
-                                            <div style="font-size:10px; margin-top:4px; border-top:1px dashed var(--border); padding-top:4px; max-height:100px; overflow-y:auto;">
+                                            <div class="print-passed-section" style="font-size:10px; margin-top:4px; border-top:1px dashed var(--border); padding-top:4px; max-height:100px; overflow-y:auto;">
                                                 @foreach (var (name, tag) in cat.PassedChecks)
                                                 {
                                                     <div style="padding:1px 0; display:flex; gap:4px; align-items:center;">
@@ -400,8 +539,7 @@
                                     }
                                 </div>
                             }
-                        </div>
-                    }
+                    </div>
                 </div>
             }
 
@@ -414,17 +552,265 @@
                 </div>
             </div>
 
+        @* ── Per-server level summary (only when >1 server selected) ── *@
+        @if (_serverLevels.Count > 1)
+        {
+            var useTable = _serverLevels.Count > 12;
+            <div class="server-comparison-section" style="margin-top:16px; background:var(--bg-secondary); border:1px solid var(--border); border-radius:8px; overflow:hidden;">
+                <div style="padding:10px 16px; border-bottom:1px solid var(--border); font-size:12px; font-weight:600; color:var(--text-secondary);">
+                    <i class="fa-solid fa-server" style="margin-right:6px; color:var(--text-muted);"></i>Server Maturity Comparison
+                    <span style="font-weight:400; color:var(--text-muted); margin-left:6px;">@_serverLevels.Count servers</span>
+                </div>
+                @if (useTable)
+                {
+                    <div class="server-comparison-scroll" style="max-height:320px; overflow-y:auto; border-top:1px solid var(--border);">
+                        <table style="width:100%; border-collapse:collapse; font-size:12px;">
+                            <thead style="background:var(--bg-tertiary); position:sticky; top:0; z-index:1;">
+                                <tr>
+                                    <th style="padding:6px 14px; text-align:left; font-weight:600; color:var(--text-secondary); border-bottom:1px solid var(--border);">Server</th>
+                                    <th style="padding:6px 10px; text-align:center; font-weight:600; color:var(--text-secondary); border-bottom:1px solid var(--border); width:60px;">Level</th>
+                                    <th style="padding:6px 14px; text-align:left; font-weight:600; color:var(--text-secondary); border-bottom:1px solid var(--border);">Stage</th>
+                                    <th style="padding:6px 14px; text-align:right; font-weight:600; color:var(--text-secondary); border-bottom:1px solid var(--border); width:60px;">Score</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var kvp in _serverLevels.OrderBy(x => x.Key))
+                                {
+                                    var srvInstance = kvp.Key;
+                                    var srvLvl      = kvp.Value.Level;
+                                    var srvScore    = kvp.Value.Score;
+                                    <tr style="border-bottom:1px solid var(--border);">
+                                        <td style="padding:5px 14px; color:var(--text-primary);">@srvInstance</td>
+                                        <td style="padding:5px 10px; text-align:center;">
+                                            <span style="font-weight:700; color:@(GetMaturityColor(srvLvl));">L@(srvLvl)</span>
+                                        </td>
+                                        <td style="padding:5px 14px; color:var(--text-secondary);">@(GetMaturityName(srvLvl))</td>
+                                        <td style="padding:5px 14px; text-align:right; color:var(--text-muted);">@(srvScore.ToString("N0"))%</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                else
+                {
+                    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(200px,1fr)); gap:1px; background:var(--border);">
+                        @foreach (var kvp in _serverLevels.OrderBy(x => x.Key))
+                        {
+                            var srvInstance = kvp.Key;
+                            var srvLvl      = kvp.Value.Level;
+                            var srvScore    = kvp.Value.Score;
+                            <div style="background:var(--bg-primary); padding:10px 14px; display:flex; align-items:center; gap:10px;">
+                                <div style="width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+                                            background:@(GetMaturityColor(srvLvl))20; color:@GetMaturityColor(srvLvl); font-weight:700; font-size:13px; flex-shrink:0;">
+                                    L@(srvLvl)
+                                </div>
+                                <div style="min-width:0;">
+                                    <div style="font-size:12px; font-weight:600; color:var(--text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="@srvInstance">@srvInstance</div>
+                                    <div style="font-size:11px; color:var(--text-muted);">@GetMaturityName(srvLvl) &nbsp;·&nbsp; @srvScore.ToString("N0")%</div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+
+        @* ── Risk Register ── *@
+        <div class="risk-panel-wrapper" style="margin-top:24px;">
+            <div style="display:flex; align-items:center; gap:10px; padding:10px 14px; background:var(--bg-secondary); border:1px solid var(--border); border-radius:6px; cursor:pointer; user-select:none;"
+                 @onclick="() => _riskPanelOpen = !_riskPanelOpen">
+                <i class="fa-solid fa-triangle-exclamation" style="color:#f59e0b;"></i>
+                <span style="font-weight:600; font-size:13px;">Risk Register</span>
+                <span style="font-size:11px; color:var(--text-muted); margin-left:4px;">Likelihood × Impact — dynamically rated from audit findings</span>
+                <i class="fa-solid @(_riskPanelOpen ? "fa-chevron-up" : "fa-chevron-down")" style="margin-left:auto; color:var(--text-muted);"></i>
+            </div>
+            <div class="risk-panel-detail" style="@(_riskPanelOpen ? "" : "display:none;")border:1px solid var(--border); border-top:none; border-radius:0 0 6px 6px; overflow:hidden;">
+                    <table style="width:100%; border-collapse:collapse; font-size:12px;">
+                        <thead>
+                            <tr style="background:var(--bg-tertiary); color:var(--text-secondary); font-size:11px; text-transform:uppercase; letter-spacing:0.04em;">
+                                <th style="padding:8px 10px; text-align:left; font-weight:600;">ID</th>
+                                <th style="padding:8px 10px; text-align:left; font-weight:600;">Risk Theme</th>
+                                <th style="padding:8px 10px; text-align:left; font-weight:600; max-width:300px;">Description</th>
+                                <th style="padding:8px 10px; text-align:center; font-weight:600;">Likelihood</th>
+                                <th style="padding:8px 10px; text-align:center; font-weight:600;">Impact</th>
+                                <th style="padding:8px 10px; text-align:center; font-weight:600;">Rating</th>
+                                <th style="padding:8px 10px; text-align:center; font-weight:600;">Coverage</th>
+                                <th style="padding:8px 10px; text-align:left; font-weight:600;">Checks Covering This</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var risk in GetRiskRegister())
+                            {
+                                var coverage = GetRiskCoverage(risk);
+                                <tr style="border-top:1px solid var(--border);">
+                                    <td style="padding:8px 10px; font-weight:600; color:var(--text-muted); white-space:nowrap;">@risk.Id</td>
+                                    <td style="padding:8px 10px; font-weight:600; white-space:nowrap;">@risk.Theme</td>
+                                    <td style="padding:8px 10px; color:var(--text-secondary); font-size:11px; max-width:300px;">@risk.Description</td>
+                                    <td style="padding:8px 10px; text-align:center;">
+                                        <span style="font-size:11px; padding:2px 8px; border-radius:10px; background:var(--bg-tertiary); color:var(--text-secondary);">@risk.Likelihood</span>
+                                    </td>
+                                    <td style="padding:8px 10px; text-align:center;">
+                                        <span style="font-size:11px; padding:2px 8px; border-radius:10px; background:var(--bg-tertiary); color:var(--text-secondary);">@risk.Impact</span>
+                                    </td>
+                                    <td style="padding:8px 10px; text-align:center;">
+                                        <span style="font-size:11px; padding:2px 8px; border-radius:10px; font-weight:600;
+                                            background:@RiskRatingBg(risk.Rating); color:@RiskRatingFg(risk.Rating);">@risk.Rating</span>
+                                    </td>
+                                    <td style="padding:8px 10px; text-align:center;">
+                                        @if (_anySelected)
+                                        {
+                                            <span style="font-size:11px; padding:2px 8px; border-radius:10px; font-weight:600;
+                                                background:@CoverageBg(coverage.Status); color:@CoverageFg(coverage.Status);">
+                                                @coverage.Status
+                                            </span>
+                                            <div style="font-size:10px; color:var(--text-muted); margin-top:2px;">@coverage.PassedCount / @coverage.TotalCount checks pass</div>
+                                        }
+                                        else
+                                        {
+                                            <span style="font-size:11px; color:var(--text-muted);">—</span>
+                                        }
+                                    </td>
+                                    <td style="padding:8px 10px; font-size:11px; color:var(--text-muted);">@risk.CheckScope</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+            </div>
+        </div>
+
+        @* ── Compliance Mapping ── *@
+        <div class="compliance-panel-wrapper" style="margin-top:16px; margin-bottom:24px;">
+            <div style="display:flex; align-items:center; gap:10px; padding:10px 14px; background:var(--bg-secondary); border:1px solid var(--border); border-radius:6px; cursor:pointer; user-select:none;"
+                 @onclick="() => _compliancePanelOpen = !_compliancePanelOpen">
+                <i class="fa-solid fa-shield-halved" style="color:#6366f1;"></i>
+                <span style="font-weight:600; font-size:13px;">Compliance Mapping</span>
+                <span style="font-size:11px; color:var(--text-muted); margin-left:4px;">ISO 27001 · SOC 2 · NIST CSF 2.0</span>
+                <i class="fa-solid @(_compliancePanelOpen ? "fa-chevron-up" : "fa-chevron-down")" style="margin-left:auto; color:var(--text-muted);"></i>
+            </div>
+            <div class="compliance-panel-detail" style="@(_compliancePanelOpen ? "" : "display:none;")border:1px solid var(--border); border-top:none; border-radius:0 0 6px 6px; padding:16px; display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px;">
+                    @* ISO 27001 *@
+                    <div>
+                        <div style="font-weight:600; font-size:12px; color:var(--text-secondary); margin-bottom:8px; text-transform:uppercase; letter-spacing:0.05em;">ISO/IEC 27001 (2022)</div>
+                        @foreach (var ctrl in GetIsoControls())
+                        {
+                            var cov = GetComplianceCoverage(ctrl.CheckCategories);
+                            <div style="padding:8px; background:var(--bg-secondary); border:1px solid var(--border); border-radius:4px; margin-bottom:6px;">
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;">
+                                    <span style="font-size:11px; font-weight:600; color:var(--text-primary);">@ctrl.Id</span>
+                                    @if (_anySelected)
+                                    {
+                                        <span style="font-size:10px; padding:1px 7px; border-radius:8px; font-weight:600;
+                                            background:@CoverageBg(cov.Status); color:@CoverageFg(cov.Status);">@cov.Status</span>
+                                    }
+                                </div>
+                                <div style="font-size:11px; color:var(--text-secondary); margin-bottom:3px;">@ctrl.Name</div>
+                                <div style="font-size:10px; color:var(--text-muted);">@ctrl.CheckScope</div>
+                            </div>
+                        }
+                    </div>
+                    @* SOC 2 *@
+                    <div>
+                        <div style="font-weight:600; font-size:12px; color:var(--text-secondary); margin-bottom:8px; text-transform:uppercase; letter-spacing:0.05em;">SOC 2 Trust Services</div>
+                        @foreach (var ctrl in GetSoc2Controls())
+                        {
+                            var cov = GetComplianceCoverage(ctrl.CheckCategories);
+                            <div style="padding:8px; background:var(--bg-secondary); border:1px solid var(--border); border-radius:4px; margin-bottom:6px;">
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;">
+                                    <span style="font-size:11px; font-weight:600; color:var(--text-primary);">@ctrl.Id</span>
+                                    @if (_anySelected)
+                                    {
+                                        <span style="font-size:10px; padding:1px 7px; border-radius:8px; font-weight:600;
+                                            background:@CoverageBg(cov.Status); color:@CoverageFg(cov.Status);">@cov.Status</span>
+                                    }
+                                </div>
+                                <div style="font-size:11px; color:var(--text-secondary); margin-bottom:3px;">@ctrl.Name</div>
+                                <div style="font-size:10px; color:var(--text-muted);">@ctrl.CheckScope</div>
+                            </div>
+                        }
+                    </div>
+                    @* NIST CSF *@
+                    <div>
+                        <div style="font-weight:600; font-size:12px; color:var(--text-secondary); margin-bottom:8px; text-transform:uppercase; letter-spacing:0.05em;">NIST CSF 2.0</div>
+                        @foreach (var ctrl in GetNistControls())
+                        {
+                            var cov = GetComplianceCoverage(ctrl.CheckCategories);
+                            <div style="padding:8px; background:var(--bg-secondary); border:1px solid var(--border); border-radius:4px; margin-bottom:6px;">
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;">
+                                    <span style="font-size:11px; font-weight:600; color:var(--text-primary);">@ctrl.Id</span>
+                                    @if (_anySelected)
+                                    {
+                                        <span style="font-size:10px; padding:1px 7px; border-radius:8px; font-weight:600;
+                                            background:@CoverageBg(cov.Status); color:@CoverageFg(cov.Status);">@cov.Status</span>
+                                    }
+                                </div>
+                                <div style="font-size:11px; color:var(--text-secondary); margin-bottom:3px;">@ctrl.Name</div>
+                                <div style="font-size:10px; color:var(--text-muted);">@ctrl.CheckScope</div>
+                            </div>
+                        }
+                    </div>
+            </div>
+        </div>
+
         </div> @* #roadmap-print-region *@
 
     }
 </div>
 
 @code {
+    // ── Type declarations (must precede field/method references for Razor wpftmp compiler) ──
+    private enum AuditFileType { SpTriage, SpBlitz }
+
+    private record AuditedServer
+    {
+        public string        SqlInstance { get; init; } = "";
+        public string        Domain      { get; init; } = "";
+        public DateTime      AuditDate   { get; init; }
+        public string        FilePath    { get; init; } = "";
+        public AuditFileType FileType    { get; init; } = AuditFileType.SpTriage;
+        public bool          IsSelected  { get; set;  } = false;
+        public Dictionary<int, int> CheckCounts { get; set; } = new();
+    }
+
+    private record MaturityLevel
+    {
+        public int    Level        { get; init; }
+        public string Name         { get; init; } = "";
+        public string Description  { get; init; } = "";
+        public List<string>           Recommendations { get; init; } = new();
+        public List<CategoryProgress> Categories      { get; init; } = new();
+        public int    TotalChecks  { get; init; }
+        public int    PassedChecks { get; init; }
+        public double PassRate     { get; init; }
+    }
+
+    private record CategoryProgress
+    {
+        public string                          Category     { get; init; } = "";
+        public int                             Total        { get; init; }
+        public int                             Passed       { get; init; }
+        public double                          PassRate     { get; init; }
+        public List<(int CheckId, string Name, string Tag)> FailedChecks { get; init; } = new();
+        public List<(string Name, string Tag)>               PassedChecks { get; init; } = new();
+    }
+
     // ── State ──
     private bool   _loading        = false;
     private string _loadingMessage = "";
     private double _loadProgress   = 0;
-    private bool   _exporting      = false;
+    private bool   _exporting        = false;
+    private bool   _splitByDomain    = false;
+
+    // ── Schedule modal state ──
+    private bool     _showScheduleModal   = false;
+    private bool     _scheduleEnabled     = false;
+    private string   _scheduleType        = "Weekly";
+    private string   _scheduleTime        = "07:00";
+    private int      _scheduleDayOfWeek   = 1; // Monday
+    private int      _scheduleDayOfMonth  = 1;
+    private bool     _scheduleSplitByDomain = false;
+    private DateTime _scheduleLastRun     = DateTime.MinValue;
+    private System.Timers.Timer? _scheduleTimer;
 
     private List<AuditedServer> _availableServers = new();
 
@@ -436,6 +822,41 @@
         => _availableServers.FirstOrDefault(s => s.IsSelected);
     private bool _anySelected => _availableServers.Any(s => s.IsSelected);
 
+    // Grouped by domain for UI — within each domain, deduplicate by SqlInstance keeping
+    // the preferred file (triage > blitz, then newest).  Ungrouped servers go under "".
+    private IEnumerable<IGrouping<string, AuditedServer>> _domainGroups
+        => _availableServers
+            .GroupBy(s => s.Domain, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(g => string.IsNullOrEmpty(g.Key) ? 1 : 0)
+            .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase);
+
+    // Within a domain, the "preferred" entry per SqlInstance (triage beats blitz, then newest).
+    private IEnumerable<AuditedServer> PreferredInDomain(IGrouping<string, AuditedServer> group)
+        => group
+            .GroupBy(s => s.SqlInstance, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.OrderBy(s => s.FileType == AuditFileType.SpTriage ? 0 : 1)
+                          .ThenByDescending(s => s.AuditDate)
+                          .First());
+
+    private bool IsDomainAllSelected(IGrouping<string, AuditedServer> group)
+        => PreferredInDomain(group).All(s => s.IsSelected);
+
+    private async Task ToggleDomain(IGrouping<string, AuditedServer> group, bool select)
+    {
+        var preferred = PreferredInDomain(group).ToHashSet();
+        foreach (var srv in _availableServers)
+        {
+            bool isPreferred = preferred.Any(p =>
+                string.Equals(p.SqlInstance, srv.SqlInstance, StringComparison.OrdinalIgnoreCase) &&
+                p.FilePath == srv.FilePath);
+            if (isPreferred)
+                srv.IsSelected = select;
+            else if (select) // deselect non-preferred duplicates when selecting a domain
+                srv.IsSelected = false;
+        }
+        await RecalculateFromSelected();
+    }
+
     private int    _overallLevel = 1;
     private double _overallScore = 0;
     private int    _totalFindings     = 0;
@@ -443,6 +864,11 @@
     private int    _totalItemsImpacted = 0;
     private List<MaturityLevel>  _maturityLevels = new();
     private HashSet<int>         _expandedLevels = new();
+    private bool                 _riskPanelOpen       = false;
+    private bool                 _compliancePanelOpen = false;
+    // Per-server level when >1 server selected: SqlInstance → (level, score%)
+    private Dictionary<string, (int Level, double Score)> _serverLevels = new();
+    private string               _pdfFooterLeft       = "Compliments of sqldba.org. Copyright sqldba.org and Adrian Sullivan";
 
     // CategoryLevelMap removed — level is now read directly from roadmap-mapping.json blitzCheckMap entries.
 
@@ -493,12 +919,102 @@
     protected override async Task OnInitializedAsync()
     {
         await ScanOutputFolder();
-        // Auto-select if only one file available
-        if (_availableServers.Count == 1)
+        // Auto-select the preferred file per server (triage beats blitz, then newest).
+        // This selects all servers across all domains on first load.
+        if (_availableServers.Count > 0)
         {
-            _availableServers[0].IsSelected = true;
+            var preferred = _availableServers
+                .GroupBy(s => s.SqlInstance, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.OrderBy(s => s.FileType == AuditFileType.SpTriage ? 0 : 1)
+                              .ThenByDescending(s => s.AuditDate)
+                              .First())
+                .ToHashSet();
+            foreach (var srv in _availableServers)
+                srv.IsSelected = preferred.Contains(srv);
             await RecalculateFromSelected();
         }
+
+        // Load schedule settings and start background timer
+        LoadScheduleSettings();
+        StartScheduleTimer();
+    }
+
+    public void Dispose()
+    {
+        _scheduleTimer?.Stop();
+        _scheduleTimer?.Dispose();
+    }
+
+    private void LoadScheduleSettings()
+    {
+        var s = UserSettings.GetRoadmapSchedule();
+        _scheduleEnabled       = s.Enabled;
+        _scheduleType          = s.Type;
+        _scheduleTime          = s.Time;
+        _scheduleDayOfWeek     = s.DayOfWeek;
+        _scheduleDayOfMonth    = s.DayOfMonth;
+        _scheduleSplitByDomain = s.SplitByDomain;
+        _scheduleLastRun       = s.LastRun;
+    }
+
+    private void SaveSchedule()
+    {
+        UserSettings.SaveRoadmapSchedule(_scheduleEnabled, _scheduleType, _scheduleTime,
+            _scheduleDayOfWeek, _scheduleDayOfMonth, _scheduleSplitByDomain);
+        _showScheduleModal = false;
+        // Restart timer so new schedule takes effect immediately
+        StartScheduleTimer();
+    }
+
+    private void StartScheduleTimer()
+    {
+        _scheduleTimer?.Stop();
+        _scheduleTimer?.Dispose();
+        // Check every 60 seconds whether the export is due
+        _scheduleTimer = new System.Timers.Timer(60_000);
+        _scheduleTimer.Elapsed += async (_, _) => await CheckScheduleDueAsync();
+        _scheduleTimer.AutoReset = true;
+        _scheduleTimer.Start();
+    }
+
+    private async Task CheckScheduleDueAsync()
+    {
+        if (!_scheduleEnabled || _exporting) return;
+
+        var s   = UserSettings.GetRoadmapSchedule();
+        var now = DateTime.Now;
+
+        bool due = s.Type switch
+        {
+            "Daily"   => IsTimeReached(s.Time, now) && s.LastRun.ToLocalTime().Date < now.Date,
+            "Weekly"  => now.DayOfWeek == (DayOfWeek)s.DayOfWeek
+                         && IsTimeReached(s.Time, now)
+                         && s.LastRun.ToLocalTime().Date < now.Date,
+            "Monthly" => now.Day == Math.Min(s.DayOfMonth, DateTime.DaysInMonth(now.Year, now.Month))
+                         && IsTimeReached(s.Time, now)
+                         && s.LastRun.ToLocalTime().Date < now.Date,
+            _ => false
+        };
+
+        if (!due) return;
+
+        Logger.LogInformation("Scheduled roadmap PDF export triggered ({Type} at {Time})", s.Type, s.Time);
+        UserSettings.UpdateRoadmapScheduleLastRun(DateTime.UtcNow);
+        _scheduleLastRun = DateTime.UtcNow;
+
+        // Temporarily apply split-by-domain setting from schedule config
+        var prevSplit = _splitByDomain;
+        _splitByDomain = s.SplitByDomain;
+
+        await InvokeAsync(async () => await ExportPdf());
+
+        _splitByDomain = prevSplit;
+    }
+
+    private static bool IsTimeReached(string hhMm, DateTime now)
+    {
+        if (!TimeSpan.TryParse(hhMm, out var t)) return false;
+        return now.TimeOfDay >= t && now.TimeOfDay < t.Add(TimeSpan.FromMinutes(2));
     }
 
     // ── Output folder scan ──
@@ -516,13 +1032,21 @@
 
             static string StripQuotes(string s) => s.Trim('\'', '"', ' ');
 
-            // Find all sp_triage and sp_Blitz CSVs (blitz files: filename contains "blitz", case-insensitive)
+            // Find all sp_triage/sqlmagic and sp_Blitz CSVs
             var allFiles = Directory.GetFiles(outputDir, "*.csv", SearchOption.TopDirectoryOnly);
-            var triageFiles = allFiles.Where(f => Path.GetFileName(f).IndexOf("sp_triage", StringComparison.OrdinalIgnoreCase) >= 0)
-                                      .OrderByDescending(f => File.GetLastWriteTime(f)).ToList();
-            var blitzFiles  = allFiles.Where(f => Path.GetFileName(f).IndexOf("blitz", StringComparison.OrdinalIgnoreCase) >= 0
-                                                && Path.GetFileName(f).IndexOf("triage", StringComparison.OrdinalIgnoreCase) < 0)
-                                      .OrderByDescending(f => File.GetLastWriteTime(f)).ToList();
+            var triageFiles = allFiles.Where(f => {
+                                    var n = Path.GetFileName(f);
+                                    return n.IndexOf("sp_triage", StringComparison.OrdinalIgnoreCase) >= 0
+                                        || n.IndexOf("sqlmagic",  StringComparison.OrdinalIgnoreCase) >= 0;
+                                })
+                                .OrderByDescending(f => File.GetLastWriteTime(f)).ToList();
+            var blitzFiles  = allFiles.Where(f => {
+                                    var n = Path.GetFileName(f);
+                                    return n.IndexOf("blitz",  StringComparison.OrdinalIgnoreCase) >= 0
+                                        && n.IndexOf("triage",  StringComparison.OrdinalIgnoreCase) < 0
+                                        && n.IndexOf("sqlmagic", StringComparison.OrdinalIgnoreCase) < 0;
+                                })
+                                .OrderByDescending(f => File.GetLastWriteTime(f)).ToList();
 
             // Build list: newest file per (SqlInstance, FileType) pair
             var seen    = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -538,31 +1062,37 @@
                         var headerLine = reader.ReadLine();
                         if (string.IsNullOrEmpty(headerLine)) continue;
 
-                        var headers     = ParseCsvLine(headerLine).Select(h => StripQuotes(h)).ToList();
-                        // sp_triage uses SQLInstance; sp_Blitz uses ServerName
+                        var delim       = DetectDelimiter(headerLine);
+                        var headers     = ParseCsvLine(headerLine, delim).Select(h => StripQuotes(h)).ToList();
+                        // sp_triage/sqlmagic use SQLInstance or Server; sp_Blitz uses ServerName
                         int instanceIdx = fileType == AuditFileType.SpTriage
-                                            ? headers.IndexOf("SQLInstance")
-                                            : headers.FindIndex(h => h.Equals("ServerName", StringComparison.OrdinalIgnoreCase));
+                                            ? headers.FindIndex(h => h.Equals("SQLInstance", StringComparison.OrdinalIgnoreCase)
+                                                                   || h.Equals("Server",      StringComparison.OrdinalIgnoreCase))
+                                            : headers.FindIndex(h => h.Equals("ServerName",  StringComparison.OrdinalIgnoreCase));
                         // sp_triage uses evaldate; sp_Blitz column 4 is the date (header is empty)
                         int dateIdx     = fileType == AuditFileType.SpTriage
-                                            ? headers.IndexOf("evaldate")
+                                            ? headers.FindIndex(h => h.Equals("evaldate", StringComparison.OrdinalIgnoreCase))
                                             : 4;
+                        int domainIdx   = headers.FindIndex(h => h.Equals("Domain", StringComparison.OrdinalIgnoreCase));
                         if (instanceIdx < 0) continue;
 
                         string? sqlInstance = null;
+                        string  domain      = "";
                         DateTime auditDate  = File.GetLastWriteTime(file);
 
                         while (!reader.EndOfStream && sqlInstance == null)
                         {
                             var line = reader.ReadLine();
                             if (string.IsNullOrEmpty(line)) continue;
-                            var cols = ParseCsvLine(line);
+                            var cols = ParseCsvLine(line, delim);
                             if (cols.Count > instanceIdx)
                             {
                                 sqlInstance = StripQuotes(cols[instanceIdx]);
                                 if (dateIdx >= 0 && cols.Count > dateIdx &&
                                     DateTime.TryParse(StripQuotes(cols[dateIdx]), out var dt))
                                     auditDate = dt;
+                                if (domainIdx >= 0 && cols.Count > domainIdx)
+                                    domain = StripQuotes(cols[domainIdx]);
                             }
                         }
 
@@ -574,6 +1104,7 @@
                         servers.Add(new AuditedServer
                         {
                             SqlInstance = sqlInstance,
+                            Domain      = domain,
                             AuditDate   = auditDate,
                             FilePath    = file,
                             FileType    = fileType
@@ -631,16 +1162,28 @@
                 if (string.IsNullOrEmpty(headerLine)) return;
 
                 static string StripQuotes(string s) => s.Trim('\'', '"', ' ');
-                var headers     = ParseCsvLine(headerLine).Select(h => StripQuotes(h)).ToList();
-                // sp_triage uses SQLInstance; sp_Blitz uses ServerName
+                var delim       = DetectDelimiter(headerLine);
+                var headers     = ParseCsvLine(headerLine, delim).Select(h => StripQuotes(h)).ToList();
+                // sp_triage/sqlmagic use SQLInstance or Server; sp_Blitz uses ServerName
                 int instanceIdx = server.FileType == AuditFileType.SpTriage
-                    ? headers.IndexOf("SQLInstance")
-                    : headers.FindIndex(h => h.Equals("ServerName", StringComparison.OrdinalIgnoreCase));
+                    ? headers.FindIndex(h => h.Equals("SQLInstance", StringComparison.OrdinalIgnoreCase)
+                                          || h.Equals("Server",      StringComparison.OrdinalIgnoreCase))
+                    : headers.FindIndex(h => h.Equals("ServerName",  StringComparison.OrdinalIgnoreCase));
 
-                // sp_Blitz uses "CheckID", sp_triage uses "SectionID"
-                int checkIdx = server.FileType == AuditFileType.SpBlitz
-                    ? headers.IndexOf("CheckID")
-                    : headers.IndexOf("SectionID");
+                // sp_Blitz: "CheckID" column is the BlitzCheckID directly.
+                // sp_triage: "SectionID" column is the BlitzCheckID, but only for rows
+                //            where "Section" starts with "sp_Blitz:" (filters out non-blitz rows).
+                //            New sqlmagic format: use SectionID > 0 directly (no Section prefix filter needed).
+                int checkIdx      = server.FileType == AuditFileType.SpBlitz
+                    ? headers.FindIndex(h => h.Equals("CheckID",   StringComparison.OrdinalIgnoreCase))
+                    : headers.FindIndex(h => h.Equals("SectionID", StringComparison.OrdinalIgnoreCase));
+                int sectionLblIdx = server.FileType == AuditFileType.SpTriage
+                    ? headers.FindIndex(h => h.Equals("Section", StringComparison.OrdinalIgnoreCase))
+                    : -1;
+                // Detect new sqlmagic format (has "Server" col rather than "SQLInstance")
+                bool isNewSqlMagic = server.FileType == AuditFileType.SpTriage
+                    && headers.Any(h => h.Equals("Server", StringComparison.OrdinalIgnoreCase))
+                    && !headers.Any(h => h.Equals("SQLInstance", StringComparison.OrdinalIgnoreCase));
 
                 if (checkIdx < 0) return;
 
@@ -649,7 +1192,7 @@
                 {
                     var line = reader.ReadLine();
                     if (string.IsNullOrEmpty(line)) continue;
-                    var cols = ParseCsvLine(line);
+                    var cols = ParseCsvLine(line, delim);
 
                     // Filter to this SQLInstance if file contains multiple
                     if (instanceIdx >= 0 && cols.Count > instanceIdx)
@@ -661,7 +1204,19 @@
                     }
 
                     if (cols.Count <= checkIdx) continue;
-                    if (int.TryParse(StripQuotes(cols[checkIdx]), out int checkId) && checkId > 0)
+
+                    // sp_triage: skip rows where Section doesn't start with "sp_Blitz:"
+                    // (New sqlmagic format uses SectionID > 0 to filter; no "sp_Blitz:" prefix needed)
+                    if (server.FileType == AuditFileType.SpTriage && !isNewSqlMagic && sectionLblIdx >= 0)
+                    {
+                        if (cols.Count <= sectionLblIdx) continue;
+                        var lbl = StripQuotes(cols[sectionLblIdx]);
+                        if (!lbl.StartsWith("sp_Blitz:", StringComparison.OrdinalIgnoreCase)) continue;
+                    }
+
+                    int.TryParse(StripQuotes(cols[checkIdx]), out int checkId);
+
+                    if (checkId > 0)
                         counts[checkId] = counts.TryGetValue(checkId, out var c) ? c + 1 : 1;
 
                     rowCount++;
@@ -717,20 +1272,31 @@
 
         await Task.Run(() =>
         {
-            // Merge: firedIds = union of all check IDs; itemsImpacted = sum of all counts
-            var mergedFiredIds = new HashSet<int>();
+            var checkMap = LoadRoadmapMapping();
 
+            // Merged view (all selected servers combined)
+            var mergedFiredIds = new HashSet<int>();
             foreach (var srv in selected)
                 foreach (var id in srv.CheckCounts.Keys)
                     mergedFiredIds.Add(id);
 
-            // Merge per-file counts into a single dict for impacted sum
             var mergedCounts = new Dictionary<int, int>();
             foreach (var srv in selected)
                 foreach (var (id, count) in srv.CheckCounts)
                     mergedCounts[id] = mergedCounts.TryGetValue(id, out var c) ? c + count : count;
 
             CalculateMaturity(mergedFiredIds, mergedCounts);
+
+            // Per-server levels (only meaningful when >1 selected)
+            _serverLevels = new Dictionary<string, (int, double)>();
+            if (selected.Count > 1)
+            {
+                foreach (var srv in selected)
+                {
+                    var firedIds = new HashSet<int>(srv.CheckCounts.Keys);
+                    _serverLevels[srv.SqlInstance] = ComputeLevel(firedIds, checkMap);
+                }
+            }
         });
 
         _expandedLevels.Add(_overallLevel);
@@ -753,10 +1319,10 @@
                     _totalItemsImpacted += count;
 
         // Per-level, per-roadmap pass/fail accumulators
-        // level → roadmap → (passed, total, failed(name,tag), passed(name,tag))
-        var levelCatResults = new Dictionary<int, Dictionary<string, (int passed, int total, List<(string,string)> failed, List<(string,string)> passedList)>>();
+        // level → roadmap → (passed, total, failed(checkId,name,tag), passed(name,tag))
+        var levelCatResults = new Dictionary<int, Dictionary<string, (int passed, int total, List<(int,string,string)> failed, List<(string,string)> passedList)>>();
         for (int i = 1; i <= 5; i++)
-            levelCatResults[i] = new Dictionary<string, (int, int, List<(string,string)>, List<(string,string)>)>(StringComparer.OrdinalIgnoreCase);
+            levelCatResults[i] = new Dictionary<string, (int, int, List<(int,string,string)>, List<(string,string)>)>(StringComparer.OrdinalIgnoreCase);
 
         _totalFindings  = 0;
         _passedFindings = 0;
@@ -768,14 +1334,14 @@
 
             var catDict = levelCatResults[level];
             if (!catDict.ContainsKey(roadmap))
-                catDict[roadmap] = (0, 0, new List<(string,string)>(), new List<(string,string)>());
+                catDict[roadmap] = (0, 0, new List<(int,string,string)>(), new List<(string,string)>());
 
             var (p, t, f, pl) = catDict[roadmap];
             bool fired = firedIds.Contains(checkId);
 
             // fired = check triggered (problem exists) = fail; not fired = pass
             _totalFindings++; t++;
-            if (fired) { f.Add((findingName, tag)); }
+            if (fired) { f.Add((checkId, findingName, tag)); }
             else       { p++; _passedFindings++; pl.Add((findingName, tag)); }
 
             catDict[roadmap] = (p, t, f, pl);
@@ -838,6 +1404,39 @@
 
 
 
+    // ── Lightweight per-server level computation (no full maturity build) ──
+    private static (int Level, double Score) ComputeLevel(HashSet<int> firedIds,
+        Dictionary<int, (string FindingName, int Level, string Roadmap, string Tag)> checkMap)
+    {
+        // level → (passed, total)
+        var lvlStats = new Dictionary<int, (int passed, int total)>();
+        for (int i = 1; i <= 5; i++) lvlStats[i] = (0, 0);
+
+        foreach (var (checkId, info) in checkMap)
+        {
+            if (info.Level < 1 || info.Level > 5) continue;
+            var (p, t) = lvlStats[info.Level];
+            t++;
+            if (!firedIds.Contains(checkId)) p++;
+            lvlStats[info.Level] = (p, t);
+        }
+
+        int level = 1;
+        for (int i = 1; i <= 5; i++)
+        {
+            var (p, t) = lvlStats[i];
+            double rate = t > 0 ? p * 100.0 / t : 100.0;
+            if (rate >= 80) level = i + 1;
+            else break;
+        }
+        level = Math.Clamp(level, 1, 5);
+
+        int totalAll  = lvlStats.Values.Sum(x => x.total);
+        int passedAll = lvlStats.Values.Sum(x => x.passed);
+        double score  = totalAll > 0 ? passedAll * 100.0 / totalAll : 0;
+        return (level, score);
+    }
+
     // ── Load check map from roadmap-mapping.json (checkId → findingName, level, roadmap, category tag) ──
     private static Dictionary<int, (string FindingName, int Level, string Roadmap, string Tag)> LoadRoadmapMapping()
     {
@@ -871,40 +1470,228 @@
         return map;
     }
 
+    // ── CSV Action Plan Export — failed checks with priority, grouped by level ──
+    private void ExportCsv()
+    {
+        if (!_maturityLevels.Any()) return;
+
+        var selectedServers = _availableServers.Where(s => s.IsSelected).ToList();
+        var domains         = selectedServers.Select(s => s.Domain).Where(d => !string.IsNullOrEmpty(d)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var fileLabel       = selectedServers.Count == 1
+            ? selectedServers[0].SqlInstance.Replace("\\", "_").Replace("/", "_")
+            : domains.Count >= 1 ? $"{string.Join("-", domains)}_{selectedServers.Count}servers" : $"{selectedServers.Count}servers";
+        if (fileLabel.Length > 60) fileLabel = fileLabel[..60];
+        var fileName = $"RoadmapActionPlan_{fileLabel}_{DateTime.Now:yyyyMMdd_HHmmss}.csv";
+
+        var outputDir = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "output");
+        Directory.CreateDirectory(outputDir);
+        var filePath  = System.IO.Path.Combine(outputDir, fileName);
+
+        var sb = new System.Text.StringBuilder();
+
+        // ── Report header ──
+        sb.AppendLine(CsvQuote($"SQL Health Assessment — Diagnostics Maturity Roadmap — Action Plan"));
+        sb.AppendLine(CsvQuote($"Generated: {DateTime.Now:dd MMM yyyy HH:mm}"));
+        sb.AppendLine(CsvQuote($"Servers: {string.Join("; ", selectedServers.Select(s => s.SqlInstance))}"));
+        sb.AppendLine(CsvQuote($"Overall Level: L{_overallLevel} — {GetMaturityName(_overallLevel)}  |  Score: {_overallScore:N0}%  |  {_passedFindings}/{_totalFindings} checks passed  |  {_totalItemsImpacted} items impacted"));
+        sb.AppendLine();
+
+        // ── Summary by level ──
+        sb.AppendLine("SUMMARY BY MATURITY LEVEL");
+        sb.AppendLine("Level,Stage,Pass Rate,Passed,Total,Status");
+        foreach (var level in _maturityLevels)
+        {
+            var status = level.Level < _overallLevel ? "COMPLETE" : level.Level == _overallLevel ? "IN PROGRESS" : "NOT STARTED";
+            sb.AppendLine(string.Join(",", $"L{level.Level}", CsvQuote(level.Name),
+                level.PassRate.ToString("N0") + "%", level.PassedChecks.ToString(), level.TotalChecks.ToString(), status));
+        }
+        sb.AppendLine();
+
+        // ── Action plan — failed checks ordered by priority ──
+        sb.AppendLine("ACTION PLAN — FAILED CHECKS");
+        sb.AppendLine("Priority,CheckID,Level,Stage,Category,CheckName,Tag,ServersImpacted,ServerCount,CategoryPassRate%,Recommended Action");
+
+        int priority = 1;
+        // Order: lowest level first (foundation before governed), then lowest pass rate category first
+        foreach (var level in _maturityLevels.OrderBy(l => l.Level))
+        {
+            foreach (var cat in level.Categories.OrderBy(c => c.PassRate))
+            {
+                foreach (var (checkId, name, tag) in cat.FailedChecks)
+                {
+                    var serversWithCheck = selectedServers
+                        .Where(s => s.CheckCounts.ContainsKey(checkId))
+                        .Select(s => s.SqlInstance)
+                        .ToList();
+                    var action = GetRecommendedAction(tag, level.Level);
+                    sb.AppendLine(string.Join(",",
+                        priority++,
+                        checkId,
+                        $"L{level.Level}",
+                        CsvQuote(level.Name),
+                        CsvQuote(cat.Category),
+                        CsvQuote(name),
+                        CsvQuote(tag),
+                        CsvQuote(string.Join("; ", serversWithCheck)),
+                        serversWithCheck.Count,
+                        cat.PassRate.ToString("N0") + "%",
+                        CsvQuote(action)));
+                }
+            }
+        }
+
+        System.IO.File.WriteAllText(filePath, sb.ToString(), System.Text.Encoding.UTF8);
+        Logger.LogInformation("Action plan CSV exported: {File}", filePath);
+        _ = Task.Run(() => System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{filePath}\""));
+    }
+
+    private static string GetRecommendedAction(string tag, int level) => tag switch
+    {
+        "Reliability"          => "Review backup, CHECKDB, and HA configuration",
+        "Performance"          => "Investigate query plans, indexing, and resource waits",
+        "Security"             => "Audit logins, permissions, and surface area configuration",
+        "Configuration"        => "Review sp_configure and instance-level settings",
+        "Monitoring/Alerting"  => "Configure SQL Agent alerts or a monitoring solution",
+        "Availability"         => "Review AG/FCI health, listener, and synchronisation",
+        _                      => level <= 2 ? "Address as high priority — blocking next maturity level" : "Schedule for next maintenance window"
+    };
+
+    private static string CsvQuote(string s)
+    {
+        if (!s.Contains(',') && !s.Contains('"') && !s.Contains('\n')) return s;
+        return "\"" + s.Replace("\"", "\"\"") + "\"";
+    }
+
     // ── PDF Export ──
     private async Task ExportPdf()
     {
         if (_exporting || !_anySelected) return;
         _exporting = true;
-        StateHasChanged();
 
-        // Expand all levels for print
         var prevExpanded = new HashSet<int>(_expandedLevels);
-        _expandedLevels = new HashSet<int> { 1, 2, 3, 4, 5 };
+        // Remember which servers were selected before we start looping
+        var originalSelected = _availableServers.Where(s => s.IsSelected).Select(s => s.FilePath).ToHashSet();
 
-        // Show executive summary table; suppress toasts
-        await JS.InvokeVoidAsync("eval",
-            "document.querySelectorAll('.print-executive-summary').forEach(e => e.style.display='block');" +
-            "document.body.classList.add('printing-active');");
+        if (_splitByDomain)
+        {
+            // Collect distinct domains from currently selected servers
+            var domainList = _availableServers
+                .Where(s => s.IsSelected && !string.IsNullOrEmpty(s.Domain))
+                .Select(s => s.Domain)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(d => d, StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
-        await Task.Delay(400); // let Blazor re-render with all levels expanded
+            foreach (var domain in domainList)
+            {
+                // Select only servers in this domain that were originally selected
+                foreach (var srv in _availableServers)
+                    srv.IsSelected = originalSelected.Contains(srv.FilePath) && srv.Domain.Equals(domain, StringComparison.OrdinalIgnoreCase);
 
-        var instanceLabel = string.Join("-", _availableServers.Where(s => s.IsSelected).Select(s => s.SqlInstance.Replace("\\", "_").Replace("/", "_")));
-        var fileName = $"RoadmapReport_{instanceLabel}_{DateTime.Now:yyyyMMdd_HHmmss}.pdf";
-        var (success, path, error) = await PrintSvc.PrintToPdfAsync(fileName, printBackgrounds: true,
-            orientation: Microsoft.Web.WebView2.Core.CoreWebView2PrintOrientation.Portrait);
+                await RecalculateFromSelected();
+                _expandedLevels = new HashSet<int> { 1, 2, 3, 4, 5 };
+                StateHasChanged();
+                await Task.Delay(600);
 
-        // Restore UI state
-        await JS.InvokeVoidAsync("eval",
-            "document.querySelectorAll('.print-executive-summary').forEach(e => e.style.display='none');" +
-            "document.body.classList.remove('printing-active');");
+                await PrintPrepareDomAsync();
+                var domServers = _availableServers.Where(s => s.IsSelected).ToList();
+                await PrintSinglePdfAsync(domServers, new List<string> { domain });
+                await PrintRestoreDomAsync();
+            }
+
+            // Restore original selection + recalculate
+            foreach (var srv in _availableServers)
+                srv.IsSelected = originalSelected.Contains(srv.FilePath);
+            await RecalculateFromSelected();
+        }
+        else
+        {
+            _expandedLevels = new HashSet<int> { 1, 2, 3, 4, 5 };
+            StateHasChanged();
+            await Task.Delay(600);
+
+            await PrintPrepareDomAsync();
+            var selectedServers = _availableServers.Where(s => s.IsSelected).ToList();
+            var domains         = selectedServers.Select(s => s.Domain).Where(d => !string.IsNullOrEmpty(d)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            await PrintSinglePdfAsync(selectedServers, domains);
+            await PrintRestoreDomAsync();
+        }
 
         _expandedLevels = prevExpanded;
         _exporting = false;
         StateHasChanged();
+    }
 
-        if (!success)
+    private async Task PrintPrepareDomAsync()
+    {
+        await JS.InvokeVoidAsync("eval",
+            "var cover=document.querySelector('.pdf-cover-page'); if(cover){ cover.style.display='flex'; cover.dataset.printShown='1'; }" +
+            "document.querySelectorAll('.print-executive-summary').forEach(e => e.style.display='block');" +
+            "document.querySelectorAll('.nav-menu,.dashboard-toolbar,.roadmap-toolbar,.settings-page > div:first-child,[class*=\"server-mode\"],[id*=\"server-mode\"]').forEach(e => { e.dataset.printHidden='1'; e.style.display='none'; });" +
+            "document.getElementById('roadmap-print-region')?.querySelectorAll('.level-section').forEach((el,i) => {" +
+            "  if(i>0) el.style.pageBreakBefore='always';" +
+            "  el.style.pageBreakInside='avoid';" +
+            "});" +
+            "document.getElementById('roadmap-print-region')?.querySelectorAll('.level-detail,.risk-panel-detail,.compliance-panel-detail').forEach(el => { el.style.display='block'; el.dataset.printForceShown='1'; });" +
+            "document.querySelector('.risk-panel-wrapper')?.style.setProperty('page-break-before','always');" +
+            "document.querySelector('.compliance-panel-wrapper')?.style.setProperty('page-break-before','always');" +
+            "document.querySelector('.server-comparison-section')?.style.setProperty('page-break-before','always');" +
+            "var sc=document.querySelector('.server-comparison-scroll'); if(sc){ sc.style.maxHeight='none'; sc.style.overflow='visible'; sc.dataset.printExpanded='1'; }" +
+            "document.body.classList.add('printing-active');");
+        await Task.Delay(200);
+    }
+
+    private async Task PrintSinglePdfAsync(List<AuditedServer> selectedServers, List<string> domains)
+    {
+        var fileLabel = selectedServers.Count == 1
+            ? selectedServers[0].SqlInstance.Replace("\\", "_").Replace("/", "_")
+            : domains.Count >= 1
+                ? $"{string.Join("-", domains)}_{selectedServers.Count}servers"
+                : $"{selectedServers.Count}servers";
+        if (fileLabel.Length > 60) fileLabel = fileLabel[..60];
+        var fileName = $"RoadmapReport_{fileLabel}_{DateTime.Now:yyyyMMdd_HHmmss}.pdf";
+
+        var serverNames = selectedServers.Count == 1
+            ? selectedServers[0].SqlInstance
+            : domains.Count >= 1
+                ? $"{string.Join(", ", domains)} ({selectedServers.Count} servers)"
+                : $"{selectedServers.Count} servers";
+        var footerCentre = System.Web.HttpUtility.HtmlEncode($"SQL Health Assessment — Diagnostics Maturity Roadmap — {serverNames} — {DateTime.Now:dd MMM yyyy HH:mm}");
+        var footerRight  = System.Web.HttpUtility.HtmlEncode(_pdfFooterLeft);
+        await JS.InvokeVoidAsync("eval",
+            $"var f=document.createElement('div');" +
+            $"f.id='pdf-footer-bar';" +
+            $"f.style='position:fixed;bottom:0;left:0;right:0;height:22px;display:flex;justify-content:space-between;align-items:center;padding:0 14px;font-size:8px;font-family:Arial,sans-serif;color:#555;border-top:2px solid #e2583e;background:linear-gradient(to right,#fff8f6,#ffffff);z-index:9999;';" +
+            $"f.innerHTML='<span style=\"display:flex;align-items:center;gap:5px;font-weight:700;color:#e2583e;\"><i class=\"fa-solid fa-heart-pulse\" style=\"font-size:10px;\"></i> SQL Health Assessment</span><span style=\"color:#444;\">{footerCentre}</span><span style=\"color:#888;font-style:italic;\">{footerRight}</span>';" +
+            $"document.body.appendChild(f);");
+
+        var (success, path, error) = await PrintSvc.PrintToPdfAsync(fileName,
+            printBackgrounds: false,
+            orientation: Microsoft.Web.WebView2.Core.CoreWebView2PrintOrientation.Landscape,
+            headerTitle: null,
+            footerUri: null);
+
+        await JS.InvokeVoidAsync("eval", "document.getElementById('pdf-footer-bar')?.remove();");
+
+        if (success)
+            Logger.LogInformation("Roadmap PDF exported: {File}", path);
+        else
             Logger.LogWarning("PDF export failed: {Error}", error);
+    }
+
+    private async Task PrintRestoreDomAsync()
+    {
+        await JS.InvokeVoidAsync("eval",
+            "var cover=document.querySelector('.pdf-cover-page[data-print-shown]'); if(cover){ cover.style.display='none'; delete cover.dataset.printShown; }" +
+            "document.querySelectorAll('.print-executive-summary').forEach(e => e.style.display='none');" +
+            "document.querySelectorAll('[data-print-hidden]').forEach(e => { e.style.removeProperty('display'); delete e.dataset.printHidden; });" +
+            "document.getElementById('roadmap-print-region')?.querySelectorAll('.level-section').forEach(el => { el.style.removeProperty('page-break-before'); el.style.removeProperty('page-break-inside'); });" +
+            "document.getElementById('roadmap-print-region')?.querySelectorAll('[data-print-force-shown]').forEach(el => { el.style.removeProperty('display'); delete el.dataset.printForceShown; });" +
+            "document.querySelector('.risk-panel-wrapper')?.style.removeProperty('page-break-before');" +
+            "document.querySelector('.compliance-panel-wrapper')?.style.removeProperty('page-break-before');" +
+            "document.querySelector('.server-comparison-section')?.style.removeProperty('page-break-before');" +
+            "var sc=document.querySelector('.server-comparison-scroll[data-print-expanded]'); if(sc){ sc.style.maxHeight='320px'; sc.style.overflow='auto'; delete sc.dataset.printExpanded; }" +
+            "document.body.classList.remove('printing-active');");
     }
 
     // ── Helpers ──
@@ -914,10 +1701,22 @@
             _expandedLevels.Add(level);
     }
 
-    // Minimal CSV parser — handles quoted fields with embedded commas/newlines
-    private static List<string> ParseCsvLine(string line)
+    // Detect delimiter from header line — tilde takes priority over comma
+    private static char DetectDelimiter(string headerLine)
+        => headerLine.Contains('~') ? '~' : ',';
+
+    // Minimal DSV parser — handles quoted fields (comma-delimited) and plain tilde-delimited
+    private static List<string> ParseCsvLine(string line, char delimiter = ',')
     {
         var result = new List<string>();
+        if (delimiter != ',')
+        {
+            // Non-comma files (e.g. tilde-delimited sqlmagic) are plain-split.
+            // SQL Server raw output has no quoting convention — strip any stray quotes literally.
+            foreach (var part in line.Split(delimiter))
+                result.Add(part.Trim().Trim('"').Trim('\''));
+            return result;
+        }
         int i = 0;
         while (i <= line.Length)
         {
@@ -988,39 +1787,136 @@
         return "fa-circle";
     }
 
-    // ── Records ──
-    private enum AuditFileType { SpTriage, SpBlitz }
+    // ── Risk / Compliance data models ──
+    private record RiskEntry(string Id, string Theme, string Description, string Likelihood, string Impact, string Rating, string CheckScope, string[] RoadmapTags);
+    private record ComplianceControl(string Id, string Name, string CheckScope, string[] CheckCategories);
+    private record CoverageResult(string Status, int PassedCount, int TotalCount);
 
-    private record AuditedServer
+    // Maps roadmap/category names to risk IDs
+    private static readonly Dictionary<string, string[]> RoadmapRiskMap = new(StringComparer.OrdinalIgnoreCase)
     {
-        public string        SqlInstance { get; init; } = "";
-        public DateTime      AuditDate   { get; init; }
-        public string        FilePath    { get; init; } = "";
-        public AuditFileType FileType    { get; init; } = AuditFileType.SpTriage;
-        public bool          IsSelected  { get; set;  } = false;
-        // Per-checkId occurrence count loaded from this file
-        public Dictionary<int, int> CheckCounts { get; set; } = new();
+        ["Data Protection & Backup"] = new[] { "R-01" },
+        ["Backup"]                   = new[] { "R-01" },
+        ["Operational Reliability"]  = new[] { "R-02", "R-06" },
+        ["Reliability"]              = new[] { "R-02" },
+        ["Availability"]             = new[] { "R-06" },
+        ["Security & Compliance"]    = new[] { "R-03" },
+        ["Security"]                 = new[] { "R-03" },
+        ["Server Configuration"]     = new[] { "R-04", "R-08" },
+        ["Configuration"]            = new[] { "R-04", "R-08" },
+        ["Configuration impacting Performance"] = new[] { "R-08" },
+        ["Monitoring & Observability"] = new[] { "R-05" },
+        ["Monitoring"]               = new[] { "R-05" },
+        ["Performance & Capacity"]   = new[] { "R-08" },
+        ["Performance"]              = new[] { "R-08" },
+        ["Database Housekeeping"]    = new[] { "R-02", "R-08" },
+    };
+
+    // Maps compliance control IDs to roadmap group names
+    private static readonly Dictionary<string, string[]> ComplianceRoadmapMap = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["A.5.30"] = new[] { "Data Protection & Backup", "Backup", "Availability", "Operational Reliability" },
+        ["A.8.9"]  = new[] { "Server Configuration", "Configuration", "Configuration impacting Performance" },
+        ["A.8.12"] = new[] { "Security & Compliance", "Security" },
+        ["A.5.15"] = new[] { "Security & Compliance", "Security" },
+        ["A.5.32"] = new[] { "Database Housekeeping", "Operational Reliability" },
+        ["A.8.16"] = new[] { "Monitoring & Observability", "Monitoring" },
+        ["CC3"]    = new[] { "Security & Compliance", "Security", "Server Configuration", "Configuration" },
+        ["CC6"]    = new[] { "Security & Compliance", "Security" },
+        ["CC7"]    = new[] { "Monitoring & Observability", "Monitoring", "Operational Reliability" },
+        ["CC8"]    = new[] { "Data Protection & Backup", "Backup", "Availability" },
+        ["CC5"]    = new[] { "Server Configuration", "Configuration", "Configuration impacting Performance" },
+        ["ID"]     = new[] { "Server Configuration", "Configuration", "Performance & Capacity", "Performance" },
+        ["PR"]     = new[] { "Security & Compliance", "Security", "Server Configuration", "Configuration" },
+        ["DE"]     = new[] { "Monitoring & Observability", "Monitoring" },
+        ["RS"]     = new[] { "Operational Reliability", "Availability" },
+        ["RC"]     = new[] { "Data Protection & Backup", "Backup", "Availability" },
+    };
+
+    private static List<RiskEntry> GetRiskRegister() => new()
+    {
+        new("R-01", "Data Recovery Failure",    "Inadequate backups or untested restores may result in permanent data loss",           "Medium",     "Severe", "Critical", "Backup, restore validation, RPO/RTO checks",          new[] { "Data Protection & Backup", "Backup" }),
+        new("R-02", "Data Corruption",          "Undetected corruption could silently compromise business data",                       "Low–Medium", "Severe", "High",     "Integrity checks, CHECKDB frequency, alerting",       new[] { "Operational Reliability", "Reliability" }),
+        new("R-03", "Cyber / Privilege Abuse",  "Weak access controls or over-privileged accounts increase breach exposure",          "Medium",     "Severe", "High",     "Login audits, sysadmin membership, password policy",  new[] { "Security & Compliance", "Security" }),
+        new("R-04", "Unsupported Software",     "Running end-of-life SQL Server versions with no security patches",                   "Medium",     "High",   "High",     "Version checks, compatibility level, patch status",   new[] { "Server Configuration", "Configuration" }),
+        new("R-05", "Monitoring Gaps",          "Failures go undetected without standardised alerting and observability",             "Medium",     "Medium", "Medium",   "Agent alerts, job failure notifications, audit logs", new[] { "Monitoring & Observability", "Monitoring" }),
+        new("R-06", "Resilience Gaps",          "HA/DR architecture not aligned to business continuity requirements",                 "Low–Medium", "High",   "High",     "AG health, failover config, availability checks",     new[] { "Availability", "Operational Reliability" }),
+        new("R-07", "Licensing Exposure",       "Incorrect SQL Server licensing creates financial and compliance risk",               "Low",        "Medium", "Medium",   "Edition checks, feature usage vs licensing tier",     new[] { "Server Configuration" }),
+        new("R-08", "Performance Degradation",  "Capacity or configuration drift causes reliability and performance issues",          "Medium",     "Medium", "Medium",   "Index health, TempDB, memory, wait stats, capacity",  new[] { "Performance & Capacity", "Performance", "Configuration impacting Performance", "Database Housekeeping" }),
+    };
+
+    private static List<ComplianceControl> GetIsoControls() => new()
+    {
+        new("A.5.30", "ICT Readiness for BC",      "Backup, DR, availability and restore testing checks",          new[] { "Data Protection & Backup", "Backup", "Availability", "Operational Reliability" }),
+        new("A.8.9",  "Configuration Management",  "Non-default configs, server hardening and baseline checks",    new[] { "Server Configuration", "Configuration", "Configuration impacting Performance" }),
+        new("A.8.12", "Data Leakage Prevention",   "Encryption, access control and privilege audit checks",        new[] { "Security & Compliance", "Security" }),
+        new("A.5.15", "Access Control",            "Privileged roles, weak passwords and login policy checks",     new[] { "Security & Compliance", "Security" }),
+        new("A.5.32", "Change Management",         "Maintenance, shrink risk and unexpected restart checks",       new[] { "Database Housekeeping", "Operational Reliability" }),
+        new("A.8.16", "Monitoring Activities",     "Agent alerts, audit logging and observability checks",         new[] { "Monitoring & Observability", "Monitoring" }),
+    };
+
+    private static List<ComplianceControl> GetSoc2Controls() => new()
+    {
+        new("CC3", "Risk Assessment",   "Risk-based SQL health and security checks",                   new[] { "Security & Compliance", "Security", "Server Configuration" }),
+        new("CC6", "Logical Access",    "Privilege, login, role and access control checks",            new[] { "Security & Compliance", "Security" }),
+        new("CC7", "Change & Detection","Alerting, integrity monitoring and change detection checks",  new[] { "Monitoring & Observability", "Monitoring", "Operational Reliability" }),
+        new("CC8", "Availability",      "Backup, failover, DR and availability checks",               new[] { "Data Protection & Backup", "Backup", "Availability" }),
+        new("CC5", "Control Activities","Standard configuration and baseline hardening checks",        new[] { "Server Configuration", "Configuration", "Configuration impacting Performance" }),
+    };
+
+    private static List<ComplianceControl> GetNistControls() => new()
+    {
+        new("ID — Identify", "Asset Visibility",      "Asset discovery, configuration state and version checks",  new[] { "Server Configuration", "Configuration", "Performance & Capacity" }),
+        new("PR — Protect",  "Access & Encryption",   "Access control, encryption and privilege hardening checks",new[] { "Security & Compliance", "Security", "Server Configuration" }),
+        new("DE — Detect",   "Alerts & Detection",    "Alerting, corruption detection and monitoring checks",     new[] { "Monitoring & Observability", "Monitoring" }),
+        new("RS — Respond",  "Incident Readiness",    "Availability config, DAC access and agent alert checks",   new[] { "Operational Reliability", "Availability" }),
+        new("RC — Recover",  "Backup & DR",           "Backup validation, restore testing and DR checks",         new[] { "Data Protection & Backup", "Backup", "Availability" }),
+    };
+
+    // Coverage: look up checks in maturityLevels matching the roadmap tags, count pass/fail
+    private CoverageResult GetComplianceCoverage(string[] roadmapTags)
+    {
+        int total = 0, passed = 0;
+        foreach (var lvl in _maturityLevels)
+            foreach (var cat in lvl.Categories.Where(c => roadmapTags.Any(t => c.Category.Contains(t, StringComparison.OrdinalIgnoreCase))))
+            {
+                total  += cat.Total;
+                passed += cat.Passed;
+            }
+        if (total == 0) return new("No Data", 0, 0);
+        double rate = passed * 100.0 / total;
+        return new(rate >= 80 ? "Covered" : rate >= 40 ? "Partial" : "Gap", passed, total);
     }
 
-    private record MaturityLevel
-    {
-        public int    Level        { get; init; }
-        public string Name         { get; init; } = "";
-        public string Description  { get; init; } = "";
-        public List<string>          Recommendations { get; init; } = new();
-        public List<CategoryProgress> Categories     { get; init; } = new();
-        public int    TotalChecks  { get; init; }
-        public int    PassedChecks { get; init; }
-        public double PassRate     { get; init; }
-    }
+    private CoverageResult GetRiskCoverage(RiskEntry risk)
+        => GetComplianceCoverage(risk.RoadmapTags);
 
-    private record CategoryProgress
+    private static string RiskRatingBg(string rating) => rating switch
     {
-        public string                          Category      { get; init; } = "";
-        public int                             Total         { get; init; }
-        public int                             Passed        { get; init; }
-        public double                          PassRate      { get; init; }
-        public List<(string Name, string Tag)> FailedChecks  { get; init; } = new();
-        public List<(string Name, string Tag)> PassedChecks  { get; init; } = new();
-    }
+        "Critical" => "#7f1d1d",
+        "High"     => "#78350f",
+        "Medium"   => "#1c3a1c",
+        _          => "var(--bg-tertiary)"
+    };
+    private static string RiskRatingFg(string rating) => rating switch
+    {
+        "Critical" => "#fca5a5",
+        "High"     => "#fcd34d",
+        "Medium"   => "#86efac",
+        _          => "var(--text-muted)"
+    };
+    private static string CoverageBg(string status) => status switch
+    {
+        "Covered"  => "#1c3a1c",
+        "Partial"  => "#2a2000",
+        "Gap"      => "#7f1d1d",
+        _          => "var(--bg-tertiary)"
+    };
+    private static string CoverageFg(string status) => status switch
+    {
+        "Covered"  => "#86efac",
+        "Partial"  => "#fcd34d",
+        "Gap"      => "#fca5a5",
+        _          => "var(--text-muted)"
+    };
 }
