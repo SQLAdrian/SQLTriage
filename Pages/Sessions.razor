@@ -12,6 +12,23 @@
 @inject IJSRuntime JSRuntime
 @implements IDisposable
 
+<!-- Charts Modal -->
+@if (_showCharts)
+{
+    <div class="panel-maximize-overlay" @onclick="HideCharts">
+        <div class="query-plan-modal-content" style="max-width:800px;" @onclick:stopPropagation>
+            <div class="panel-maximize-header">
+                <span class="panel-maximize-title">Session Performance Charts</span>
+                <button class="panel-maximize-close" @onclick="HideCharts" title="Close">✕</button>
+            </div>
+            <div class="panel-maximize-body">
+                <canvas id="cpuChart" width="400" height="200"></canvas>
+                <canvas id="memoryChart" width="400" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+}
+
 <PdfExportModal @ref="_pdfModal"
     Title="Export Sessions to PDF"
     DefaultLandscape="true"
@@ -79,6 +96,9 @@
                     <i class="fa-solid fa-file-pdf"></i>
                 }
                 @(_pdfExporting ? " Saving..." : " PDF")
+            </button>
+            <button class="toolbar-btn" @onclick="ShowCharts" title="Show Performance Charts">
+                <i class="fa-solid fa-chart-bar"></i> Charts
             </button>
         </div>
 
@@ -207,6 +227,7 @@
     private QueryPlanModal? _planModal;
     private PdfExportModal _pdfModal = default!;
     private bool _pdfExporting = false;
+    private bool _showCharts = false;
 
     private List<SessionInfo> FilteredSessions
     {
@@ -408,6 +429,28 @@
     private async Task ManualRefresh()
     {
         await LoadSessions();
+    }
+
+    private void ShowCharts()
+    {
+        _showCharts = true;
+        StateHasChanged();
+        // Render charts with Chart.js
+        _ = Task.Run(async () => await RenderCharts());
+    }
+
+    private void HideCharts()
+    {
+        _showCharts = false;
+    }
+
+    private async Task RenderCharts()
+    {
+        await Task.Delay(100); // Allow DOM render
+        var cpuData = AllSessions.OrderByDescending(s => s.CpuTime).Take(10).Select(s => new { label = $"SPID {s.SPID}", value = s.CpuTime }).ToList();
+        var memoryData = AllSessions.OrderByDescending(s => s.LogicalReads).Take(10).Select(s => new { label = $"SPID {s.SPID}", value = s.LogicalReads }).ToList();
+
+        await JSRuntime.InvokeVoidAsync("renderSessionCharts", cpuData, memoryData);
     }
 
     private async void OnGlobalInstanceChanged(string instanceName)

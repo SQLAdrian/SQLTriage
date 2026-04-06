@@ -78,6 +78,15 @@ body {
     padding: 0;
 }
 
+.page-fade-in {
+    animation: pageFadeIn 0.18s ease-out;
+}
+
+@keyframes pageFadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
 /* === Navigation === */
 .nav-menu {
     width: 240px;
@@ -89,7 +98,46 @@ body {
     padding: 12px 0;
     overflow-y: auto;
     max-height: 100vh;
+    transition: width 0.22s ease, min-width 0.22s ease;
+    overflow-x: hidden;
 }
+
+.nav-menu.collapsed {
+    width: 52px;
+    min-width: 52px;
+}
+
+.nav-menu.collapsed .nav-brand-text,
+.nav-menu.collapsed .nav-link-text,
+.nav-menu.collapsed .nav-section-label,
+.nav-menu.collapsed .nav-footer-text {
+    display: none;
+}
+
+.nav-menu.collapsed .nav-link {
+    justify-content: center;
+    padding: 8px 0;
+    gap: 0;
+}
+
+/* Hide text nodes and non-icon spans in collapsed nav using font-size trick */
+.nav-menu.collapsed .nav-link > span:not([class*="fa"]):not([class*="icon"]) {
+    display: none;
+}
+
+.nav-collapse-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 13px;
+    transition: color 0.15s;
+    margin-left: auto;
+}
+
+.nav-collapse-btn:hover { color: var(--text-primary); }
 
 .nav-brand {
     padding: 8px 16px 16px;
@@ -113,6 +161,23 @@ body {
 .nav-footer small {
     font-size: 10px;
     color: var(--text-secondary);
+}
+
+.nav-section-label {
+    padding: 4px 12px 2px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    margin-top: 8px;
+    border-top: 1px solid var(--border);
+}
+
+.nav-menu.collapsed .nav-section-label {
+    border-top: 1px solid var(--border);
+    margin: 8px 6px 2px;
+    padding: 0;
 }
 
 .nav-link {

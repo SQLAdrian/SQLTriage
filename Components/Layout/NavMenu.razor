@@ -14,14 +14,18 @@
 @implements IAsyncDisposable
 
 
-<div class="nav-menu w-60 min-w-60 bg-app-bg-secondary border-r border-app-border flex flex-col py-3 overflow-y-auto max-h-screen">
-    <div class="px-4 pb-4 border-b border-app-border mb-2 flex items-center gap-2">
-        <span class="text-lg text-app-accent"><i class="fa-solid fa-heart-pulse"></i></span>
-        <span class="text-base font-semibold text-app-text-primary">SQL Health Assessment</span>
+<div class="nav-menu @(_collapsed ? "collapsed" : "")">
+    <div style="padding:8px 12px 12px; border-bottom:1px solid var(--border); margin-bottom:8px; display:flex; align-items:center; gap:8px;">
+        <span class="nav-brand-icon"><i class="fa-solid fa-heart-pulse"></i></span>
+        <span class="nav-brand-text nav-link-text">SQL Health Assessment</span>
+        <button class="nav-collapse-btn" title="@(_collapsed ? "Expand sidebar" : "Collapse sidebar")"
+                @onclick="ToggleCollapse">
+            <i class="fa-solid @(_collapsed ? "fa-angles-right" : "fa-angles-left")"></i>
+        </button>
     </div>
     <nav>
         <br />
-        <div class="px-3 py-1 text-xs font-bold uppercase tracking-wider text-app-text-secondary mt-2 border-t border-app-border">Audits</div>
+        <div class="nav-section-label">Audits</div>
         <br />
         <NavLink href="/servers" class="nav-link" title="Ctrl+8">
             <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-server"></i></span> Servers
@@ -46,7 +50,7 @@
         }
 
         <br />
-        <div class="px-3 py-1 text-xs font-bold uppercase tracking-wider text-app-text-secondary mt-2 border-t border-app-border">Tools</div>
+        <div class="nav-section-label">Tools</div>
         <br />
         @if (_experimentalMode)
         {
@@ -86,7 +90,7 @@
         }
 
         <br />
-        <div class="px-3 py-1 text-xs font-bold uppercase tracking-wider text-app-text-secondary mt-2 border-t border-app-border">Live</div>
+        <div class="nav-section-label">Live</div>
         <br />
 
         @* Dynamic dashboards — master DB, Dashboards category only (excludes Tools, Audits, etc.) *@
@@ -101,7 +105,7 @@
 
 
         <br />
-        <div class="px-3 py-1 text-xs font-bold uppercase tracking-wider text-app-text-secondary mt-2 border-t border-app-border">SQLWATCH</div>
+        <div class="nav-section-label">SQLWATCH</div>
         <br />
         @if (_SQLWATCHExists)
         {
@@ -120,7 +124,7 @@
         }
 
         <br />
-        <div class="px-3 py-1 text-xs font-bold uppercase tracking-wider text-app-text-secondary mt-2 border-t border-app-border">PerformanceMonitor</div>
+        <div class="nav-section-label">PerformanceMonitor</div>
         <br />
         @if (_performanceMonitorExists)
         {
@@ -139,7 +143,7 @@
         }
 
         <br />
-        <div class="px-3 py-1 text-xs font-bold uppercase tracking-wider text-app-text-secondary mt-2 border-t border-app-border">Monitoring new server</div>
+        <div class="nav-section-label">Monitoring new server</div>
         <br />
         <NavLink href="/deploysqlwatch" class="nav-link">
             <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-eye"></i></span> SQLWATCH
@@ -149,7 +153,7 @@
         </NavLink>
 
         <br />
-        <div class="px-3 py-1 text-xs font-bold uppercase tracking-wider text-app-text-secondary mt-2 border-t border-app-border">Configure</div>
+        <div class="nav-section-label">Configure</div>
         <br />
 
         <NavLink href="/settings" class="nav-link" title="Ctrl+6">
@@ -314,6 +318,10 @@
 
     private bool _performanceMonitorExists = false;
     private bool _SQLWATCHExists = false;
+
+    // ── Sidebar collapse ─────────────────────────────────────────────────
+    private bool _collapsed = false;
+    private void ToggleCollapse() => _collapsed = !_collapsed;
 
     // ── No-Pants Mode ────────────────────────────────────────────────────
     private bool _noPantsMode = false;

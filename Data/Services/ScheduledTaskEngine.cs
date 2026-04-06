@@ -6,6 +6,7 @@ using System.IO;
 using System.Text;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
+using SqlHealthAssessment.Data;
 using SqlHealthAssessment.Data.Models;
 
 namespace SqlHealthAssessment.Data.Services
@@ -269,7 +270,7 @@ namespace SqlHealthAssessment.Data.Services
                 _history.UpdateExecution(exec);
                 _toast.ShowSuccess(task.Name, $"{dt.Rows.Count} rows on {serverName} ({sw.Elapsed.TotalSeconds:F1}s)", 4000);
                 _logger.LogInformation("Scheduled task '{Name}' completed on {Server}: {Rows} rows in {Duration:F1}s",
-                    task.Name, serverName, dt.Rows.Count, sw.Elapsed.TotalSeconds);
+                    task.Name, LogAnon.S(serverName), dt.Rows.Count, sw.Elapsed.TotalSeconds);
             }
             catch (Exception ex)
             {
@@ -281,7 +282,7 @@ namespace SqlHealthAssessment.Data.Services
                 _history.UpdateExecution(exec);
 
                 _toast.ShowError(task.Name, $"Failed on {serverName}: {ex.Message}", 6000);
-                _logger.LogWarning(ex, "Scheduled task '{Name}' failed on {Server}", task.Name, serverName);
+                _logger.LogWarning(ex, "Scheduled task '{Name}' failed on {Server}", task.Name, LogAnon.S(serverName));
             }
         }
 

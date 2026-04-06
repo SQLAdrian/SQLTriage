@@ -118,7 +118,7 @@ namespace SqlHealthAssessment.Data
             _lastSummary[serverName] = summary;
 
             _logger.LogInformation("{Server}: {Passed} passed, {Failed} failed, {Errors} errors in {Duration:F1}s",
-                serverName, summary.Passed, summary.Failed, summary.Errors, summary.Duration.TotalSeconds);
+                LogAnon.S(serverName), summary.Passed, summary.Failed, summary.Errors, summary.Duration.TotalSeconds);
 
             OnExecutionCompleted?.Invoke(summary);
             return summary;
@@ -175,7 +175,7 @@ namespace SqlHealthAssessment.Data
             _lastSummary[serverName] = summary;
 
             _logger.LogInformation("{Server}: {Passed} passed, {Failed} failed, {Errors} errors in {Duration:F1}s",
-                serverName, summary.Passed, summary.Failed, summary.Errors, summary.Duration.TotalSeconds);
+                LogAnon.S(serverName), summary.Passed, summary.Failed, summary.Errors, summary.Duration.TotalSeconds);
 
             OnExecutionCompleted?.Invoke(summary);
             return summary;
@@ -203,7 +203,7 @@ namespace SqlHealthAssessment.Data
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Error executing checks on {Server}", server);
+                        _logger.LogError(ex, "Error executing checks on {Server}", LogAnon.S(server));
 
                         summaries.Add(new CheckExecutionSummary
                         {

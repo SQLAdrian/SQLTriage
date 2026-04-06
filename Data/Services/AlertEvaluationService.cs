@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
+using SqlHealthAssessment.Data;
 using SqlHealthAssessment.Data.Models;
 
 namespace SqlHealthAssessment.Data.Services
@@ -32,6 +33,7 @@ namespace SqlHealthAssessment.Data.Services
         private readonly ConcurrentDictionary<string, DateTime> _lastNotified = new(StringComparer.OrdinalIgnoreCase);
 
         private bool _isRunning;
+        private bool _dryRun;
         private readonly SemaphoreSlim _evaluationLock = new(1, 1);
 
         /// <summary>Max concurrent SQL queries during alert evaluation (prevents connection exhaustion).</summary>
@@ -39,6 +41,20 @@ namespace SqlHealthAssessment.Data.Services
         private readonly SemaphoreSlim _querySemaphore = new(MaxConcurrentQueries, MaxConcurrentQueries);
 
         public event Action? OnAlertsChanged;
+
+        /// <summary>
+        /// When true, alerts fire and appear in-memory but no notifications are dispatched and nothing is persisted.
+        /// Useful for testing alert rules without spamming notifications.
+        /// </summary>
+        public bool DryRun
+        {
+            get => _dryRun;
+            set
+            {
+                _dryRun = value;
+                _logger.LogInformation("Alert dry-run mode: {Mode}", value ? "ON" : "OFF");
+            }
+        }
 
         /// <summary>
         /// All currently active/acknowledged alert states (for UI binding).
@@ -103,6 +119,9 @@ namespace SqlHealthAssessment.Data.Services
 
                 var now = DateTime.UtcNow;
 
+                // Enforce retention policy from global defaults
+                _history.EnforceRetention(globalDefaults.RetentionDays);
+
                 // Auto-acknowledge stale alerts
                 var autoAcked = _history.AutoAcknowledge(globalDefaults.AutoAcknowledgeHours);
                 if (autoAcked > 0)
@@ -128,9 +147,21 @@ namespace SqlHealthAssessment.Data.Services
                         continue;
                     }
 
-                    // Skip special query modes for now (error_log_scan, connectivity_check)
+                    // Route special query modes to dedicated handlers
                     if (!string.IsNullOrEmpty(alert.QueryMode) && alert.QueryMode != "standard")
+                    {
+                        _lastEvaluation[evalKey] = now;
+                        var specialTasks = new List<Task>();
+                        foreach (var conn in serverConnections)
+                        {
+                            foreach (var serverName in conn.GetServerList())
+                            {
+                                specialTasks.Add(ThrottledSpecialEvaluateAsync(alert, conn, serverName, globalDefaults));
+                            }
+                        }
+                        await Task.WhenAll(specialTasks);
                         continue;
+                    }
 
                     _lastEvaluation[evalKey] = now;
 
@@ -179,6 +210,164 @@ namespace SqlHealthAssessment.Data.Services
             }
         }
 
+        private async Task ThrottledSpecialEvaluateAsync(
+            AlertDefinition alert,
+            ServerConnection connection,
+            string serverName,
+            AlertGlobalDefaults globalDefaults)
+        {
+            await _querySemaphore.WaitAsync();
+            try
+            {
+                await EvaluateSpecialAlertAsync(alert, connection, serverName, globalDefaults);
+            }
+            finally
+            {
+                _querySemaphore.Release();
+            }
+        }
+
+        private async Task EvaluateSpecialAlertAsync(
+            AlertDefinition alert,
+            ServerConnection connection,
+            string serverName,
+            AlertGlobalDefaults globalDefaults)
+        {
+            var stateKey = $"{alert.Id}:{serverName}".ToLowerInvariant();
+
+            try
+            {
+                double? value = alert.QueryMode switch
+                {
+                    "connectivity_check" => await CheckConnectivityAsync(connection, serverName),
+                    "host_connectivity_check" => await CheckConnectivityAsync(connection, serverName),
+                    "error_log_scan" => await ScanErrorLogAsync(alert, connection, serverName),
+                    "io_error_check" => await CheckIoErrorsAsync(connection, serverName),
+                    _ => null
+                };
+
+                if (value == null) return;
+
+                var isTriggered = IsThresholdBreached(value.Value, alert.Thresholds.Warning, alert.Operator)
+                    || (alert.Thresholds.Critical.HasValue && IsThresholdBreached(value.Value, alert.Thresholds.Critical, alert.Operator));
+
+                if (isTriggered)
+                {
+                    var isCritical = alert.Thresholds.Critical.HasValue
+                        && IsThresholdBreached(value.Value, alert.Thresholds.Critical, alert.Operator);
+                    var severity = isCritical ? "Critical" : "Warning";
+                    var thresholdUsed = isCritical ? alert.Thresholds.Critical!.Value : (alert.Thresholds.Warning ?? 1);
+
+                    if (!_activeStates.TryGetValue(stateKey, out var existing))
+                    {
+                        existing = new AlertState
+                        {
+                            AlertId = alert.Id,
+                            AlertName = alert.Name,
+                            ServerName = serverName,
+                            Severity = severity,
+                            Status = AlertStatus.Active,
+                            LastValue = value.Value,
+                            ThresholdValue = thresholdUsed,
+                            HitCount = 1,
+                            FirstTriggered = DateTime.UtcNow,
+                            LastTriggered = DateTime.UtcNow,
+                            Message = FormatMessage(alert, serverName, value.Value, thresholdUsed, severity)
+                        };
+                        _activeStates[stateKey] = existing;
+                        if (!_dryRun) _history.UpsertAlert(existing);
+                        if (!_dryRun) DispatchNotification(alert, existing);
+                        _lastNotified[stateKey] = DateTime.UtcNow;
+                    }
+                    else
+                    {
+                        existing.HitCount++;
+                        existing.LastValue = value.Value;
+                        existing.LastTriggered = DateTime.UtcNow;
+                        var cooldown = _definitions.GetCooldown(alert);
+                        if (!_lastNotified.TryGetValue(stateKey, out var lastNotify)
+                            || (DateTime.UtcNow - lastNotify) >= cooldown)
+                        {
+                            if (!_dryRun) DispatchNotification(alert, existing);
+                            _lastNotified[stateKey] = DateTime.UtcNow;
+                        }
+                        if (!_dryRun) _history.UpsertAlert(existing);
+                    }
+                }
+                else if (_activeStates.TryRemove(stateKey, out var cleared))
+                {
+                    cleared.Status = AlertStatus.Resolved;
+                    cleared.ResolvedAt = DateTime.UtcNow;
+                    if (!_dryRun) _history.ResolveAlert(alert.Id, serverName);
+                    _lastNotified.TryRemove(stateKey, out _);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Special alert {AlertId} ({Mode}) failed on {Server}",
+                    alert.Id, alert.QueryMode, LogAnon.S(serverName));
+            }
+        }
+
+        private async Task<double?> CheckConnectivityAsync(ServerConnection connection, string serverName)
+        {
+            try
+            {
+                var connStr = connection.GetConnectionString(serverName, "master");
+                using var sqlConn = new SqlConnection(connStr);
+                await sqlConn.OpenAsync();
+                using var cmd = new SqlCommand("SELECT 1", sqlConn) { CommandTimeout = 5 };
+                await cmd.ExecuteScalarAsync();
+                return 0; // 0 = reachable (below threshold of 1 = unreachable)
+            }
+            catch
+            {
+                return 1; // 1 = unreachable
+            }
+        }
+
+        private async Task<double?> ScanErrorLogAsync(AlertDefinition alert, ServerConnection connection, string serverName)
+        {
+            try
+            {
+                var connStr = connection.GetConnectionString(serverName, "master");
+                using var sqlConn = new SqlConnection(connStr);
+                await sqlConn.OpenAsync();
+
+                // Count matching errors in xp_readerrorlog output from the last 5 minutes
+                var sql = alert.Id switch
+                {
+                    "error_log_severity" => "DECLARE @t TABLE(LogDate DATETIME, ProcessInfo NVARCHAR(50), [Text] NVARCHAR(MAX)); INSERT INTO @t EXEC xp_readerrorlog 0, 1, NULL, NULL, DATEADD(MINUTE,-5,GETDATE()), GETDATE(); SELECT COUNT(*) FROM @t WHERE [Text] NOT LIKE '%Backup%'",
+                    "error_log_fatal" => "DECLARE @t TABLE(LogDate DATETIME, ProcessInfo NVARCHAR(50), [Text] NVARCHAR(MAX)); INSERT INTO @t EXEC xp_readerrorlog 0, 1, NULL, NULL, DATEADD(MINUTE,-5,GETDATE()), GETDATE(); SELECT COUNT(*) FROM @t WHERE [Text] LIKE '%Fatal%' OR [Text] LIKE '%severity 20%' OR [Text] LIKE '%severity 21%' OR [Text] LIKE '%severity 22%' OR [Text] LIKE '%severity 23%' OR [Text] LIKE '%severity 24%' OR [Text] LIKE '%severity 25%'",
+                    "logon_failure" => "DECLARE @t TABLE(LogDate DATETIME, ProcessInfo NVARCHAR(50), [Text] NVARCHAR(MAX)); INSERT INTO @t EXEC xp_readerrorlog 0, 1, 'Login failed', NULL, DATEADD(MINUTE,-5,GETDATE()), GETDATE(); SELECT COUNT(*) FROM @t",
+                    _ => null
+                };
+
+                if (sql == null) return null;
+
+                using var cmd = new SqlCommand(sql, sqlConn) { CommandTimeout = 15 };
+                var result = await cmd.ExecuteScalarAsync();
+                return result == null || result == DBNull.Value ? 0 : Convert.ToDouble(result);
+            }
+            catch { return null; }
+        }
+
+        private async Task<double?> CheckIoErrorsAsync(ServerConnection connection, string serverName)
+        {
+            try
+            {
+                var connStr = connection.GetConnectionString(serverName, "master");
+                using var sqlConn = new SqlConnection(connStr);
+                await sqlConn.OpenAsync();
+                using var cmd = new SqlCommand(
+                    "SELECT COUNT(*) FROM sys.dm_io_virtual_file_stats(NULL, NULL) WHERE io_stall_read_ms > 5000 OR io_stall_write_ms > 5000",
+                    sqlConn) { CommandTimeout = 10 };
+                var result = await cmd.ExecuteScalarAsync();
+                return result == null || result == DBNull.Value ? 0 : Convert.ToDouble(result);
+            }
+            catch { return null; }
+        }
+
         private async Task EvaluateAlertOnServerAsync(
             AlertDefinition alert,
             ServerConnection connection,
@@ -215,11 +404,11 @@ namespace SqlHealthAssessment.Data.Services
                         if (!_lastNotified.TryGetValue(stateKey, out var lastNotify)
                             || (DateTime.UtcNow - lastNotify) >= cooldown)
                         {
-                            DispatchNotification(alert, existing);
+                            if (!_dryRun) DispatchNotification(alert, existing);
                             _lastNotified[stateKey] = DateTime.UtcNow;
                         }
 
-                        _history.UpsertAlert(existing);
+                        if (!_dryRun) _history.UpsertAlert(existing);
                     }
                     else
                     {
@@ -239,13 +428,14 @@ namespace SqlHealthAssessment.Data.Services
                             Message = FormatMessage(alert, serverName, value.Value, thresholdUsed, severity)
                         };
                         _activeStates[stateKey] = state;
-                        _history.UpsertAlert(state);
+                        if (!_dryRun) _history.UpsertAlert(state);
 
-                        DispatchNotification(alert, state);
+                        if (!_dryRun) DispatchNotification(alert, state);
                         _lastNotified[stateKey] = DateTime.UtcNow;
 
-                        _logger.LogWarning("Alert fired: {AlertName} on {Server} ({Severity}) — value: {Value}",
-                            alert.Name, serverName, severity, value.Value);
+                        _logger.LogWarning("Alert fired: {AlertName} on {Server} ({Severity}) — value: {Value}{DryRun}",
+                            alert.Name, LogAnon.S(serverName), severity, value.Value,
+                            _dryRun ? " [DRY RUN]" : "");
                     }
                 }
                 else
@@ -258,13 +448,13 @@ namespace SqlHealthAssessment.Data.Services
                         _history.ResolveAlert(alert.Id, serverName);
                         _lastNotified.TryRemove(stateKey, out _);
 
-                        _logger.LogInformation("Alert resolved: {AlertName} on {Server}", alert.Name, serverName);
+                        _logger.LogInformation("Alert resolved: {AlertName} on {Server}", alert.Name, LogAnon.S(serverName));
                     }
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to evaluate alert {AlertId} on {Server}", alert.Id, serverName);
+                _logger.LogWarning(ex, "Failed to evaluate alert {AlertId} on {Server}", alert.Id, LogAnon.S(serverName));
             }
         }
 

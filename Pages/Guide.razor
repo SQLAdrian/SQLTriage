@@ -1,9 +1,18 @@
 @page "/guide"
 @inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
 
 <div class="guide-container">
     <h1>Component Guide</h1>
     <p>This guide explains the major components of the navigation menu and what you can do in each section.</p>
+    <button class="btn btn-secondary" @onclick="StartGuidedTour" style="margin-bottom: 20px;">
+        <i class="fa-solid fa-play"></i> Start Guided Tour
+    </button>
+
+    <!-- Animated arrows for tour -->
+    <div id="tour-arrow" class="tour-arrow" style="display:none;">
+        <i class="fa-solid fa-arrow-down fa-bounce"></i>
+    </div>
 
     <div class="guide-section">
         <h2><i class="fa-solid fa-chart-line"></i> Live Dashboards</h2>
@@ -195,7 +204,37 @@
     </div>
 </div>
 
+<style>
+    .tour-arrow {
+        position: absolute;
+        color: #ff6b35;
+        font-size: 2rem;
+        z-index: 1000;
+        animation: bounce 1s infinite;
+    }
+    @@keyframes bounce {
+        0%, 20%, 50%, 80%, 100% { transform: translateY(0); }
+        40% { transform: translateY(-10px); }
+        60% { transform: translateY(-5px); }
+    }
+    .tour-highlight {
+        box-shadow: 0 0 20px rgba(255, 107, 53, 0.8);
+        border: 2px solid #ff6b35;
+        animation: pulse 1s infinite;
+    }
+    @@keyframes pulse {
+        0% { transform: scale(1); }
+        50% { transform: scale(1.05); }
+        100% { transform: scale(1); }
+    }
+</style>
+
 @code {
+    private async Task StartGuidedTour()
+    {
+        await JSRuntime.InvokeVoidAsync("startGuidedTour");
+    }
+
     private void GoToLiveMonitor() => Navigation.NavigateTo("/dashboard/livemonitor");
     private void GoToInstanceOverview() => Navigation.NavigateTo("/dashboard/instanceoverview");
     private void GoToWaitEvents() => Navigation.NavigateTo("/dashboard/waitstats");

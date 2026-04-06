@@ -332,7 +332,19 @@ namespace SqlHealthAssessment.Data.Services
             return records;
         }
 
-        private void PurgeOldRecords()
+        /// <summary>
+        /// Enforces retention based on the current global default (called each evaluation cycle).
+        /// Only purges if the provided retentionDays differs from the configured default.
+        /// </summary>
+        public void EnforceRetention(int retentionDays)
+        {
+            if (retentionDays == _retentionDays) return; // no change, daily timer handles it
+            PurgeOldRecords(retentionDays);
+        }
+
+        private void PurgeOldRecords() => PurgeOldRecords(_retentionDays);
+
+        private void PurgeOldRecords(int retentionDays)
         {
             try
             {
@@ -342,11 +354,11 @@ namespace SqlHealthAssessment.Data.Services
                 cmd.CommandText = @"
                     DELETE FROM alert_history
                     WHERE last_triggered < @cutoff AND status = 'Resolved'";
-                cmd.Parameters.AddWithValue("@cutoff", DateTime.UtcNow.AddDays(-_retentionDays).ToString("o"));
+                cmd.Parameters.AddWithValue("@cutoff", DateTime.UtcNow.AddDays(-retentionDays).ToString("o"));
                 var deleted = cmd.ExecuteNonQuery();
                 if (deleted > 0)
                     _logger.LogInformation("Purged {Count} resolved alert history records older than {Days} days",
-                        deleted, _retentionDays);
+                        deleted, retentionDays);
             }
             catch (Exception ex)
             {

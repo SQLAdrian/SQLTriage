@@ -1,6 +1,7 @@
 /* In the name of God, the Merciful, the Compassionate */
 
 using Microsoft.Data.SqlClient;
+using SqlHealthAssessment.Data;
 using Microsoft.Extensions.Logging;
 using Microsoft.SqlServer.Management.Assessment;
 using Microsoft.SqlServer.Management.Common;
@@ -319,7 +320,7 @@ public class SqlAssessmentService
             var serverName = await GetServerNameAsync(connection);
             var serverInfo = await GetServerInfoAsync(connection);
 
-            _logger.LogInformation("Running SQL Assessment Engine against {Server}...", serverName);
+            _logger.LogInformation("Running SQL Assessment Engine against {Server}...", LogAnon.S(serverName));
 
             // ── Primary path: use the Microsoft SQL Assessment Engine ────────
             bool engineSucceeded = false;

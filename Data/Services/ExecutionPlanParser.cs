@@ -99,6 +99,13 @@ public class PlanEdge
 
 public static class ExecutionPlanParser
 {
+    private static string GenerateUniqueIndexName(string? table, List<string> keyCols)
+    {
+        if (string.IsNullOrEmpty(table)) table = "UnknownTable";
+        var baseName = $"IX_{table}_{string.Join("_", keyCols.Take(3))}";
+        return baseName.Length > 128 ? baseName.Substring(0, 128) : baseName;
+    }
+
     private static readonly XNamespace Ns = "http://schemas.microsoft.com/sqlserver/2004/07/showplan";
 
     private static readonly JsonSerializerOptions JsonOpts = new()
@@ -177,7 +184,10 @@ public static class ExecutionPlanParser
                 }
             }
 
+            // Prioritize scalar/equality columns first as per best practices
             var keyCols = equality.Concat(inequality).ToList();
+            // Ensure scalars (from predicates) are prioritized if not already
+            // For now, equality takes precedence as they are more selective
             var qualifiedTable = schema != null ? $"[{schema}].[{table}]" : $"[{table}]";
 
             // Build CREATE INDEX DDL
@@ -186,9 +196,16 @@ public static class ExecutionPlanParser
             if (include.Count > 0)
                 ddl += $"\n    INCLUDE ({string.Join(", ", include.Select(c => $"[{c}]"))})";
 
+            var indexName = GenerateUniqueIndexName(table, keyCols);
+            var enhancedDdl = $"CREATE NONCLUSTERED INDEX [{indexName}]";
+            enhancedDdl += $"\n    ON {qualifiedTable} ({string.Join(", ", keyCols.Select(c => $"[{c}]"))})";
+            if (include.Count > 0)
+                enhancedDdl += $"\n    INCLUDE ({string.Join(", ", include.Select(c => $"[{c}]"))})";
+            enhancedDdl += $"\n    -- Estimated impact: {impact}%\n";
+
             var summary = $"Missing index on {db}.{qualifiedTable} (Impact: {impact}%)";
-            var full = $"{summary}\n{ddl}";
-            graph.Recommendations.Add(full);
+            graph.Recommendations.Add(summary);
+            graph.Recommendations.Add(enhancedDdl);
         }
 
         // ── Plan Summary (statement-level metadata) ────────────────────────────
@@ -247,6 +264,7 @@ public static class ExecutionPlanParser
             .Any(e => e.Name.LocalName == "Warnings");
         if (hasWarnings)   node.Badges.Add("Warning");
         if (node.IsParallel) node.Badges.Add("Parallelism");
+        if (node.RelativeCost > 50) node.Badges.Add("High Cost");
 
         // Actual rows from runtime counters
         var rtCounter = relOp.Descendants()
@@ -255,6 +273,13 @@ public static class ExecutionPlanParser
         {
             double ar = ParseDouble(rtCounter.Attribute("ActualRows")?.Value);
             if (ar > 0) node.ActualRows = ar;
+
+            // Best practice: Flag large discrepancies between estimated and actual rows
+            if (node.ActualRows.HasValue && node.EstimateRows > 0)
+            {
+                double ratio = node.ActualRows.Value / node.EstimateRows;
+                if (ratio > 10 || ratio < 0.1) node.Badges.Add("Row Estimate Mismatch");
+            }
         }
 
         // ── Additional RelOp attributes ─────────────────────────────────────────
@@ -402,6 +427,10 @@ public static class ExecutionPlanParser
                 var index  = objEl.Attribute("Index")?.Value?.Trim('[', ']');
                 if (table != null) items.Add(table);
                 if (index != null) items.Add(index);
+                // Add concise cost info like SSMS
+                items.Add($"Cost: {node.RelativeCost:F1}%");
+                if (node.EstimateRows > 0) items.Add($"Rows: {node.EstimateRows:N0}");
+                if (node.EstimateIO > 0) items.Add($"I/O: {node.EstimateIO:F2}");
                 node.Subtext      = [.. items];
                 node.ObjectDb     = objEl.Attribute("Database")?.Value?.Trim('[', ']');
                 node.ObjectSchema = objEl.Attribute("Schema")?.Value?.Trim('[', ']');

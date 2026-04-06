@@ -1,6 +1,7 @@
 <!--/* In the name of God, the Merciful, the Compassionate */-->
 @inject IJSRuntime JS
 @inject SqlHealthAssessment.Data.UserSettingsService UserSettings
+@inject SqlHealthAssessment.Data.ToastService Toast
 @using SqlHealthAssessment.Data.Services
 
 @if (IsVisible)
@@ -13,6 +14,22 @@
                     <button class="panel-maximize-btn" style="position:static;opacity:1;"
                             @onclick="ToggleSummary" title="@(_showSummary ? "Hide Summary" : "Show Summary")">
                         <i class="fa-solid fa-chart-bar"></i>
+                    </button>
+                    <button class="panel-maximize-btn" style="position:static;opacity:1;"
+                            @onclick="ToggleCompact" title="@(_compactView ? "Detailed View" : "Compact View")">
+                        <i class="fa-solid fa-compress"></i>
+                    </button>
+                    <button class="panel-maximize-btn" style="position:static;opacity:1;"
+                            @onclick="ExportPlan" title="Export Plan as Image">
+                        <i class="fa-solid fa-download"></i>
+                    </button>
+                    <button class="panel-maximize-btn" style="position:static;opacity:1;"
+                            @onclick="ShowOptimizationTips" title="Show Optimization Tips">
+                        <i class="fa-solid fa-lightbulb"></i>
+                    </button>
+                    <button class="panel-maximize-btn" style="position:static;opacity:1;"
+                            @onclick="SavePlan" title="Save Plan for Comparison">
+                        <i class="fa-solid fa-save"></i>
                     </button>
                     @if (!string.IsNullOrWhiteSpace(QueryText))
                     {
@@ -32,6 +49,12 @@
                 </div>
             }
 
+            <!-- Search/Filter Controls -->
+            <div class="plan-controls" style="display:flex;gap:8px;padding:8px;border-bottom:1px solid var(--border);">
+                <input type="text" placeholder="Search operators..." @bind="_searchTerm" @bind:event="oninput" style="flex:1;" />
+                <button class="settings-btn" @onclick="ClearSearch" disabled="@(string.IsNullOrEmpty(_searchTerm))">Clear</button>
+            </div>
+
             <div class="query-plan-modal-body">
                 <div id="qp-container"></div>
             </div>
@@ -48,6 +71,8 @@
 
     private bool _showQueryText = false;
     private bool _showSummary = true;
+    private bool _compactView = false;
+    private string _searchTerm = "";
 
     // ── ROLLBACK FLAG ────────────────────────────────────────────────────────
     // Set to false to instantly revert to the legacy JS-only renderer.
@@ -122,5 +147,64 @@
                 $"document.querySelector('.qp-v2-summary').style.display = '{(_showSummary ? "" : "none")}'");
         }
         catch { /* summary may not exist for this plan */ }
+    }
+
+    private async Task ToggleCompact()
+    {
+        _compactView = !_compactView;
+        try
+        {
+            await JS.InvokeVoidAsync("queryPlanInteropV2.setCompactView", _compactView);
+        }
+        catch { /* JS not available */ }
+    }
+
+    private async Task ExportPlan()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("queryPlanInteropV2.exportPlan", "query-plan-image.png");
+        }
+        catch { /* JS not available */ }
+    }
+
+    private void ShowOptimizationTips()
+    {
+        var tips = new List<string>
+        {
+            "Consider adding missing indexes for high-impact queries.",
+            "Review statistics on tables with row estimate mismatches.",
+            "Avoid implicit conversions by matching data types in predicates.",
+            "Use query hints sparingly; focus on schema optimization first.",
+            "Monitor for spills (sort/hash) indicating memory pressure.",
+            "Consider partitioning large tables for better performance."
+        };
+
+        // Could display in a modal or toast
+        Toast.ShowInfo(string.Join("\n", tips), "Optimization Tips");
+    }
+
+    private async Task ClearSearch()
+    {
+        _searchTerm = "";
+        try
+        {
+            await JS.InvokeVoidAsync("queryPlanInteropV2.setSearchTerm", "");
+        }
+        catch { /* JS not available */ }
+    }
+
+    private async Task SavePlan()
+    {
+        if (string.IsNullOrEmpty(PlanXml)) return;
+
+        try
+        {
+            // Save to local storage with timestamp
+            var key = $"plan_{DateTime.Now.ToString("yyyyMMdd_HHmmss")}";
+            await JS.InvokeVoidAsync("localStorage.setItem", key, PlanXml);
+            Toast.ShowSuccess("Plan saved for comparison");
+        }
+        catch { /* JS not available */ }
     }
 }

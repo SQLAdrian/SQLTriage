@@ -128,5 +128,17 @@ namespace SqlHealthAssessment.Data
             var result = await cmd.ExecuteScalarAsync();
             return result as string;
         }
+
+        /// <summary>
+        /// Kill a session by SPID
+        /// </summary>
+        public async Task KillSessionAsync(int spid)
+        {
+            using var connection = await _connectionFactory.CreateConnectionAsync();
+            if (connection is not SqlConnection sqlConn)
+                throw new InvalidOperationException("KillSession requires a SQL Server connection");
+            using var cmd = new SqlCommand($"KILL {spid}", sqlConn) { CommandTimeout = 30 };
+            await cmd.ExecuteNonQueryAsync();
+        }
     }
 }

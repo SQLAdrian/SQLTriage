@@ -27,7 +27,7 @@
 
     @if (Data != null && Data.Rows.Count > 0)
     {
-        <div class="overflow-x-auto max-h-100 overflow-y-auto" tabindex="0">
+        <div class="overflow-x-auto max-h-100 @(Data.Rows.Count > 500 ? "" : "overflow-y-auto")" tabindex="0">
             <table class="w-full border-collapse text-sm" role="table" aria-labelledby="@($"grid-title-{Title.GetHashCode()}")">
                 <thead>
                     <tr role="row">
@@ -209,6 +209,11 @@
                 _data = value;
                 // Invalidate cache when data changes
                 _cachedSortedRows = null;
+                // Clear action/job states so buttons reset when server or data changes
+                _actionStates.Clear();
+                _actionMessages.Clear();
+                _runJobStates.Clear();
+                _runJobMessages.Clear();
             }
         }
     }
@@ -344,8 +349,8 @@
             if (Data.Columns.Contains(SortColumn))
             {
                 rows = SortAscending
-                    ? rows.OrderBy(r => r[SortColumn]?.ToString(), StringComparer.OrdinalIgnoreCase)
-                    : rows.OrderByDescending(r => r[SortColumn]?.ToString(), StringComparer.OrdinalIgnoreCase);
+                    ? rows.OrderBy(r => ToSortKey(r[SortColumn]))
+                    : rows.OrderByDescending(r => ToSortKey(r[SortColumn]));
             }
         }
         
@@ -354,6 +359,14 @@
         _lastSortAscending = SortAscending;
         
         return _cachedSortedRows;
+    }
+
+    private static IComparable ToSortKey(object? val)
+    {
+        var s = val?.ToString() ?? "";
+        return decimal.TryParse(s, System.Globalization.NumberStyles.Any,
+            System.Globalization.CultureInfo.InvariantCulture, out var d)
+            ? (IComparable)d : s;
     }
 
     private async Task HandleRowClick(DataRow row)

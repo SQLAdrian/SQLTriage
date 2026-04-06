@@ -37,6 +37,12 @@ namespace SqlHealthAssessment.Data
         /// </summary>
         private Dictionary<string, string> _panelTypeCache = new(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// Optimization: Cache for parsed JSON to avoid repeated deserialization
+        /// </summary>
+        private string? _cachedJsonContent;
+        private DateTime _lastJsonCheck = DateTime.MinValue;
+
         private static readonly JsonSerializerOptions SerializerOptions = new()
         {
             WriteIndented = true,
@@ -49,6 +55,29 @@ namespace SqlHealthAssessment.Data
             UnknownTypeHandling = System.Text.Json.Serialization.JsonUnknownTypeHandling.JsonNode,
             PreferredObjectCreationHandling = System.Text.Json.Serialization.JsonObjectCreationHandling.Populate
         };
+
+        // Optimization: Use streams for large JSON parsing
+        private async Task<DashboardConfigRoot> LoadConfigFromStreamAsync()
+        {
+            var configPath = _configPath;
+            if (!File.Exists(configPath))
+                configPath = _backupPath;
+
+            if (!File.Exists(configPath))
+                return DefaultConfigGenerator.Generate();
+
+            try
+            {
+                await using var stream = File.OpenRead(configPath);
+                return await JsonSerializer.DeserializeAsync<DashboardConfigRoot>(stream, SerializerOptions)
+                       ?? DefaultConfigGenerator.Generate();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to load config from stream, using defaults");
+                return DefaultConfigGenerator.Generate();
+            }
+        }
 
         /// <summary>
         /// Event raised after the configuration has been saved and should be re-rendered.
@@ -184,8 +213,8 @@ namespace SqlHealthAssessment.Data
             {
                 try
                 {
-                    var json = File.ReadAllText(_configPath);
-                    var config = JsonSerializer.Deserialize<DashboardConfigRoot>(json, SerializerOptions);
+                    // Optimization: Use stream for large configs
+                    var config = LoadConfigFromStreamAsync().GetAwaiter().GetResult();
                     if (config != null)
                     {
                         _logger.LogDebug("Deserialized config with {Count} dashboards", config.Dashboards?.Count ?? 0);

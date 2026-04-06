@@ -588,14 +588,22 @@ IF @SQLVer >= 15 AND EXISTS(SELECT 1 FROM sys.columns
           WHERE Name = N'is_accelerated_database_recovery_on'
           AND Object_ID = Object_ID(N'sys.databases'))
 BEGIN
+	DECLARE @ADRSQLtables TABLE([name] NVARCHAR(250))
     DECLARE @ADRSQL NVARCHAR(MAX) = N''
-    SELECT @ADRSQL += N'ALTER DATABASE ' + QUOTENAME(name) + N' SET ACCELERATED_DATABASE_RECOVERY = ON;' + CHAR(13)
-    FROM sys.databases
+	SET @ADRSQL = '
+	SELECT QUOTENAME(name) [name]
+	FROM sys.databases
     WHERE database_id > 4 
       AND state = 0 
       AND is_read_only = 0
-      AND name NOT IN ('tempdb')
-      AND is_accelerated_database_recovery_on = 0
+      AND name NOT IN (''tempdb'')
+      AND is_accelerated_database_recovery_on = 0'
+	INSERT INTO @ADRSQLtables
+	EXEC sp_executesql @ADRSQL
+	SET @ADRSQL = N''
+    SELECT @ADRSQL += N'ALTER DATABASE ' + QUOTENAME(name) + N' SET ACCELERATED_DATABASE_RECOVERY = ON;' + CHAR(13)
+	FROM @ADRSQLtables
+    
 
     IF @ADRSQL <> N''
     BEGIN
@@ -945,148 +953,148 @@ INSERT INTO @AlertTable VALUES ('Severity',25, 	@ServerName + N' Alert - Sev 25 
 -- Using SQL Server in Windows 8 and Windows Server 2012 environments
 --https://learn.microsoft.com/en-us/sql/relational-databases/errors-events/database-engine-events-and-errors-0-to-999?view=sql-server-ver17
 -- http://support.microsoft.com/kb/2681562
-INSERT INTO @AlertTable VALUES ('Error',610, 	@ServerName + N' Alert! Error 610: Invalid header value from a page.' )--  Run DBCC CHECKDB to check for a data corruption.'   )
-INSERT INTO @AlertTable VALUES ('Error',823, 	@ServerName + N' Alert! Error 823: The operating system returned an error')
-INSERT INTO @AlertTable VALUES ('Error',824, 	@ServerName + N' Alert! Error 824: Logical consistency-based I/O error')
-INSERT INTO @AlertTable VALUES ('Error',825, 	@ServerName + N' Alert! Error 825: Read-Retry Required')
-INSERT INTO @AlertTable VALUES ('Error',832, 	@ServerName + N' Alert! Error 832: Constant page has changed')
-INSERT INTO @AlertTable VALUES ('Error',855, 	@ServerName + N' Alert! Error 855: Uncorrectable hardware memory corruption detected')
-INSERT INTO @AlertTable VALUES ('Error',856, 	@ServerName + N' Alert! Error 856: SQL Server has detected hardware memory corruption, but has recovered the page')
-INSERT INTO @AlertTable VALUES ('Error',1205, 	@ServerName + N' Alert! Error 1205: Deadlock')
-INSERT INTO @AlertTable VALUES ('Error',3928, 	@ServerName + N' Alert! Error 3928: Deadlock')
-INSERT INTO @AlertTable VALUES ('Error',829,	@ServerName + N' Alert! Error Database, Page is marked RestorePending, which may indicate disk corruption.')-- To recover from this state, perform a restore.')
-INSERT INTO @AlertTable VALUES ('Error',211,	@ServerName + N' Alert! Error 211: Corruption in database possibly due to schema or catalog inconsistency.')-- Run DBCC CHECKCATALOG.')
-INSERT INTO @AlertTable VALUES ('Error',602,	@ServerName + N' Alert! Error 602: A stored procedure references a dropped table, or metadata is corrupted.')-- Drop and re-create the stored procedure, or execute DBCC CHECKDB.
-INSERT INTO @AlertTable VALUES ('Error',603,	@ServerName + N' Alert! Error 603: Could not find an entry for table or index with object ID.')-- This error can occur if a stored procedure references a dropped table, or metadata is corrupted. Drop and re-create the stored procedure, or execute DBCC CHECKDB.
-INSERT INTO @AlertTable VALUES ('Error',608,	@ServerName + N' Alert! Error 608: No catalog entry found for partition ID in database. The metadata is inconsistent.')-- Run DBCC CHECKDB to check for a metadata corruption.	
-INSERT INTO @AlertTable VALUES ('Error',683,	@ServerName + N' Alert! Error 683: An internal error occurred trying to convert between variable- and fixed-length decimal formats.')-- Run DBCC CHECKDB to check for any database corruption.
-INSERT INTO @AlertTable VALUES ('Error',684,	@ServerName + N' Alert! Error 684: An internal error occurred attempting to convert between compressed and uncompressed storage .')-- Run DBCC CHECKDB to check for any corruption.
-INSERT INTO @AlertTable VALUES ('Error',692,	@ServerName + N' Alert! Error 692: Internal error. Buffer provided to write a fixed column value is too large.')-- Run DBCC CHECKDB to check for any corruption.
-INSERT INTO @AlertTable VALUES ('Error',808,	@ServerName + N' Alert! Error 808: Insufficient bytes transferred. Backup, insufficient disk space, corruption or hardware failure.')-- Check errorlogs/application-logs for detailed messages and correct error conditions.
-INSERT INTO @AlertTable VALUES ('Error',882,	@ServerName + N' Alert! Error 882: The schema of a table created by InternalBaseTable is corrupt.')--
-INSERT INTO @AlertTable VALUES ('Error',918,	@ServerName + N' Alert! Error 918: Failed to load the engine script metadata from script DLL. This is a serious error condition.')-- which usually indicates a corrupt or incomplete installation-- Repairing the SQL Server instance may help resolve this error.
-INSERT INTO @AlertTable VALUES ('Error',965,	@ServerName + N' Alert! Error 965: Warning: A column nullability inconsistency was detected in the metadata. Index may be corrupt.')-- Run DBCC CHECKTABLE to verify consistency.
-INSERT INTO @AlertTable VALUES ('Error',976,	@ServerName + N' Alert! Error 976: Database Not Accessible')
-INSERT INTO @AlertTable VALUES ('Error',983,	@ServerName + N' Alert! Error 983: Database Role Resolving. Unable to access availability database')
-INSERT INTO @AlertTable VALUES ('Error',3402,	@ServerName + N' Alert! Error 3402: Database Restoring')
+INSERT INTO @AlertTable VALUES ('Error',610, 	@ServerName + N' Error 610: Invalid header value from a page.' )--  Run DBCC CHECKDB to check for a data corruption.'   )
+INSERT INTO @AlertTable VALUES ('Error',823, 	@ServerName + N' Error 823: The operating system returned an error')
+INSERT INTO @AlertTable VALUES ('Error',824, 	@ServerName + N' Error 824: Logical consistency-based I/O error')
+INSERT INTO @AlertTable VALUES ('Error',825, 	@ServerName + N' Error 825: Read-Retry Required')
+INSERT INTO @AlertTable VALUES ('Error',832, 	@ServerName + N' Error 832: Constant page has changed')
+INSERT INTO @AlertTable VALUES ('Error',855, 	@ServerName + N' Error 855: Uncorrectable hardware memory corruption detected')
+INSERT INTO @AlertTable VALUES ('Error',856, 	@ServerName + N' Error 856: SQL Server has detected hardware memory corruption, but has recovered the page')
+INSERT INTO @AlertTable VALUES ('Error',1205, 	@ServerName + N' Error 1205: Deadlock')
+INSERT INTO @AlertTable VALUES ('Error',3928, 	@ServerName + N' Error 3928: Deadlock')
+INSERT INTO @AlertTable VALUES ('Error',829,	@ServerName + N' Error Database, Page is marked RestorePending, which may indicate disk corruption.')-- To recover from this state, perform a restore.')
+INSERT INTO @AlertTable VALUES ('Error',211,	@ServerName + N' Error 211: Corruption in database possibly due to schema or catalog inconsistency.')-- Run DBCC CHECKCATALOG.')
+INSERT INTO @AlertTable VALUES ('Error',602,	@ServerName + N' Error 602: Stored procedure references a dropped table, or metadata is corrupted.')-- Drop and re-create the stored procedure, or execute DBCC CHECKDB.
+INSERT INTO @AlertTable VALUES ('Error',603,	@ServerName + N' Error 603: Could not find an entry for table or index with object ID.')-- This error can occur if a stored procedure references a dropped table, or metadata is corrupted. Drop and re-create the stored procedure, or execute DBCC CHECKDB.
+INSERT INTO @AlertTable VALUES ('Error',608,	@ServerName + N' Error 608: No catalog entry found for partition ID in database. The metadata is inconsistent.')-- Run DBCC CHECKDB to check for a metadata corruption.	
+INSERT INTO @AlertTable VALUES ('Error',683,	@ServerName + N' Error 683: Error occurred trying to convert between variable- and fixed-length decimal formats.')-- Run DBCC CHECKDB to check for any database corruption.
+INSERT INTO @AlertTable VALUES ('Error',684,	@ServerName + N' Error 684: Error occurred attempting to convert between compressed and uncompressed storage.')-- Run DBCC CHECKDB to check for any corruption.
+INSERT INTO @AlertTable VALUES ('Error',692,	@ServerName + N' Error 692: Error. Buffer provided to write a fixed column value is too large.')-- Run DBCC CHECKDB to check for any corruption.
+INSERT INTO @AlertTable VALUES ('Error',808,	@ServerName + N' Error 808: Insufficient bytes transferred. Backup,insufficient disk space,corruption/hardware failure.')-- Check errorlogs/application-logs for detailed messages and correct error conditions.
+INSERT INTO @AlertTable VALUES ('Error',882,	@ServerName + N' Error 882: Schema of a table created by InternalBaseTable is corrupt.')--
+INSERT INTO @AlertTable VALUES ('Error',918,	@ServerName + N' Error 918: Failed to load engine script metadata from script DLL. This is a serious error condition.')-- which usually indicates a corrupt or incomplete installation-- Repairing the SQL Server instance may help resolve this error.
+INSERT INTO @AlertTable VALUES ('Error',965,	@ServerName + N' Error 965: Warning: Column nullability inconsistency detected in the metadata. Index may be corrupt.')-- Run DBCC CHECKTABLE to verify consistency.
+INSERT INTO @AlertTable VALUES ('Error',976,	@ServerName + N' Error 976: Database Not Accessible')
+INSERT INTO @AlertTable VALUES ('Error',983,	@ServerName + N' Error 983: Database Role Resolving. Unable to access availability database')
+INSERT INTO @AlertTable VALUES ('Error',3402,	@ServerName + N' Error 3402: Database Restoring')
 /* Always On / AG critical */
-INSERT INTO @AlertTable VALUES ('Error',35265, 	@ServerName + N' Alert! AG 35265: AG Data Movement - Resumed')
-INSERT INTO @AlertTable VALUES ('Error',35264, 	@ServerName + N' Alert! AG 35264: AG Data Movement - Suspended')
-INSERT INTO @AlertTable VALUES ('Error',28034, 	@ServerName + N' Alert! AG 28034: Connection handshake on broker')
-INSERT INTO @AlertTable VALUES ('Error',1480, 	@ServerName + N' Alert! AG 1480: AG Role Change' )
-INSERT INTO @AlertTable VALUES ('Error',41091, 	@ServerName + N' Alert! AG 41091: Replica Going Offline Lease Expired')
-INSERT INTO @AlertTable VALUES ('Error',41131, 	@ServerName + N' Alert! AG 41131: Failed to Bring AG ONLINE')
-INSERT INTO @AlertTable VALUES ('Error',41142, 	@ServerName + N' Alert! AG 41142: Replica Cannot become primary')
-INSERT INTO @AlertTable VALUES ('Error',41406, 	@ServerName + N' Alert! AG 41406: AG not Ready for Auto Failover')
-INSERT INTO @AlertTable VALUES ('Error',41414, 	@ServerName + N' Alert! AG 41414: Secondary not Connected')
-INSERT INTO @AlertTable VALUES ('Error',35276, 	@ServerName + N' Alert! Error 35276: Failed to allocate and schedule an AG task for database. Database Out of Sync'  )
+INSERT INTO @AlertTable VALUES ('Error',35265, 	@ServerName + N' AG 35265: AG Data Movement - Resumed')
+INSERT INTO @AlertTable VALUES ('Error',35264, 	@ServerName + N' AG 35264: AG Data Movement - Suspended')
+INSERT INTO @AlertTable VALUES ('Error',28034, 	@ServerName + N' AG 28034: Connection handshake on broker')
+INSERT INTO @AlertTable VALUES ('Error',1480, 	@ServerName + N' AG 1480: AG Role Change' )
+INSERT INTO @AlertTable VALUES ('Error',41091, 	@ServerName + N' AG 41091: Replica Going Offline Lease Expired')
+INSERT INTO @AlertTable VALUES ('Error',41131, 	@ServerName + N' AG 41131: Failed to Bring AG ONLINE')
+INSERT INTO @AlertTable VALUES ('Error',41142, 	@ServerName + N' AG 41142: Replica Cannot become primary')
+INSERT INTO @AlertTable VALUES ('Error',41406, 	@ServerName + N' AG 41406: AG not Ready for Auto Failover')
+INSERT INTO @AlertTable VALUES ('Error',41414, 	@ServerName + N' AG 41414: Secondary not Connected')
+INSERT INTO @AlertTable VALUES ('Error',35276, 	@ServerName + N' Error 35276: Failed to allocate and schedule an AG task for database. Database Out of Sync'  )
 
 
-INSERT INTO @AlertTable VALUES ('Error',1481,	@ServerName + N' Alert! AG 1481: Database replica sync health check failed')
-INSERT INTO @AlertTable VALUES ('Error',35201,	@ServerName + N' Alert! AG 35201: Connection to primary failed')
-INSERT INTO @AlertTable VALUES ('Error',19407, 	@ServerName + N' Alert! AG 19407: Cluster connectivity issue.' )-- The lease between the SQL availability group and the Windows Server Failover Cluster has expired.'  )
-INSERT INTO @AlertTable VALUES ('Error',19419, 	@ServerName + N' Alert! AG 19419: Cluster to SQL lease timeout.' )--  Failover Cluster did not receive a process event signal from SQL Server hosting availability group within the lease timeout period.'  )
-INSERT INTO @AlertTable VALUES ('Error',19421, 	@ServerName + N' Alert! AG 19421: SQL to Cluster lease timeout.' )--  SQL availability group did not receive a process event signal from the Failover Cluster within the lease timeout period.'  )
-INSERT INTO @AlertTable VALUES ('Error',19422, 	@ServerName + N' Alert! AG 19422: AG lease renewal failed.' )--  SQL availability group and the Windows Server Failover Cluster failed because SQL Server encountered Windows error with error code.'  )
-INSERT INTO @AlertTable VALUES ('Error',41143, 	@ServerName + N' Alert! AG 41143: AG replica is in a failed state.' )--   A previous operation to read or update persisted configuration data for the availability group has failed.  To recover from this failure, either restart the local Windows Server Failover Clustering (WSFC) service or restart the local instance of SQL Server.'  )
-INSERT INTO @AlertTable VALUES ('Error',41005, 	@ServerName + N' Alert! AG 41005: Failed to obtain Failover Clustering (WSFC) resource handle.' )--  The WSFC service may not be running or may not be accessible in its current state.'  )
-INSERT INTO @AlertTable VALUES ('Error',41144, 	@ServerName + N' Alert! AG 41144: Local AG replica is in a failed state.' )--   The replica failed to read or update the persisted configuration data. To recover from this failure, either restart the local Windows Server Failover Clustering (WSFC) service or restart the local instance of SQL Server.'  )
+INSERT INTO @AlertTable VALUES ('Error',1481,	@ServerName + N' AG 1481: Database replica sync health check failed')
+INSERT INTO @AlertTable VALUES ('Error',35201,	@ServerName + N' AG 35201: Connection to primary failed')
+INSERT INTO @AlertTable VALUES ('Error',19407, 	@ServerName + N' AG 19407: Cluster connectivity issue.' )-- The lease between the SQL availability group and the Windows Server Failover Cluster has expired.'  )
+INSERT INTO @AlertTable VALUES ('Error',19419, 	@ServerName + N' AG 19419: Cluster to SQL lease timeout.' )--  Failover Cluster did not receive a process event signal from SQL Server hosting availability group within the lease timeout period.'  )
+INSERT INTO @AlertTable VALUES ('Error',19421, 	@ServerName + N' AG 19421: SQL to Cluster lease timeout.' )--  SQL availability group did not receive a process event signal from the Failover Cluster within the lease timeout period.'  )
+INSERT INTO @AlertTable VALUES ('Error',19422, 	@ServerName + N' AG 19422: AG lease renewal failed.' )--  SQL availability group and the Windows Server Failover Cluster failed because SQL Server encountered Windows error with error code.'  )
+INSERT INTO @AlertTable VALUES ('Error',41143, 	@ServerName + N' AG 41143: AG replica is in a failed state.' )--   A previous operation to read or update persisted configuration data for the availability group has failed.  To recover from this failure, either restart the local Windows Server Failover Clustering (WSFC) service or restart the local instance of SQL Server.'  )
+INSERT INTO @AlertTable VALUES ('Error',41005, 	@ServerName + N' AG 41005: Failed to obtain Failover Clustering (WSFC) resource handle.' )--  The WSFC service may not be running or may not be accessible in its current state.'  )
+INSERT INTO @AlertTable VALUES ('Error',41144, 	@ServerName + N' AG 41144: Local AG replica is in a failed state.' )--   The replica failed to read or update the persisted configuration data. To recover from this failure, either restart the local Windows Server Failover Clustering (WSFC) service or restart the local instance of SQL Server.'  )
 
-INSERT INTO @AlertTable VALUES ('Error',19406, 	@ServerName + N' Alert! AG 19406: AG Replica Changed States')
-INSERT INTO @AlertTable VALUES ('Error',35206, 	@ServerName + N' Alert! AG 35206: Connection Timeout')
-INSERT INTO @AlertTable VALUES ('Error',35250, 	@ServerName + N' Alert! AG 35250: Connection to Primary Inactive')
-INSERT INTO @AlertTable VALUES ('Error',35273, 	@ServerName + N' Alert! AG 35273: Database Inaccessible')
-INSERT INTO @AlertTable VALUES ('Error',35274, 	@ServerName + N' Alert! AG 35274: Database Recovery Pending')
-INSERT INTO @AlertTable VALUES ('Error',35275, 	@ServerName + N' Alert! AG 35275: Database in Suspect State')
+INSERT INTO @AlertTable VALUES ('Error',19406, 	@ServerName + N' AG 19406: AG Replica Changed States')
+INSERT INTO @AlertTable VALUES ('Error',35206, 	@ServerName + N' AG 35206: Connection Timeout')
+INSERT INTO @AlertTable VALUES ('Error',35250, 	@ServerName + N' AG 35250: Connection to Primary Inactive')
+INSERT INTO @AlertTable VALUES ('Error',35273, 	@ServerName + N' AG 35273: Database Inaccessible')
+INSERT INTO @AlertTable VALUES ('Error',35274, 	@ServerName + N' AG 35274: Database Recovery Pending')
+INSERT INTO @AlertTable VALUES ('Error',35275, 	@ServerName + N' AG 35275: Database in Suspect State')
       
  
 
-INSERT INTO @AlertTable VALUES ('Error',9002, 	@ServerName + N' Alert! Error 9002: Log File FULL')
-INSERT INTO @AlertTable VALUES ('Error',1101,	@ServerName + N' Alert! Error 1101: Database filegroup out of space')
-INSERT INTO @AlertTable VALUES ('Error',3041,	@ServerName + N' Alert! Error 3041: - BACKUP failed to complete. Check the backup application log for detailed messages.')
-INSERT INTO @AlertTable VALUES ('Error',12412,	@ServerName + N' Alert! Error 12412:- Internal table access error. Failed to access the Query Store internal table.')
-INSERT INTO @AlertTable VALUES ('Error',18210,	@ServerName + N' Alert! Error 18210:- Failure on backup device. Operating system error.')
-INSERT INTO @AlertTable VALUES ('Error',28036, 	@ServerName + N' Alert! Error 28036: Connection handshake failed.' )--  The certificate used by this endpoint was not found')
-INSERT INTO @AlertTable VALUES ('Error',2511, 	@ServerName + N' Alert! Error 2511: Table error. Keys out of order on page.' )-- 
-INSERT INTO @AlertTable VALUES ('Error',5228, 	@ServerName + N' Alert! Error 5228: Table error. DBCC detected incomplete cleanup.' )-- 
-INSERT INTO @AlertTable VALUES ('Error',5229, 	@ServerName + N' Alert! Error 5229: Table error. contains an anti-matter column.' )-- 
-INSERT INTO @AlertTable VALUES ('Error',5242, 	@ServerName + N' Alert! Error 5242: An inconsistency was detected during an internal operation in database.' )-- 
-INSERT INTO @AlertTable VALUES ('Error',5243, 	@ServerName + N' Alert! Error 5243: An inconsistency was detected during an internal operation.' )-- 
-INSERT INTO @AlertTable VALUES ('Error',5250, 	@ServerName + N' Alert! Error 5250: Database error. This error cannot be repaired.' )--
+INSERT INTO @AlertTable VALUES ('Error',9002, 	@ServerName + N' Error 9002: Log File FULL')
+INSERT INTO @AlertTable VALUES ('Error',1101,	@ServerName + N' Error 1101: Database filegroup out of space')
+INSERT INTO @AlertTable VALUES ('Error',3041,	@ServerName + N' Error 3041: BACKUP failed to complete. Check the backup application log for detailed messages.')
+INSERT INTO @AlertTable VALUES ('Error',12412,	@ServerName + N' Error 12412: Internal table access error. Failed to access the Query Store internal table.')
+INSERT INTO @AlertTable VALUES ('Error',18210,	@ServerName + N' Error 18210:  Failure on backup device. Operating system error.')
+INSERT INTO @AlertTable VALUES ('Error',28036, 	@ServerName + N' Error 28036: Connection handshake failed.' )--  The certificate used by this endpoint was not found')
+INSERT INTO @AlertTable VALUES ('Error',2511, 	@ServerName + N' Error 2511: Table error. Keys out of order on page.' )-- 
+INSERT INTO @AlertTable VALUES ('Error',5228, 	@ServerName + N' Error 5228: Table error. DBCC detected incomplete cleanup.' )-- 
+INSERT INTO @AlertTable VALUES ('Error',5229, 	@ServerName + N' Error 5229: Table error. contains an anti-matter column.' )-- 
+INSERT INTO @AlertTable VALUES ('Error',5242, 	@ServerName + N' Error 5242: An inconsistency was detected during an internal operation in database.' )-- 
+INSERT INTO @AlertTable VALUES ('Error',5243, 	@ServerName + N' Error 5243: An inconsistency was detected during an internal operation.' )-- 
+INSERT INTO @AlertTable VALUES ('Error',5250, 	@ServerName + N' Error 5250: Database error. This error cannot be repaired.' )--
 
 /* Memory pressure alerts */
-INSERT INTO @AlertTable VALUES ('Error',701,	@ServerName + N' Alert! Error 701: Insufficient memory in resource pool')
-INSERT INTO @AlertTable VALUES ('Error',802,	@ServerName + N' Alert! Error 802: Insufficient memory available in the buffer pool')
-INSERT INTO @AlertTable VALUES ('Error',8645,	@ServerName + N' Alert! Error 8645: Timeout waiting for memory resource (RESOURCE_SEMAPHORE)')
-INSERT INTO @AlertTable VALUES ('Error',8651,	@ServerName + N' Alert! Error 8651: Low memory condition - deferred request failed')
-INSERT INTO @AlertTable VALUES ('Error',17803,	@ServerName + N' Alert! Error 17803: Insufficient memory during thread creation (Windows memory allocation failed)')
+INSERT INTO @AlertTable VALUES ('Error',701,	@ServerName + N' Error 701: Insufficient memory in resource pool')
+INSERT INTO @AlertTable VALUES ('Error',802,	@ServerName + N' Error 802: Insufficient memory available in the buffer pool')
+INSERT INTO @AlertTable VALUES ('Error',8645,	@ServerName + N' Error 8645: Timeout waiting for memory resource (RESOURCE_SEMAPHORE)')
+INSERT INTO @AlertTable VALUES ('Error',8651,	@ServerName + N' Error 8651: Low memory condition - deferred request failed')
+INSERT INTO @AlertTable VALUES ('Error',17803,	@ServerName + N' Error 17803: Insufficient memory during thread creation (Windows memory allocation failed)')
 
 /* Log / disk space alerts */
-INSERT INTO @AlertTable VALUES ('Error',9001,	@ServerName + N' Alert! Error 9001: Log for database is not available (log corruption / inaccessible)')
-INSERT INTO @AlertTable VALUES ('Error',1105,	@ServerName + N' Alert! Error 1105: Could not allocate space in filegroup (data file full, including PRIMARY)')
-INSERT INTO @AlertTable VALUES ('Error',3271,	@ServerName + N' Alert! Error 3271: Non-recoverable I/O error occurred on file')
+INSERT INTO @AlertTable VALUES ('Error',9001,	@ServerName + N' Error 9001: Log for database is not available (log corruption / inaccessible)')
+INSERT INTO @AlertTable VALUES ('Error',1105,	@ServerName + N' Error 1105: Could not allocate space in filegroup (data file full, including PRIMARY)')
+INSERT INTO @AlertTable VALUES ('Error',3271,	@ServerName + N' Error 3271: Non-recoverable I/O error occurred on file')
 
 /* Authentication / security */
-INSERT INTO @AlertTable VALUES ('Error',17806,	@ServerName + N' Alert! Error 17806: SSPI handshake failed (authentication failure)')
+INSERT INTO @AlertTable VALUES ('Error',17806,	@ServerName + N' Error 17806: SSPI handshake failed (authentication failure)')
 
 /* I/O subsystem */
-INSERT INTO @AlertTable VALUES ('Error',7105,	@ServerName + N' Alert! Error 7105: Could not retrieve row from disk (out-of-row BLOB I/O error)')
+INSERT INTO @AlertTable VALUES ('Error',7105,	@ServerName + N' Error 7105: Could not retrieve row from disk (out-of-row BLOB I/O error)')
 
 /* Configuration change audit trail */
-INSERT INTO @AlertTable VALUES ('Error',15457,	@ServerName + N' Alert! Error 15457: Configuration option changed (audit trail)')
+INSERT INTO @AlertTable VALUES ('Error',15457,	@ServerName + N' Error 15457: Configuration option changed (audit trail)')
 
 /* Network / TDS errors */
-INSERT INTO @AlertTable VALUES ('Error',4014,	@ServerName + N' Alert! Error 4014: Fatal error reading input stream from the network (TDS corruption)')
-INSERT INTO @AlertTable VALUES ('Error',17826,	@ServerName + N' Alert! Error 17826: Could not start network library due to internal error (SQL lost its listener)')
+INSERT INTO @AlertTable VALUES ('Error',4014,	@ServerName + N' Error 4014: Fatal error reading input stream from the network (TDS corruption)')
+INSERT INTO @AlertTable VALUES ('Error',17826,	@ServerName + N' Error 17826: Could not start network library due to internal error (SQL lost its listener)')
 
 /* File Control Block / pre-corruption indicator */
-INSERT INTO @AlertTable VALUES ('Error',5180,	@ServerName + N' Alert! Error 5180: Could not open File Control Block for invalid file ID (precursor to 823/824 corruption)')
+INSERT INTO @AlertTable VALUES ('Error',5180,	@ServerName + N' Error 5180: Could not open File Control Block for invalid file ID (precursor to 823/824 corruption)')
 
 /* Stack alignment fatal error */
-INSERT INTO @AlertTable VALUES ('Error',17551,	@ServerName + N' Alert! Error 17551: Fatal error - stack not properly aligned (indicates driver/OS issue)')
+INSERT INTO @AlertTable VALUES ('Error',17551,	@ServerName + N' Error 17551: Fatal error - stack not properly aligned (indicates driver/OS issue)')
 
 /* Buffer manager internal error */
-INSERT INTO @AlertTable VALUES ('Error',8966,	@ServerName + N' Alert! Error 8966: Unable to read and latch page (internal buffer manager error indicating corruption)')
+INSERT INTO @AlertTable VALUES ('Error',8966,	@ServerName + N' Error 8966: Unable to read and latch page (internal buffer manager error indicating corruption)')
 
 /* Backup / restore termination (complementary to 3041 -- also fires on restore failures) */
-INSERT INTO @AlertTable VALUES ('Error',3013,	@ServerName + N' Alert! Error 3013: BACKUP or RESTORE terminating abnormally')
+INSERT INTO @AlertTable VALUES ('Error',3013,	@ServerName + N' Error 3013: BACKUP or RESTORE terminating abnormally')
 
 /* MSDTC distributed transaction recovery */
-INSERT INTO @AlertTable VALUES ('Error',3452,	@ServerName + N' Alert! Error 3452: Recovery of in-doubt distributed transactions (MSDTC) detected')
+INSERT INTO @AlertTable VALUES ('Error',3452,	@ServerName + N' Error 3452: Recovery of in-doubt distributed transactions (MSDTC) detected')
 
 /* Security monitoring -- login failures (delay_between_responses set to 60s in the loop to avoid storms) */
-INSERT INTO @AlertTable VALUES ('Error',18456,	@ServerName + N' Alert! Error 18456: Login failed (security monitoring)')
+INSERT INTO @AlertTable VALUES ('Error',18456,	@ServerName + N' Error 18456: Login failed (security monitoring)')
 
 /* Additional critical missing alerts - best practice additions */
 /* I/O subsystem and lock errors */
-INSERT INTO @AlertTable VALUES ('Error',596,	@ServerName + N' Alert! Error 596: LCK_M_IX lock wait exceeded (severe blocking)')
-INSERT INTO @AlertTable VALUES ('Error',595,	@ServerName + N' Alert! Error 595: Lock escalation prevented')
-INSERT INTO @AlertTable VALUES ('Error',1221,	@ServerName + N' Alert! Error 1221: Lock resources exceeded (deadlock victim)')
+INSERT INTO @AlertTable VALUES ('Error',596,	@ServerName + N' Error 596: LCK_M_IX lock wait exceeded (severe blocking)')
+INSERT INTO @AlertTable VALUES ('Error',595,	@ServerName + N' Error 595: Lock escalation prevented')
+INSERT INTO @AlertTable VALUES ('Error',1221,	@ServerName + N' Error 1221: Lock resources exceeded (deadlock victim)')
 
 /* TempDB critical issues */
-INSERT INTO @AlertTable VALUES ('Error',1105,	@ServerName + N' Alert! Error 1105: Could not allocate space in tempdb')
+INSERT INTO @AlertTable VALUES ('Error',1105,	@ServerName + N' Error 1105: Could not allocate space in tempdb')
 
 /* Query Store errors */
-INSERT INTO @AlertTable VALUES ('Error',12410,	@ServerName + N' Alert! Error 12410: Query Store internal error')
-INSERT INTO @AlertTable VALUES ('Error',12411,	@ServerName + N' Alert! Error 12411: Query Store collection failed')
+INSERT INTO @AlertTable VALUES ('Error',12410,	@ServerName + N' Error 12410: Query Store internal error')
+INSERT INTO @AlertTable VALUES ('Error',12411,	@ServerName + N' Error 12411: Query Store collection failed')
 
 /* Transaction log corruption */
-INSERT INTO @AlertTable VALUES ('Error',9003,	@ServerName + N' Alert! Error 9003: Log scan - invalid log sequence number')
-INSERT INTO @AlertTable VALUES ('Error',9004,	@ServerName + N' Alert! Error 9004: Log file corruption - truncated')
-INSERT INTO @AlertTable VALUES ('Error',9013,	@ServerName + N' Alert! Error 9013: Virtual log file too small')
+INSERT INTO @AlertTable VALUES ('Error',9003,	@ServerName + N' Error 9003: Log scan - invalid log sequence number')
+INSERT INTO @AlertTable VALUES ('Error',9004,	@ServerName + N' Error 9004: Log file corruption - truncated')
+INSERT INTO @AlertTable VALUES ('Error',9013,	@ServerName + N' Error 9013: Virtual log file too small')
 
 /* DAC connection issues */
-INSERT INTO @AlertTable VALUES ('Error',233,	@ServerName + N' Alert! Error 233: Shared memory provider disconnected')
+INSERT INTO @AlertTable VALUES ('Error',233,	@ServerName + N' Error 233: Shared memory provider disconnected')
 
 /* Brent Ozar / Microsoft additional critical alerts */
 /* Out of memory conditions */
-INSERT INTO @AlertTable VALUES ('Error',701, 	@ServerName + N' Alert! Error 701: Insufficient memory (resource pool)')
-INSERT INTO @AlertTable VALUES ('Error',802, 	@ServerName + N' Alert! Error 802: Buffer pool insufficient memory')
-INSERT INTO @AlertTable VALUES ('Error',8645, 	@ServerName + N' Alert! Error 8645: Resource semaphore wait timeout')
+INSERT INTO @AlertTable VALUES ('Error',701, 	@ServerName + N' Error 701: Insufficient memory (resource pool)')
+INSERT INTO @AlertTable VALUES ('Error',802, 	@ServerName + N' Error 802: Buffer pool insufficient memory')
+INSERT INTO @AlertTable VALUES ('Error',8645, 	@ServerName + N' Error 8645: Resource semaphore wait timeout')
 
 /* SOS scheduler exhaustion (critical) */
-INSERT INTO @AlertTable VALUES ('Error',17883, 	@ServerName + N' Alert! Error 17883: Scheduler deadlock detected')
-INSERT INTO @AlertTable VALUES ('Error',17884, 	@ServerName + N' Alert! Error 17884: All schedulers appear deadlocked')
+INSERT INTO @AlertTable VALUES ('Error',17883, 	@ServerName + N' Error 17883: Scheduler deadlock detected')
+INSERT INTO @AlertTable VALUES ('Error',17884, 	@ServerName + N' Error 17884: All schedulers appear deadlocked')
 
 
 DECLARE @MaxAlerts TINYINT
@@ -2153,6 +2161,40 @@ UNION ALL
 SELECT 1222, 1, 1 /*Deadlock related*/
 --SELECT 1224, 1, 1  /*Lock escalation - NOT WORTH IT*/
 
+
+/*sp_Blitz
+								CASE WHEN [T].[TraceFlag] = '652'  THEN '652 enabled globally, which disables pre-fetching during index scans. This is usually a very bad idea.'
+											 WHEN [T].[TraceFlag] = '661'  THEN '661 enabled globally, which disables ghost record removal, causing the database to grow in size. This is usually a very bad idea.'
+										     WHEN [T].[TraceFlag] = '834'  AND @ColumnStoreIndexesInUse = 1 THEN '834 is enabled globally, but you also have columnstore indexes. That combination is not recommended by Microsoft.'
+											 WHEN [T].[TraceFlag] = '834'  AND @CheckUserDatabaseObjects = 0 THEN '834 is enabled globally, but @CheckUserDatabaseObjects was set to 0, so we skipped checking if any databases have columnstore indexes. That combination is not recommended by Microsoft.'
+											 WHEN [T].[TraceFlag] = '1117' THEN '1117 enabled globally, which grows all files in a filegroup at the same time.'
+											 WHEN [T].[TraceFlag] = '1118' THEN '1118 enabled globally, which tries to reduce SGAM waits.'
+											 WHEN [T].[TraceFlag] = '1211' THEN '1211 enabled globally, which disables lock escalation when you least expect it. This is usually a very bad idea.'
+											 WHEN [T].[TraceFlag] = '1204' THEN '1204 enabled globally, which captures deadlock graphs in the error log.'
+											 WHEN [T].[TraceFlag] = '1222' THEN '1222 enabled globally, which captures deadlock graphs in the error log.'
+											 WHEN [T].[TraceFlag] = '1224' THEN '1224 enabled globally, which disables lock escalation until the server has memory pressure. This is usually a very bad idea.'
+											 WHEN [T].[TraceFlag] = '1806' THEN '1806 enabled globally, which disables Instant File Initialization, causing restores and file growths to take longer. This is usually a very bad idea.'
+											 WHEN [T].[TraceFlag] = '2330' THEN '2330 enabled globally, which disables missing index requests. This is usually a very bad idea.'
+											 WHEN [T].[TraceFlag] = '2371' THEN '2371 enabled globally, which changes the auto update stats threshold.'
+											 WHEN [T].[TraceFlag] = '3023' THEN '3023 enabled globally, which performs checksums by default when doing database backups.'
+											 WHEN [T].[TraceFlag] = '3226' THEN '3226 enabled globally, which keeps the event log clean by not reporting successful backups.'
+											 WHEN [T].[TraceFlag] = '3505' THEN '3505 enabled globally, which disables Checkpoints. This is usually a very bad idea.'
+											 WHEN [T].[TraceFlag] = '4199' THEN '4199 enabled globally, which enables non-default Query Optimizer fixes, changing query plans from the default behaviors.'
+											 WHEN [T].[TraceFlag] = '7745' AND @CheckUserDatabaseObjects = 0 THEN '7745 enabled globally, which makes shutdowns/failovers quicker by not waiting for Query Store to flush to disk. This good idea loses you the non-flushed Query Store data. @CheckUserDatabaseObjects was set to 0, so we skipped checking if any databases have Query Store enabled.'
+											 WHEN [T].[TraceFlag] = '7745' AND @QueryStoreInUse = 1 THEN '7745 enabled globally, which makes shutdowns/failovers quicker by not waiting for Query Store to flush to disk. This good idea loses you the non-flushed Query Store data.'
+											 WHEN [T].[TraceFlag] = '7745' AND  @ProductVersionMajor > 12 THEN '7745 enabled globally, which is for Query Store. None of your databases have Query Store enabled, so why do you have this turned on?'
+											 WHEN [T].[TraceFlag] = '7745' AND  @ProductVersionMajor <= 12 THEN '7745 enabled globally, which is for Query Store. Query Store does not exist on your SQL Server version, so why do you have this turned on?'
+											 WHEN [T].[TraceFlag] = '7752' AND  @ProductVersionMajor > 14 THEN '7752 enabled globally, which is for Query Store. However, it has no effect in your SQL Server version. Consider turning it off.'
+											 WHEN [T].[TraceFlag] = '7752' AND  @ProductVersionMajor <= 12 THEN '7752 enabled globally, which is for Query Store. Query Store does not exist on your SQL Server version, so why do you have this turned on?'
+											 WHEN [T].[TraceFlag] = '7752' AND @CheckUserDatabaseObjects = 0 THEN '7752 enabled globally, which stops queries needing to wait on Query Store loading up after database recovery. @CheckUserDatabaseObjects was set to 0, so we skipped checking if any databases have Query Store enabled.'
+											 WHEN [T].[TraceFlag] = '7752' AND @QueryStoreInUse = 1 THEN '7752 enabled globally, which stops queries needing to wait on Query Store loading up after database recovery.'
+											 WHEN [T].[TraceFlag] = '7752' AND  @ProductVersionMajor > 12 THEN '7752 enabled globally, which is for Query Store. None of your databases have Query Store enabled, so why do you have this turned on?'
+											 WHEN [T].[TraceFlag] = '8048' THEN '8048 enabled globally, which tries to reduce CMEMTHREAD waits on servers with a lot of logical processors.'
+											 WHEN [T].[TraceFlag] = '8017' AND (CAST(SERVERPROPERTY('Edition') AS NVARCHAR(1000)) LIKE N'%Express%') THEN '8017 is enabled globally, but this is the default for Express Edition.'
+                                             WHEN [T].[TraceFlag] = '8017' AND (CAST(SERVERPROPERTY('Edition') AS NVARCHAR(1000)) NOT LIKE N'%Express%') THEN '8017 is enabled globally, which disables the creation of schedulers for all logical processors.'
+											 WHEN [T].[TraceFlag] = '8649' THEN '8649 enabled globally, which cost threshold for parallelism down to 0.  This is usually a very bad idea.'
+											 ELSE [T].[TraceFlag] + ' is enabled globally.' END
+*/
 /*
 1488, Enables Replication to continue when the secondary node is down
 */
@@ -2212,6 +2254,8 @@ BEGIN
 	SELECT 9476, 1, 1  /*SQL 2017+: Snapshot baseline for CE model version 120+ to control multiple query optimizer changes*
 --https://www.mssqltips.com/sqlservertip/3320/enabling-sql-server-trace-flag-for-a-poor-performing-query-using-querytraceon/
 	--4136 IGNORE STATISTICS */
+	UNION ALL 
+	SELECT 2451,1,1
 
 END
 

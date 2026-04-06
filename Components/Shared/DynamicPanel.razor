@@ -9,6 +9,7 @@
 @inject ILogger<DynamicPanel> Logger
 @inject LocalLogService LocalLogger
 
+<div id="panel-@Panel?.Id">
 @switch (Panel.PanelType)
 {
     case "TimeSeries":
@@ -183,7 +184,8 @@
             </a>
         </div>
         break;
-}
+    }
+</div>
 
 @code {
     [Parameter] public PanelDefinition Panel { get; set; } = new();

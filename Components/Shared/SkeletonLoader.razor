@@ -1,0 +1,54 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@* Reusable skeleton loading placeholder. Type controls the shape; Count controls how many rows. *@
+
+@if (Type == "card")
+{
+    @for (int i = 0; i < Count; i++)
+    {
+        <div class="skeleton skeleton-card" style="@Style"></div>
+    }
+}
+else if (Type == "chart")
+{
+    <div class="skeleton skeleton-chart" style="@Style"></div>
+}
+else if (Type == "table")
+{
+    <div class="skeleton skeleton-title" style="width:40%;"></div>
+    @for (int i = 0; i < Count; i++)
+    {
+        <div class="skeleton skeleton-text" style="@Style"></div>
+    }
+}
+else if (Type == "stat")
+{
+    <div style="display:flex; gap:12px; flex-wrap:wrap;">
+        @for (int i = 0; i < Count; i++)
+        {
+            <div style="flex:1; min-width:120px;">
+                <div class="skeleton skeleton-title" style="width:50%;"></div>
+                <div class="skeleton" style="height:32px; width:80%;"></div>
+            </div>
+        }
+    </div>
+}
+else
+{
+    @* default: lines *@
+    <div class="skeleton skeleton-title"></div>
+    @for (int i = 0; i < Count; i++)
+    {
+        <div class="skeleton skeleton-text" style="width:@(80 - i * 8 > 40 ? 80 - i * 8 : 60)%;"></div>
+    }
+}
+
+@code {
+    /// <summary>card | chart | table | stat | lines</summary>
+    [Parameter] public string Type { get; set; } = "lines";
+
+    /// <summary>Number of repeated elements (rows, cards, stats).</summary>
+    [Parameter] public int Count { get; set; } = 3;
+
+    /// <summary>Optional inline style override on the skeleton element.</summary>
+    [Parameter] public string Style { get; set; } = "";
+}

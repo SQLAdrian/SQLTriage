@@ -46,7 +46,9 @@
             <div class="app-content" id="main-content" role="content" aria-label="Page content">
                 <ErrorBoundary>
                     <ChildContent>
-                        <RouteView RouteData="@routeData" />
+                        <div class="page-fade-in" @key="Navigation.Uri">
+                            <RouteView RouteData="@routeData" />
+                        </div>
                     </ChildContent>
                     <ErrorContent Context="ex">
                         <div class="error-boundary" role="alert" aria-live="assertive">

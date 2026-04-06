@@ -10,6 +10,7 @@
 @inject AlertingService Alerting
 @inject ToastService Toast
 @inject ServerConnectionManager ConnectionManager
+@inject XEventService XEventService
 @using System.Data
 @using Microsoft.Data.SqlClient
 @implements IDisposable
@@ -18,10 +19,20 @@
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
         <h2 style="margin: 0;">Alerts</h2>
         <div style="display: flex; gap: 8px; align-items: center;">
+            @if (_dryRun)
+            {
+                <span class="severity-badge severity-warning" style="font-size: 12px; padding: 4px 10px;">
+                    DRY RUN
+                </span>
+            }
             <span class="severity-badge @(Engine.IsRunning ? "severity-info" : "")"
                   style="font-size: 12px; padding: 4px 10px;">
                 @(Engine.IsRunning ? "Engine Running" : "Engine Stopped")
             </span>
+            <label class="toggle-label" style="font-size: 12px;">
+                <input type="checkbox" checked="@_dryRun" @onchange="ToggleDryRun" />
+                Dry Run
+            </label>
             <button class="settings-btn" @onclick="ToggleEngine">
                 @(Engine.IsRunning ? "Stop" : "Start")
             </button>
@@ -149,6 +160,24 @@
                         <span>@(_globalDefaults.Enabled ? "Active" : "Disabled")</span>
                     </label>
                 </div>
+            </div>
+        </div>
+
+        <!-- Extended Events Settings -->
+        <div class="settings-group" style="margin-bottom: 16px;">
+            <h3 style="margin-top: 0;">Extended Events (Optional)</h3>
+            <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">Deploy pre-configured Extended Event sessions for real-time monitoring. Sessions capture events like deadlocks and errors without polling.</p>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button class="settings-btn" @onclick="DeployComprehensiveSession">Deploy Comprehensive Session</button>
+                <button class="settings-btn" @onclick="DeployDeadlockSession">Deploy Deadlock Session</button>
+                <button class="settings-btn" @onclick="DeployErrorSession">Deploy Error Session</button>
+                <button class="settings-btn" @onclick="ViewSessions">View Active Sessions</button>
+            </div>
+            <div style="margin-top: 12px;">
+                <label class="toggle-label">
+                    <input type="checkbox" @bind="_useXEForAlerts" />
+                    <span>Use XE for eligible alerts (deadlocks, errors)</span>
+                </label>
             </div>
         </div>
 
@@ -505,6 +534,12 @@
     private string? _testQueryError;
     private string? _testQueryElapsed;
 
+    // XE state
+    private bool _useXEForAlerts;
+
+    // Dry-run state (mirrors Engine.DryRun)
+    private bool _dryRun;
+
     private List<AlertDefinition> FilteredAlerts =>
         _selectedCategory == null
             ? _allAlerts
@@ -512,6 +547,7 @@
 
     protected override void OnInitialized()
     {
+        _dryRun = Engine.DryRun;
         LoadData();
         Engine.OnAlertsChanged += OnEngineChanged;
     }
@@ -542,6 +578,15 @@
         _activeAlerts = Engine.ActiveAlerts.ToList();
         _activeAlertCount = Engine.ActiveCount;
         await InvokeAsync(StateHasChanged);
+    }
+
+    private void ToggleDryRun(ChangeEventArgs e)
+    {
+        _dryRun = (bool)(e.Value ?? false);
+        Engine.DryRun = _dryRun;
+        Toast.ShowInfo(_dryRun
+            ? "Dry Run enabled — alerts evaluate but no notifications or history writes"
+            : "Dry Run disabled — alerts will notify and persist");
     }
 
     private void ToggleEngine()
@@ -742,6 +787,114 @@
         if (seconds < 3600) return $"{seconds / 60}m";
         if (seconds < 86400) return $"{seconds / 3600}h";
         return $"{seconds / 86400}d";
+    }
+
+    private async Task DeployComprehensiveSession()
+    {
+        var connection = ConnectionManager.GetConnections().FirstOrDefault();
+        if (connection == null)
+        {
+            Toast.ShowError("No server connection configured");
+            return;
+        }
+
+        try
+        {
+            var connStr = connection.GetConnectionString(connection.ServerNames, "master");
+            var result = await XEventService.CreateSessionAsync(connStr, "ComprehensiveMonitor", "error_reported", "severity >= 17");
+            if (result.StartsWith("Error"))
+            {
+                Toast.ShowError(result);
+            }
+            else
+            {
+                Toast.ShowSuccess("Comprehensive XE session deployed");
+                await XEventService.StartSessionAsync(connStr, "ComprehensiveMonitor");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to deploy session: {ex.Message}");
+        }
+    }
+
+    private async Task DeployDeadlockSession()
+    {
+        var connection = ConnectionManager.GetConnections().FirstOrDefault();
+        if (connection == null)
+        {
+            Toast.ShowError("No server connection configured");
+            return;
+        }
+
+        try
+        {
+            var connStr = connection.GetConnectionString(connection.ServerNames, "master");
+            var result = await XEventService.CreateSessionAsync(connStr, "DeadlockMonitor", "xml_deadlock_report");
+            if (result.StartsWith("Error"))
+            {
+                Toast.ShowError(result);
+            }
+            else
+            {
+                Toast.ShowSuccess("Deadlock XE session deployed");
+                await XEventService.StartSessionAsync(connStr, "DeadlockMonitor");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to deploy session: {ex.Message}");
+        }
+    }
+
+    private async Task DeployErrorSession()
+    {
+        var connection = ConnectionManager.GetConnections().FirstOrDefault();
+        if (connection == null)
+        {
+            Toast.ShowError("No server connection configured");
+            return;
+        }
+
+        try
+        {
+            var connStr = connection.GetConnectionString(connection.ServerNames, "master");
+            var result = await XEventService.CreateSessionAsync(connStr, "ErrorMonitor", "error_reported", "severity >= 17");
+            if (result.StartsWith("Error"))
+            {
+                Toast.ShowError(result);
+            }
+            else
+            {
+                Toast.ShowSuccess("Error XE session deployed");
+                await XEventService.StartSessionAsync(connStr, "ErrorMonitor");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to deploy session: {ex.Message}");
+        }
+    }
+
+    private async Task ViewSessions()
+    {
+        var connection = ConnectionManager.GetConnections().FirstOrDefault();
+        if (connection == null)
+        {
+            Toast.ShowError("No server connection configured");
+            return;
+        }
+
+        try
+        {
+            var sessions = await XEventService.GetSessionsAsync(connection.GetConnectionString(connection.ServerNames, "master"));
+            var message = string.Join("\n", sessions.Select(s => $"{s.Name}: {(s.IsEnabled ? "Running" : "Stopped")}"));
+            Toast.ShowInfo($"Active XE Sessions:\n{message}");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to load sessions: {ex.Message}");
+        }
     }
 
     public void Dispose()

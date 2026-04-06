@@ -1,0 +1,46 @@
+name: Release with Squirrel
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: 8.0.x
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build
+      run: dotnet build --configuration Release --no-restore
+
+    - name: Publish
+      run: dotnet publish -c Release -r win-x64 --self-contained true -o ./publish
+
+    - name: Create Squirrel Release
+      uses: robmen/squirrel.windows-action@v1
+      with:
+        args: --releasify ./publish/SqlHealthAssessment.exe --releaseDir ./releases --loadingGif loading.gif --packageName SqlHealthAssessment
+
+    - name: Upload Release
+      uses: actions/upload-artifact@v3
+      with:
+        name: squirrel-release
+        path: ./releases/
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: ./releases/*
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

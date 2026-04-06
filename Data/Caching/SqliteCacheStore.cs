@@ -455,6 +455,9 @@ namespace SqlHealthAssessment.Data.Caching
         /// <summary>
         /// Reads cached time-series data within the specified time window.
         /// </summary>
+        // Maximum data points returned per chart series to prevent memory pressure
+        private const int MaxChartDataPoints = 2000;
+
         public async Task<List<TimeSeriesPoint>> GetTimeSeriesAsync(
             string queryId, string instanceKey, DateTime from, DateTime to)
         {
@@ -469,11 +472,13 @@ namespace SqlHealthAssessment.Data.Caching
                   AND instance_key = @ikey
                   AND time_value >= @from
                   AND time_value <= @to
-                ORDER BY time_value";
+                ORDER BY time_value
+                LIMIT @maxPoints";
             cmd.Parameters.AddWithValue("@qid", queryId);
             cmd.Parameters.AddWithValue("@ikey", instanceKey);
             cmd.Parameters.AddWithValue("@from", from.ToString("o"));
             cmd.Parameters.AddWithValue("@to", to.ToString("o"));
+            cmd.Parameters.AddWithValue("@maxPoints", MaxChartDataPoints);
 
             var results = new List<TimeSeriesPoint>();
             using var reader = await cmd.ExecuteReaderAsync();

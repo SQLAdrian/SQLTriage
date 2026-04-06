@@ -208,7 +208,7 @@ namespace SqlHealthAssessment.Data
                     SqlSafetyValidator.ValidateOrThrow(config.SqlQueryForOutput, $"{config.Name} (SqlQueryForOutput)");
                 }
 
-                _logger.LogInformation("Script {Name} passed safety validation for {Server}", config.Name, targetServer);
+                _logger.LogInformation("Script {Name} passed safety validation for {Server}", config.Name, LogAnon.S(targetServer));
                 // --- END SQL SAFETY VALIDATION ---
 
                 // Split script on GO batch separators using regex (GO must be on its own line)
@@ -246,7 +246,7 @@ namespace SqlHealthAssessment.Data
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogWarning(ex, "Batch execution warning in script {Name} on {Server}", config.Name, targetServer);
+                        _logger.LogWarning(ex, "Batch execution warning in script {Name} on {Server}", config.Name, LogAnon.S(targetServer));
                         // Log but continue - some batches may fail due to version differences
                     }
                 }
@@ -271,13 +271,13 @@ namespace SqlHealthAssessment.Data
                         }
 
                         _logger.LogInformation("ExecutionTest for {Name} on {Server}: ToRun={ToRun}",
-                            config.Name, targetServer, shouldRunExecParams ? 1 : 0);
+                            config.Name, LogAnon.S(targetServer), shouldRunExecParams ? 1 : 0);
                     }
                     catch (OperationCanceledException) { throw; }
                     catch (Exception ex)
                     {
                         _logger.LogWarning(ex, "ExecutionTest failed for {Name} on {Server} — defaulting to run ExecutionParameters",
-                            config.Name, targetServer);
+                            config.Name, LogAnon.S(targetServer));
                         shouldRunExecParams = true;
                     }
                 }
@@ -298,14 +298,14 @@ namespace SqlHealthAssessment.Data
                     catch (Exception ex)
                     {
                         result.ErrorMessage = $"ExecutionParameters warning: {ex.Message}";
-                        _logger.LogWarning(ex, "ExecutionParameters failed for script {Name} on {Server} — continuing to SqlQueryForOutput", config.Name, targetServer);
+                        _logger.LogWarning(ex, "ExecutionParameters failed for script {Name} on {Server} — continuing to SqlQueryForOutput", config.Name, LogAnon.S(targetServer));
                     }
                 }
                 else if (!shouldRunExecParams)
                 {
                     result.StatusMessage = "✓ Loaded previous execution";
                     _logger.LogInformation("ExecutionParameters skipped for {Name} on {Server} (ExecutionTest returned ToRun=0)",
-                        config.Name, targetServer);
+                        config.Name, LogAnon.S(targetServer));
                 }
 
                 // Select the results:
@@ -341,7 +341,7 @@ namespace SqlHealthAssessment.Data
                 result.Success = true;
 
                 _logger.LogInformation("Script {Name} executed successfully on {Server} in {ElapsedMs}ms ({Rows} rows)",
-                    config.Name, targetServer, stopwatch.ElapsedMilliseconds, result.RowsAffected);
+                    config.Name, LogAnon.S(targetServer), stopwatch.ElapsedMilliseconds, result.RowsAffected);
             }
             catch (SqlSafetyException ex)
             {
@@ -355,14 +355,14 @@ namespace SqlHealthAssessment.Data
                 stopwatch.Stop();
                 result.ExecutionTime = stopwatch.Elapsed;
                 result.ErrorMessage = "Execution was cancelled.";
-                _logger.LogWarning("Script {Name} execution cancelled on {Server}", config.Name, targetServer);
+                _logger.LogWarning("Script {Name} execution cancelled on {Server}", config.Name, LogAnon.S(targetServer));
             }
             catch (Exception ex)
             {
                 stopwatch.Stop();
                 result.ExecutionTime = stopwatch.Elapsed;
                 result.ErrorMessage = ex.Message;
-                _logger.LogError(ex, "Error executing script {Name} on {Server}", config.Name, targetServer);
+                _logger.LogError(ex, "Error executing script {Name} on {Server}", config.Name, LogAnon.S(targetServer));
             }
 
             return result;

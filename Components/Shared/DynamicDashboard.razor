@@ -214,8 +214,21 @@
         </div>
     }
 
-    @* Show panel errors *@
-    @if (_panelErrors.Any())
+    @* No servers configured — show prompt instead of connection errors *@
+    @if (!ConnectionManager.GetConnections().Any())
+    {
+        <div style="padding:48px 32px; text-align:center; background:var(--bg-secondary); border:1px solid var(--border); border-radius:8px; margin:16px;">
+            <i class="fa-solid fa-server" style="font-size:36px; color:var(--text-muted); margin-bottom:16px; display:block;"></i>
+            <div style="font-size:15px; font-weight:600; color:var(--text-primary); margin-bottom:8px;">No servers configured</div>
+            <div style="font-size:13px; color:var(--text-secondary); margin-bottom:20px;">Add a server connection to start monitoring.</div>
+            <a href="/servers" style="display:inline-flex; align-items:center; gap:8px; padding:8px 20px; background:var(--primary); color:#fff; border-radius:6px; text-decoration:none; font-size:13px; font-weight:600;">
+                <i class="fa-solid fa-plus"></i> Add Server
+            </a>
+        </div>
+    }
+
+    @* Show panel errors (only when servers are configured) *@
+    @if (_panelErrors.Any() && ConnectionManager.GetConnections().Any())
     {
         <div class="chart-empty" style="color: #ff9800; background: #2a2000; border: 1px solid #ff9800; padding: 12px; margin: 8px; border-radius: 4px;">
             <strong>&#9888; Data Load Warnings:</strong>
