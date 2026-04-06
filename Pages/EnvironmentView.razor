@@ -16,6 +16,12 @@
         <div class="env-toolbar-left">
             <i class="fa-solid fa-network-wired" style="color:var(--accent);font-size:18px;"></i>
             <span style="font-size:15px;font-weight:600;color:var(--text-primary);">Environment View</span>
+            @if (_serverResults.Count > 0 && !_isScanning)
+            {
+                <span style="font-size:11px;color:var(--text-muted);margin-left:6px;">
+                    @_serverResults.Count server(s) · @(_serverResults.Sum(s => s.HostCount)) hosts
+                </span>
+            }
         </div>
         <div class="env-toolbar-right">
             <div class="server-scope-toggle">
@@ -68,131 +74,74 @@
         </div>
     }
 
-    @if (_serverResults.Count > 0)
+    @if (_serverResults.Count > 0 || _isScanning)
     {
-        <!-- ── Server Grid ──────────────────────────────────────────────── -->
-        <div class="env-server-grid">
-            @foreach (var sr in _serverResults)
-            {
-                var isSelected = sr.ServerName == _selectedServerName;
-                var crossIn  = GetCrossLinksTo(sr.ServerName);
-                var crossOut = GetCrossLinksFrom(sr.ServerName);
+        <!-- ── Main topology area ──────────────────────────────────────── -->
+        <div class="env-lower" style="flex:1;min-height:0;">
 
-                <div class="env-srv-card @(isSelected ? "env-srv-card-selected" : "") @(sr.Error != null ? "env-srv-card-error" : "")"
-                     @onclick="() => SelectServer(sr.ServerName)">
-
-                    <div class="env-srv-card-header">
-                        <i class="fa-solid fa-server env-srv-card-icon"></i>
-                        <span class="env-srv-card-name" title="@sr.ServerName">@ShortName(sr.ServerName)</span>
-                        @if (sr.Error != null)
-                        {
-                            <i class="fa-solid fa-triangle-exclamation" style="color:#f87171;margin-left:auto;" title="@sr.Error"></i>
-                        }
-                    </div>
-
-                    @if (sr.Error == null)
+            <!-- Force-directed topology canvas -->
+            <div class="env-topo-strip" style="flex:1;min-width:0;">
+                <div id="env-topo-canvas" class="env-topo-canvas">
+                    @if (_isScanning)
                     {
-                        <div class="env-srv-badges">
-                            <span class="env-srv-badge env-srv-badge-green" title="Hosts"><i class="fa-solid fa-desktop"></i> @sr.HostCount</span>
-                            <span class="env-srv-badge env-srv-badge-green" title="Apps"><i class="fa-solid fa-cube"></i> @sr.AppCount</span>
-                            <span class="env-srv-badge env-srv-badge-green" title="Users"><i class="fa-solid fa-user"></i> @sr.UserCount</span>
-                            <span class="env-srv-badge env-srv-badge-green" title="DBs"><i class="fa-solid fa-database"></i> @sr.DbCount</span>
-                            <span class="env-srv-badge" title="IPs"><i class="fa-solid fa-network-wired"></i> @sr.IpCount</span>
-                            <span class="env-srv-badge" title="Auth schemes"><i class="fa-solid fa-shield-halved"></i> @sr.AuthCount</span>
+                        <div style="display:flex;align-items:center;justify-content:center;height:100%;gap:10px;color:var(--text-secondary);">
+                            <i class="fa-solid fa-spinner fa-spin"></i>
+                            <span>Scanning @_scanProgress…</span>
                         </div>
+                    }
+                </div>
+            </div>
 
-                        <!-- Cross-server connection indicators -->
-                        @if (crossIn.Count > 0 || crossOut.Count > 0)
-                        {
-                            <div class="env-srv-crosslinks">
-                                @foreach (var lnk in crossIn)
+            <!-- Host detail panel (slides in on node click) -->
+            @if (_selectedHost != null)
+            {
+                <div class="env-host-detail">
+                    <div class="env-host-detail-header">
+                        <i class="fa-solid fa-desktop"></i>
+                        <strong>@_selectedHost.Hostname</strong>
+                        <span style="font-size:10px;color:var(--text-muted);margin-left:4px;">via @_selectedHostServer</span>
+                        <button class="env-detail-close" @onclick="() => _selectedHost = null">✕</button>
+                    </div>
+                    <div class="env-detail-badges">
+                        <span class="env-badge"><i class="fa-solid fa-plug"></i> @_selectedHost.ConnectionCount conn</span>
+                        <span class="env-badge"><i class="fa-solid fa-cube"></i> @_selectedHost.UniqueApps apps</span>
+                        <span class="env-badge"><i class="fa-solid fa-user"></i> @_selectedHost.UniqueUsers users</span>
+                        <span class="env-badge"><i class="fa-solid fa-database"></i> @_selectedHost.UniqueDbs DBs</span>
+                    </div>
+                    <div class="env-host-detail-table-wrap">
+                        <table class="env-detail-table">
+                            <thead>
+                                <tr>
+                                    <th>Application</th>
+                                    <th>User</th>
+                                    <th>Database</th>
+                                    <th>IP</th>
+                                    <th>Driver</th>
+                                    <th>Protocol</th>
+                                    <th>Auth</th>
+                                    <th>Encrypt</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var c in _selectedHost.Connections)
                                 {
-                                    <span class="env-xlink env-xlink-in" title="@lnk.FromServer connects here">
-                                        <i class="fa-solid fa-arrow-right"></i> @ShortName(lnk.FromServer)
-                                    </span>
+                                    <tr>
+                                        <td title="@c.App">@c.App</td>
+                                        <td title="@c.User">@c.User</td>
+                                        <td title="@c.Database">@c.Database</td>
+                                        <td>@c.IP</td>
+                                        <td>@c.DriverVersion</td>
+                                        <td>@c.ProtocolVersion</td>
+                                        <td>@c.AuthScheme</td>
+                                        <td>@c.EncryptOption</td>
+                                    </tr>
                                 }
-                                @foreach (var lnk in crossOut)
-                                {
-                                    <span class="env-xlink env-xlink-out" title="This server connects to @lnk.ToServer">
-                                        <i class="fa-solid fa-arrow-left"></i> @ShortName(lnk.ToServer)
-                                    </span>
-                                }
-                            </div>
-                        }
-                    }
-                    else
-                    {
-                        <div class="env-srv-errmsg">@sr.Error</div>
-                    }
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             }
         </div>
-
-        <!-- ── Mini Topology + Host Detail ────────────────────────────── -->
-        @if (_selectedServer != null)
-        {
-            <div class="env-lower">
-
-                <!-- Mini topology strip -->
-                <div class="env-topo-strip">
-                    <div class="env-topo-header">
-                        <i class="fa-solid fa-diagram-project"></i>
-                        <strong>@_selectedServer.ServerName</strong>
-                        <span class="env-topo-subtitle">— @_selectedServer.HostCount hosts, click a node to inspect</span>
-                    </div>
-                    <div id="env-topo-canvas" class="env-topo-canvas"></div>
-                </div>
-
-                <!-- Host detail panel -->
-                @if (_selectedHost != null)
-                {
-                    <div class="env-host-detail">
-                        <div class="env-host-detail-header">
-                            <i class="fa-solid fa-desktop"></i>
-                            <strong>@_selectedHost.Hostname</strong>
-                            <button class="env-detail-close" @onclick="() => _selectedHost = null">✕</button>
-                        </div>
-                        <div class="env-detail-badges">
-                            <span class="env-badge"><i class="fa-solid fa-plug"></i> @_selectedHost.ConnectionCount conn</span>
-                            <span class="env-badge"><i class="fa-solid fa-cube"></i> @_selectedHost.UniqueApps apps</span>
-                            <span class="env-badge"><i class="fa-solid fa-user"></i> @_selectedHost.UniqueUsers users</span>
-                            <span class="env-badge"><i class="fa-solid fa-database"></i> @_selectedHost.UniqueDbs DBs</span>
-                        </div>
-                        <div class="env-host-detail-table-wrap">
-                            <table class="env-detail-table">
-                                <thead>
-                                    <tr>
-                                        <th>Application</th>
-                                        <th>User</th>
-                                        <th>Database</th>
-                                        <th>IP</th>
-                                        <th>Driver</th>
-                                        <th>Protocol</th>
-                                        <th>Auth</th>
-                                        <th>Encrypt</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach (var c in _selectedHost.Connections)
-                                    {
-                                        <tr>
-                                            <td title="@c.App">@c.App</td>
-                                            <td title="@c.User">@c.User</td>
-                                            <td title="@c.Database">@c.Database</td>
-                                            <td>@c.IP</td>
-                                            <td>@c.DriverVersion</td>
-                                            <td>@c.ProtocolVersion</td>
-                                            <td>@c.AuthScheme</td>
-                                            <td>@c.EncryptOption</td>
-                                        </tr>
-                                    }
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                }
-            </div>
-        }
     }
 </div>
 
@@ -204,13 +153,13 @@
     private string _selectedConnectionId = "";
     private bool _isScanning = false;
     private string? _errorMessage;
+    private string _scanProgress = "";
 
     private List<ServerEnvironmentResult> _serverResults = new();
     private List<CrossLink> _crossLinks = new();
 
-    private string? _selectedServerName;
-    private ServerEnvironmentResult? _selectedServer;
     private HostNode? _selectedHost;
+    private string _selectedHostServer = "";
 
     private DotNetObjectReference<EnvironmentView>? _dotNetRef;
 
@@ -233,8 +182,18 @@
     [Microsoft.JSInterop.JSInvokable]
     public void OnHostNodeClicked(string hostname)
     {
-        _selectedHost = _selectedServer?.Hosts?.FirstOrDefault(
-            h => string.Equals(h.Hostname, hostname, StringComparison.OrdinalIgnoreCase));
+        // Search all server results for this hostname
+        foreach (var sr in _serverResults)
+        {
+            var host = sr.Hosts?.FirstOrDefault(
+                h => string.Equals(h.Hostname, hostname, StringComparison.OrdinalIgnoreCase));
+            if (host != null)
+            {
+                _selectedHost = host;
+                _selectedHostServer = sr.ServerName;
+                break;
+            }
+        }
         InvokeAsync(StateHasChanged);
     }
 
@@ -244,9 +203,8 @@
         _errorMessage = null;
         _serverResults.Clear();
         _crossLinks.Clear();
-        _selectedServerName = null;
-        _selectedServer = null;
         _selectedHost = null;
+        _selectedHostServer = "";
         StateHasChanged();
 
         try
@@ -272,85 +230,79 @@
 
             if (targets.Count == 0) { _errorMessage = "No servers selected."; return; }
 
-            var results = await Task.WhenAll(targets.Select(t => ScanServerAsync(t.conn, t.serverName)));
-            _serverResults = results.Where(r => r != null).ToList()!;
+            // Scan with progress feedback
+            var results = new List<ServerEnvironmentResult>();
+            for (int i = 0; i < targets.Count; i++)
+            {
+                var t = targets[i];
+                _scanProgress = $"{t.serverName} ({i+1}/{targets.Count})";
+                StateHasChanged();
+                var r = await ScanServerAsync(t.conn, t.serverName);
+                if (r != null) results.Add(r);
+            }
+
+            _serverResults = results;
 
             if (_serverResults.Count == 0) { _errorMessage = "No results returned."; return; }
 
-            // Build cross-server links
             BuildCrossLinks();
 
-            // Auto-select first server
-            var first = _serverResults.FirstOrDefault(s => s.Error == null) ?? _serverResults[0];
-            await SelectServerAsync(first.ServerName);
+            // Render the full topology with all servers
+            await RenderTopology();
         }
         catch (Exception ex) { _errorMessage = $"Scan failed: {ex.Message}"; }
-        finally { _isScanning = false; StateHasChanged(); }
+        finally { _isScanning = false; _scanProgress = ""; StateHasChanged(); }
     }
 
-    private void SelectServer(string serverName)
+    private async Task RenderTopology()
     {
-        _selectedHost = null;
-        _ = SelectServerAsync(serverName);
-    }
-
-    private async Task SelectServerAsync(string serverName)
-    {
-        _selectedServerName = serverName;
-        _selectedServer = _serverResults.FirstOrDefault(s => s.ServerName == serverName);
-        _selectedHost = null;
-        StateHasChanged();
-
-        if (_selectedServer == null || _selectedServer.Error != null) return;
-
-        await Task.Delay(30); // let DOM render canvas div
-
-        var crossIn  = GetCrossLinksTo(serverName);
-        var crossOut = GetCrossLinksFrom(serverName);
+        await Task.Delay(50); // let DOM render canvas div
 
         var json = System.Text.Json.JsonSerializer.Serialize(new
         {
-            server = new
+            servers = _serverResults.Select(sr => new
             {
-                name = _selectedServer.ServerName,
+                name   = sr.ServerName,
+                error  = sr.Error,
                 counts = new
                 {
-                    hosts = _selectedServer.HostCount,
-                    apps  = _selectedServer.AppCount,
-                    users = _selectedServer.UserCount,
-                    dbs   = _selectedServer.DbCount,
-                    ips   = _selectedServer.IpCount,
-                    auth  = _selectedServer.AuthCount,
-                    encr  = _selectedServer.EncrCount
-                }
-            },
-            hosts = (_selectedServer.Hosts ?? new()).Select(h => new
-            {
-                hostname        = h.Hostname,
-                connectionCount = h.ConnectionCount,
-                uniqueApps      = h.UniqueApps,
-                uniqueUsers     = h.UniqueUsers,
-                uniqueDbs       = h.UniqueDbs
+                    hosts = sr.HostCount,
+                    apps  = sr.AppCount,
+                    users = sr.UserCount,
+                    dbs   = sr.DbCount,
+                    ips   = sr.IpCount,
+                    auth  = sr.AuthCount
+                },
+                hosts = (sr.Hosts ?? new()).Select(h => new
+                {
+                    hostname        = h.Hostname,
+                    connectionCount = h.ConnectionCount,
+                    uniqueApps      = h.UniqueApps,
+                    uniqueUsers     = h.UniqueUsers,
+                    uniqueDbs       = h.UniqueDbs
+                })
             }),
-            crossIn  = crossIn.Select(l => new  { server = l.FromServer, count = l.ConnectionCount }),
-            crossOut = crossOut.Select(l => new { server = l.ToServer,   count = l.ConnectionCount })
+            crossLinks = _crossLinks.Select(l => new
+            {
+                fromServer      = l.FromServer,
+                toServer        = l.ToServer,
+                connectionCount = l.ConnectionCount
+            })
         });
 
         try
         {
-            await JS.InvokeVoidAsync("environmentView.renderMini", "env-topo-canvas", json);
+            await JS.InvokeVoidAsync("environmentView.renderTopology", "env-topo-canvas", json);
         }
         catch { }
     }
-
 
     private void ClearResults()
     {
         _serverResults.Clear();
         _crossLinks.Clear();
-        _selectedServerName = null;
-        _selectedServer = null;
         _selectedHost = null;
+        _selectedHostServer = "";
         _errorMessage = null;
     }
 
@@ -386,21 +338,6 @@
                 }
             }
         }
-    }
-
-    private List<CrossLink> GetCrossLinksTo(string serverName) =>
-        _crossLinks.Where(l => string.Equals(l.ToServer, serverName, StringComparison.OrdinalIgnoreCase)).ToList();
-
-    private List<CrossLink> GetCrossLinksFrom(string serverName) =>
-        _crossLinks.Where(l => string.Equals(l.FromServer, serverName, StringComparison.OrdinalIgnoreCase)).ToList();
-
-    private static string ShortName(string name)
-    {
-        // Strip domain suffix for display: SERVER\INSTANCE → SERVER\INST (truncate if long)
-        if (name.Length <= 20) return name;
-        var parts = name.Split('\\');
-        var machine = parts[0].Length > 15 ? parts[0][..13] + "…" : parts[0];
-        return parts.Length > 1 ? $"{machine}\\{parts[1]}" : machine;
     }
 
     // ── Data models ──────────────────────────────────────────────────────
@@ -447,6 +384,11 @@
         public string ToServer      { get; set; } = "";
         public string ViaHost       { get; set; } = "";
         public int    ConnectionCount { get; set; }
+    }
+
+    public void Dispose()
+    {
+        _dotNetRef?.Dispose();
     }
 
     // ── SQL query ────────────────────────────────────────────────────────
@@ -514,11 +456,6 @@
         }
     }
 
-    public void Dispose()
-    {
-        _dotNetRef?.Dispose();
-    }
-
     private const string EnvironmentQuery = @"
 DECLARE @ThisServer [NVARCHAR] (500)
 DECLARE @CharToCheck [NVARCHAR] (5)
@@ -561,6 +498,5 @@ FROM (
     LEFT OUTER JOIN [sys].dm_exec_requests R WITH(NOLOCK) ON R.session_id = T.session_id
     LEFT OUTER JOIN [sys].dm_server_services AS [services] WITH(NOLOCK) ON T.original_login_name = [services].service_account
     WHERE T.client_version > 0 AND [services].service_account IS NULL
-    --AND (T.nt_user_name <> 'SQLTELEMETRY' AND client_net_address = '<local machine>')
 ) C1";
 }
