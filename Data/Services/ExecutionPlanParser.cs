@@ -10,89 +10,90 @@ namespace SqlHealthAssessment.Data.Services;
 
 public class PlanGraph
 {
-    [JsonPropertyName("nodes")]          public List<PlanNode> Nodes           { get; set; } = [];
-    [JsonPropertyName("edges")]          public List<PlanEdge> Edges           { get; set; } = [];
-    [JsonPropertyName("query")]          public string?        Query            { get; set; }
-    [JsonPropertyName("recommendations")] public List<string>  Recommendations  { get; set; } = [];
-    [JsonPropertyName("summary")]        public PlanSummary?   Summary          { get; set; }
+    [JsonPropertyName("nodes")] public List<PlanNode> Nodes { get; set; } = [];
+    [JsonPropertyName("edges")] public List<PlanEdge> Edges { get; set; } = [];
+    [JsonPropertyName("query")] public string? Query { get; set; }
+    [JsonPropertyName("recommendations")] public List<string> Recommendations { get; set; } = [];
+    [JsonPropertyName("summary")] public PlanSummary? Summary { get; set; }
 }
 
 public class PlanSummary
 {
-    [JsonPropertyName("ceVersion")]           public string? CeVersion            { get; set; }
-    [JsonPropertyName("compileTimeMs")]       public double? CompileTimeMs        { get; set; }
-    [JsonPropertyName("compileMemoryKB")]     public double? CompileMemoryKB      { get; set; }
-    [JsonPropertyName("compileCpuMs")]        public double? CompileCpuMs         { get; set; }
-    [JsonPropertyName("optimizationLevel")]   public string? OptimizationLevel    { get; set; }
-    [JsonPropertyName("earlyAbortReason")]    public string? EarlyAbortReason     { get; set; }
-    [JsonPropertyName("nonParallelReason")]   public string? NonParallelReason    { get; set; }
-    [JsonPropertyName("queryHash")]           public string? QueryHash            { get; set; }
-    [JsonPropertyName("planHash")]            public string? PlanHash             { get; set; }
-    [JsonPropertyName("cachedPlanSizeKB")]    public double? CachedPlanSizeKB     { get; set; }
-    [JsonPropertyName("dop")]                 public int?    Dop                  { get; set; }
-    [JsonPropertyName("memoryGrantKB")]       public double? MemoryGrantKB        { get; set; }
-    [JsonPropertyName("parameterization")]    public string? Parameterization     { get; set; }
-    [JsonPropertyName("setOptions")]          public Dictionary<string, bool>? SetOptions { get; set; }
-    [JsonPropertyName("parameters")]          public List<PlanParameter>? Parameters { get; set; }
-    [JsonPropertyName("statsUsed")]           public List<PlanStatistic>?  StatsUsed  { get; set; }
-    [JsonPropertyName("waitStats")]           public List<PlanWaitStat>?   WaitStats  { get; set; }
-    [JsonPropertyName("traceFlags")]          public List<string>?         TraceFlags { get; set; }
-    [JsonPropertyName("warnings")]            public List<string>?         Warnings   { get; set; }
+    [JsonPropertyName("ceVersion")] public string? CeVersion { get; set; }
+    [JsonPropertyName("compileTimeMs")] public double? CompileTimeMs { get; set; }
+    [JsonPropertyName("compileMemoryKB")] public double? CompileMemoryKB { get; set; }
+    [JsonPropertyName("compileCpuMs")] public double? CompileCpuMs { get; set; }
+    [JsonPropertyName("optimizationLevel")] public string? OptimizationLevel { get; set; }
+    [JsonPropertyName("earlyAbortReason")] public string? EarlyAbortReason { get; set; }
+    [JsonPropertyName("nonParallelReason")] public string? NonParallelReason { get; set; }
+    [JsonPropertyName("queryHash")] public string? QueryHash { get; set; }
+    [JsonPropertyName("planHash")] public string? PlanHash { get; set; }
+    [JsonPropertyName("cachedPlanSizeKB")] public double? CachedPlanSizeKB { get; set; }
+    [JsonPropertyName("dop")] public int? Dop { get; set; }
+    [JsonPropertyName("memoryGrantKB")] public double? MemoryGrantKB { get; set; }
+    [JsonPropertyName("parameterization")] public string? Parameterization { get; set; }
+    [JsonPropertyName("setOptions")] public Dictionary<string, bool>? SetOptions { get; set; }
+    [JsonPropertyName("parameters")] public List<PlanParameter>? Parameters { get; set; }
+    [JsonPropertyName("statsUsed")] public List<PlanStatistic>? StatsUsed { get; set; }
+    [JsonPropertyName("waitStats")] public List<PlanWaitStat>? WaitStats { get; set; }
+    [JsonPropertyName("traceFlags")] public List<string>? TraceFlags { get; set; }
+    [JsonPropertyName("warnings")] public List<string>? Warnings { get; set; }
+    [JsonPropertyName("planCreationTime")] public string? PlanCreationTime { get; set; }
 }
 
 public class PlanParameter
 {
-    [JsonPropertyName("name")]           public string  Name          { get; set; } = "";
-    [JsonPropertyName("dataType")]       public string? DataType      { get; set; }
-    [JsonPropertyName("compiledValue")]  public string? CompiledValue { get; set; }
-    [JsonPropertyName("runtimeValue")]   public string? RuntimeValue  { get; set; }
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("dataType")] public string? DataType { get; set; }
+    [JsonPropertyName("compiledValue")] public string? CompiledValue { get; set; }
+    [JsonPropertyName("runtimeValue")] public string? RuntimeValue { get; set; }
 }
 
 public class PlanStatistic
 {
-    [JsonPropertyName("name")]            public string  Name           { get; set; } = "";
-    [JsonPropertyName("table")]           public string? Table          { get; set; }
-    [JsonPropertyName("modCount")]        public long?   ModCount       { get; set; }
-    [JsonPropertyName("samplingPct")]     public double? SamplingPct    { get; set; }
-    [JsonPropertyName("lastUpdate")]      public string? LastUpdate     { get; set; }
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("table")] public string? Table { get; set; }
+    [JsonPropertyName("modCount")] public long? ModCount { get; set; }
+    [JsonPropertyName("samplingPct")] public double? SamplingPct { get; set; }
+    [JsonPropertyName("lastUpdate")] public string? LastUpdate { get; set; }
 }
 
 public class PlanWaitStat
 {
-    [JsonPropertyName("waitType")]  public string WaitType { get; set; } = "";
-    [JsonPropertyName("waitMs")]    public double WaitMs   { get; set; }
-    [JsonPropertyName("waitCount")] public long   WaitCount { get; set; }
+    [JsonPropertyName("waitType")] public string WaitType { get; set; } = "";
+    [JsonPropertyName("waitMs")] public double WaitMs { get; set; }
+    [JsonPropertyName("waitCount")] public long WaitCount { get; set; }
 }
 
 public class PlanNode
 {
-    [JsonPropertyName("id")]            public int      Id           { get; set; }
-    [JsonPropertyName("type")]          public string   Type         { get; set; } = "";
-    [JsonPropertyName("physicalType")]  public string   PhysicalType { get; set; } = "";
-    [JsonPropertyName("cost")]          public double   Cost         { get; set; }
-    [JsonPropertyName("subTreeCost")]   public double   SubTreeCost  { get; set; }
-    [JsonPropertyName("relativeCost")]  public double   RelativeCost { get; set; }
-    [JsonPropertyName("estimateRows")]  public double   EstimateRows { get; set; }
-    [JsonPropertyName("actualRows")]    public double?  ActualRows   { get; set; }
-    [JsonPropertyName("estimateCPU")]   public double   EstimateCPU  { get; set; }
-    [JsonPropertyName("estimateIO")]    public double   EstimateIO   { get; set; }
-    [JsonPropertyName("avgRowSize")]    public double   AvgRowSize   { get; set; }
-    [JsonPropertyName("isParallel")]         public bool     IsParallel         { get; set; }
-    [JsonPropertyName("estimateExecutions")] public double   EstimateExecutions  { get; set; } = 1;
-    [JsonPropertyName("objectDb")]           public string?  ObjectDb            { get; set; }
-    [JsonPropertyName("objectSchema")]       public string?  ObjectSchema        { get; set; }
-    [JsonPropertyName("predicate")]          public string?  Predicate           { get; set; }
-    [JsonPropertyName("badges")]             public List<string> Badges          { get; set; } = [];
-    [JsonPropertyName("subtext")]            public string[] Subtext             { get; set; } = [];
-    [JsonPropertyName("properties")]         public Dictionary<string, string> Properties { get; set; } = [];
+    [JsonPropertyName("id")] public int Id { get; set; }
+    [JsonPropertyName("type")] public string Type { get; set; } = "";
+    [JsonPropertyName("physicalType")] public string PhysicalType { get; set; } = "";
+    [JsonPropertyName("cost")] public double Cost { get; set; }
+    [JsonPropertyName("subTreeCost")] public double SubTreeCost { get; set; }
+    [JsonPropertyName("relativeCost")] public double RelativeCost { get; set; }
+    [JsonPropertyName("estimateRows")] public double EstimateRows { get; set; }
+    [JsonPropertyName("actualRows")] public double? ActualRows { get; set; }
+    [JsonPropertyName("estimateCPU")] public double EstimateCPU { get; set; }
+    [JsonPropertyName("estimateIO")] public double EstimateIO { get; set; }
+    [JsonPropertyName("avgRowSize")] public double AvgRowSize { get; set; }
+    [JsonPropertyName("isParallel")] public bool IsParallel { get; set; }
+    [JsonPropertyName("estimateExecutions")] public double EstimateExecutions { get; set; } = 1;
+    [JsonPropertyName("objectDb")] public string? ObjectDb { get; set; }
+    [JsonPropertyName("objectSchema")] public string? ObjectSchema { get; set; }
+    [JsonPropertyName("predicate")] public string? Predicate { get; set; }
+    [JsonPropertyName("badges")] public List<string> Badges { get; set; } = [];
+    [JsonPropertyName("subtext")] public string[] Subtext { get; set; } = [];
+    [JsonPropertyName("properties")] public Dictionary<string, string> Properties { get; set; } = [];
 }
 
 public class PlanEdge
 {
-    [JsonPropertyName("source")]    public int    Source   { get; set; }
-    [JsonPropertyName("target")]    public int    Target   { get; set; }
-    [JsonPropertyName("rowCount")]  public double RowCount { get; set; }
-    [JsonPropertyName("rowSize")]   public double RowSize  { get; set; }
+    [JsonPropertyName("source")] public int Source { get; set; }
+    [JsonPropertyName("target")] public int Target { get; set; }
+    [JsonPropertyName("rowCount")] public double RowCount { get; set; }
+    [JsonPropertyName("rowSize")] public double RowSize { get; set; }
 }
 
 // ── Parser ────────────────────────────────────────────────────────────────────
@@ -132,7 +133,7 @@ public static class ExecutionPlanParser
 
     private static PlanGraph Parse(string xml)
     {
-        var doc   = XDocument.Parse(xml);
+        var doc = XDocument.Parse(xml);
         var graph = new PlanGraph();
 
         // Find the first statement element that has a QueryPlan child.
@@ -160,14 +161,14 @@ public static class ExecutionPlanParser
             var mi = mig.Elements().FirstOrDefault(e => e.Name.LocalName == "MissingIndex");
             if (mi == null) continue;
 
-            var table  = mi.Attribute("Table")?.Value?.Trim('[', ']');
+            var table = mi.Attribute("Table")?.Value?.Trim('[', ']');
             var schema = mi.Attribute("Schema")?.Value?.Trim('[', ']');
-            var db     = mi.Attribute("Database")?.Value?.Trim('[', ']');
+            var db = mi.Attribute("Database")?.Value?.Trim('[', ']');
 
             // Extract columns by usage type
-            var equality   = new List<string>();
+            var equality = new List<string>();
             var inequality = new List<string>();
-            var include    = new List<string>();
+            var include = new List<string>();
             foreach (var cg in mi.Elements().Where(e => e.Name.LocalName == "ColumnGroup"))
             {
                 var usage = cg.Attribute("Usage")?.Value;
@@ -178,9 +179,9 @@ public static class ExecutionPlanParser
                     .ToList();
                 switch (usage)
                 {
-                    case "EQUALITY":   equality.AddRange(cols!);   break;
+                    case "EQUALITY": equality.AddRange(cols!); break;
                     case "INEQUALITY": inequality.AddRange(cols!); break;
-                    case "INCLUDE":    include.AddRange(cols!);    break;
+                    case "INCLUDE": include.AddRange(cols!); break;
                 }
             }
 
@@ -216,10 +217,10 @@ public static class ExecutionPlanParser
         const int selectNodeId = -1;
         graph.Nodes.Add(new PlanNode
         {
-            Id           = selectNodeId,
-            Type         = "Select",
+            Id = selectNodeId,
+            Type = "Select",
             PhysicalType = "Select",
-            SubTreeCost  = rootCost,
+            SubTreeCost = rootCost,
             RelativeCost = 100.0,
         });
 
@@ -242,18 +243,18 @@ public static class ExecutionPlanParser
 
         var node = new PlanNode
         {
-            Id           = nodeId,
-            Type         = relOp.Attribute("LogicalOp")?.Value
+            Id = nodeId,
+            Type = relOp.Attribute("LogicalOp")?.Value
                         ?? relOp.Attribute("PhysicalOp")?.Value
                         ?? "Unknown",
             PhysicalType = relOp.Attribute("PhysicalOp")?.Value ?? "",
             EstimateRows = ParseDouble(relOp.Attribute("EstimateRows")?.Value),
-            EstimateCPU  = ParseDouble(relOp.Attribute("EstimateCPU")?.Value),
-            EstimateIO   = ParseDouble(relOp.Attribute("EstimateIO")?.Value),
-            AvgRowSize   = ParseDouble(relOp.Attribute("AvgRowSize")?.Value),
-            SubTreeCost        = subTreeCost,
-            RelativeCost       = rootCost > 0 ? subTreeCost / rootCost * 100.0 : 0,
-            IsParallel         = relOp.Attribute("Parallel")?.Value is "1" or "true",
+            EstimateCPU = ParseDouble(relOp.Attribute("EstimateCPU")?.Value),
+            EstimateIO = ParseDouble(relOp.Attribute("EstimateIO")?.Value),
+            AvgRowSize = ParseDouble(relOp.Attribute("AvgRowSize")?.Value),
+            SubTreeCost = subTreeCost,
+            RelativeCost = rootCost > 0 ? subTreeCost / rootCost * 100.0 : 0,
+            IsParallel = relOp.Attribute("Parallel")?.Value is "1" or "true",
             EstimateExecutions = ParseDouble(relOp.Attribute("EstimateExecutions")?.Value) is > 0 and var ee ? ee : 1.0,
         };
 
@@ -262,7 +263,7 @@ public static class ExecutionPlanParser
         // Badges
         bool hasWarnings = relOp.Descendants()
             .Any(e => e.Name.LocalName == "Warnings");
-        if (hasWarnings)   node.Badges.Add("Warning");
+        if (hasWarnings) node.Badges.Add("Warning");
         if (node.IsParallel) node.Badges.Add("Parallelism");
         if (node.RelativeCost > 50) node.Badges.Add("High Cost");
 
@@ -283,17 +284,17 @@ public static class ExecutionPlanParser
         }
 
         // ── Additional RelOp attributes ─────────────────────────────────────────
-        var rebinds  = ParseDouble(relOp.Attribute("EstimateRebinds")?.Value);
-        var rewinds  = ParseDouble(relOp.Attribute("EstimateRewinds")?.Value);
+        var rebinds = ParseDouble(relOp.Attribute("EstimateRebinds")?.Value);
+        var rewinds = ParseDouble(relOp.Attribute("EstimateRewinds")?.Value);
         var rowsRead = ParseDouble(relOp.Attribute("EstimatedRowsRead")?.Value);
         var tableCard = ParseDouble(relOp.Attribute("TableCardinality")?.Value);
-        var ordered   = relOp.Attribute("Ordered")?.Value;
+        var ordered = relOp.Attribute("Ordered")?.Value;
 
-        if (rebinds > 0)   node.Properties["Estimated Rebinds"]  = rebinds.ToString("N0");
-        if (rewinds > 0)   node.Properties["Estimated Rewinds"]  = rewinds.ToString("N0");
-        if (rowsRead > 0)  node.Properties["Est. Rows Read"]     = rowsRead.ToString("N0");
-        if (tableCard > 0) node.Properties["Table Cardinality"]  = tableCard.ToString("N0");
-        if (ordered != null) node.Properties["Ordered"]           = ordered;
+        if (rebinds > 0) node.Properties["Estimated Rebinds"] = rebinds.ToString("N0");
+        if (rewinds > 0) node.Properties["Estimated Rewinds"] = rewinds.ToString("N0");
+        if (rowsRead > 0) node.Properties["Est. Rows Read"] = rowsRead.ToString("N0");
+        if (tableCard > 0) node.Properties["Table Cardinality"] = tableCard.ToString("N0");
+        if (ordered != null) node.Properties["Ordered"] = ordered;
 
         // ── Runtime counters (actual execution plan) ─────────────────────────────
         var rtCounters = relOp.Descendants()
@@ -307,25 +308,25 @@ public static class ExecutionPlanParser
             int threadCount = 0;
             foreach (var rt in rtCounters)
             {
-                totalActualExec      += ParseDouble(rt.Attribute("ActualExecutions")?.Value);
-                totalElapsedMs       += ParseDouble(rt.Attribute("ActualElapsedms")?.Value);
-                totalCpuMs           += ParseDouble(rt.Attribute("ActualCPUms")?.Value);
-                totalActualRowsRead  += ParseDouble(rt.Attribute("ActualRowsRead")?.Value);
-                totalScans           += ParseDouble(rt.Attribute("ActualScans")?.Value);
-                totalLogicalReads    += ParseDouble(rt.Attribute("ActualLogicalReads")?.Value);
-                totalPhysicalReads   += ParseDouble(rt.Attribute("ActualPhysicalReads")?.Value);
-                totalReadAheadReads  += ParseDouble(rt.Attribute("ActualReadAheadReads")?.Value);
+                totalActualExec += ParseDouble(rt.Attribute("ActualExecutions")?.Value);
+                totalElapsedMs += ParseDouble(rt.Attribute("ActualElapsedms")?.Value);
+                totalCpuMs += ParseDouble(rt.Attribute("ActualCPUms")?.Value);
+                totalActualRowsRead += ParseDouble(rt.Attribute("ActualRowsRead")?.Value);
+                totalScans += ParseDouble(rt.Attribute("ActualScans")?.Value);
+                totalLogicalReads += ParseDouble(rt.Attribute("ActualLogicalReads")?.Value);
+                totalPhysicalReads += ParseDouble(rt.Attribute("ActualPhysicalReads")?.Value);
+                totalReadAheadReads += ParseDouble(rt.Attribute("ActualReadAheadReads")?.Value);
                 threadCount++;
             }
-            if (totalActualExec > 0)     node.Properties["Actual Executions"]    = totalActualExec.ToString("N0");
-            if (totalElapsedMs > 0)      node.Properties["Actual Elapsed (ms)"]  = totalElapsedMs.ToString("N1");
-            if (totalCpuMs > 0)          node.Properties["Actual CPU (ms)"]      = totalCpuMs.ToString("N1");
-            if (totalActualRowsRead > 0) node.Properties["Actual Rows Read"]     = totalActualRowsRead.ToString("N0");
-            if (totalScans > 0)          node.Properties["Actual Scans"]         = totalScans.ToString("N0");
-            if (totalLogicalReads > 0)   node.Properties["Actual Logical Reads"] = totalLogicalReads.ToString("N0");
-            if (totalPhysicalReads > 0)  node.Properties["Actual Physical Reads"]= totalPhysicalReads.ToString("N0");
-            if (totalReadAheadReads > 0) node.Properties["Actual Read-Ahead"]    = totalReadAheadReads.ToString("N0");
-            if (threadCount > 1)         node.Properties["Thread Count"]         = threadCount.ToString();
+            if (totalActualExec > 0) node.Properties["Actual Executions"] = totalActualExec.ToString("N0");
+            if (totalElapsedMs > 0) node.Properties["Actual Elapsed (ms)"] = totalElapsedMs.ToString("N1");
+            if (totalCpuMs > 0) node.Properties["Actual CPU (ms)"] = totalCpuMs.ToString("N1");
+            if (totalActualRowsRead > 0) node.Properties["Actual Rows Read"] = totalActualRowsRead.ToString("N0");
+            if (totalScans > 0) node.Properties["Actual Scans"] = totalScans.ToString("N0");
+            if (totalLogicalReads > 0) node.Properties["Actual Logical Reads"] = totalLogicalReads.ToString("N0");
+            if (totalPhysicalReads > 0) node.Properties["Actual Physical Reads"] = totalPhysicalReads.ToString("N0");
+            if (totalReadAheadReads > 0) node.Properties["Actual Read-Ahead"] = totalReadAheadReads.ToString("N0");
+            if (threadCount > 1) node.Properties["Thread Count"] = threadCount.ToString();
         }
 
         // ── Warnings detail ──────────────────────────────────────────────────────
@@ -350,13 +351,40 @@ public static class ExecutionPlanParser
             }
             if (warningsEl.Descendants().Any(e => e.Name.LocalName == "ColumnsWithNoStatistics"))
                 warningParts.Add("Missing Column Statistics");
+
+            // #14 Non-SARGable predicate — surface the column and expression involved
+            foreach (var nsp in warningsEl.Descendants()
+                .Where(e => e.Name.LocalName == "NonSARGableReason"))
+            {
+                var colRef = nsp.Descendants()
+                    .FirstOrDefault(e => e.Name.LocalName == "ColumnReference");
+                var scalarOp = nsp.Descendants()
+                    .FirstOrDefault(e => e.Name.LocalName == "ScalarOperator");
+                var colName = colRef?.Attribute("Column")?.Value;
+                var expr    = scalarOp?.Attribute("ScalarString")?.Value ?? nsp.Attribute("Reason")?.Value;
+                if (colName != null && expr != null)
+                    warningParts.Add($"Non-SARGable: [{colName}] — {expr}");
+                else if (colName != null)
+                    warningParts.Add($"Non-SARGable predicate on [{colName}]");
+                else
+                    warningParts.Add("Non-SARGable predicate — consider rewriting to allow index seeks");
+            }
             if (warningsEl.Descendants().Any(e => e.Name.LocalName == "UnmatchedIndexes"))
                 warningParts.Add("Unmatched Indexes");
             foreach (var conv in warningsEl.Descendants()
                 .Where(e => e.Name.LocalName == "PlanAffectingConvert"))
             {
-                var expr = conv.Attribute("Expression")?.Value;
-                warningParts.Add(expr != null ? $"Implicit Convert: {expr}" : "Implicit Convert");
+                // #4 Column-level implicit conversion detail
+                var expr       = conv.Attribute("Expression")?.Value;
+                var convertIssue = conv.Attribute("ConvertIssue")?.Value; // "Seek Plan" or "Cardinality Estimate"
+                var fromType   = conv.Attribute("FromType")?.Value;
+                var toType     = conv.Attribute("ToType")?.Value;
+
+                var convMsg = "Implicit Convert";
+                if (expr != null)          convMsg += $": {expr}";
+                if (fromType != null && toType != null) convMsg += $" ({fromType} → {toType})";
+                if (convertIssue != null)  convMsg += $" — affects {convertIssue}";
+                warningParts.Add(convMsg);
             }
             if (warningsEl.Descendants().Any(e => e.Name.LocalName == "SortSpillDetails"))
                 warningParts.Add("Sort Spill");
@@ -382,7 +410,7 @@ public static class ExecutionPlanParser
                 .Where(e => e.Name.LocalName == "ColumnReference")
                 .Select(c =>
                 {
-                    var col   = c.Attribute("Column")?.Value;
+                    var col = c.Attribute("Column")?.Value;
                     var table = c.Attribute("Table")?.Value?.Trim('[', ']');
                     return table != null ? $"{table}.{col}" : col;
                 })
@@ -397,21 +425,21 @@ public static class ExecutionPlanParser
         if (opEl != null)
         {
             // ── Operator-specific attributes ─────────────────────────────────────
-            var opOrdered    = opEl.Attribute("Ordered")?.Value;
-            var opLookup     = opEl.Attribute("Lookup")?.Value;
-            var forcedIndex  = opEl.Attribute("ForcedIndex")?.Value;
-            var forceScan    = opEl.Attribute("ForceScan")?.Value;
-            var noExpand     = opEl.Attribute("NoExpandHint")?.Value;
-            var storage      = opEl.Attribute("Storage")?.Value;
-            var scanDir      = opEl.Attribute("ScanDirection")?.Value;
+            var opOrdered = opEl.Attribute("Ordered")?.Value;
+            var opLookup = opEl.Attribute("Lookup")?.Value;
+            var forcedIndex = opEl.Attribute("ForcedIndex")?.Value;
+            var forceScan = opEl.Attribute("ForceScan")?.Value;
+            var noExpand = opEl.Attribute("NoExpandHint")?.Value;
+            var storage = opEl.Attribute("Storage")?.Value;
+            var scanDir = opEl.Attribute("ScanDirection")?.Value;
 
-            if (opOrdered is "true" or "1")  node.Properties["Scan Ordered"] = "True";
-            if (opLookup is "true" or "1")   node.Properties["Lookup"]       = "True";
+            if (opOrdered is "true" or "1") node.Properties["Scan Ordered"] = "True";
+            if (opLookup is "true" or "1") node.Properties["Lookup"] = "True";
             if (forcedIndex is "true" or "1") node.Properties["Forced Index"] = "True";
-            if (forceScan is "true" or "1")   node.Properties["Force Scan"]   = "True";
-            if (noExpand is "true" or "1")    node.Properties["NOEXPAND Hint"]= "True";
-            if (storage != null)              node.Properties["Storage"]      = storage;
-            if (scanDir != null)              node.Properties["Scan Direction"]= scanDir;
+            if (forceScan is "true" or "1") node.Properties["Force Scan"] = "True";
+            if (noExpand is "true" or "1") node.Properties["NOEXPAND Hint"] = "True";
+            if (storage != null) node.Properties["Storage"] = storage;
+            if (scanDir != null) node.Properties["Scan Direction"] = scanDir;
 
             // Only search within this operator's own XML — stop at nested RelOp boundaries
             // so Compute Scalar doesn't inherit the Object/Predicate from a child TVF or scan.
@@ -423,19 +451,19 @@ public static class ExecutionPlanParser
             if (objEl != null)
             {
                 var items = new List<string>(2);
-                var table  = objEl.Attribute("Table")?.Value?.Trim('[', ']');
-                var index  = objEl.Attribute("Index")?.Value?.Trim('[', ']');
+                var table = objEl.Attribute("Table")?.Value?.Trim('[', ']');
+                var index = objEl.Attribute("Index")?.Value?.Trim('[', ']');
                 if (table != null) items.Add(table);
                 if (index != null) items.Add(index);
                 // Add concise cost info like SSMS
                 items.Add($"Cost: {node.RelativeCost:F1}%");
                 if (node.EstimateRows > 0) items.Add($"Rows: {node.EstimateRows:N0}");
                 if (node.EstimateIO > 0) items.Add($"I/O: {node.EstimateIO:F2}");
-                node.Subtext      = [.. items];
-                node.ObjectDb     = objEl.Attribute("Database")?.Value?.Trim('[', ']');
+                node.Subtext = [.. items];
+                node.ObjectDb = objEl.Attribute("Database")?.Value?.Trim('[', ']');
                 node.ObjectSchema = objEl.Attribute("Schema")?.Value?.Trim('[', ']');
-                if (index != null) node.Properties["Index"]  = index;
-                if (table != null) node.Properties["Table"]  = table;
+                if (index != null) node.Properties["Index"] = index;
+                if (table != null) node.Properties["Table"] = table;
             }
 
             // ── Predicate ────────────────────────────────────────────────────────
@@ -496,13 +524,13 @@ public static class ExecutionPlanParser
             }
 
             // ── Hash Keys / Order By / Group By ──────────────────────────────────
-            ExtractColumnList(opEl, "HashKeysProbe",  "Hash Keys (Probe)",  node);
-            ExtractColumnList(opEl, "HashKeysBuild",  "Hash Keys (Build)",  node);
-            ExtractColumnList(opEl, "ProbeColumn",    "Probe Column",       node);
-            ExtractColumnList(opEl, "BuildColumn",    "Build Column",       node);
-            ExtractColumnList(opEl, "OrderBy",        "Order By",           node);
-            ExtractColumnList(opEl, "GroupBy",        "Group By",           node);
-            ExtractColumnList(opEl, "PartitionColumns","Partition Columns", node);
+            ExtractColumnList(opEl, "HashKeysProbe", "Hash Keys (Probe)", node);
+            ExtractColumnList(opEl, "HashKeysBuild", "Hash Keys (Build)", node);
+            ExtractColumnList(opEl, "ProbeColumn", "Probe Column", node);
+            ExtractColumnList(opEl, "BuildColumn", "Build Column", node);
+            ExtractColumnList(opEl, "OrderBy", "Order By", node);
+            ExtractColumnList(opEl, "GroupBy", "Group By", node);
+            ExtractColumnList(opEl, "PartitionColumns", "Partition Columns", node);
 
             // ── Nested Loops outer references ────────────────────────────────────
             var outerRefs = opEl.Elements()
@@ -524,14 +552,28 @@ public static class ExecutionPlanParser
             .FirstOrDefault(e => e.Name.LocalName == "MemoryGrant");
         if (memGrant != null)
         {
-            var serial  = memGrant.Attribute("SerialRequiredMemory")?.Value;
+            var serial = memGrant.Attribute("SerialRequiredMemory")?.Value;
             var desired = memGrant.Attribute("SerialDesiredMemory")?.Value;
             var granted = memGrant.Attribute("GrantedMemory")?.Value;
             var maxUsed = memGrant.Attribute("MaxUsedMemory")?.Value;
-            if (serial  != null) node.Properties["Required Memory (KB)"] = serial;
-            if (desired != null) node.Properties["Desired Memory (KB)"]  = desired;
-            if (granted != null) node.Properties["Granted Memory (KB)"]  = granted;
+            if (serial != null) node.Properties["Required Memory (KB)"] = serial;
+            if (desired != null) node.Properties["Desired Memory (KB)"] = desired;
+            if (granted != null) node.Properties["Granted Memory (KB)"] = granted;
             if (maxUsed != null) node.Properties["Max Used Memory (KB)"] = maxUsed;
+
+            // #8 Memory Grant Feedback (SQL Server 2019+) — flag if feedback adjusted the grant
+            var mgfAdjusted = memGrant.Attribute("IsMemoryGrantFeedbackAdjusted")?.Value;
+            if (mgfAdjusted is "NoFeedback" or "YesAdjusting" or "YesStable")
+            {
+                node.Badges.Add("MemGrantFeedback");
+                node.Properties["Memory Grant Feedback"] = mgfAdjusted switch
+                {
+                    "YesStable"    => "Feedback applied — grant is stable",
+                    "YesAdjusting" => "Feedback adjusting — grant still converging",
+                    "NoFeedback"   => "No feedback yet (first execution)",
+                    _              => mgfAdjusted
+                };
+            }
         }
 
         graph.Nodes.Add(node);
@@ -539,10 +581,10 @@ public static class ExecutionPlanParser
         if (parentId != int.MinValue)   // int.MinValue = "no parent" sentinel; -1 is valid (SELECT root)
             graph.Edges.Add(new PlanEdge
             {
-                Source   = parentId,
-                Target   = nodeId,
+                Source = parentId,
+                Target = nodeId,
                 RowCount = node.EstimateRows,
-                RowSize  = node.AvgRowSize
+                RowSize = node.AvgRowSize
             });
 
         // Recurse into direct RelOp children
@@ -584,10 +626,10 @@ public static class ExecutionPlanParser
 
         var cols = colRefs.Select(c =>
         {
-            var col   = c.Attribute("Column")?.Value;
+            var col = c.Attribute("Column")?.Value;
             var table = c.Attribute("Table")?.Value?.Trim('[', ']');
-            var asc   = c.Parent?.Attribute("Ascending")?.Value;
-            var name  = table != null ? $"{table}.{col}" : col;
+            var asc = c.Parent?.Attribute("Ascending")?.Value;
+            var name = table != null ? $"{table}.{col}" : col;
             if (asc != null) name += asc is "true" or "1" ? " ASC" : " DESC";
             return name;
         })
@@ -603,12 +645,12 @@ public static class ExecutionPlanParser
         var summary = new PlanSummary();
 
         // ── Statement-level attributes ──────────────────────────────────────────
-        summary.CeVersion         = stmt.Attribute("CardinalityEstimationModelVersion")?.Value;
+        summary.CeVersion = stmt.Attribute("CardinalityEstimationModelVersion")?.Value;
         summary.OptimizationLevel = stmt.Attribute("StatementOptmLevel")?.Value;
-        summary.EarlyAbortReason  = stmt.Attribute("StatementOptmEarlyAbortReason")?.Value;
-        summary.QueryHash         = stmt.Attribute("QueryHash")?.Value;
-        summary.PlanHash          = stmt.Attribute("QueryPlanHash")?.Value;
-        summary.Parameterization  = stmt.Attribute("StatementParameterizationType")?.Value;
+        summary.EarlyAbortReason = stmt.Attribute("StatementOptmEarlyAbortReason")?.Value;
+        summary.QueryHash = stmt.Attribute("QueryHash")?.Value;
+        summary.PlanHash = stmt.Attribute("QueryPlanHash")?.Value;
+        summary.Parameterization = stmt.Attribute("StatementParameterizationType")?.Value;
 
         var compileTimeAttr = stmt.Attribute("CompileTime")?.Value;
         if (compileTimeAttr != null) summary.CompileTimeMs = ParseDouble(compileTimeAttr);
@@ -629,6 +671,11 @@ public static class ExecutionPlanParser
         var cachedPlanAttr = queryPlan.Attribute("CachedPlanSize")?.Value;
         if (cachedPlanAttr != null) summary.CachedPlanSizeKB = ParseDouble(cachedPlanAttr);
 
+        // #13 Plan creation time — present in actual plans from DMVs / Query Store
+        var creationTime = queryPlan.Attribute("CachedPlanAge")?.Value
+                        ?? stmt.Attribute("CreationTime")?.Value;
+        if (creationTime != null) summary.PlanCreationTime = creationTime;
+
         // Memory grant at statement level
         var memGrantEl = queryPlan.Elements().FirstOrDefault(e => e.Name.LocalName == "MemoryGrantInfo");
         if (memGrantEl != null)
@@ -647,10 +694,10 @@ public static class ExecutionPlanParser
         {
             summary.Parameters = paramList.Select(p => new PlanParameter
             {
-                Name          = p.Attribute("Column")?.Value ?? "",
-                DataType      = p.Attribute("ParameterDataType")?.Value,
+                Name = p.Attribute("Column")?.Value ?? "",
+                DataType = p.Attribute("ParameterDataType")?.Value,
                 CompiledValue = p.Attribute("ParameterCompiledValue")?.Value,
-                RuntimeValue  = p.Attribute("ParameterRuntimeValue")?.Value
+                RuntimeValue = p.Attribute("ParameterRuntimeValue")?.Value
             }).ToList();
         }
 
@@ -664,8 +711,8 @@ public static class ExecutionPlanParser
             {
                 var stat = new PlanStatistic
                 {
-                    Name       = s.Attribute("Statistics")?.Value ?? "",
-                    Table      = s.Attribute("Table")?.Value?.Trim('[', ']'),
+                    Name = s.Attribute("Statistics")?.Value ?? "",
+                    Table = s.Attribute("Table")?.Value?.Trim('[', ']'),
                     LastUpdate = s.Attribute("LastUpdate")?.Value
                 };
                 var modCount = s.Attribute("ModificationCount")?.Value;
@@ -685,8 +732,8 @@ public static class ExecutionPlanParser
         {
             summary.WaitStats = waitStats.Select(w => new PlanWaitStat
             {
-                WaitType  = w.Attribute("WaitType")?.Value ?? "",
-                WaitMs    = ParseDouble(w.Attribute("WaitTimeMs")?.Value),
+                WaitType = w.Attribute("WaitType")?.Value ?? "",
+                WaitMs = ParseDouble(w.Attribute("WaitTimeMs")?.Value),
                 WaitCount = long.TryParse(w.Attribute("WaitCount")?.Value, out var wc) ? wc : 0
             }).ToList();
         }
@@ -696,7 +743,7 @@ public static class ExecutionPlanParser
             .Where(e => e.Name.LocalName == "TraceFlag")
             .Select(tf =>
             {
-                var val   = tf.Attribute("Value")?.Value;
+                var val = tf.Attribute("Value")?.Value;
                 var scope = tf.Attribute("Scope")?.Value;
                 return scope != null ? $"TF {val} ({scope})" : $"TF {val}";
             })

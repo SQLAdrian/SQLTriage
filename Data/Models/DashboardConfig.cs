@@ -264,11 +264,11 @@ namespace SqlHealthAssessment.Data.Models
             return Operator switch
             {
                 ">=" => actual >= Value,
-                ">"  => actual > Value,
+                ">" => actual > Value,
                 "<=" => actual <= Value,
-                "<"  => actual < Value,
+                "<" => actual < Value,
                 "==" => Math.Abs(actual - Value) < 0.0001,
-                _    => actual >= Value
+                _ => actual >= Value
             };
         }
     }
@@ -283,7 +283,7 @@ namespace SqlHealthAssessment.Data.Models
         [JsonPropertyName("column")]
         public string Column { get; set; } = "";
 
-        /// <summary>"higher-is-better" (green at top) or "higher-is-worse" (red at top).</summary>
+        /// <summary>"higher-is-better", "higher-is-worse", or "text-match" (exact string match → matchColor).</summary>
         [JsonPropertyName("mode")]
         public string Mode { get; set; } = "higher-is-better";
 
@@ -294,6 +294,14 @@ namespace SqlHealthAssessment.Data.Models
         /// <summary>Color for the high end of the range. Default: bright green or red based on mode.</summary>
         [JsonPropertyName("maxColor")]
         public string MaxColor { get; set; } = "";
+
+        /// <summary>For text-match mode: the exact string value that triggers the color.</summary>
+        [JsonPropertyName("matchValue")]
+        public string? MatchValue { get; set; }
+
+        /// <summary>For text-match mode: the color to apply when the cell value equals matchValue.</summary>
+        [JsonPropertyName("matchColor")]
+        public string? MatchColor { get; set; }
     }
 
     public class QueryPair

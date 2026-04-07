@@ -736,6 +736,16 @@ window.queryPlanInteropV2 = (function () {
             addMetric('Parameterization', s.parameterization);
             if (s.queryHash) addMetric('Query Hash', s.queryHash);
             if (s.planHash) addMetric('Plan Hash', s.planHash);
+            // #13 Plan age
+            if (s.planCreationTime) {
+                try {
+                    const d   = new Date(s.planCreationTime);
+                    const age = isNaN(d) ? s.planCreationTime : d.toLocaleString();
+                    addMetric('Plan Created', age, 'info');
+                } catch (_) {
+                    addMetric('Plan Created', s.planCreationTime);
+                }
+            }
 
             if (grid.children.length > 0) body.appendChild(grid);
 
@@ -902,21 +912,65 @@ window.queryPlanInteropV2 = (function () {
             const width = Math.max(1.5, Math.min(12,
                 1.5 + (Math.log10(rows + 1) / Math.log10(maxRows + 1)) * 10.5));
 
+            // ── #3 Row estimate mismatch — colour edge red/amber when actual ≠ estimate >10× ──
+            const targetNode   = nodeMap[edge.target];
+            const estRows      = targetNode ? (targetNode.estimateRows || 0) : 0;
+            const actRows      = targetNode ? (targetNode.actualRows   ?? null) : null;
+            let   edgeColor    = '#5a5a5a';
+            let   mismatchTip  = null;
+            if (actRows !== null && estRows > 0) {
+                const ratio = actRows / estRows;
+                if (ratio > 10) {
+                    edgeColor   = '#e53935';   // red  — actual >> estimated (under-estimate)
+                    mismatchTip = `Estimate: ${fmt(estRows)} → Actual: ${fmt(actRows)} (×${ratio.toFixed(0)} over)`;
+                } else if (ratio < 0.1) {
+                    edgeColor   = '#f59e0b';   // amber — actual << estimated (over-estimate)
+                    mismatchTip = `Estimate: ${fmt(estRows)} → Actual: ${fmt(actRows)} (×${(1/ratio).toFixed(0)} under)`;
+                }
+            }
+
             const path = document.createElementNS(SVG_NS, 'path');
             path.setAttribute('d',             `M ${x1} ${y1} C ${mx} ${y1} ${mx} ${y2} ${x2} ${y2}`);
             path.setAttribute('fill',          'none');
-            path.setAttribute('stroke',        '#5a5a5a');
-            path.setAttribute('stroke-width',  width);
+            path.setAttribute('stroke',        edgeColor);
+            path.setAttribute('stroke-width',  mismatchTip ? Math.max(width, 3) : width);
             path.setAttribute('stroke-linecap', 'round');
+            if (mismatchTip) {
+                path.style.pointerEvents = 'stroke';
+                const titleEl = document.createElementNS(SVG_NS, 'title');
+                titleEl.textContent = mismatchTip;
+                path.appendChild(titleEl);
+            }
             svg.appendChild(path);
+
+            // Mismatch warning icon on the edge midpoint
+            if (mismatchTip) {
+                const warnG = document.createElementNS(SVG_NS, 'g');
+                warnG.setAttribute('transform', `translate(${mx - 6},${(y1 + y2) / 2 - 7})`);
+                const warnCirc = document.createElementNS(SVG_NS, 'circle');
+                warnCirc.setAttribute('cx', '6'); warnCirc.setAttribute('cy', '7');
+                warnCirc.setAttribute('r', '7');
+                warnCirc.setAttribute('fill', edgeColor); warnCirc.setAttribute('opacity', '0.9');
+                const warnTxt = document.createElementNS(SVG_NS, 'text');
+                warnTxt.setAttribute('x', '6'); warnTxt.setAttribute('y', '11');
+                warnTxt.setAttribute('text-anchor', 'middle');
+                warnTxt.setAttribute('font-size', '9');
+                warnTxt.setAttribute('font-weight', 'bold');
+                warnTxt.setAttribute('fill', '#fff');
+                warnTxt.textContent = '!';
+                const warnTitle = document.createElementNS(SVG_NS, 'title');
+                warnTitle.textContent = mismatchTip;
+                warnG.append(warnCirc, warnTxt, warnTitle);
+                svg.appendChild(warnG);
+            }
 
             if (rows > 1) {
                 const txt = document.createElementNS(SVG_NS, 'text');
                 txt.setAttribute('x',           mx);
-                txt.setAttribute('y',           (y1 + y2) / 2 - width / 2 - 3);
+                txt.setAttribute('y',           (y1 + y2) / 2 - width / 2 - (mismatchTip ? 12 : 3));
                 txt.setAttribute('text-anchor', 'middle');
                 txt.setAttribute('font-size',   '9');
-                txt.setAttribute('fill',        '#888');
+                txt.setAttribute('fill',        mismatchTip ? edgeColor : '#888');
                 txt.textContent = fmt(rows);
                 svg.appendChild(txt);
             }
@@ -985,11 +1039,31 @@ window.queryPlanInteropV2 = (function () {
                 labels.appendChild(sub);
             }
 
+            // ── #7 Seek/scan predicate inline on node face ────────────────────
+            const seekPred = node.properties && node.properties['Seek Predicate'];
+            if (seekPred) {
+                const predEl = document.createElement('div');
+                predEl.className   = 'qp-v2-pred';
+                predEl.title       = seekPred;
+                // Truncate to fit: show first 38 chars
+                predEl.textContent = seekPred.length > 38 ? seekPred.slice(0, 36) + '…' : seekPred;
+                labels.appendChild(predEl);
+            }
+
             const costEl = document.createElement('div');
             costEl.className   = 'qp-v2-cost';
             costEl.style.color = cc;
             costEl.textContent = 'Cost: ' + displayPct.toFixed(1) + '%';
             labels.appendChild(costEl);
+
+            // ── #8 Memory grant feedback badge ────────────────────────────────
+            if (node.badges.includes('MemGrantFeedback')) {
+                const mgEl = document.createElement('div');
+                mgEl.className   = 'qp-v2-mgf-badge';
+                mgEl.title       = 'Memory Grant Feedback applied — grant was adjusted by SQL Server';
+                mgEl.textContent = 'MGF';
+                labels.appendChild(mgEl);
+            }
 
             body.appendChild(labels);
             nodeDiv.appendChild(body);
@@ -999,7 +1073,27 @@ window.queryPlanInteropV2 = (function () {
             // ── Hover events → shared pane ────────────────────────────────────
             nodeDiv.addEventListener('mouseenter', () => { if (!_dragging) showPane(pane, node, nodeDiv); });
             nodeDiv.addEventListener('mouseleave', () => startFade(pane));
+
+            // ── #12 Right-click copy node properties ──────────────────────────
+            nodeDiv.addEventListener('contextmenu', ev => {
+                ev.preventDefault();
+                const rows = buildRows(node, node._individualPct ?? node.relativeCost);
+                const text = (node.physicalType || node.type) + '\n'
+                    + rows.filter(([, v]) => v != null && v !== '')
+                          .map(([k, v]) => k.padEnd(22) + v)
+                          .join('\n');
+                navigator.clipboard.writeText(text).catch(() => {});
+                // Brief visual feedback on the node
+                nodeDiv.style.outline = '2px solid var(--accent, #2196f3)';
+                setTimeout(() => { nodeDiv.style.outline = ''; }, 900);
+            });
+
+            // Register for search highlight
+            nodeElements[node.id] = nodeDiv;
         });
+
+        // Expose node elements so the public API setSearchTerm() can reach them
+        _lastNodeElements = nodeElements;
 
         // ── Pan / zoom state ──────────────────────────────────────────────────
         let _tx = 0, _ty = 0, _scale = 1;
@@ -1007,6 +1101,7 @@ window.queryPlanInteropV2 = (function () {
 
         function applyXform() {
             wrap.style.transform = `translate(${_tx}px,${_ty}px) scale(${_scale})`;
+            updateMinimap();
         }
 
         function clampScale(s) { return Math.max(0.12, Math.min(5, s)); }
@@ -1070,26 +1165,182 @@ window.queryPlanInteropV2 = (function () {
             else if (btn.dataset.action === 'fit')     resetFit();
         });
 
+        // ── #11 Keyboard shortcuts for zoom/pan ───────────────────────────────
+        const onKey = e => {
+            // Only handle when the viewport (or its children) are focused/visible
+            // and no input element is focused
+            if (document.activeElement && ['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)) return;
+            if (!viewport.isConnected) return;
+            const r  = viewport.getBoundingClientRect();
+            const cx = r.width / 2, cy = r.height / 2;
+            const PAN_STEP = 60;
+            switch (e.key) {
+                case '+': case '=':
+                    if (e.ctrlKey || e.metaKey) { e.preventDefault(); zoomAt(cx, cy, 1.25); }
+                    break;
+                case '-':
+                    if (e.ctrlKey || e.metaKey) { e.preventDefault(); zoomAt(cx, cy, 1 / 1.25); }
+                    break;
+                case '0':
+                    if (e.ctrlKey || e.metaKey) { e.preventDefault(); resetFit(); }
+                    break;
+                case 'ArrowLeft':  e.preventDefault(); _tx += PAN_STEP; applyXform(); break;
+                case 'ArrowRight': e.preventDefault(); _tx -= PAN_STEP; applyXform(); break;
+                case 'ArrowUp':    e.preventDefault(); _ty += PAN_STEP; applyXform(); break;
+                case 'ArrowDown':  e.preventDefault(); _ty -= PAN_STEP; applyXform(); break;
+            }
+        };
+        window.addEventListener('keydown', onKey);
+
+        // ── #6 Search highlight ───────────────────────────────────────────────
+        // nodeElements map: nodeId → div element (for highlight)
+        const nodeElements = {};
+        // (populated after node divs are built; we store by wrapping each node creation
+        //  in a post-build step — see below after node loop)
+
+        // ── #10 Minimap ───────────────────────────────────────────────────────
+        // Only show minimap when there are enough nodes to warrant it (>= 8)
+        let minimapEl = null, mmViewport = null;
+        const MINIMAP_W = 160, MINIMAP_H = 100;
+        if (graph.nodes.length >= 8) {
+            minimapEl = document.createElement('div');
+            minimapEl.className = 'qp-v2-minimap';
+            minimapEl.title = 'Minimap — drag the viewport rectangle to pan';
+
+            const mmSvg = document.createElementNS(SVG_NS, 'svg');
+            mmSvg.setAttribute('width', MINIMAP_W);
+            mmSvg.setAttribute('height', MINIMAP_H);
+
+            const scaleX = MINIMAP_W / canvasW;
+            const scaleY = MINIMAP_H / canvasH;
+            const mmScale = Math.min(scaleX, scaleY);
+
+            // Draw node rects on minimap
+            graph.nodes.forEach(n => {
+                const p = positions[n.id];
+                if (!p) return;
+                const rect = document.createElementNS(SVG_NS, 'rect');
+                rect.setAttribute('x',      (p.x + PAD) * mmScale);
+                rect.setAttribute('y',      (p.y + PAD) * mmScale);
+                rect.setAttribute('width',  NODE_W * mmScale);
+                rect.setAttribute('height', NODE_H * mmScale);
+                rect.setAttribute('fill',   costColor(n._individualPct ?? n.relativeCost));
+                rect.setAttribute('opacity', '0.7');
+                mmSvg.appendChild(rect);
+            });
+
+            // Viewport rectangle (draggable)
+            mmViewport = document.createElementNS(SVG_NS, 'rect');
+            mmViewport.setAttribute('fill',   'none');
+            mmViewport.setAttribute('stroke', '#fff');
+            mmViewport.setAttribute('stroke-width', '1.5');
+            mmViewport.setAttribute('rx', '2');
+            mmSvg.appendChild(mmViewport);
+
+            minimapEl.appendChild(mmSvg);
+            container.appendChild(minimapEl);
+
+            // Minimap drag to pan
+            let mmDragging = false;
+            mmSvg.addEventListener('mousedown', ev => {
+                mmDragging = true;
+                ev.preventDefault();
+                ev.stopPropagation();
+            });
+            window.addEventListener('mousemove', ev => {
+                if (!mmDragging) return;
+                const mmRect = mmSvg.getBoundingClientRect();
+                const relX   = (ev.clientX - mmRect.left) / mmScale;
+                const relY   = (ev.clientY - mmRect.top)  / mmScale;
+                const vw     = viewport.clientWidth;
+                const vh     = viewport.clientHeight;
+                // Centre the viewport rectangle on the clicked minimap point
+                _tx = -(relX * _scale - vw / 2);
+                _ty = -(relY * _scale - vh / 2);
+                applyXform();
+            });
+            window.addEventListener('mouseup', () => { mmDragging = false; });
+        }
+
+        function updateMinimap() {
+            if (!minimapEl || !mmViewport) return;
+            const scaleX  = MINIMAP_W / canvasW;
+            const scaleY  = MINIMAP_H / canvasH;
+            const mmScale = Math.min(scaleX, scaleY);
+            const vw = viewport.clientWidth;
+            const vh = viewport.clientHeight;
+            // Viewport rect in canvas coords
+            const vLeft = -_tx / _scale;
+            const vTop  = -_ty / _scale;
+            const vW    = vw / _scale;
+            const vH    = vh / _scale;
+            mmViewport.setAttribute('x',      Math.max(0, vLeft * mmScale));
+            mmViewport.setAttribute('y',      Math.max(0, vTop  * mmScale));
+            mmViewport.setAttribute('width',  vW * mmScale);
+            mmViewport.setAttribute('height', vH * mmScale);
+        }
+        updateMinimap();
+
         // Cleanup listeners when container is re-used (next plan render clears innerHTML)
         const obs = new MutationObserver(() => {
             if (!viewport.isConnected) {
                 window.removeEventListener('mousemove', onMove);
                 window.removeEventListener('mouseup',   onUp);
+                window.removeEventListener('keydown',   onKey);
                 obs.disconnect();
             }
         });
         obs.observe(container, { childList: true });
     }
 
+    // ── Per-render search highlight state (module-level so setSearchTerm can reach it) ──
+    let _currentNodeElements = {};   // nodeId → div
+    let _currentSearchTerm   = '';
+    let _lastNodeElements    = {};   // written by render(), read by showPlan()
+
+    function applySearchHighlight(term) {
+        _currentSearchTerm = term;
+        const lc = (term || '').toLowerCase().trim();
+        Object.values(_currentNodeElements).forEach(div => {
+            if (!lc) {
+                div.style.outline     = '';
+                div.style.opacity     = '';
+                div.style.zIndex      = '';
+            } else {
+                // Match against operator name text inside the node
+                const nameEl = div.querySelector('.qp-v2-name');
+                const text   = (nameEl ? nameEl.textContent : '').toLowerCase();
+                if (text.includes(lc)) {
+                    div.style.outline = '2px solid #f59e0b';
+                    div.style.opacity = '1';
+                    div.style.zIndex  = '10';
+                } else {
+                    div.style.outline = '';
+                    div.style.opacity = '0.35';
+                    div.style.zIndex  = '';
+                }
+            }
+        });
+    }
+
     // ── Public API ────────────────────────────────────────────────────────────
+
+    // Per-render plan XML store (for .sqlplan download)
+    let _currentPlanXml = null;
+
     return {
-        showPlan: function (containerId, jsonData) {
+        showPlan: function (containerId, jsonData, planXml) {
             const container = document.getElementById(containerId);
             if (!container) return;
             container.innerHTML = '';
+            _currentNodeElements = {};
+            _currentSearchTerm   = '';
+            _currentPlanXml      = planXml || null;
             try {
                 const graph = typeof jsonData === 'string' ? JSON.parse(jsonData) : jsonData;
                 render(container, graph);
+                // After render, pull node elements from the last render pass
+                _currentNodeElements = Object.assign({}, _lastNodeElements);
             } catch (e) {
                 container.innerHTML =
                     '<p style="color:#f44336;padding:16px;">Failed to render query plan: ' + e.message + '</p>';
@@ -1107,10 +1358,30 @@ window.queryPlanInteropV2 = (function () {
         clearPlan: function (containerId) {
             const el = document.getElementById(containerId);
             if (el) el.innerHTML = '';
+            _currentNodeElements = {};
+            _currentPlanXml      = null;
         },
 
         setUseV2Icons: function (enabled) {
             USE_V2_ICONS = !!enabled;
+        },
+
+        // ── #6 Search highlight ───────────────────────────────────────────────
+        setSearchTerm: function (term) {
+            applySearchHighlight(term);
+        },
+
+        // ── #9 Download .sqlplan ──────────────────────────────────────────────
+        downloadSqlplan: function (xml) {
+            const blob = new Blob([xml || _currentPlanXml || ''], { type: 'application/xml' });
+            const url  = URL.createObjectURL(blob);
+            const a    = document.createElement('a');
+            a.href     = url;
+            a.download = 'query-plan.sqlplan';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
         }
     };
 })();

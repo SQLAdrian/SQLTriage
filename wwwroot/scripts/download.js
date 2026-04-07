@@ -2,50 +2,6 @@
 
 // Download helper functions for Blazor
 
-// Guided tour for guide page
-function startGuidedTour() {
-    const arrow = document.getElementById('tour-arrow');
-    if (!arrow) return;
-
-    arrow.style.display = 'block';
-
-    const sections = [
-        '.guide-section:nth-child(3)', // Audits and Tools
-        'nav', // Navigation menu
-        '.guide-section:nth-child(1)', // Live Dashboards
-        '.guide-section:nth-child(4)', // Configure and Deploy
-        '.guide-section:nth-child(2)'  // SQLWATCH Monitoring
-    ];
-
-    let currentIndex = 0;
-
-    function highlightNext() {
-        // Remove previous highlight
-        document.querySelectorAll('.tour-highlight').forEach(el => el.classList.remove('tour-highlight'));
-
-        if (currentIndex >= sections.length) {
-            arrow.style.display = 'none';
-            return;
-        }
-
-        const target = document.querySelector(sections[currentIndex]);
-        if (target) {
-            target.classList.add('tour-highlight');
-            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-            // Position arrow
-            const rect = target.getBoundingClientRect();
-            arrow.style.left = (rect.left + rect.width / 2 - 20) + 'px';
-            arrow.style.top = (rect.top - 40) + 'px';
-        }
-
-        currentIndex++;
-        setTimeout(highlightNext, 3000); // 3 seconds per section
-    }
-
-    highlightNext();
-}
-
 // Progressive loading with IntersectionObserver
 function setupIntersectionObserver(panelId) {
     const element = document.getElementById(panelId);

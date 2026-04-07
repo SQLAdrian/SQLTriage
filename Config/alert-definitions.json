@@ -851,7 +851,7 @@
       "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 30,
-      "query": "SELECT COUNT(*) AS value FROM sys.dm_hadr_availability_group_states WHERE primary_recovery_health_desc <> 'ONLINE' OR secondary_recovery_health_desc <> 'ONLINE'"
+      "query": "IF SERVERPROPERTY('IsHadrEnabled') = 0 BEGIN SELECT 0 AS value; RETURN; END\nSELECT COUNT(*) AS value FROM sys.dm_hadr_availability_group_states WHERE primary_recovery_health_desc <> 'ONLINE' OR secondary_recovery_health_desc <> 'ONLINE'"
     },
     {
       "id": "ag_replica_unhealthy",
@@ -867,7 +867,7 @@
       "operator": "greater_than",
       "durationSeconds": 30,
       "frequencySeconds": 30,
-      "query": "SELECT COUNT(*) AS value FROM sys.dm_hadr_availability_replica_states WHERE connected_state_desc = 'DISCONNECTED' OR synchronization_health_desc <> 'HEALTHY'"
+      "query": "IF SERVERPROPERTY('IsHadrEnabled') = 0 BEGIN SELECT 0 AS value; RETURN; END\nSELECT COUNT(*) AS value FROM sys.dm_hadr_availability_replica_states WHERE connected_state_desc = 'DISCONNECTED' OR synchronization_health_desc <> 'HEALTHY'"
     },
     {
       "id": "ag_sync_behind",
@@ -884,7 +884,7 @@
       "operator": "greater_than",
       "durationSeconds": 120,
       "frequencySeconds": 60,
-      "query": "SELECT MAX(ISNULL(log_send_queue_size, 0) + ISNULL(redo_queue_size, 0)) / 1024 AS value FROM sys.dm_hadr_database_replica_states WHERE is_local = 0"
+      "query": "IF SERVERPROPERTY('IsHadrEnabled') = 0 BEGIN SELECT 0 AS value; RETURN; END\nSELECT MAX(ISNULL(log_send_queue_size, 0) + ISNULL(redo_queue_size, 0)) / 1024 AS value FROM sys.dm_hadr_database_replica_states WHERE is_local = 0"
     },
     {
       "id": "ag_estimated_data_loss",
@@ -901,7 +901,7 @@
       "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 60,
-      "query": "SELECT MAX(DATEDIFF(SECOND, last_hardened_time, GETDATE())) AS value FROM sys.dm_hadr_database_replica_states WHERE is_local = 0 AND last_hardened_time IS NOT NULL"
+      "query": "IF SERVERPROPERTY('IsHadrEnabled') = 0 BEGIN SELECT 0 AS value; RETURN; END\nSELECT MAX(DATEDIFF(SECOND, last_hardened_time, GETDATE())) AS value FROM sys.dm_hadr_database_replica_states WHERE is_local = 0 AND last_hardened_time IS NOT NULL"
     },
     {
       "id": "ag_redo_queue",
@@ -918,7 +918,7 @@
       "operator": "greater_than",
       "durationSeconds": 0,
       "frequencySeconds": 60,
-      "query": "SELECT MAX(ISNULL(redo_queue_size, 0)) / 1024 AS value FROM sys.dm_hadr_database_replica_states WHERE is_local = 0"
+      "query": "IF SERVERPROPERTY('IsHadrEnabled') = 0 BEGIN SELECT 0 AS value; RETURN; END\nSELECT MAX(ISNULL(redo_queue_size, 0)) / 1024 AS value FROM sys.dm_hadr_database_replica_states WHERE is_local = 0"
     },
     {
       "id": "ag_listener_offline",
@@ -1092,23 +1092,6 @@
       "query": "SELECT CAST(COUNT(*) AS FLOAT) * 100.0 / NULLIF(CAST(SERVERPROPERTY('MaxConnections') AS FLOAT), 0) AS value FROM sys.dm_exec_sessions WHERE is_user_process = 1"
     },
     {
-      "id": "config_change",
-      "name": "Configuration Change",
-      "description": "A SQL Server configuration option has been changed",
-      "category": "logging",
-      "enabled": false,
-      "severity": "Medium",
-      "thresholds": {
-        "warning": 1
-      },
-      "unit": "event",
-      "operator": "greater_than",
-      "durationSeconds": 0,
-      "frequencySeconds": 300,
-      "cooldownMinutes": 30,
-      "query": "SELECT COUNT(*) AS value FROM sys.configurations WHERE value <> value_in_use"
-    },
-    {
       "id": "job_duration_unusual",
       "name": "SQL Agent Job Duration Unusual",
       "description": "A SQL Agent job has run significantly longer or shorter than its baseline duration",
@@ -1189,7 +1172,7 @@
       "operator": "greater_than",
       "durationSeconds": 120,
       "frequencySeconds": 60,
-      "query": "SELECT MAX(ISNULL(DATEDIFF(MILLISECOND, last_commit_time, last_hardened_time), 0)) AS value FROM sys.dm_hadr_database_replica_states WHERE is_local = 1"
+      "query": "IF SERVERPROPERTY('IsHadrEnabled') = 0 BEGIN SELECT 0 AS value; RETURN; END\nSELECT MAX(ISNULL(DATEDIFF(MILLISECOND, last_commit_time, last_hardened_time), 0)) AS value FROM sys.dm_hadr_database_replica_states WHERE is_local = 1"
     },
     {
       "id": "ag_not_ready_automatic_failover",

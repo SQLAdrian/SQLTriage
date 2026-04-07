@@ -21,7 +21,11 @@
                     </button>
                     <button class="panel-maximize-btn" style="position:static;opacity:1;"
                             @onclick="ExportPlan" title="Export Plan as Image">
-                        <i class="fa-solid fa-download"></i>
+                        <i class="fa-solid fa-image"></i>
+                    </button>
+                    <button class="panel-maximize-btn" style="position:static;opacity:1;"
+                            @onclick="DownloadSqlplan" title="Download as .sqlplan (open in SSMS)">
+                        <i class="fa-solid fa-file-code"></i>
                     </button>
                     <button class="panel-maximize-btn" style="position:static;opacity:1;"
                             @onclick="ShowOptimizationTips" title="Show Optimization Tips">
@@ -51,7 +55,8 @@
 
             <!-- Search/Filter Controls -->
             <div class="plan-controls" style="display:flex;gap:8px;padding:8px;border-bottom:1px solid var(--border);">
-                <input type="text" placeholder="Search operators..." @bind="_searchTerm" @bind:event="oninput" style="flex:1;" />
+                <input type="text" placeholder="Search operators… (highlights matching nodes)"
+                       value="@_searchTerm" @oninput="OnSearchInput" style="flex:1;" />
                 <button class="settings-btn" @onclick="ClearSearch" disabled="@(string.IsNullOrEmpty(_searchTerm))">Clear</button>
             </div>
 
@@ -94,7 +99,7 @@
                 // Apply icon set preference before rendering (guard: older published versions may not have this method)
                 try { await JS.InvokeVoidAsync("queryPlanInteropV2.setUseV2Icons", UserSettings.GetUseV2PlanIcons()); } catch { }
                 var json = ExecutionPlanParser.ParseToJson(xml);
-                await JS.InvokeVoidAsync("queryPlanInteropV2.showPlan", "qp-container", json);
+                await JS.InvokeVoidAsync("queryPlanInteropV2.showPlan", "qp-container", json, xml);
                 return;
             }
             catch (Exception ex)
@@ -184,13 +189,24 @@
         Toast.ShowInfo(string.Join("\n", tips), "Optimization Tips");
     }
 
+    private async Task OnSearchInput(ChangeEventArgs e)
+    {
+        _searchTerm = e.Value?.ToString() ?? "";
+        try { await JS.InvokeVoidAsync("queryPlanInteropV2.setSearchTerm", _searchTerm); }
+        catch { /* JS not available */ }
+    }
+
     private async Task ClearSearch()
     {
         _searchTerm = "";
-        try
-        {
-            await JS.InvokeVoidAsync("queryPlanInteropV2.setSearchTerm", "");
-        }
+        try { await JS.InvokeVoidAsync("queryPlanInteropV2.setSearchTerm", ""); }
+        catch { /* JS not available */ }
+    }
+
+    private async Task DownloadSqlplan()
+    {
+        if (string.IsNullOrEmpty(PlanXml)) return;
+        try { await JS.InvokeVoidAsync("queryPlanInteropV2.downloadSqlplan", PlanXml); }
         catch { /* JS not available */ }
     }
 

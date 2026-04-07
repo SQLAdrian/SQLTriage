@@ -497,10 +497,20 @@
     private string? GetCellColor(string columnName, object? value)
     {
         if (ColumnColorRules == null || value == null || value == DBNull.Value) return null;
-        if (!double.TryParse(value.ToString(), out var v)) return null;
 
         var rule = ColumnColorRules.FirstOrDefault(r => r.Column.Equals(columnName, StringComparison.OrdinalIgnoreCase));
         if (rule == null) return null;
+
+        // text-match mode: return matchColor if cell value equals matchValue (case-insensitive)
+        if (rule.Mode == "text-match")
+        {
+            if (!string.IsNullOrEmpty(rule.MatchValue) && !string.IsNullOrEmpty(rule.MatchColor)
+                && string.Equals(value.ToString(), rule.MatchValue, StringComparison.OrdinalIgnoreCase))
+                return rule.MatchColor;
+            return null;
+        }
+
+        if (!double.TryParse(value.ToString(), out var v)) return null;
 
         EnsureColumnRanges();
         if (_columnRanges == null || !_columnRanges.TryGetValue(columnName, out var range)) return null;
