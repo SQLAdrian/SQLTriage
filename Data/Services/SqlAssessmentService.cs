@@ -2,12 +2,11 @@
 
 using Microsoft.Data.SqlClient;
 using SqlHealthAssessment.Data;
+using SqlHealthAssessment.Data.Services.Assessment;
 using Microsoft.Extensions.Logging;
 using Microsoft.SqlServer.Management.Assessment;
 using Microsoft.SqlServer.Management.Common;
-using System.Diagnostics;
 using System.IO;
-using System.Management;
 using System.Text.Json;
 
 namespace SqlHealthAssessment.Data.Services;
@@ -477,26 +476,33 @@ public class SqlAssessmentService
                     TotalChecksRun++;
                     try
                     {
+                        CheckExecutionResult execResult;
                         switch (check.ImplementationType)
                         {
                             case "Sql":
-                                await ExecuteSqlCheckAsync(connection, check, serverName, summary);
+                                execResult = await SqlCheckExecutor.RunAsync(connection, check, serverName, _logger);
                                 break;
                             case "PowerShell":
-                                await ExecutePowerShellCheckAsync(check, localMachineName, summary);
+                                execResult = await PowerShellCheckExecutor.RunAsync(check, localMachineName, _logger);
                                 break;
                             case "Wmi":
-                                await ExecuteWmiCheckAsync(check, localMachineName, summary);
+                                execResult = await WmiCheckExecutor.RunAsync(check, localMachineName, _logger);
                                 break;
                             case "Registry":
-                                ExecuteRegistryCheck(check, localMachineName, summary);
+                                execResult = RegistryCheckExecutor.Run(check, localMachineName, _logger);
                                 break;
                             case "Info":
                                 AddInfoResult(check, serverName, summary);
-                                break;
+                                continue;
                             default:
                                 _logger.LogDebug("Unknown implementation type {Type} for {CheckId}", check.ImplementationType, check.CheckId);
-                                break;
+                                continue;
+                        }
+                        if (!execResult.Skipped)
+                        {
+                            summary.Results.AddRange(execResult.Results);
+                            if (execResult.Passed) TotalChecksPassed++;
+                            else TotalChecksFailed++;
                         }
                     }
                     catch (UnauthorizedAccessException ex)
@@ -634,211 +640,6 @@ ORDER BY gs.avg_user_impact DESC;";
         }
     }
 
-    private async Task<bool> ExecuteSqlCheckAsync(SqlConnection connection, AssessmentCheckDefinition check,
-        string serverName, AssessmentSummary summary)
-    {
-        using var cmd = new SqlCommand(check.Sql, connection);
-        cmd.CommandTimeout = 30;
-
-        using var reader = await cmd.ExecuteReaderAsync();
-
-        bool hasResults = false;
-        while (await reader.ReadAsync())
-        {
-            hasResults = true;
-            var checkResult = new AssessmentResult
-            {
-                CheckId = check.CheckId,
-                Message = reader.IsDBNull(0) ? check.DisplayName : reader.GetString(0),
-                Severity = check.Severity,
-                TargetName = reader.IsDBNull(1) ? serverName : reader.GetString(1),
-                TargetType = check.TargetType,
-                Category = check.Category,
-                Description = check.Description,
-                HelpLink = check.HelpLink,
-                Status = "Failed",
-                SqlQuery = check.Sql,
-                ImplementationType = "Sql"
-            };
-
-            summary.Results.Add(checkResult);
-            TotalChecksFailed++;
-        }
-        reader.Close();
-
-        // If no results, the check passed
-        if (!hasResults)
-        {
-            AddPassedResult(check, serverName, summary);
-        }
-
-        return true;
-    }
-
-    private async Task<bool> ExecutePowerShellCheckAsync(AssessmentCheckDefinition check,
-        string targetName, AssessmentSummary summary)
-    {
-        if (string.IsNullOrEmpty(check.PowerShell))
-            return false;
-
-        try
-        {
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = "powershell.exe",
-                Arguments = $"-NoProfile -ExecutionPolicy Bypass -Command \"{check.PowerShell}\"",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-
-            using var process = Process.Start(startInfo);
-            if (process == null) return false;
-
-            var output = await process.StandardOutput.ReadToEndAsync();
-            var error = await process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync();
-
-            if (!string.IsNullOrEmpty(error))
-            {
-                _logger.LogWarning("PowerShell check {CheckId} had errors: {Error}", check.CheckId, error);
-            }
-
-            // If there's output, it means the check found an issue
-            if (!string.IsNullOrWhiteSpace(output))
-            {
-                var checkResult = new AssessmentResult
-                {
-                    CheckId = check.CheckId,
-                    Message = output.Trim(),
-                    Severity = check.Severity,
-                    TargetName = targetName,
-                    TargetType = "LocalMachine",
-                    Category = check.Category,
-                    Description = check.Description,
-                    HelpLink = check.HelpLink,
-                    SqlQuery = check.Sql,
-                    ImplementationType = check.ImplementationType,
-                    Status = "Failed"
-                };
-                summary.Results.Add(checkResult);
-                TotalChecksFailed++;
-            }
-            else
-            {
-                AddPassedResult(check, targetName, summary);
-            }
-
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Error executing PowerShell check {CheckId}", check.CheckId);
-            throw;
-        }
-    }
-
-    private async Task<bool> ExecuteWmiCheckAsync(AssessmentCheckDefinition check,
-        string targetName, AssessmentSummary summary)
-    {
-        if (string.IsNullOrEmpty(check.Wmi))
-            return false;
-
-        try
-        {
-            using var searcher = new ManagementObjectSearcher(check.Wmi);
-            var results = await Task.Run(() => searcher.Get());
-
-            // If there are results, the check found an issue
-            if (results.Count > 0)
-            {
-                var output = string.Join(Environment.NewLine,
-                    results.Cast<ManagementObject>().Take(10).Select(m =>
-                        string.Join(", ", m.Properties.Cast<PropertyData>().Select(p => $"{p.Name}={p.Value}"))));
-
-                var checkResult = new AssessmentResult
-                {
-                    CheckId = check.CheckId,
-                    Message = output,
-                    Severity = check.Severity,
-                    TargetName = targetName,
-                    TargetType = "LocalMachine",
-                    Category = check.Category,
-                    Description = check.Description,
-                    HelpLink = check.HelpLink,
-                    SqlQuery = check.Sql,
-                    ImplementationType = check.ImplementationType,
-                    Status = "Failed"
-                };
-                summary.Results.Add(checkResult);
-                TotalChecksFailed++;
-            }
-            else
-            {
-                AddPassedResult(check, targetName, summary);
-            }
-
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Error executing WMI check {CheckId}", check.CheckId);
-            throw;
-        }
-    }
-
-    private bool ExecuteRegistryCheck(AssessmentCheckDefinition check,
-        string targetName, AssessmentSummary summary)
-    {
-        if (string.IsNullOrEmpty(check.Registry))
-            return false;
-
-        try
-        {
-            // Registry format: HKEY_LOCAL_MACHINE\path\to\key or similar
-            var parts = check.Registry.Split(new[] { '\\' }, 2);
-            if (parts.Length < 2) return false;
-
-            var hiveName = parts[0].Replace("HKEY_LOCAL_MACHINE", "HKLM")
-                                       .Replace("HKEY_CURRENT_USER", "HKCU");
-            var subKeyPath = parts[1];
-
-            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(subKeyPath);
-
-            if (key != null)
-            {
-                // Key exists - check passes (or fail depending on what we're checking)
-                AddPassedResult(check, targetName, summary);
-            }
-            else
-            {
-                var checkResult = new AssessmentResult
-                {
-                    CheckId = check.CheckId,
-                    Message = $"Registry key {check.Registry} not found",
-                    Severity = check.Severity,
-                    TargetName = targetName,
-                    TargetType = "LocalMachine",
-                    Category = check.Category,
-                    Description = check.Description,
-                    HelpLink = check.HelpLink,
-                    SqlQuery = check.Sql,
-                    ImplementationType = check.ImplementationType,
-                    Status = "Failed"
-                };
-                summary.Results.Add(checkResult);
-                TotalChecksFailed++;
-            }
-
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Error executing Registry check {CheckId}", check.CheckId);
-            throw;
-        }
-    }
 
     private void AddInfoResult(AssessmentCheckDefinition check, string targetName, AssessmentSummary summary)
     {
@@ -854,25 +655,6 @@ ORDER BY gs.avg_user_impact DESC;";
             HelpLink = check.HelpLink,
             Status = "Passed"
         });
-        TotalChecksPassed++;
-    }
-
-    private void AddPassedResult(AssessmentCheckDefinition check, string targetName, AssessmentSummary summary)
-    {
-        var passedResult = new AssessmentResult
-        {
-            CheckId = check.CheckId,
-            Message = "Check passed - no issues found",
-            Severity = "Pass",
-            TargetName = targetName,
-            TargetType = check.TargetType,
-            Category = check.Category,
-            Description = check.Description,
-            HelpLink = check.HelpLink,
-            Status = "Passed"
-        };
-
-        summary.Results.Add(passedResult);
         TotalChecksPassed++;
     }
 
