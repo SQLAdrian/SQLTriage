@@ -483,7 +483,17 @@
         </table>
     </div>
 
-
+    <!-- Notifications -->
+    <div class="settings-group">
+        <h3>Notifications</h3>
+        <div class="settings-row">
+            <label class="settings-label">Show "What's New" on update</label>
+            <input type="checkbox" @bind="_showReleaseNotesOnUpdate" @bind:after="SaveNotificationSettings" />
+        </div>
+        <p style="color: var(--text-muted); font-size: 12px; margin-top: 4px;">
+            When enabled, a popup shows release notes each time the application is updated.
+        </p>
+    </div>
 
 </div>
 
@@ -667,6 +677,9 @@
     private bool _autoExportVaCsv;
     private bool _autoExportVaPdf;
 
+    // Notifications
+    private bool _showReleaseNotesOnUpdate;
+
     protected override void OnInitialized()
     {
         // Load configuration
@@ -711,6 +724,9 @@
         _autoExportQuickCheckPdf = s.AutoExportQuickCheckPdf;
         _autoExportVaCsv = s.AutoExportVulnerabilityAssessmentCsv;
         _autoExportVaPdf = s.AutoExportVulnerabilityAssessmentPdf;
+
+        // Load notification settings
+        _showReleaseNotesOnUpdate = s.ShowReleaseNotesOnUpdate;
     }
 
     private void OnZoomLevelChanged(ChangeEventArgs e)
@@ -951,6 +967,10 @@
             _autoExportVaCsv, _autoExportVaPdf);
     }
 
+    private void SaveNotificationSettings()
+    {
+        UserSettings.SetShowReleaseNotesOnUpdate(_showReleaseNotesOnUpdate);
+    }
 
     private void ValidateConfig()
     {

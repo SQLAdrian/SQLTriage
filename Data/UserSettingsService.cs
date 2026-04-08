@@ -44,12 +44,12 @@ namespace SqlHealthAssessment.Data
             public int ZoomLevel { get; set; } = 150;
 
             // ── Auto-Export Settings ──
-            public bool AutoExportAuditCsv { get; set; } = true;
+            public bool AutoExportAuditCsv { get; set; } = false;
             public bool AutoExportAuditJson { get; set; } = false;
             public bool AutoExportAuditPdf { get; set; } = false;
-            public bool AutoExportQuickCheckCsv { get; set; } = true;
-            public bool AutoExportQuickCheckPdf { get; set; } = true;
-            public bool AutoExportVulnerabilityAssessmentCsv { get; set; } = true;
+            public bool AutoExportQuickCheckCsv { get; set; } = false;
+            public bool AutoExportQuickCheckPdf { get; set; } = false;
+            public bool AutoExportVulnerabilityAssessmentCsv { get; set; } = false;
             public bool AutoExportVulnerabilityAssessmentPdf { get; set; } = false;
 
             // ── Diagnostics ──
@@ -73,12 +73,30 @@ namespace SqlHealthAssessment.Data
             // ── Release Notes ──
             /// <summary>The last version for which the "What's new" modal was shown. Empty = never shown.</summary>
             public string LastSeenVersion { get; set; } = "";
+            /// <summary>When true, shows the "What's new" modal automatically when the version changes.</summary>
+            public bool ShowReleaseNotesOnUpdate { get; set; } = true;
 
             // ── No-Pants Mode ──
             /// <summary>When true, shows dangerous server-modification controls in dashboards. Off by default.</summary>
             public bool NoPantsMode { get; set; } = false;
             /// <summary>Whether the user has accepted the no-pants disclaimer at least once.</summary>
             public bool NoPantsDisclaimerAccepted { get; set; } = false;
+
+            // ── Live Sessions Monitoring ──
+            /// <summary>Auto-refresh enabled for Live Sessions page.</summary>
+            public bool SessionsAutoRefresh { get; set; } = true;
+            /// <summary>Refresh interval in seconds for Live Sessions page.</summary>
+            public int SessionsRefreshInterval { get; set; } = 5;
+            /// <summary>Hide sleeping sessions by default.</summary>
+            public bool SessionsHideSleeping { get; set; } = false;
+            /// <summary>Show only blocked/blocking sessions.</summary>
+            public bool SessionsShowOnlyBlocked { get; set; } = false;
+            /// <summary>Hide low-IO sessions.</summary>
+            public bool SessionsHideLowIO { get; set; } = false;
+            /// <summary>Search text for filtering sessions.</summary>
+            public string SessionsSearchText { get; set; } = "";
+            /// <summary>Maximum number of sessions to display.</summary>
+            public int SessionsMaxDisplay { get; set; } = 500;
 
             // ── Experimental Mode ──
             /// <summary>When true, shows experimental/preview features that are not yet production-ready.</summary>
@@ -322,6 +340,30 @@ namespace SqlHealthAssessment.Data
         // ── Release Notes ──
         public string GetLastSeenVersion() { lock (_lock) return _settings.LastSeenVersion; }
         public void SetLastSeenVersion(string version) { lock (_lock) _settings.LastSeenVersion = version; SaveSettings(); }
+        public bool GetShowReleaseNotesOnUpdate() { lock (_lock) return _settings.ShowReleaseNotesOnUpdate; }
+        public void SetShowReleaseNotesOnUpdate(bool value) { lock (_lock) _settings.ShowReleaseNotesOnUpdate = value; SaveSettings(); }
+
+        // ── Live Sessions Monitoring ──
+        public bool GetSessionsAutoRefresh() { lock (_lock) return _settings.SessionsAutoRefresh; }
+        public void SetSessionsAutoRefresh(bool value) { lock (_lock) _settings.SessionsAutoRefresh = value; SaveSettings(); }
+
+        public int GetSessionsRefreshInterval() { lock (_lock) return _settings.SessionsRefreshInterval; }
+        public void SetSessionsRefreshInterval(int seconds) { lock (_lock) _settings.SessionsRefreshInterval = seconds; SaveSettings(); }
+
+        public bool GetSessionsHideSleeping() { lock (_lock) return _settings.SessionsHideSleeping; }
+        public void SetSessionsHideSleeping(bool value) { lock (_lock) _settings.SessionsHideSleeping = value; SaveSettings(); }
+
+        public bool GetSessionsShowOnlyBlocked() { lock (_lock) return _settings.SessionsShowOnlyBlocked; }
+        public void SetSessionsShowOnlyBlocked(bool value) { lock (_lock) _settings.SessionsShowOnlyBlocked = value; SaveSettings(); }
+
+        public bool GetSessionsHideLowIO() { lock (_lock) return _settings.SessionsHideLowIO; }
+        public void SetSessionsHideLowIO(bool value) { lock (_lock) _settings.SessionsHideLowIO = value; SaveSettings(); }
+
+        public string GetSessionsSearchText() { lock (_lock) return _settings.SessionsSearchText; }
+        public void SetSessionsSearchText(string text) { lock (_lock) _settings.SessionsSearchText = text; SaveSettings(); }
+
+        public int GetSessionsMaxDisplay() { lock (_lock) return _settings.SessionsMaxDisplay; }
+        public void SetSessionsMaxDisplay(int count) { lock (_lock) _settings.SessionsMaxDisplay = count; SaveSettings(); }
 
         // ── Auto-Export Accessors ──
         public UserSettings GetSettings() { lock (_lock) return _settings; }

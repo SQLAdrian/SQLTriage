@@ -91,9 +91,11 @@
         }
         else
         {
-            // Show release notes when version has changed since last seen
+            // Show release notes when version has changed since last seen (if user hasn't disabled it)
             var currentVersion = GetCurrentVersion();
-            if (!string.IsNullOrEmpty(currentVersion) && UserSettings.GetLastSeenVersion() != currentVersion)
+            if (!string.IsNullOrEmpty(currentVersion)
+                && UserSettings.GetLastSeenVersion() != currentVersion
+                && UserSettings.GetShowReleaseNotesOnUpdate())
                 _showReleaseNotes = true;
         }
     }
@@ -129,12 +131,14 @@
         StateHasChanged();
     }
 
-    private void OnReleaseNotesClosed()
+    private void OnReleaseNotesClosed(bool dontShowAgain)
     {
         _showReleaseNotes = false;
         var version = GetCurrentVersion();
         if (!string.IsNullOrEmpty(version))
             UserSettings.SetLastSeenVersion(version);
+        if (dontShowAgain)
+            UserSettings.SetShowReleaseNotesOnUpdate(false);
         StateHasChanged();
     }
 

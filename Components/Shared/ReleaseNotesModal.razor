@@ -29,9 +29,10 @@
             </div>
 
             <div class="release-notes-footer">
-                <span style="font-size:12px; color:var(--text-muted);">
-                    Full changelog: <strong>About</strong> page
-                </span>
+                <label style="font-size:12px; color:var(--text-muted); display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none;">
+                    <input type="checkbox" @bind="_dontShowAgain" style="cursor:pointer;" />
+                    Don't show this again
+                </label>
                 <button class="settings-btn settings-btn-primary" @onclick="Close">
                     <i class="fa-solid fa-check"></i> Got it
                 </button>
@@ -43,11 +44,12 @@
 
 @code {
     [Parameter] public bool IsVisible { get; set; }
-    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<bool> OnClose { get; set; }
 
     private List<string> _notes = new();
     private string _version = "";
     private string _buildDate = "";
+    private bool _dontShowAgain = false;
 
     protected override void OnInitialized()
     {
@@ -77,5 +79,5 @@
         catch { /* non-fatal — modal simply won't show */ }
     }
 
-    private async Task Close() => await OnClose.InvokeAsync();
+    private async Task Close() => await OnClose.InvokeAsync(_dontShowAgain);
 }
