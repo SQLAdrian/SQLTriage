@@ -335,6 +335,12 @@
       <ZipFilePath>$(ReleaseDir)\$(ZipFileName)</ZipFilePath>
     </PropertyGroup>
     <RemoveDir Directories="$(PublishDir)bin" ContinueOnError="true" />
+    <!-- Strip dev/research artefacts that must never ship in a release -->
+    <RemoveDir Directories="$(PublishDir)research_output" ContinueOnError="true" />
+    <RemoveDir Directories="$(PublishDir)research_logs"   ContinueOnError="true" />
+    <RemoveDir Directories="$(PublishDir)temp"            ContinueOnError="true" />
+    <RemoveDir Directories="$(PublishDir)win-x64"         ContinueOnError="true" />
+    <RemoveDir Directories="$(PublishDir).git"            ContinueOnError="true" />
     <MakeDir Directories="$(ReleaseDir)" />
     <ZipDirectory SourceDirectory="$(PublishDir)" DestinationFile="$(ZipFilePath)" Overwrite="true" />
     <Message Importance="high" Text="Release ZIP created: $(ZipFilePath)" />
