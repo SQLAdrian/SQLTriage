@@ -77,11 +77,13 @@ namespace SqlHealthAssessment.Data.Caching
         /// Decrypts a cached value. Falls back to returning the raw value if
         /// decryption fails (e.g., session key rotated after restart).
         /// </summary>
-        private string UnprotectValue(string value)
+        private string? UnprotectValue(string value)
         {
             if (_dataProtection == null) return value;
             var result = _dataProtection.Unprotect(value);
-            return string.IsNullOrEmpty(result) ? value : result; // Fallback for pre-encryption data
+            // Null/empty means decrypt failed (wrong key — stale cache from reinstall or key rotation).
+            // Return null so callers treat it as a cache miss and do a fresh fetch.
+            return string.IsNullOrEmpty(result) ? null : result;
         }
 
         // ──────────────────────────── Schema ────────────────────────────
@@ -119,6 +121,9 @@ namespace SqlHealthAssessment.Data.Caching
                 CREATE INDEX IF NOT EXISTS idx_ts_query_time
                     ON cache_timeseries(query_id, instance_key, time_value);
 
+                CREATE INDEX IF NOT EXISTS idx_ts_fetched_at
+                    ON cache_timeseries(fetched_at);
+
                 CREATE TABLE IF NOT EXISTS cache_stat (
                     query_id     TEXT NOT NULL,
                     instance_key TEXT NOT NULL,
@@ -129,6 +134,9 @@ namespace SqlHealthAssessment.Data.Caching
                     fetched_at   TEXT NOT NULL,
                     PRIMARY KEY (query_id, instance_key)
                 );
+
+                CREATE INDEX IF NOT EXISTS idx_stat_fetched_at
+                    ON cache_stat(fetched_at);
 
                 CREATE TABLE IF NOT EXISTS cache_bargauge (
                     query_id     TEXT NOT NULL,
@@ -142,6 +150,9 @@ namespace SqlHealthAssessment.Data.Caching
                     PRIMARY KEY (query_id, instance_key, label, instance)
                 );
 
+                CREATE INDEX IF NOT EXISTS idx_bargauge_fetched_at
+                    ON cache_bargauge(fetched_at);
+
                 CREATE TABLE IF NOT EXISTS cache_datatable (
                     query_id     TEXT NOT NULL,
                     instance_key TEXT NOT NULL,
@@ -149,6 +160,9 @@ namespace SqlHealthAssessment.Data.Caching
                     fetched_at   TEXT NOT NULL,
                     PRIMARY KEY (query_id, instance_key)
                 );
+
+                CREATE INDEX IF NOT EXISTS idx_datatable_fetched_at
+                    ON cache_datatable(fetched_at);
 
                 CREATE TABLE IF NOT EXISTS cache_checkstatus (
                     query_id     TEXT NOT NULL,
@@ -159,12 +173,17 @@ namespace SqlHealthAssessment.Data.Caching
                     PRIMARY KEY (query_id, instance_key, status)
                 );
 
+                CREATE INDEX IF NOT EXISTS idx_checkstatus_fetched_at
+                    ON cache_checkstatus(fetched_at);
+
                 CREATE TABLE IF NOT EXISTS cache_metadata (
                     query_id     TEXT NOT NULL,
                     instance_key TEXT NOT NULL,
                     last_fetch   TEXT NOT NULL,
                     PRIMARY KEY (query_id, instance_key)
                 );
+                CREATE INDEX IF NOT EXISTS idx_metadata_last_fetch
+                    ON cache_metadata(last_fetch);
             ";
             cmd.ExecuteNonQuery();
         }
@@ -574,6 +593,7 @@ namespace SqlHealthAssessment.Data.Caching
             var raw = (string?)await cmd.ExecuteScalarAsync();
             if (raw == null) return null;
             var json = UnprotectValue(raw);   // Decrypt from cache
+            if (json == null) return null;    // Stale/undecryptable entry — treat as cache miss
             return DeserializeDataTable(json);
         }
 

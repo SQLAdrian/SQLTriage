@@ -15,6 +15,10 @@ public class PlanGraph
     [JsonPropertyName("query")] public string? Query { get; set; }
     [JsonPropertyName("recommendations")] public List<string> Recommendations { get; set; } = [];
     [JsonPropertyName("summary")] public PlanSummary? Summary { get; set; }
+    /// <summary>1-based index within the batch (for multi-statement plans).</summary>
+    [JsonPropertyName("statementNumber")] public int StatementNumber { get; set; } = 1;
+    /// <summary>This statement's cost as a % of the total batch cost.</summary>
+    [JsonPropertyName("batchPct")] public double BatchPct { get; set; } = 100.0;
 }
 
 public class PlanSummary
@@ -73,6 +77,8 @@ public class PlanNode
     [JsonPropertyName("cost")] public double Cost { get; set; }
     [JsonPropertyName("subTreeCost")] public double SubTreeCost { get; set; }
     [JsonPropertyName("relativeCost")] public double RelativeCost { get; set; }
+    [JsonPropertyName("localCost")] public double LocalCost { get; set; }
+    [JsonPropertyName("localCostPercentage")] public double LocalCostPercentage { get; set; }
     [JsonPropertyName("estimateRows")] public double EstimateRows { get; set; }
     [JsonPropertyName("actualRows")] public double? ActualRows { get; set; }
     [JsonPropertyName("estimateCPU")] public double EstimateCPU { get; set; }
@@ -123,30 +129,108 @@ public static class ExecutionPlanParser
     ];
 
     /// <summary>
-    /// Parse showplan XML and return a JSON string representing the plan graph.
+    /// Parse showplan XML and return a JSON array string — one graph per statement in the batch.
+    /// Multi-statement batches produce multiple entries; single-statement plans produce a 1-element array.
     /// </summary>
     public static string ParseToJson(string xml)
     {
-        var graph = Parse(xml);
-        return JsonSerializer.Serialize(graph, JsonOpts);
+        // Handle UTF-16 encoded plans
+        if (xml.Length > 3 && xml[0] == '\uFEFF')
+        {
+            xml = xml.TrimStart('\uFEFF');
+        }
+        var graphs = ParseAll(xml);
+        return JsonSerializer.Serialize(graphs, JsonOpts);
     }
 
-    private static PlanGraph Parse(string xml)
+    public static PlanGraph Parse(string xml)
     {
-        var doc = XDocument.Parse(xml);
-        var graph = new PlanGraph();
+        try
+        {
+            // Handle UTF-16 encoded plans
+            if (xml.Length > 3 && xml[0] == '\uFEFF')
+            {
+                xml = xml.TrimStart('\uFEFF');
+            }
+            var graphs = ParseAll(xml);
+            
+            Serilog.Log.Debug("Parsed execution plan successfully: {NodeCount} nodes, {EdgeCount} edges", 
+                graphs.FirstOrDefault()?.Nodes.Count ?? 0,
+                graphs.FirstOrDefault()?.Edges.Count ?? 0);
+            
+            return graphs.FirstOrDefault() ?? new PlanGraph();
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Error(ex, "Execution plan parsing failed. XML length: {XmlLength} chars", xml?.Length ?? 0);
+            
+            // Log first 1000 chars of XML for diagnostics
+            if (!string.IsNullOrWhiteSpace(xml))
+            {
+                var preview = xml.Length > 1000 ? xml.Substring(0, 1000) + "..." : xml;
+                Serilog.Log.Debug("Plan XML preview: {PlanPreview}", preview);
+            }
+            
+            return new PlanGraph();
+        }
+    }
 
-        // Find the first statement element that has a QueryPlan child.
-        // Using StartsWith("Stmt") handles all variants (StmtSimple, StmtCond, StmtCursor, etc.)
-        // and correctly skips SET/USE statements that appear before the real query in a batch.
-        var stmtSimple = doc.Descendants()
-            .FirstOrDefault(e => e.Name.LocalName.StartsWith("Stmt") &&
-                                 e.Elements().Any(c => c.Name.LocalName == "QueryPlan"));
-        if (stmtSimple == null) return graph;
+    private static List<PlanGraph> ParseAll(string xml)
+    {
+        // Strip BOM and handle encoding mismatches
+        xml = xml.TrimStart('\uFEFF', '\uFFFE', '\u0000');
+        var doc = XDocument.Parse(xml);
+
+        // VSCode-mssql / SSMS compatible selection - ignore namespaces completely
+        // Works across ALL showplan schema versions 2005 -> 2022
+        var stmts = doc.Descendants()
+            .Where(e => 
+                e.Name.LocalName.StartsWith("Stmt") &&
+                e.Descendants().Any(c => c.Name.LocalName == "QueryPlan")
+            )
+            .ToList();
+
+        // Handle cursor plans where QueryPlan is nested inside CursorPlan > Operation
+        if (stmts.Count == 0)
+        {
+            stmts = doc.Descendants()
+                .Where(e => 
+                    e.Name.LocalName.StartsWith("Stmt") &&
+                    e.Descendants().Any(c => c.Name.LocalName == "Operation")
+                )
+                .ToList();
+        }
+
+        // Final fallback: find any QueryPlan elements anywhere in the document
+        if (stmts.Count == 0)
+        {
+            stmts = doc.Descendants()
+                .Where(e => e.Name.LocalName == "QueryPlan")
+                .Select(e => e.Parent)
+                .ToList();
+        }
+
+        if (stmts.Count == 0) return [new PlanGraph()];
+
+        // Total batch cost = sum of all statement costs (for per-statement % of batch)
+        double batchTotal = stmts.Sum(s => ParseDouble(s.Attribute("StatementSubTreeCost")?.Value));
+        if (batchTotal <= 0) batchTotal = 1.0;
+
+        var result = new List<PlanGraph>();
+        for (int i = 0; i < stmts.Count; i++)
+            result.Add(ParseStatement(stmts[i], stmtNumber: i + 1, batchTotal));
+        return result;
+    }
+
+    private static PlanGraph ParseStatement(XElement stmtSimple, int stmtNumber, double batchTotal)
+    {
+        var graph = new PlanGraph();
+        graph.StatementNumber = stmtNumber;
 
         graph.Query = stmtSimple.Attribute("StatementText")?.Value;
 
         double rootCost = ParseDouble(stmtSimple.Attribute("StatementSubTreeCost")?.Value);
+        graph.BatchPct = batchTotal > 0 ? rootCost / batchTotal * 100.0 : 100.0;
         if (rootCost <= 0) rootCost = 1.0;
 
         // .First is safe here — we already verified the child exists above
@@ -191,22 +275,34 @@ public static class ExecutionPlanParser
             // For now, equality takes precedence as they are more selective
             var qualifiedTable = schema != null ? $"[{schema}].[{table}]" : $"[{table}]";
 
-            // Build CREATE INDEX DDL
-            var ddl = $"CREATE NONCLUSTERED INDEX [IX_{table}_{string.Join("_", keyCols)}]";
-            ddl += $"\n    ON {qualifiedTable} ({string.Join(", ", keyCols.Select(c => $"[{c}]"))})";
-            if (include.Count > 0)
-                ddl += $"\n    INCLUDE ({string.Join(", ", include.Select(c => $"[{c}]"))})";
-
+            // Build CREATE INDEX DDL with production best practices
             var indexName = GenerateUniqueIndexName(table, keyCols);
+            var databasePrefix = !string.IsNullOrEmpty(db) ? $"[{db}]." : "";
             var enhancedDdl = $"CREATE NONCLUSTERED INDEX [{indexName}]";
-            enhancedDdl += $"\n    ON {qualifiedTable} ({string.Join(", ", keyCols.Select(c => $"[{c}]"))})";
+            enhancedDdl += $"\n    ON {databasePrefix}{qualifiedTable} ({string.Join(", ", keyCols.Select(c => $"[{c}]"))})";
             if (include.Count > 0)
                 enhancedDdl += $"\n    INCLUDE ({string.Join(", ", include.Select(c => $"[{c}]"))})";
-            enhancedDdl += $"\n    -- Estimated impact: {impact}%\n";
+            
+            // Add production options
+            enhancedDdl += $"\n    WITH (";
+            enhancedDdl += $"\n        ONLINE = {{ONLINE}},";
+            enhancedDdl += $"\n        SORT_IN_TEMPDB = {{SORT_IN_TEMPDB}},";
+            enhancedDdl += $"\n        MAXDOP = {{MAXDOP}},";
+            enhancedDdl += $"\n        DATA_COMPRESSION = {{COMPRESSION}}";
+            enhancedDdl += $"\n        {{RESUMABLE}}";
+            enhancedDdl += $"\n        {{SEQUENTIAL_KEY}}";
+            enhancedDdl += $"\n    );";
+            enhancedDdl += $"\n    -- Estimated query improvement: {impact}%";
+            enhancedDdl += $"\n    -- Automatically generated from execution plan recommendation";
+            graph.Recommendations.Add(enhancedDdl);
+            enhancedDdl += $"\n    );";
+            enhancedDdl += $"\n    -- Estimated query improvement: {impact}%";
+            enhancedDdl += $"\n    -- Automatically generated from execution plan recommendation";
 
             var summary = $"Missing index on {db}.{qualifiedTable} (Impact: {impact}%)";
             graph.Recommendations.Add(summary);
             graph.Recommendations.Add(enhancedDdl);
+            graph.Recommendations.Add($"\n💡 Best Practice: Run during off-peak hours. Use ONLINE=OFF if running on SQL Server Standard Edition.");
         }
 
         // ── Plan Summary (statement-level metadata) ────────────────────────────
@@ -215,20 +311,48 @@ public static class ExecutionPlanParser
         // Synthetic SELECT root node — SSMS always renders the statement wrapper as the
         // leftmost box (Cost: 0 %). NodeId = -1 so it never collides with XML NodeIds (≥ 0).
         const int selectNodeId = -1;
-        graph.Nodes.Add(new PlanNode
+        var selectNode = new PlanNode
         {
             Id = selectNodeId,
             Type = "Select",
             PhysicalType = "Select",
             SubTreeCost = rootCost,
             RelativeCost = 100.0,
-        });
+        };
+        // Surface plan-level metadata on the root node so the detail pane can show it
+        if (graph.Summary?.CachedPlanSizeKB > 0)
+            selectNode.Properties["Cached Plan Size"] = $"{graph.Summary.CachedPlanSizeKB:N0} KB";
+        if (graph.Summary?.MemoryGrantKB > 0)
+            selectNode.Properties["Memory Grant (KB)"] = $"{graph.Summary.MemoryGrantKB:N0}";
+        if (graph.Summary?.Dop > 0)
+            selectNode.Properties["Degree of Parallelism"] = graph.Summary.Dop.ToString();
+        if (!string.IsNullOrEmpty(graph.Summary?.OptimizationLevel))
+            selectNode.Properties["Optimization Level"] = graph.Summary.OptimizationLevel;
+        graph.Nodes.Add(selectNode);
 
         // Parse operator tree from first RelOp under QueryPlan, wired as child of SELECT.
         var rootRelOp = queryPlan.Elements()
             .FirstOrDefault(e => e.Name.LocalName == "RelOp");
         if (rootRelOp != null)
             ParseRelOp(rootRelOp, parentId: selectNodeId, graph, rootCost);
+
+        // Post-order traversal to calculate local node costs (vscode-mssql algorithm)
+        // Process children first, then parent - bottom up
+        foreach (var node in graph.Nodes.OrderByDescending(n => n.Id))
+        {
+            double childCostSum = 0.0;
+            foreach (var edge in graph.Edges.Where(e => e.Source == node.Id))
+            {
+                var childNode = graph.Nodes.FirstOrDefault(n => n.Id == edge.Target);
+                if (childNode != null)
+                {
+                    childCostSum += childNode.SubTreeCost;
+                }
+            }
+            // Local cost = this node's subtree cost minus sum of all children subtree costs
+            node.LocalCost = Math.Max(node.SubTreeCost - childCostSum, 0.0);
+            node.LocalCostPercentage = rootCost > 0 ? node.LocalCost / rootCost * 100.0 : 0.0;
+        }
 
         return graph;
     }

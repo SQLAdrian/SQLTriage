@@ -48,6 +48,22 @@ namespace SqlHealthAssessment
         // Tray menu items that update dynamically
         private System.Windows.Forms.ToolStripMenuItem? _trayServerModeItem;
         private System.Windows.Forms.ToolStripMenuItem? _trayOpenBrowserItem;
+        private System.Windows.Forms.ToolStripMenuItem? _trayServerStatusItem;   // green/red dot + label
+        private System.Windows.Forms.ToolStripMenuItem? _trayServerCountItem;    // connected / total servers
+
+        /// <summary>
+        /// Renders a 12×12 filled circle bitmap in the given colour — used as status dot icons in the tray menu.
+        /// </summary>
+        private static System.Drawing.Bitmap MakeDotIcon(System.Drawing.Color colour)
+        {
+            var bmp = new System.Drawing.Bitmap(12, 12, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+            using var g = System.Drawing.Graphics.FromImage(bmp);
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            g.Clear(System.Drawing.Color.Transparent);
+            using var brush = new System.Drawing.SolidBrush(colour);
+            g.FillEllipse(brush, 1, 1, 10, 10);
+            return bmp;
+        }
 
         private void InitializeTrayIcon(string version)
         {
@@ -73,6 +89,20 @@ namespace SqlHealthAssessment
                     Visible = true
                 };
 
+                // Status indicator row — dot icon + text, not clickable
+                _trayServerStatusItem = new System.Windows.Forms.ToolStripMenuItem("● Server mode: off")
+                {
+                    Enabled = false,
+                    Image = MakeDotIcon(System.Drawing.Color.FromArgb(180, 180, 180))
+                };
+
+                // Connected servers summary row, not clickable
+                _trayServerCountItem = new System.Windows.Forms.ToolStripMenuItem("No servers configured")
+                {
+                    Enabled = false,
+                    Image = MakeDotIcon(System.Drawing.Color.FromArgb(120, 120, 120))
+                };
+
                 _trayOpenBrowserItem = new System.Windows.Forms.ToolStripMenuItem("Open in Browser", null, (_, _) => TrayOpenBrowser());
                 _trayOpenBrowserItem.Enabled = false;
 
@@ -82,12 +112,18 @@ namespace SqlHealthAssessment
                 menu.Items.Add("Show Window", null, (_, _) => TrayShow());
                 menu.Items.Add("Hide to Tray", null, (_, _) => TrayHide());
                 menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+                menu.Items.Add(_trayServerStatusItem);
+                menu.Items.Add(_trayServerCountItem);
+                menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
                 menu.Items.Add(_trayServerModeItem);
                 menu.Items.Add(_trayOpenBrowserItem);
                 menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
                 menu.Items.Add("Exit", null, (_, _) => TrayExit());
                 _trayIcon.ContextMenuStrip = menu;
                 _trayIcon.DoubleClick += (_, _) => TrayShow();
+
+                // Refresh status counts each time the menu opens
+                menu.Opening += (_, _) => UpdateTrayServerStatus();
             }
             catch (Exception ex)
             {
@@ -97,23 +133,70 @@ namespace SqlHealthAssessment
 
         private void UpdateTrayServerStatus()
         {
-            var serverMode = App.Services?.GetService<ServerModeService>();
-            if (serverMode == null || _trayServerModeItem == null || _trayOpenBrowserItem == null) return;
+            if (_trayIcon == null || _trayServerModeItem == null || _trayOpenBrowserItem == null) return;
 
-            if (serverMode.IsRunning)
+            var serverMode = App.Services?.GetService<ServerModeService>();
+            var connMgr    = App.Services?.GetService<ServerConnectionManager>();
+            var version    = App.Services?.GetService<AutoUpdateService>()?.GetCurrentVersion() ?? "";
+
+            // ── Server mode row ──────────────────────────────────────────
+            bool running = serverMode?.IsRunning == true;
+            if (_trayServerStatusItem != null)
             {
-                _trayServerModeItem.Text = $"Stop Server Mode ({serverMode.Url})";
-                _trayOpenBrowserItem.Text = $"Open {serverMode.Url}";
+                _trayServerStatusItem.Image = MakeDotIcon(running
+                    ? System.Drawing.Color.FromArgb(60, 200, 80)    // green
+                    : System.Drawing.Color.FromArgb(200, 60, 60));   // red
+                _trayServerStatusItem.Text = running
+                    ? $"Server mode: running  ({serverMode!.Url})"
+                    : "Server mode: off";
+            }
+
+            if (running)
+            {
+                _trayServerModeItem.Text = $"Stop Server Mode";
+                _trayOpenBrowserItem.Text = $"Open {serverMode!.Url}";
                 _trayOpenBrowserItem.Enabled = true;
-                _trayIcon!.Text = $"SQL Health Assessment — Server: {serverMode.Url}";
+                // Tooltip max 63 chars
+                var tip = $"SHA v{version} — server {serverMode.Url}";
+                _trayIcon.Text = tip.Length > 63 ? tip[..63] : tip;
             }
             else
             {
                 _trayServerModeItem.Text = "Start Server Mode";
                 _trayOpenBrowserItem.Text = "Open in Browser";
                 _trayOpenBrowserItem.Enabled = false;
-                var version = App.Services?.GetService<AutoUpdateService>()?.GetCurrentVersion() ?? "";
-                _trayIcon!.Text = $"SQL Health Assessment v{version}";
+                _trayIcon.Text = $"SQL Health Assessment v{version}";
+            }
+
+            // ── Connected servers row ────────────────────────────────────
+            if (_trayServerCountItem != null && connMgr != null)
+            {
+                var all         = connMgr.GetConnections();
+                int total       = all.Count;
+                int connected   = all.Count(c => c.IsConnected);
+                int disconnected = total - connected;
+
+                if (total == 0)
+                {
+                    _trayServerCountItem.Text  = "No servers configured";
+                    _trayServerCountItem.Image = MakeDotIcon(System.Drawing.Color.FromArgb(120, 120, 120));
+                }
+                else if (disconnected == 0)
+                {
+                    _trayServerCountItem.Text  = $"Servers: {connected}/{total} connected";
+                    _trayServerCountItem.Image = MakeDotIcon(System.Drawing.Color.FromArgb(60, 200, 80));
+                }
+                else if (connected == 0)
+                {
+                    _trayServerCountItem.Text  = $"Servers: 0/{total} connected";
+                    _trayServerCountItem.Image = MakeDotIcon(System.Drawing.Color.FromArgb(200, 60, 60));
+                }
+                else
+                {
+                    // Mixed — amber
+                    _trayServerCountItem.Text  = $"Servers: {connected}/{total} connected  ({disconnected} down)";
+                    _trayServerCountItem.Image = MakeDotIcon(System.Drawing.Color.FromArgb(220, 160, 30));
+                }
             }
         }
 
@@ -149,13 +232,15 @@ namespace SqlHealthAssessment
                 {
                     await serverMode.StopAsync();
                     _logger?.LogInformation("Server mode stopped from tray");
+                    Dispatcher.Invoke(UpdateTrayServerStatus);
                     _trayIcon?.ShowBalloonTip(2000, "SQL Health Assessment", "Server mode stopped", System.Windows.Forms.ToolTipIcon.Info);
                 }
                 else
                 {
                     await serverMode.StartAsync();
                     _logger?.LogInformation("Server mode started from tray");
-                    _trayIcon?.ShowBalloonTip(2000, "SQL Health Assessment", "Server mode started", System.Windows.Forms.ToolTipIcon.Info);
+                    Dispatcher.Invoke(UpdateTrayServerStatus);
+                    _trayIcon?.ShowBalloonTip(2000, "SQL Health Assessment", $"Server mode started — {serverMode.Url}", System.Windows.Forms.ToolTipIcon.Info);
                 }
             }
             catch (Exception ex)
@@ -179,6 +264,7 @@ namespace SqlHealthAssessment
             {
                 await serverMode.StartAsync();
                 _logger?.LogInformation("Server mode started automatically");
+                Dispatcher.Invoke(UpdateTrayServerStatus);
                 _trayIcon?.ShowBalloonTip(2000, "SQL Health Assessment", "Server mode started automatically", System.Windows.Forms.ToolTipIcon.Info);
             }
             catch (Exception ex)

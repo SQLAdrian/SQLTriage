@@ -9,7 +9,23 @@
 @using SqlHealthAssessment.Data.Services
 @using SqlHealthAssessment.Data.Models
 @inject ServerConnectionManager ConnectionManager
+@inject NavigationManager NavigationManager
+@implements IAsyncDisposable
 
+@if (_navWarningVisible)
+{
+    <div class="nav-warning-overlay">
+        <div class="nav-warning-dialog">
+            <div class="nav-warning-icon">⚠️</div>
+            <div class="nav-warning-title">Deployment in progress</div>
+            <div class="nav-warning-body">Navigating away will cancel the deployment. Are you sure?</div>
+            <div class="nav-warning-actions">
+                <button class="btn btn-danger" @onclick="ConfirmLeave">Leave anyway</button>
+                <button class="btn btn-primary" @onclick="CancelLeave">Stay on page</button>
+            </div>
+        </div>
+    </div>
+}
 
 <div class="database-deploy-page">
     <h2 style="margin-bottom: 20px;">Deploy SQLWATCH Database</h2>
@@ -147,10 +163,47 @@
     private List<ServerConnection> ExistingServers = new();
     private ServerConnection? SelectedExistingServer;
 
+    private IDisposable? _navHandler;
+    private bool _navWarningVisible = false;
+    private string? _pendingNavUri;
+
     protected override void OnInitialized()
     {
         // Load existing servers from ServerConnectionManager
         ExistingServers = ConnectionManager.GetEnabledConnections();
+        _navHandler = NavigationManager.RegisterLocationChangingHandler(OnLocationChanging);
+    }
+
+    private ValueTask OnLocationChanging(LocationChangingContext context)
+    {
+        if (!isDeploying) return ValueTask.CompletedTask;
+        context.PreventNavigation();
+        _pendingNavUri = context.TargetLocation;
+        _navWarningVisible = true;
+        InvokeAsync(StateHasChanged);
+        return ValueTask.CompletedTask;
+    }
+
+    private void ConfirmLeave()
+    {
+        _navWarningVisible = false;
+        _navHandler?.Dispose();
+        _navHandler = null;
+        var uri = _pendingNavUri ?? "/";
+        _pendingNavUri = null;
+        NavigationManager.NavigateTo(uri);
+    }
+
+    private void CancelLeave()
+    {
+        _navWarningVisible = false;
+        _pendingNavUri = null;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _navHandler?.Dispose();
+        await Task.CompletedTask;
     }
 
     private void OnExistingServerChanged(ChangeEventArgs e)
@@ -539,5 +592,48 @@
         padding: 10px;
         color: var(--green);
         margin: 10px 0;
+    }
+
+    .btn-danger { background: var(--red); color: #fff; }
+
+    .nav-warning-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.55);
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .nav-warning-dialog {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 28px 32px;
+        max-width: 400px;
+        width: 90%;
+        text-align: center;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+
+    .nav-warning-icon { font-size: 2.5rem; margin-bottom: 10px; }
+
+    .nav-warning-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin-bottom: 8px;
+    }
+
+    .nav-warning-body {
+        font-size: 0.9rem;
+        color: var(--text-muted, #888);
+        margin-bottom: 20px;
+    }
+
+    .nav-warning-actions {
+        display: flex;
+        gap: 10px;
+        justify-content: center;
     }
 </style>

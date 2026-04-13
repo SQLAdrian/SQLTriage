@@ -48,10 +48,14 @@ GO
 -- ============================================================
 -- CONFIGURATION BLOCK — set all flags here before running
 -- ============================================================
+DECLARE @DoBaseConfigEngine	BIT = 0	  -- Deploy set of base configurations
+DECLARE @DoBaseConfigDB		BIT = 0   -- Deploy database configuations
+DECLARE @DoTopDBCount		TINYINT = 5   -- Only do TOP n databases based on overall IO usage.
 DECLARE @UpdateOla          BIT = 0   -- Update Ola job schedules
 DECLARE @AddMappedDrive     BIT = 0   -- Create backup mapped drive (requires @MappedDriveDomainPassword below)
 DECLARE @NeedEmptyFile      BIT = 0   -- Create emergency empty file
 DECLARE @DoDeadlocks        BIT = 0   -- Enable deadlock XEvent capture
+DECLARE @Apply_TARGET_RECOVERY_TIME BIT = 0
 DECLARE @ApplyMaxMemory     BIT = 0   -- Apply calculated max server memory (SET TO 1 TO APPLY)
 DECLARE @ApplyTrustworthy   BIT = 0   -- SET TRUSTWORTHY OFF on user databases (SET TO 1 TO APPLY)
 DECLARE @ApplyChaining      BIT = 0   -- SET DB_CHAINING OFF on user databases (SET TO 1 TO APPLY)
@@ -552,6 +556,109 @@ BEGIN
 	END CATCH
 END
 
+
+
+/*
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   USABLE VARIABLES SECTION 
+   In here add the variables that the rest of the script will use
+   First do normal variables and then table variables
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+*/
+SET NOCOUNT ON;
+	SET ANSI_NULLS ON;
+	SET ANSI_PADDING ON;
+	SET ANSI_WARNINGS ON;
+	SET ARITHABORT ON;
+	SET CONCAT_NULL_YIELDS_NULL ON;
+	SET QUOTED_IDENTIFIER ON;
+	SET STATISTICS IO OFF;
+	SET STATISTICS TIME OFF;
+	SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; 
+
+DECLARE @SQLVer INT, @SQLEdition NVARCHAR(500)
+SELECT  @SQLVer = CONVERT(INT, @@MicrosoftVersion / 0x01000000),
+       @SQLEdition = CONVERT(NVARCHAR(500),SERVERPROPERTY('Edition'))
+
+DECLARE @dynamicSQL NVARCHAR(4000)
+DECLARE @Databases TABLE
+	(
+		id [INT] IDENTITY(1,1)
+		, database_id INT
+		, databasename [NVARCHAR] (250)
+		, [compatibility_level] [BIGINT]
+		, user_access [BIGINT]
+		, user_access_desc [NVARCHAR] (50)
+		, [state] [BIGINT]
+		, state_desc  [NVARCHAR] (50)
+		, recovery_model [BIGINT]
+		, recovery_model_desc  [NVARCHAR] (50)
+		, create_date DATETIME
+		, AGReplicaRole INT
+		, [BackupPref] [NVARCHAR] (250)
+		, [CurrentLocation] [NVARCHAR] (250)
+		, AGName [NVARCHAR] (250)
+		, [ReadSecondary] [NVARCHAR] (250)
+		, [TotalIO] BIGINT
+		, [TotalIORank] INT
+		, [SkipForDBLoop] BIT
+		
+		, is_auto_close_on TINYINT
+		, is_auto_shrink_on TINYINT
+		, is_auto_create_stats_on TINYINT
+		, is_auto_update_stats_on TINYINT
+		, is_auto_update_stats_async_on TINYINT
+		, is_auto_create_stats_incremental_on TINYINT
+		, page_verify_option TINYINT
+		, is_query_store_on TINYINT
+
+	);
+	INSERT INTO @Databases
+	SELECT 
+	db.database_id
+	, db.name
+	, db.compatibility_level
+	, db.user_access
+	, db.user_access_desc
+	, db.state
+	, db.state_desc
+	, db.recovery_model
+	, db.recovery_model_desc
+	, db.create_date
+	, 1
+	, NULL
+	, NULL
+	, NULL
+	, NULL
+	,DS.[TotalIO]
+	, DS.[Rank]
+	, CASE WHEN db.database_id <= 4 THEN 1 ELSE 0 END
+	, db.is_auto_close_on
+	, db.is_auto_shrink_on
+	, db.is_auto_create_stats_on
+	, db.is_auto_update_stats_on
+	, db.is_auto_update_stats_async_on
+	, db.is_auto_create_stats_incremental_on
+	, db.page_verify_option
+	, db.is_query_store_on 
+	FROM 
+	[sys].databases db
+	LEFT OUTER JOIN (
+	SELECT Name AS [DatabaseName]
+		, d.database_id
+		, SUM(num_of_reads) AS[Number of Reads]
+		, SUM(num_of_writes) AS[Number of Writes]
+		, SUM(num_of_writes) +  SUM(num_of_reads) [TotalIO]
+		, RANK() OVER (ORDER BY SUM(num_of_writes) +  SUM(num_of_reads) DESC) [Rank]
+		FROM [sys].dm_io_virtual_file_stats(NULL,NULL) I
+		INNER JOIN [sys].databases d ON I.database_id = d.database_id
+		GROUP BY Name, d.database_id
+	) DS on DS.database_id = db.database_id
+	WHERE 1 =1 
+	 AND 1=1/*db.database_id > 4*/ 
+	 AND db.user_access = 0 
+	 AND db.State = 0 
+	
 /*
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    SECTION 2.2: BLOCKED PROCESS THRESHOLD & XEvent
@@ -560,6 +667,9 @@ END
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 */
 
+
+
+
 /*
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    SECTION 2.3: PERFORMANCE BEST PRACTICES (Microsoft/Brent Ozar)
@@ -567,98 +677,284 @@ END
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 */
 
--- Lock Pages in Memory (LPIM) - Enterprise Edition only
--- Prevents SQL Server working set from being paged out by Windows
-DECLARE @SQLVer INT, @SQLEdition NVARCHAR(500)
-SELECT  @SQLVer = CONVERT(INT, @@MicrosoftVersion / 0x01000000),
-       @SQLEdition = CONVERT(NVARCHAR(500),SERVERPROPERTY('Edition'))
 
-IF @SQLEdition LIKE '%Enterprise%' OR @SQLEdition LIKE '%Developer%'
+/*
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+--==========================================================
+-- Lock Pages in Memory (LPIM) - Was Enterprise Edition only prior SQL 2012
+-- Prevents SQL Server working set from being paged out by Windows in memory. 
+-- This does not mean SQL server won't page out, it's just that other processes can't force SQL server to hand memory back to the OS. Not really a showstopper if MAX SQL memory has been set, and even if not, issues are rare.
+--==========================================================
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+*/
+--IF @DoBaseConfigEngine = 1
 BEGIN
-    EXEC sys.sp_configure N'show advanced options', N'1'
-    RECONFIGURE
-    EXEC sys.sp_configure N'locks', N'0'  -- default, verify not overridden
-    RECONFIGURE
-    RAISERROR('INFO: Lock Pages in Memory requires Windows policy setting for SQL service account', 10, 1) WITH NOWAIT;
-    RAISERROR('      Grant "Lock pages in memory" (seLockMemoryPrivilege) to SQL service account', 10, 1) WITH NOWAIT;
-    EXEC sys.sp_configure N'show advanced options', N'0'
-    RECONFIGURE
+	DECLARE @LPIM_Enabled BIT
+	SET @LPIM_Enabled = 0
+	/* Alternative query
+	SELECT @LPIM_Enabled = 
+	CASE sql_memory_model_desc 
+		WHEN 'CONVENTIONAL' THEN 0 --'Lock Pages in Memory DISABLED'
+		WHEN 'LOCK_PAGES' THEN 1 --'Lock Pages in Memory ENABLED'
+		ELSE 0 --'Something else, smells like large page allocation traceflags in here'
+	END
+	from sys.dm_os_sys_info
+	WHERE sql_memory_model_desc = 'CONVENTIONAL'
+	*/
+
+		   DECLARE @xp_errorlog  TABLE
+		(
+			LogDate DATETIME
+			, ProcessInfo [NVARCHAR] (250)
+			, Text [NVARCHAR] (4000)
+		);
+
+		/*First find the errorlog that contains the startup info, might have been cycled*/
+		DECLARE @xp_errorlogs TABLE
+			(
+				Archive INT
+				, [Date] DATETIME
+				,  [Log File Size (Byte)] BIGINT
+			)
+		INSERT @xp_errorlogs
+		EXEC sys.sp_enumerrorlogs;
+
+		DECLARE @logcounter INT = 0 ;
+		DECLARE @lastlog INT;
+		DECLARE @RestartInfoLog INT;
+		SELECT @lastlog = MAX(Archive) FROM @xp_errorlogs;
+		WHILE @logcounter <= @lastlog
+		BEGIN
+			INSERT @xp_errorlog
+			EXEC xp_ReadErrorLog @logcounter, 1, N'Command Line Startup Parameters:';
+			IF EXISTS(SELECT 1 FROM @xp_errorlog WHERE [Text] LIKE 'Command Line Startup Parameters:%')
+			BEGIN
+				SET @RestartInfoLog = @logcounter;
+				SET @logcounter = @lastlog + 1;
+				--BREAK
+			END
+			SET @logcounter = @logcounter + 1;
+		END
+
+		INSERT @xp_errorlog
+		EXEC [sys].xp_readerrorlog @RestartInfoLog, 1, N'locked pages';
+
+	IF EXISTS
+	( 
+		SELECT * 
+		FROM @xp_errorlog 
+		WHERE [Text] 
+		LIKE '%locked pages%'
+	)
+	BEGIN
+		RAISERROR('PLANNED ACTION: Lock Pages in Memory requires Windows policy setting for SQL service account', 10, 1) WITH NOWAIT;
+		RAISERROR('      Grant "Lock pages in memory" (seLockMemoryPrivilege) to SQL service account', 10, 1) WITH NOWAIT;
+	END
 END
 
 
--- Secondary tempdb data files (best practice for SQL 2016+)
--- Create multiple tempdb files based on logical CPU count (up to 8, or cores per NUMA)
-IF @SQLVer >= 13
-BEGIN
-    DECLARE @TempDBFileCount INT, @CPUCount INT
-    SELECT @CPUCount = cpu_count FROM sys.dm_os_sys_info
-    SET @TempDBFileCount = CASE WHEN @CPUCount > 8 THEN 8 ELSE @CPUCount END
-    
-    -- Check existing tempdb data files
-    DECLARE @CurrentTempDBFiles INT
-    SELECT @CurrentTempDBFiles = COUNT(*) 
-    FROM tempdb.sys.database_files 
-    WHERE type = 0  -- data files only
-    
-    IF @CurrentTempDBFiles < @TempDBFileCount
-    BEGIN
-        RAISERROR('INFO: tempdb currently has %d data files, best practice suggests %d for this server', 
-            10, 1, @CurrentTempDBFiles, @TempDBFileCount) WITH NOWAIT;
-        RAISERROR('      Recommend adding additional tempdb data files manually for best performance', 10, 1) WITH NOWAIT;
-    END
-END
 
+/*
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+--==========================================================
 -- Accelerated Database Recovery (ADR) - SQL 2019+ only
 -- Improves database availability during long-running transactions
+--==========================================================
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+*/
+IF @DoBaseConfigEngine = 1 OR @ForChangeControl = 1
+BEGIN
+	
+	IF @SQLVer >= 13
+	BEGIN
+		DECLARE @TempDBFileCount INT, @CPUCount INT
+		SELECT @CPUCount = cpu_count FROM sys.dm_os_sys_info
+
+		SET @TempDBFileCount = 
+		CASE 
+			WHEN @CPUCount > 12 THEN 12 
+			WHEN @CPUCount > 8 THEN 8 
+			ELSE 8
+		END
+    
+		-- Check existing tempdb data files
+		DECLARE @CurrentTempDBFiles INT
+		SELECT @CurrentTempDBFiles = COUNT(*) 
+		FROM tempdb.sys.database_files 
+		WHERE type = 0  -- data files only
+    
+		--SELECT @CurrentTempDBFiles ,@TempDBFileCount
+		IF @CurrentTempDBFiles < @TempDBFileCount
+		BEGIN
+			RAISERROR('PLANNED ACTION: tempdb currently has %d data files, best practice suggests %d for this server', 10, 1, @CurrentTempDBFiles, @TempDBFileCount) WITH NOWAIT;
+			RAISERROR('      Recommend adding additional tempdb data files manually for best performance', 10, 1) WITH NOWAIT;
+		END
+		ELSE
+		BEGIN
+			RAISERROR('INFO: tempdb file count OK. Currently has %d data files, best practice suggests %d for this server', 10, 1, @CurrentTempDBFiles, @TempDBFileCount) WITH NOWAIT;
+		END
+
+	END
+END
+
+/*
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+--==========================================================
+-- Accelerated Database Recovery (ADR) - SQL 2019+ only
+-- Improves database availability during long-running transactions
+--==========================================================
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+*/
 IF @SQLVer >= 15 AND EXISTS(SELECT 1 FROM sys.columns 
           WHERE Name = N'is_accelerated_database_recovery_on'
           AND Object_ID = Object_ID(N'sys.databases'))
 BEGIN
 	DECLARE @ADRSQLtables TABLE([name] NVARCHAR(250))
     DECLARE @ADRSQL NVARCHAR(MAX) = N''
-	SET @ADRSQL = '
-	SELECT QUOTENAME(name) [name]
-	FROM sys.databases
-    WHERE database_id > 4 
-      AND state = 0 
-      AND is_read_only = 0
-      AND name NOT IN (''tempdb'')
-      AND is_accelerated_database_recovery_on = 0'
 	INSERT INTO @ADRSQLtables
-	EXEC sp_executesql @ADRSQL
+	
+	SELECT QUOTENAME(name) [name]
+	FROM sys.databases db
+	INNER JOIN @Databases d ON d.database_id = db.database_id
+    WHERE db.database_id > 4 
+      AND db.state = 0 
+      AND db.is_read_only = 0
+      AND db.name NOT IN ('tempdb')
+      AND db.is_accelerated_database_recovery_on = 0
+	  AND d.TotalIORank < @DoTopDBCount 
+
 	SET @ADRSQL = N''
-    SELECT @ADRSQL += N'ALTER DATABASE ' + QUOTENAME(name) + N' SET ACCELERATED_DATABASE_RECOVERY = ON;' + CHAR(13)
+    SELECT @ADRSQL += N'ALTER DATABASE ' + [name] + N' SET ACCELERATED_DATABASE_RECOVERY = ON;' + CHAR(13)
 	FROM @ADRSQLtables
     
-
-    IF @ADRSQL <> N''
+	SELECT @ADRSQL
+    IF @ADRSQL <> N'' 
     BEGIN
-        RAISERROR('INFO: Enabling Accelerated Database Recovery on user databases', 10, 1) WITH NOWAIT;
+		IF @DoBaseConfigDB = 1 AND @ForChangeControl = 1
+        RAISERROR('PLANNED ACTION: Enabling Accelerated Database Recovery on user databases', 10, 1) WITH NOWAIT;
         RAISERROR(@ADRSQL, 10, 1) WITH NOWAIT;
-        EXEC sp_executesql @ADRSQL
+		IF @DoBaseConfigDB = 1 AND @ForChangeControl = 0
+		BEGIN
+			RAISERROR('IMPLEMENTING: Enabling Accelerated Database Recovery on user databases', 10, 1) WITH NOWAIT;
+			EXEC sp_executesql @ADRSQL
+		END
     END
     ELSE
         RAISERROR('INFO: ADR already enabled on all applicable databases', 10, 1) WITH NOWAIT;
 END
+
+
+
+/*
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+--==========================================================
 -- Query Store retention settings (recommended by Brent Ozar)
 -- Set to 7 days, auto-cleanup, capture all queries
+--==========================================================
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+*/
+
 IF @SQLVer >= 13
 BEGIN
     DECLARE @QSSQL NVARCHAR(MAX) = N''
-    SELECT @QSSQL += N'ALTER DATABASE ' + QUOTENAME(name) + 
+    SELECT @QSSQL += N'ALTER DATABASE ' + QUOTENAME(db.name) + 
         N' SET QUERY_STORE (OPERATION_MODE = READ_WRITE, CLEANUP_POLICY = (STALE_QUERY_THRESHOLD_DAYS = 30), ' +
         N'DATA_FLUSH_INTERVAL_SECONDS = 60, MAX_STORAGE_SIZE_MB = 1000, INTERVAL_LENGTH_MINUTES = 60);' + CHAR(13)
-    FROM sys.databases
-    WHERE database_id > 4 AND state = 0 AND is_query_store_on = 1
+	FROM sys.databases db
+	INNER JOIN @Databases d ON d.database_id = db.database_id
+    WHERE db.database_id > 4 AND db.state = 0 AND db.is_query_store_on = 1 AND d.TotalIORank < @DoTopDBCount 
     
     IF @QSSQL <> N''
     BEGIN
-        RAISERROR('INFO: Optimizing Query Store retention settings', 10, 1) WITH NOWAIT;
+        RAISERROR('PLANNED ACTION: Optimizing Query Store retention settings', 10, 1) WITH NOWAIT;
         EXEC sp_executesql @QSSQL
     END
 END
 
+/*
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+--==========================================================
+-- Indirect Checkpoints (SQL 2016+) - Better Recovery
+--==========================================================
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+*/
+RAISERROR ('Checking: Indirect Checkpoints (Target Recovery Time)', 0, 1) WITH NOWAIT;
+
+DECLARE @sql nvarchar(max) = N'';
+SELECT @sql += CASE
+  WHEN (ag.role = N'PRIMARY' AND ag.ag_status = N'READ_WRITE') OR ag.role IS NULL THEN N'
+    ALTER DATABASE ' + QUOTENAME(d.name) + N' SET TARGET_RECOVERY_TIME = 60 SECONDS;' 
+  ELSE N'
+    RAISERROR ( N''-- fix ' + QUOTENAME(d.name) + N' on Primary.'',0,1) WITH NOWAIT;' 
+  END
+FROM sys.databases AS d 
+OUTER APPLY
+(
+  SELECT role = s.role_desc, 
+    ag_status = DATABASEPROPERTYEX(c.database_name, N'Updateability')
+    FROM sys.dm_hadr_availability_replica_states AS s
+    INNER JOIN sys.availability_databases_cluster AS c
+       ON s.group_id = c.group_id 
+       AND d.name = c.database_name
+    WHERE s.is_local = 1
+) AS ag
+WHERE d.target_recovery_time_in_seconds <> 60
+  AND d.database_id > 4 
+  AND d.[state] = 0 
+  AND d.is_in_standby = 0 
+  AND d.is_read_only = 0;
+/*SELECT DatabaseCount = @@ROWCOUNT, Version = @@VERSION, cmd = @sql;*/
+
+DECLARE @SQLVersionCheck INT = @@MicrosoftVersion / 0x01000000;
+IF @SQLVersionCheck >= 13  -- SQL 2016+
+
+BEGIN
+
+    IF LEN(@sql) > 0 --Clearly something came back
+    BEGIN
+		IF @Apply_TARGET_RECOVERY_TIME = 1 AND @ForChangeControl = 0
+		BEGIN
+			EXEC sp_executesql @sql;
+			RAISERROR ('IMPLEMENTING: Enabled indirect checkpoints (1 min target recovery)', 0, 1) WITH NOWAIT;
+		END
+		IF @Apply_TARGET_RECOVERY_TIME = 1 AND @ForChangeControl = 1
+			RAISERROR ('PLANNED ACTION: Enabled indirect checkpoints (1 min target recovery)', 0, 1) WITH NOWAIT;
+    END
+    ELSE
+        RAISERROR ('INFO: Indirect checkpoints already optimized', 10, 1) WITH NOWAIT;
+END
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+--==========================================================
 -- Check for High Performance Power Plan (Brent Ozar priority)
+--==========================================================
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+*/
+
 DECLARE @PowerPlan NVARCHAR(100)
 EXEC master.dbo.xp_regread 'HKEY_LOCAL_MACHINE', 
     'SYSTEM\CurrentControlSet\Control\PowerUser\PowerSchemes', 
@@ -678,6 +974,10 @@ RECONFIGURE WITH OVERRIDE
 RAISERROR ('Action: Set blocked process threshold to 5 seconds', 0, 1) WITH NOWAIT;
 EXEC sys.sp_configure N'show advanced options', N'0'
 RECONFIGURE WITH OVERRIDE
+
+
+
+
 
 /* XEvent session to capture blocking reports and deadlocks together.
    Writes to a ring buffer (in-memory, no file I/O overhead).
@@ -717,128 +1017,7 @@ END CATCH
 USE [msdb]
 
 
-/*
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-   SECTION 3: DATABASE MAIL CONFIGURATION
-   Enable Database Mail and create operators for alert notifications
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-*/
-/* We will assume you have Datbase Mail enabled and configured*/
-/*Thanks:
-Brent Ozar Unlimited, https://www.brentozar.com/blitz/configure-sql-server-alerts/
-@KeefOnToast and Chuck
-*/
-
-
-
-/*Enable Advanced options*/
-EXEC sys.sp_configure N'show advanced options', N'1'
-RECONFIGURE WITH OVERRIDE
-
-/*Enable Database Mail*/
-EXEC sp_configure 'Database Mail XPs', 1
-RECONFIGURE WITH OVERRIDE
-RAISERROR ('Action: Enabled database mail',0,1) WITH NOWAIT;
-
-
-
-USE [master]
-
--- Get the server name
-DECLARE @ServerName sysname 
-SET @ServerName = (SELECT @@SERVERNAME);
-/*
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-   SECTION 4: SQL AGENT ALERTS
-   Create comprehensive alerts for severity levels, error numbers,
-   and Always On availability group events
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-*/
----------------------------------------------------------------------------------------------------------
-/* Adapted by Adrian Sullivan from Glenn Berry's script*/
-
--- Add important SQL Agent Alerts to your instance
-
--- This will work with SQL Server 2008 and newer
--- Glenn Berry
--- SQLskills.com
--- Last Modified: August 11, 2014
--- http://sqlserverperformance.wordpress.com/
--- http://sqlskills.com/blogs/glenn/
--- Twitter: GlennAlanBerry
-
--- Listen to my Pluralsight courses
--- http://www.pluralsight.com/author/glenn-berry
-
-
-DECLARE @Operator NVARCHAR(500);
-DECLARE @DynamicSQL NVARCHAR(4000);
-DECLARE @Severity TINYINT;
-DECLARE @AlertName NVARCHAR(500);
-DECLARE @StepDescription NVARCHAR(500);
-DECLARE @WhereToSend TINYINT;
-DECLARE @SQLDBANotification NVARCHAR(200);
-SET @SQLDBANotification= N'Possible P2/P3. Assign to SQL Engineers/DBA';
-
--- Change @OperatorName as needed
-DECLARE @OperatorName sysname 
-SET @OperatorName= N'SQLDBA';
-
-
-SET @WhereToSend = 1 /*Change this to 7 to cover Email(1), Pager(2) and Net Send(4)*/
-SET @Operator = @OperatorName;
-SET @DynamicSQL =' EXEC msdb.dbo.sp_add_operator @name=N''' + @Operator + ''', 
-@enabled=1, 
-@weekday_pager_start_time=90000, 
-@weekday_pager_end_time=180000, 
-@saturday_pager_start_time=90000, 
-@saturday_pager_end_time=180000, 
-@sunday_pager_start_time=90000, 
-@sunday_pager_end_time=180000, 
-@pager_days=0, 
-@email_address=N''alerts@sqldba.org'', 
-@category_name=N''[Uncategorized]''; '
-BEGIN TRY
-		EXEC sp_executesql @DynamicSQL;
-		SET @StepDescription = 'Operator created: ' + @Operator;
-END TRY
-BEGIN CATCH
-		SET @StepDescription = 'Operator already exists for: ' + @Operator;
-		EXEC msdb.dbo.sp_update_operator @name=N'SQLDBA', 
-		@enabled=1, 
-		@pager_days=0, 
-		@email_address=N'alerts@sqldba.org', 
-		@pager_address=N''
-
-END CATCH
-RAISERROR (@StepDescription,0,1) WITH NOWAIT;
-
--- Make sure you have an Agent Operator defined that matches the name you supplied
-IF NOT EXISTS(SELECT * FROM msdb.dbo.sysoperators WHERE name = @OperatorName)
-    BEGIN
-        RAISERROR ('There is no SQL Operator with a name of %s' , 18 , 16 , @OperatorName);
-        RETURN;
-    END
-
--- Change @CategoryName as needed
-DECLARE @CategoryName sysname 
-SET @CategoryName = N'SQL Server Agent Alerts';
-
-
--- Add Alert Category if it does not exist
-IF NOT EXISTS (SELECT *
-               FROM msdb.dbo.syscategories
-               WHERE category_class = 2  -- ALERT
-               AND category_type = 3
-               AND name = @CategoryName)
-    BEGIN
-        EXEC msdb.dbo.sp_add_category @class = N'ALERT', @type = N'NONE', @name = @CategoryName;
-    END
-
-
-
-
-
+/* JOBS JOBS JOBS JOBS JOBS JOBS JOBS JOBS JOBS JOBS JOBS JOBS JOBS JOBS JOBS JOBS JOBS JOBS*/
 DECLARE @ReturnCode INT
 SELECT @ReturnCode = 0
 --DECLARE @the_job_Id BINARY(16)
@@ -932,7 +1111,126 @@ END
 -- Alert Names start with the name of the server 
 
 
-SET NOCOUNT ON
+
+
+
+
+/*
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   SECTION 3: DATABASE MAIL CONFIGURATION
+   Enable Database Mail and create operators for alert notifications
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+*/
+/* We will assume you have Datbase Mail enabled and configured*/
+/*Thanks:
+Brent Ozar Unlimited, https://www.brentozar.com/blitz/configure-sql-server-alerts/
+@KeefOnToast and Chuck
+*/
+
+
+
+/*Enable Advanced options*/
+EXEC sys.sp_configure N'show advanced options', N'1'
+RECONFIGURE WITH OVERRIDE
+
+/*Enable Database Mail*/
+EXEC sp_configure 'Database Mail XPs', 1
+RECONFIGURE WITH OVERRIDE
+RAISERROR ('Action: Enabled database mail',0,1) WITH NOWAIT;
+
+
+
+USE [master]
+
+-- Get the server name
+DECLARE @ServerName sysname 
+SET @ServerName = (SELECT @@SERVERNAME);
+/*
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   SECTION 4: SQL AGENT ALERTS
+   Create comprehensive alerts for severity levels, error numbers,
+   and Always On availability group events
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+*/
+---------------------------------------------------------------------------------------------------------
+/* Adapted by Adrian Sullivan from Glenn Berry's script*/
+
+-- Add important SQL Agent Alerts to your instance
+
+-- This will work with SQL Server 2008 and newer
+-- Glenn Berry
+-- SQLskills.com
+-- Last Modified: August 11, 2014
+-- http://sqlserverperformance.wordpress.com/
+-- http://sqlskills.com/blogs/glenn/
+-- Twitter: GlennAlanBerry
+
+-- Listen to my Pluralsight courses
+-- http://www.pluralsight.com/author/glenn-berry
+
+
+DECLARE @Operator NVARCHAR(500);
+DECLARE @Severity TINYINT;
+DECLARE @AlertName NVARCHAR(500);
+DECLARE @StepDescription NVARCHAR(500);
+DECLARE @WhereToSend TINYINT;
+DECLARE @SQLDBANotification NVARCHAR(200);
+SET @SQLDBANotification= N'Possible P2/P3. Assign to SQL Engineers/DBA';
+
+-- Change @OperatorName as needed
+DECLARE @OperatorName sysname 
+SET @OperatorName= N'SQLDBA';
+
+
+SET @WhereToSend = 1 /*Change this to 7 to cover Email(1), Pager(2) and Net Send(4)*/
+SET @Operator = @OperatorName;
+SET @DynamicSQL =' EXEC msdb.dbo.sp_add_operator @name=N''' + @Operator + ''', 
+@enabled=1, 
+@weekday_pager_start_time=90000, 
+@weekday_pager_end_time=180000, 
+@saturday_pager_start_time=90000, 
+@saturday_pager_end_time=180000, 
+@sunday_pager_start_time=90000, 
+@sunday_pager_end_time=180000, 
+@pager_days=0, 
+@email_address=N''alerts@sqldba.org'', 
+@category_name=N''[Uncategorized]''; '
+BEGIN TRY
+		EXEC sp_executesql @DynamicSQL;
+		SET @StepDescription = 'Operator created: ' + @Operator;
+END TRY
+BEGIN CATCH
+		SET @StepDescription = 'Operator already exists for: ' + @Operator;
+		EXEC msdb.dbo.sp_update_operator @name=N'SQLDBA', 
+		@enabled=1, 
+		@pager_days=0, 
+		@email_address=N'alerts@sqldba.org', 
+		@pager_address=N''
+
+END CATCH
+RAISERROR (@StepDescription,0,1) WITH NOWAIT;
+
+-- Make sure you have an Agent Operator defined that matches the name you supplied
+IF NOT EXISTS(SELECT * FROM msdb.dbo.sysoperators WHERE name = @OperatorName)
+    BEGIN
+        RAISERROR ('There is no SQL Operator with a name of %s' , 18 , 16 , @OperatorName);
+        RETURN;
+    END
+
+-- Change @CategoryName as needed
+DECLARE @CategoryName sysname 
+SET @CategoryName = N'SQL Server Agent Alerts';
+
+
+-- Add Alert Category if it does not exist
+IF NOT EXISTS (SELECT *
+               FROM msdb.dbo.syscategories
+               WHERE category_class = 2  -- ALERT
+               AND category_type = 3
+               AND name = @CategoryName)
+    BEGIN
+        EXEC msdb.dbo.sp_add_category @class = N'ALERT', @type = N'NONE', @name = @CategoryName;
+    END
 DECLARE @AlertTable TABLE 
 (
 	ID INT IDENTITY(1,1)
@@ -1603,46 +1901,7 @@ DECLARE @QueryStore TINYINT
 
 
 
-DECLARE @Databases TABLE
-	(
-		id INT IDENTITY(1,1)
-		, databasename VARCHAR(250)
-		, [compatibility_level] BIGINT
-		, user_access BIGINT
-		, user_access_desc VARCHAR(50)
-		, [state] BIGINT
-		, state_desc  VARCHAR(50)
-		, recovery_model INT
-		, recovery_model_desc  VARCHAR(50)
-		, create_date DATETIME
-		, is_auto_close_on TINYINT
-		, is_auto_shrink_on TINYINT
-		, is_auto_create_stats_on TINYINT
-		, is_auto_update_stats_on TINYINT
-		, is_auto_update_stats_async_on TINYINT
-		, is_auto_create_stats_incremental_on TINYINT
-		, page_verify_option TINYINT
-		, is_query_store_on TINYINT
-	);
-SET @DynamicSQL = 'SELECT 
-	db.name
-	, db.compatibility_level
-	, db.user_access
-	, db.user_access_desc
-	, db.state
-	, db.state_desc
-	, db.recovery_model
-	, db.recovery_model_desc
-	, db.create_date
-	, db.is_auto_close_on
-	, db.is_auto_shrink_on
-	, db.is_auto_create_stats_on
-	, db.is_auto_update_stats_on
-	, db.is_auto_update_stats_async_on
-	' + CASE WHEN CONVERT(INT, LEFT(CONVERT(NVARCHAR(20), SERVERPROPERTY('productversion')), CHARINDEX('.', CONVERT(NVARCHAR(20), SERVERPROPERTY('productversion'))) - 1)) < 12 THEN ', NULL' ELSE ', db.is_auto_create_stats_incremental_on' END +'
-	, db.page_verify_option
-	' + CASE WHEN CONVERT(INT, LEFT(CONVERT(NVARCHAR(20), SERVERPROPERTY('productversion')), CHARINDEX('.', CONVERT(NVARCHAR(20), SERVERPROPERTY('productversion'))) - 1)) < 13 THEN ', db.is_query_store_on' ELSE ', NULL' END +'
-	FROM sys.databases db ';
+
 
 -- Exclude system databases and offline/restoring databases
 SET @DynamicSQL = @DynamicSQL + ' WHERE database_id > 4 AND state NOT IN (1,2,3,6)';
@@ -1707,31 +1966,6 @@ BEGIN
 	SET @Databasei_Count = @Databasei_Count + 1
 END
 
-DECLARE @sql nvarchar(max) = N'';
-SELECT @sql += CASE
-  WHEN (ag.role = N'PRIMARY' AND ag.ag_status = N'READ_WRITE') OR ag.role IS NULL THEN N'
-    ALTER DATABASE ' + QUOTENAME(d.name) + N' SET TARGET_RECOVERY_TIME = 60 SECONDS;' 
-  ELSE N'
-    RAISERROR ( N''-- fix ' + QUOTENAME(d.name) + N' on Primary.'',0,1) WITH NOWAIT;' 
-  END
-FROM sys.databases AS d 
-OUTER APPLY
-(
-  SELECT role = s.role_desc, 
-    ag_status = DATABASEPROPERTYEX(c.database_name, N'Updateability')
-    FROM sys.dm_hadr_availability_replica_states AS s
-    INNER JOIN sys.availability_databases_cluster AS c
-       ON s.group_id = c.group_id 
-       AND d.name = c.database_name
-    WHERE s.is_local = 1
-) AS ag
-WHERE d.target_recovery_time_in_seconds <> 60
-  AND d.database_id > 4 
-  AND d.[state] = 0 
-  AND d.is_in_standby = 0 
-  AND d.is_read_only = 0;
-/*SELECT DatabaseCount = @@ROWCOUNT, Version = @@VERSION, cmd = @sql;*/
-EXEC sys.sp_executesql @sql;
 
 
 /*
@@ -1936,12 +2170,15 @@ BEGIN
     DECLARE @RCSIName SYSNAME
     DECLARE @RCSISQL  NVARCHAR(2000)
     DECLARE rcsi_cursor CURSOR LOCAL FAST_FORWARD FOR
-        SELECT name FROM sys.databases
-        WHERE database_id > 4
-          AND is_read_committed_snapshot_on = 0
-          AND [state] = 0
-          AND is_read_only = 0
-          AND is_in_standby = 0
+        SELECT db.name 
+		FROM sys.databases db
+		INNER JOIN @Databases d ON d.database_id = db.database_id
+        WHERE db.database_id > 4
+          AND db.is_read_committed_snapshot_on = 0
+          AND db.[state] = 0
+          AND db.is_read_only = 0
+          AND db.is_in_standby = 0
+		  AND d.TotalIORank < @DoTopDBCount 
 
     OPEN rcsi_cursor
     FETCH NEXT FROM rcsi_cursor INTO @RCSIName
@@ -2680,7 +2917,7 @@ DECLARE @RemoteAdmin INT
 SELECT @RemoteAdmin = CAST(value_in_use AS INT) FROM sys.configurations WHERE name = 'remote admin connections'
 IF @RemoteAdmin = 0
 BEGIN
-    RAISERROR('INFO: Remote Admin Connections is OFF - recommended to enable for DAC access', 10, 1) WITH NOWAIT;
+    RAISERROR('PLANNED ACTION: Remote Admin Connections is OFF - recommended to enable for DAC access', 10, 1) WITH NOWAIT;
     RAISERROR('      Run: EXEC sp_configure ''remote admin connections'', 1', 10, 1) WITH NOWAIT;
 END
 
@@ -2928,27 +3165,7 @@ BEGIN
     EXEC sp_configure 'show advanced options', 0; RECONFIGURE;
 END
 
--- 9.3: Indirect Checkpoints (SQL 2016+) - Better Recovery
--- Source: MadeiraToolbox
-DECLARE @SQLVersionCheck INT = @@MicrosoftVersion / 0x01000000;
-IF @SQLVersionCheck >= 13  -- SQL 2016+
-BEGIN
-    RAISERROR ('Checking: Indirect Checkpoints', 0, 1) WITH NOWAIT;
-    DECLARE @IndirectCP NVARCHAR(MAX) = '';
-    SELECT @IndirectCP = @IndirectCP + 
-        CASE WHEN target_recovery_time_in_seconds > 60 OR target_recovery_time_in_seconds = 0 THEN
-            'ALTER DATABASE ' + QUOTENAME(name) + ' SET TARGET_RECOVERY_TIME = 1 MINUTES; ' 
-        ELSE '' END
-    FROM sys.databases WHERE state_desc = 'ONLINE' AND database_id NOT IN (1,2,32767);
-    
-    IF LEN(@IndirectCP) > 0
-    BEGIN
-        EXEC sp_executesql @IndirectCP;
-        RAISERROR ('      Action: Enabled indirect checkpoints (1 min target recovery)', 0, 1) WITH NOWAIT;
-    END
-    ELSE
-        RAISERROR ('      INFO: Indirect checkpoints already optimized', 10, 1) WITH NOWAIT;
-END
+
 
 
 -- 9.5: Security Baseline - Orphaned Users

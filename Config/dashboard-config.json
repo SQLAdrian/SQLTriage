@@ -1831,6 +1831,40 @@
           "actionColumnMode": null,
           "dataGridColumns": null,
           "dataGridColumnColors": null
+        },
+        {
+          "id": "live.app_connections",
+          "title": "Active Connections by Application",
+          "description": "User sessions grouped by application name and target database — identifies which apps drive the most connections and I/O.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 280,
+          "refreshIntervalSeconds": 30,
+          "layout": {
+            "column": 0,
+            "order": 23,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT\n  ISNULL(NULLIF(s.program_name,''), '(unknown)') AS [Application],\n  ISNULL(s.host_name, '(unknown)')               AS [Host],\n  ISNULL(DB_NAME(s.database_id), '(none)')       AS [Database],\n  COUNT(*)                                        AS [Sessions],\n  SUM(CASE WHEN r.session_id IS NOT NULL THEN 1 ELSE 0 END) AS [Active],\n  SUM(s.reads)    AS [Reads],\n  SUM(s.writes)   AS [Writes],\n  SUM(s.cpu_time) AS [CPU ms],\n  MAX(s.last_request_start_time) AS [Last Active]\nFROM sys.dm_exec_sessions s\nLEFT JOIN sys.dm_exec_requests r ON s.session_id = r.session_id\nWHERE s.is_user_process = 1\nGROUP BY s.program_name, s.host_name, s.database_id\nORDER BY [Sessions] DESC, [Active] DESC"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "N0",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 50,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": null,
+          "dataGridColumnColors": null
         }
       ]
     },
@@ -2872,6 +2906,217 @@
           "colorThresholds": [],
           "dataGridIsClickable": false,
           "dataGridMaxRows": 50,
+          "dataGridTopRows": 0,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": null,
+          "dataGridColumnColors": null
+        },
+        {
+          "id": "pevents.bad_pages",
+          "title": "Suspect / Bad Pages",
+          "description": "Pages flagged as suspect in msdb — indicates I/O subsystem errors or disk corruption. Any row here warrants immediate investigation.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 220,
+          "refreshIntervalSeconds": 600,
+          "layout": {
+            "column": 0,
+            "order": 4,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT\n  DB_NAME(database_id) AS [Database],\n  file_id              AS [File ID],\n  page_id              AS [Page ID],\n  CASE event_type\n    WHEN 1 THEN '823/824 Hard Error'\n    WHEN 2 THEN 'Bad Checksum'\n    WHEN 3 THEN 'Torn Page'\n    WHEN 4 THEN 'Restored (cleared)'\n    WHEN 5 THEN 'Repaired by DBCC'\n    WHEN 7 THEN 'Deallocated by DBCC'\n    ELSE CAST(event_type AS VARCHAR(5))\n  END AS [Event Type],\n  error_count          AS [Errors],\n  last_update_date     AS [Last Seen]\nFROM msdb.dbo.suspect_pages\nORDER BY last_update_date DESC"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "N0",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": null,
+          "dataGridColumnColors": [
+            {
+              "column": "Event Type",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchValue": "823/824 Hard Error",
+              "matchColor": "#f44336"
+            },
+            {
+              "column": "Event Type",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchValue": "Bad Checksum",
+              "matchColor": "#f44336"
+            },
+            {
+              "column": "Event Type",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchValue": "Torn Page",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Event Type",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchValue": "Restored (cleared)",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Event Type",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchValue": "Repaired by DBCC",
+              "matchColor": "#4caf50"
+            }
+          ]
+        },
+        {
+          "id": "pevents.io_issues",
+          "title": "Slow I/O Requests (system_health)",
+          "description": "I/O requests that exceeded the slow I/O threshold captured by the system_health XEvent session.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 260,
+          "refreshIntervalSeconds": 300,
+          "layout": {
+            "column": 0,
+            "order": 5,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "IF EXISTS (SELECT 1 FROM sys.server_event_sessions WHERE name = 'system_health')\nBEGIN\n  SELECT TOP 100\n    xdr.value('(@timestamp)[1]','datetime2')           AS [Time],\n    xdr.value('(data[@name=\"duration\"]/value)[1]','bigint') / 1000 AS [Duration ms],\n    DB_NAME(xdr.value('(data[@name=\"database_id\"]/value)[1]','int')) AS [Database],\n    xdr.value('(data[@name=\"file_id\"]/value)[1]','int') AS [File ID],\n    xdr.value('(data[@name=\"is_retry\"]/value)[1]','bit') AS [Retry]\n  FROM (\n    SELECT CAST(target_data AS XML) AS target_data\n    FROM sys.dm_xe_session_targets t\n    JOIN sys.dm_xe_sessions s ON t.event_session_address = s.address\n    WHERE s.name = 'system_health' AND t.target_name = 'ring_buffer'\n  ) d\n  CROSS APPLY target_data.nodes('//RingBufferTarget/event[@name=''io_request_slow'']') AS x(xdr)\n  ORDER BY [Time] DESC\nEND\nELSE SELECT 'system_health XEvent session not running' AS [Info]"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "N0",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": null,
+          "dataGridColumnColors": null
+        },
+        {
+          "id": "pevents.nonyyielding",
+          "title": "Non-Yielding Scheduler Events",
+          "description": "Non-yielding scheduler events from system_health — a scheduler stuck for >250ms. Often precedes a SQL Server process dump or crash.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 220,
+          "refreshIntervalSeconds": 300,
+          "layout": {
+            "column": 0,
+            "order": 6,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "IF EXISTS (SELECT 1 FROM sys.server_event_sessions WHERE name = 'system_health')\nBEGIN\n  SELECT TOP 50\n    xdr.value('(@timestamp)[1]','datetime2')  AS [Time],\n    xdr.value('(data[@name=\"scheduler_id\"]/value)[1]','int') AS [Scheduler ID],\n    xdr.value('(data[@name=\"yields\"]/value)[1]','bigint')    AS [Yields],\n    xdr.value('(data[@name=\"worker_address\"]/value)[1]','varchar(50)') AS [Worker]\n  FROM (\n    SELECT CAST(target_data AS XML) AS target_data\n    FROM sys.dm_xe_session_targets t\n    JOIN sys.dm_xe_sessions s ON t.event_session_address = s.address\n    WHERE s.name = 'system_health' AND t.target_name = 'ring_buffer'\n  ) d\n  CROSS APPLY target_data.nodes('//RingBufferTarget/event[@name=''scheduler_monitor_non_yielding_ring_buffer_recorded'']') AS x(xdr)\n  ORDER BY [Time] DESC\nEND\nELSE SELECT 'system_health XEvent session not running' AS [Info]"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "N0",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": null,
+          "dataGridColumnColors": null
+        },
+        {
+          "id": "pevents.memory_oom",
+          "title": "Out-of-Memory Events (system_health)",
+          "description": "Memory allocation failures captured by system_health. Repeated OOM events indicate the server is consistently over-committed.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 220,
+          "refreshIntervalSeconds": 300,
+          "layout": {
+            "column": 0,
+            "order": 7,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "IF EXISTS (SELECT 1 FROM sys.server_event_sessions WHERE name = 'system_health')\nBEGIN\n  SELECT TOP 50\n    xdr.value('(@timestamp)[1]','datetime2') AS [Time],\n    xdr.value('(data[@name=\"pool_id\"]/value)[1]','int') AS [Pool ID],\n    xdr.value('(data[@name=\"requested_memory_kb\"]/value)[1]','bigint') AS [Requested KB],\n    xdr.value('(data[@name=\"granted_memory_kb\"]/value)[1]','bigint')   AS [Granted KB]\n  FROM (\n    SELECT CAST(target_data AS XML) AS target_data\n    FROM sys.dm_xe_session_targets t\n    JOIN sys.dm_xe_sessions s ON t.event_session_address = s.address\n    WHERE s.name = 'system_health' AND t.target_name = 'ring_buffer'\n  ) d\n  CROSS APPLY target_data.nodes('//RingBufferTarget/event[@name=''out_of_memory'']') AS x(xdr)\n  ORDER BY [Time] DESC\nEND\nELSE SELECT 'system_health XEvent session not running' AS [Info]"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "N0",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": null,
+          "dataGridColumnColors": null
+        },
+        {
+          "id": "pevents.memory_broker",
+          "title": "Memory Broker Notifications (system_health)",
+          "description": "Internal memory rebalancing events — SQL Server redistributing memory between components (buffer pool, plan cache, query workspace).",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 220,
+          "refreshIntervalSeconds": 300,
+          "layout": {
+            "column": 0,
+            "order": 8,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "IF EXISTS (SELECT 1 FROM sys.server_event_sessions WHERE name = 'system_health')\nBEGIN\n  SELECT TOP 50\n    xdr.value('(@timestamp)[1]','datetime2') AS [Time],\n    xdr.value('(data[@name=\"notifier\"]/value)[1]','varchar(100)')      AS [Notifier],\n    xdr.value('(data[@name=\"notification\"]/value)[1]','varchar(100)')  AS [Notification],\n    xdr.value('(data[@name=\"memory_target_kb\"]/value)[1]','bigint')    AS [Target KB],\n    xdr.value('(data[@name=\"available_memory_kb\"]/value)[1]','bigint') AS [Available KB]\n  FROM (\n    SELECT CAST(target_data AS XML) AS target_data\n    FROM sys.dm_xe_session_targets t\n    JOIN sys.dm_xe_sessions s ON t.event_session_address = s.address\n    WHERE s.name = 'system_health' AND t.target_name = 'ring_buffer'\n  ) d\n  CROSS APPLY target_data.nodes('//RingBufferTarget/event[@name=''memory_broker_ring_buffer_recorded'']') AS x(xdr)\n  ORDER BY [Time] DESC\nEND\nELSE SELECT 'system_health XEvent session not running' AS [Info]"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "N0",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
           "dataGridTopRows": 0,
           "actionColumn": null,
           "actionColumnMode": null,
@@ -5045,6 +5290,142 @@
               "maxColor": "#ef4444"
             }
           ]
+        },
+        {
+          "id": "dbh.idle_databases",
+          "title": "Idle / Dormant Databases",
+          "description": "Databases with no active user connections. Candidates for archiving, decommission, or licensing cost reduction.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 280,
+          "refreshIntervalSeconds": 300,
+          "layout": {
+            "column": 0,
+            "order": 11,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT\n  d.name AS [Database],\n  d.state_desc AS [State],\n  d.recovery_model_desc AS [Recovery Model],\n  CAST(SUM(mf.size) * 8.0 / 1024 AS DECIMAL(10,1)) AS [Size MB],\n  d.log_reuse_wait_desc AS [Log Reuse Wait],\n  d.create_date AS [Created],\n  'Idle' AS [Connection Status]\nFROM sys.databases d\nJOIN sys.master_files mf ON d.database_id = mf.database_id\nWHERE d.database_id > 4\n  AND d.state_desc = 'ONLINE'\n  AND NOT EXISTS (\n    SELECT 1 FROM sys.dm_exec_sessions s\n    WHERE s.database_id = d.database_id AND s.is_user_process = 1\n  )\nGROUP BY d.name, d.state_desc, d.database_id, d.log_reuse_wait_desc,\n         d.recovery_model_desc, d.create_date\nORDER BY [Size MB] DESC"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "N0",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": null,
+          "dataGridColumnColors": null
+        },
+        {
+          "id": "dbh.file_growth_7d",
+          "title": "Database File Growth — Last 7 Days",
+          "description": "Auto-growth events from the default trace over the past 7 days. Frequent growths indicate undersized files; plan for pre-growth.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 280,
+          "refreshIntervalSeconds": 600,
+          "layout": {
+            "column": 0,
+            "order": 12,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "IF EXISTS (SELECT 1 FROM sys.traces WHERE is_default = 1)\nBEGIN\n  DECLARE @tracepath NVARCHAR(260);\n  SELECT @tracepath = REVERSE(SUBSTRING(REVERSE(path), CHARINDEX(N'\\', REVERSE(path)), 260)) + N'log.trc'\n  FROM sys.traces WHERE is_default = 1;\n  SELECT\n    DatabaseName        AS [Database],\n    CASE EventClass WHEN 92 THEN 'Data File' WHEN 93 THEN 'Log File' ELSE CAST(EventClass AS VARCHAR) END AS [File Type],\n    CAST(IntegerData * 8.0 / 1024 AS DECIMAL(10,1)) AS [Growth MB],\n    FileName            AS [File Path],\n    StartTime           AS [Time],\n    HostName            AS [Host],\n    LoginName           AS [Login]\n  FROM fn_trace_gettable(@tracepath, DEFAULT)\n  WHERE EventClass IN (92, 93)\n    AND StartTime >= DATEADD(DAY, -7, GETDATE())\n  ORDER BY StartTime DESC\nEND\nELSE SELECT 'Default trace disabled — enable: sp_configure ''default trace enabled'', 1; RECONFIGURE' AS [Info]"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "N0",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 100,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": null,
+          "dataGridColumnColors": null
+        },
+        {
+          "id": "dbh.compression_candidates",
+          "title": "Compression Candidates — Uncompressed Tables",
+          "description": "Largest uncompressed tables (>10 MB) across all online databases. Row or page compression typically achieves 40-70% space reduction.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 280,
+          "refreshIntervalSeconds": 600,
+          "layout": {
+            "column": 0,
+            "order": 13,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT TOP 30\n  DB_NAME()                         AS [Database],\n  OBJECT_SCHEMA_NAME(p.object_id)   AS [Schema],\n  OBJECT_NAME(p.object_id)          AS [Table],\n  p.data_compression_desc           AS [Compression],\n  SUM(a.total_pages) * 8 / 1024     AS [Total MB],\n  SUM(a.used_pages)  * 8 / 1024     AS [Used MB],\n  SUM(p.rows)                       AS [Rows]\nFROM sys.partitions p\nJOIN sys.allocation_units a ON p.partition_id = a.container_id\nWHERE p.index_id IN (0,1)\n  AND p.data_compression_desc = 'NONE'\n  AND OBJECT_SCHEMA_NAME(p.object_id) NOT IN ('sys','INFORMATION_SCHEMA')\nGROUP BY p.object_id, p.data_compression_desc\nHAVING SUM(a.total_pages) * 8 / 1024 > 10\nORDER BY [Total MB] DESC"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "N0",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 30,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": null,
+          "dataGridColumnColors": null
+        },
+        {
+          "id": "dbh.enterprise_features",
+          "title": "Enterprise Features In Use",
+          "description": "Enterprise-tier SQL Server features active on this instance — relevant for licensing reviews and edition downgrade impact assessment.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 240,
+          "refreshIntervalSeconds": 600,
+          "layout": {
+            "column": 0,
+            "order": 14,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT feature_name AS [Feature], feature_id AS [Feature ID]\nFROM sys.dm_db_persisted_sku_features\nWHERE DB_ID() > 4\nUNION ALL\nSELECT 'Always On Availability Groups', 100\nWHERE EXISTS (SELECT 1 FROM sys.availability_groups)\nUNION ALL\nSELECT 'Resource Governor', 101\nWHERE EXISTS (SELECT 1 FROM sys.resource_governor_configuration WHERE is_enabled = 1)\nUNION ALL\nSELECT 'Transparent Data Encryption (TDE)', 102\nWHERE EXISTS (SELECT 1 FROM sys.databases WHERE is_encrypted = 1 AND database_id > 4)\nUNION ALL\nSELECT 'Change Data Capture (CDC)', 103\nWHERE EXISTS (SELECT 1 FROM sys.databases WHERE is_cdc_enabled = 1)\nUNION ALL\nSELECT 'Database Audit', 104\nWHERE EXISTS (SELECT 1 FROM sys.database_audit_specifications WHERE is_state_enabled = 1)\nUNION ALL\nSELECT 'Columnstore Indexes', 105\nWHERE EXISTS (SELECT 1 FROM sys.indexes WHERE type IN (5,6))\nUNION ALL\nSELECT 'In-Memory OLTP (Hekaton)', 106\nWHERE EXISTS (SELECT 1 FROM sys.filegroups WHERE type = 'FX')\nORDER BY [Feature]"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "N0",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": null,
+          "dataGridColumnColors": null
         }
       ]
     },
@@ -6689,6 +7070,1949 @@
           "dataGridColumnColors": null
         }
       ]
+    },
+    {
+      "id": "pmhealth",
+      "title": "PM Health & Diagnostics",
+      "navTitle": "PM Health",
+      "navIcon": "fa-solid fa-heart-pulse",
+      "navCategory": "Performance Monitor",
+      "navOrder": 99,
+      "source": "PerformanceMonitor",
+      "defaultDatabase": "PerformanceMonitor",
+      "enabled": true,
+      "panels": [
+        {
+          "id": "pmh.critical_issues",
+          "title": "Critical Issues",
+          "description": "Consolidated severity-rated issue log across all PM collectors with actionable recommendations.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 350,
+          "refreshIntervalSeconds": 60,
+          "layout": {
+            "column": 1,
+            "order": 1,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "sqlwatch",
+            "sqlServer": "SELECT TOP 100\n    ci.log_date          AS [Time],\n    ci.severity          AS [Severity],\n    ci.problem_area      AS [Area],\n    ci.source_collector  AS [Collector],\n    ci.affected_database AS [Database],\n    ci.message           AS [Message],\n    ci.recommendation    AS [Recommendation]\nFROM report.critical_issues AS ci\nORDER BY ci.severity_order ASC, ci.log_date DESC"
+          },
+          "defaultDatabase": "PerformanceMonitor",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": [
+            "Time",
+            "Severity",
+            "Area",
+            "Collector",
+            "Database",
+            "Message",
+            "Recommendation"
+          ],
+          "dataGridColumnColors": [
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ef4444"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#fbbf24"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ef4444"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#9ca3af"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ef4444"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#fbbf24"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            }
+          ]
+        },
+        {
+          "id": "pmh.collection_health",
+          "title": "Collector Health",
+          "description": "Is PM itself collecting? Shows last success time, failure rate, and health status per collector.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 280,
+          "refreshIntervalSeconds": 120,
+          "layout": {
+            "column": 1,
+            "order": 2,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "sqlwatch",
+            "sqlServer": "SELECT\n    ch.collector_name                          AS [Collector],\n    ch.health_status                           AS [Status],\n    ch.last_success_time                       AS [Last Success],\n    ch.hours_since_success                     AS [Hours Since Success],\n    CAST(ch.failure_rate_percent AS DECIMAL(5,1)) AS [Failure % (7d)],\n    ch.total_runs_7d                           AS [Runs (7d)],\n    ch.failed_runs_7d                          AS [Failed (7d)],\n    ch.avg_duration_ms                         AS [Avg ms]\nFROM report.collection_health AS ch\nORDER BY ch.hours_since_success DESC, ch.failure_rate_percent DESC"
+          },
+          "defaultDatabase": "PerformanceMonitor",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": [
+            "Collector",
+            "Status",
+            "Last Success",
+            "Hours Since Success",
+            "Failure % (7d)",
+            "Runs (7d)",
+            "Failed (7d)",
+            "Avg ms"
+          ],
+          "dataGridColumnColors": [
+            {
+              "column": "Status",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ef4444"
+            },
+            {
+              "column": "Status",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Status",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#fbbf24"
+            },
+            {
+              "column": "Status",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Status",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Status",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Status",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Status",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Status",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ef4444"
+            },
+            {
+              "column": "Status",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#9ca3af"
+            },
+            {
+              "column": "Status",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ef4444"
+            },
+            {
+              "column": "Status",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Status",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#fbbf24"
+            },
+            {
+              "column": "Status",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            }
+          ]
+        },
+        {
+          "id": "pmh.daily_summary",
+          "title": "Daily Summary (Day-over-Day)",
+          "description": "Single-page overview: top waits, throughput, expensive query count, deadlock/blocking events, and UP/DOWN/SAME trend vs yesterday.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 340,
+          "refreshIntervalSeconds": 300,
+          "layout": {
+            "column": 1,
+            "order": 3,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "sqlwatch",
+            "sqlServer": "SELECT\n    ds.metric_name                       AS [Metric],\n    CAST(ds.metric_value AS NVARCHAR(200)) AS [Value]\nFROM report.daily_summary_v2 AS ds\nORDER BY ds.sort_order"
+          },
+          "defaultDatabase": "PerformanceMonitor",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": [
+            "Metric",
+            "Value"
+          ],
+          "dataGridColumnColors": null
+        },
+        {
+          "id": "pmh.parameter_sniffing",
+          "title": "Parameter Sniffing Candidates",
+          "description": "Queries with multiple execution plans for the same query hash. High variance ratio = unstable plan choice due to parameter sniffing.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 350,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 1,
+            "order": 4,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "sqlwatch",
+            "sqlServer": "SELECT TOP 50\n    psd.database_name                                          AS [Database],\n    psd.plan_count                                             AS [Plans],\n    psd.execution_count                                        AS [Executions],\n    CAST(psd.worker_time_variance_ratio  AS DECIMAL(10,1))    AS [CPU Variance Ratio],\n    CAST(psd.elapsed_time_variance_ratio AS DECIMAL(10,1))    AS [Elapsed Variance Ratio],\n    psd.sensitivity_level                                      AS [Sensitivity],\n    psd.last_execution_time                                    AS [Last Run],\n    LEFT(psd.sample_query_text, 300)                           AS [Query]\nFROM report.parameter_sensitivity_detection AS psd\nORDER BY psd.worker_time_variance_ratio DESC"
+          },
+          "defaultDatabase": "PerformanceMonitor",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": [
+            "Database",
+            "Plans",
+            "Executions",
+            "CPU Variance Ratio",
+            "Elapsed Variance Ratio",
+            "Sensitivity",
+            "Last Run",
+            "Query"
+          ],
+          "dataGridColumnColors": [
+            {
+              "column": "Sensitivity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ef4444"
+            },
+            {
+              "column": "Sensitivity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Sensitivity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#fbbf24"
+            },
+            {
+              "column": "Sensitivity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Sensitivity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Sensitivity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Sensitivity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Sensitivity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Sensitivity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ef4444"
+            },
+            {
+              "column": "Sensitivity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#9ca3af"
+            },
+            {
+              "column": "Sensitivity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ef4444"
+            },
+            {
+              "column": "Sensitivity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Sensitivity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#fbbf24"
+            },
+            {
+              "column": "Sensitivity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            }
+          ]
+        },
+        {
+          "id": "pmh.file_io_latency",
+          "title": "File I/O Latency",
+          "description": "Per-file read/write latency. CRITICAL: read >50ms / write >100ms. Pinpoints storage bottlenecks to specific database files.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 300,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 1,
+            "order": 5,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "sqlwatch",
+            "sqlServer": "SELECT\n    fil.database_name        AS [Database],\n    fil.file_type            AS [File Type],\n    fil.file_name            AS [File],\n    fil.avg_read_latency_ms  AS [Read ms],\n    fil.avg_write_latency_ms AS [Write ms],\n    fil.reads_last_15min     AS [Reads (15m)],\n    fil.writes_last_15min    AS [Writes (15m)],\n    fil.latency_issue        AS [Issue],\n    fil.recommendation       AS [Recommendation]\nFROM report.file_io_latency AS fil\nWHERE fil.latency_issue <> 'OK'\n   OR fil.avg_read_latency_ms > 5\n   OR fil.avg_write_latency_ms > 5\nORDER BY fil.avg_read_latency_ms DESC, fil.avg_write_latency_ms DESC"
+          },
+          "defaultDatabase": "PerformanceMonitor",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": [
+            "Database",
+            "File Type",
+            "File",
+            "Read ms",
+            "Write ms",
+            "Reads (15m)",
+            "Writes (15m)",
+            "Issue",
+            "Recommendation"
+          ],
+          "dataGridColumnColors": [
+            {
+              "column": "Read ms",
+              "mode": "higher-is-worse",
+              "minColor": "#4caf50",
+              "maxColor": "#ef4444"
+            },
+            {
+              "column": "Write ms",
+              "mode": "higher-is-worse",
+              "minColor": "#4caf50",
+              "maxColor": "#ef4444"
+            },
+            {
+              "column": "Issue",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ef4444"
+            },
+            {
+              "column": "Issue",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Issue",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#fbbf24"
+            },
+            {
+              "column": "Issue",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Issue",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Issue",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Issue",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Issue",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Issue",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ef4444"
+            },
+            {
+              "column": "Issue",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#9ca3af"
+            },
+            {
+              "column": "Issue",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ef4444"
+            },
+            {
+              "column": "Issue",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Issue",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#fbbf24"
+            },
+            {
+              "column": "Issue",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            }
+          ]
+        },
+        {
+          "id": "pmh.cpu_spikes",
+          "title": "CPU Spike Events",
+          "description": "CPU utilization events classified as CRITICAL (>90%), HIGH (>80%), MEDIUM (>60%). SQL Server vs other process breakdown.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 280,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 1,
+            "order": 6,
+            "spanColumns": false
+          },
+          "query": {
+            "source": "sqlwatch",
+            "sqlServer": "SELECT TOP 100\n    cs.event_time        AS [Time],\n    cs.sql_server_cpu    AS [SQL CPU %],\n    cs.other_process_cpu AS [Other CPU %],\n    cs.total_cpu         AS [Total CPU %],\n    cs.severity          AS [Severity]\nFROM report.cpu_spikes AS cs\nORDER BY cs.event_time DESC"
+          },
+          "defaultDatabase": "PerformanceMonitor",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": [
+            "Time",
+            "SQL CPU %",
+            "Other CPU %",
+            "Total CPU %",
+            "Severity"
+          ],
+          "dataGridColumnColors": [
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ef4444"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#fbbf24"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ef4444"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#9ca3af"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ef4444"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#fbbf24"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Total CPU %",
+              "mode": "higher-is-worse",
+              "minColor": "#4caf50",
+              "maxColor": "#ef4444"
+            }
+          ]
+        },
+        {
+          "id": "pmh.memory_pressure",
+          "title": "Memory Pressure Events",
+          "description": "Memory pressure notifications from ring buffers with process and system severity indicators.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 280,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 1,
+            "order": 7,
+            "spanColumns": false
+          },
+          "query": {
+            "source": "sqlwatch",
+            "sqlServer": "SELECT TOP 100\n    mpe.event_time        AS [Time],\n    mpe.notification      AS [Notification],\n    mpe.process_indicator AS [Process Indicator],\n    mpe.system_indicator  AS [System Indicator],\n    mpe.severity          AS [Severity]\nFROM report.memory_pressure_events AS mpe\nORDER BY mpe.event_time DESC"
+          },
+          "defaultDatabase": "PerformanceMonitor",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": [
+            "Time",
+            "Notification",
+            "Process Indicator",
+            "System Indicator",
+            "Severity"
+          ],
+          "dataGridColumnColors": [
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ef4444"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#fbbf24"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ef4444"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#9ca3af"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ef4444"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#fbbf24"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            }
+          ]
+        },
+        {
+          "id": "pmh.plan_cache_bloat_pct",
+          "title": "Plan Cache Single-Use %",
+          "description": "Percentage of plan cache consumed by single-use plans. >50% = CRITICAL bloat indicating optimize for ad-hoc workloads should be enabled.",
+          "enabled": true,
+          "source": "",
+          "panelType": "StatCard",
+          "chartType": "Line",
+          "height": 120,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 0,
+            "order": 8,
+            "spanColumns": false
+          },
+          "query": {
+            "source": "sqlwatch",
+            "sqlServer": "SELECT TOP 1 CAST(pcb.single_use_percent AS DECIMAL(5,1)) AS [Value] FROM report.plan_cache_bloat AS pcb ORDER BY pcb.collection_time DESC"
+          },
+          "defaultDatabase": "PerformanceMonitor",
+          "statUnit": "%",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "",
+          "colorThresholds": [
+            {
+              "operator": ">=",
+              "value": 0,
+              "color": "#4caf50",
+              "label": "OK"
+            },
+            {
+              "operator": ">=",
+              "value": 20,
+              "color": "#fbbf24",
+              "label": "Medium"
+            },
+            {
+              "operator": ">=",
+              "value": 30,
+              "color": "#ff9800",
+              "label": "High"
+            },
+            {
+              "operator": ">=",
+              "value": 50,
+              "color": "#ef4444",
+              "label": "Critical"
+            }
+          ],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": null,
+          "dataGridColumnColors": null
+        },
+        {
+          "id": "pmh.plan_cache_bloat",
+          "title": "Plan Cache Bloat Detail",
+          "description": "Single-use plan ratio, total cache size, and bloat severity. Configure optimize for ad-hoc workloads if Single-Use % is HIGH or CRITICAL.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 200,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 1,
+            "order": 9,
+            "spanColumns": false
+          },
+          "query": {
+            "source": "sqlwatch",
+            "sqlServer": "SELECT TOP 5\n    pcb.collection_time                                AS [Time],\n    pcb.total_plans                                    AS [Total Plans],\n    pcb.single_use_plans                               AS [Single-Use Plans],\n    CAST(pcb.single_use_percent     AS DECIMAL(5,1))  AS [Single-Use %],\n    CAST(pcb.total_cache_mb         AS DECIMAL(10,1)) AS [Cache MB],\n    CAST(pcb.single_use_mb          AS DECIMAL(10,1)) AS [Single-Use MB],\n    pcb.bloat_level                                    AS [Bloat Level],\n    pcb.recommendation                                 AS [Recommendation]\nFROM report.plan_cache_bloat AS pcb\nORDER BY pcb.collection_time DESC"
+          },
+          "defaultDatabase": "PerformanceMonitor",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": [
+            "Time",
+            "Total Plans",
+            "Single-Use Plans",
+            "Single-Use %",
+            "Cache MB",
+            "Single-Use MB",
+            "Bloat Level",
+            "Recommendation"
+          ],
+          "dataGridColumnColors": [
+            {
+              "column": "Bloat Level",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ef4444"
+            },
+            {
+              "column": "Bloat Level",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Bloat Level",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#fbbf24"
+            },
+            {
+              "column": "Bloat Level",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Bloat Level",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Bloat Level",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Bloat Level",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Bloat Level",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Bloat Level",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ef4444"
+            },
+            {
+              "column": "Bloat Level",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#9ca3af"
+            },
+            {
+              "column": "Bloat Level",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ef4444"
+            },
+            {
+              "column": "Bloat Level",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Bloat Level",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#fbbf24"
+            },
+            {
+              "column": "Bloat Level",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            }
+          ]
+        },
+        {
+          "id": "pmh.memory_grant_pressure",
+          "title": "Memory Grant Pressure",
+          "description": "Active grants, waiting queries, memory utilization %, timeout/forced grant counts. Waiting queries > 0 or forced grants indicate memory pressure.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 220,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 1,
+            "order": 10,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "sqlwatch",
+            "sqlServer": "SELECT TOP 10\n    mgp.collection_time                                       AS [Time],\n    mgp.active_grants                                         AS [Active Grants],\n    mgp.queries_waiting                                       AS [Waiting Queries],\n    mgp.granted_memory_mb                                     AS [Granted MB],\n    mgp.used_memory_mb                                        AS [Used MB],\n    CAST(mgp.memory_utilization_percent AS DECIMAL(5,1))     AS [Utilization %],\n    mgp.timeout_errors                                        AS [Timeouts],\n    mgp.forced_grants                                         AS [Forced Grants],\n    mgp.pressure_level                                        AS [Pressure],\n    mgp.recommendation                                        AS [Recommendation]\nFROM report.memory_grant_pressure AS mgp\nORDER BY mgp.collection_time DESC"
+          },
+          "defaultDatabase": "PerformanceMonitor",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": [
+            "Time",
+            "Active Grants",
+            "Waiting Queries",
+            "Granted MB",
+            "Used MB",
+            "Utilization %",
+            "Timeouts",
+            "Forced Grants",
+            "Pressure",
+            "Recommendation"
+          ],
+          "dataGridColumnColors": [
+            {
+              "column": "Pressure",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ef4444"
+            },
+            {
+              "column": "Pressure",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Pressure",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#fbbf24"
+            },
+            {
+              "column": "Pressure",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Pressure",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Pressure",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Pressure",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Pressure",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Pressure",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ef4444"
+            },
+            {
+              "column": "Pressure",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#9ca3af"
+            },
+            {
+              "column": "Pressure",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ef4444"
+            },
+            {
+              "column": "Pressure",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Pressure",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#fbbf24"
+            },
+            {
+              "column": "Pressure",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            }
+          ]
+        },
+        {
+          "id": "pmh.scheduler_pressure",
+          "title": "CPU Scheduler Pressure",
+          "description": "Runnable task queue depth, worker thread utilization %. Sustained runnable tasks per scheduler > 1 indicates CPU saturation.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 220,
+          "refreshIntervalSeconds": null,
+          "layout": {
+            "column": 1,
+            "order": 11,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "sqlwatch",
+            "sqlServer": "SELECT TOP 10\n    csp.collection_time                   AS [Time],\n    csp.total_schedulers                  AS [Schedulers],\n    csp.total_runnable_tasks              AS [Runnable Tasks],\n    csp.avg_runnable_tasks_per_scheduler  AS [Avg Runnable/Sched],\n    csp.worker_utilization_percent        AS [Worker %],\n    csp.total_active_requests             AS [Active Requests],\n    csp.total_queued_requests             AS [Queued Requests],\n    csp.pressure_level                    AS [Pressure],\n    csp.recommendation                    AS [Recommendation]\nFROM report.cpu_scheduler_pressure AS csp\nORDER BY csp.collection_time DESC"
+          },
+          "defaultDatabase": "PerformanceMonitor",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": [
+            "Time",
+            "Schedulers",
+            "Runnable Tasks",
+            "Avg Runnable/Sched",
+            "Worker %",
+            "Active Requests",
+            "Queued Requests",
+            "Pressure",
+            "Recommendation"
+          ],
+          "dataGridColumnColors": [
+            {
+              "column": "Pressure",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ef4444"
+            },
+            {
+              "column": "Pressure",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Pressure",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#fbbf24"
+            },
+            {
+              "column": "Pressure",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Pressure",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Pressure",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Pressure",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Pressure",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Pressure",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ef4444"
+            },
+            {
+              "column": "Pressure",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#9ca3af"
+            },
+            {
+              "column": "Pressure",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ef4444"
+            },
+            {
+              "column": "Pressure",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Pressure",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#fbbf24"
+            },
+            {
+              "column": "Pressure",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            }
+          ]
+        },
+        {
+          "id": "pmh.blocking_chains",
+          "title": "Blocking Chain Analysis",
+          "description": "Hierarchical blocking with head blocker identification, blocked session counts, wait type, query text, and targeted recommendations per lock type.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 320,
+          "refreshIntervalSeconds": 10,
+          "layout": {
+            "column": 1,
+            "order": 12,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "sqlwatch",
+            "sqlServer": "SELECT\n    bca.session_id               AS [Session],\n    bca.blocking_session_id      AS [Blocked By],\n    bca.blocking_chain_position  AS [Position],\n    bca.sessions_blocked         AS [Sessions Blocked],\n    bca.wait_type                AS [Wait Type],\n    bca.wait_duration_sec        AS [Wait (sec)],\n    bca.database_name            AS [Database],\n    bca.command                  AS [Command],\n    bca.query_text               AS [Query],\n    bca.severity                 AS [Severity],\n    bca.recommendation           AS [Recommendation]\nFROM report.blocking_chain_analysis AS bca\nORDER BY bca.sessions_blocked DESC, bca.wait_duration_ms DESC"
+          },
+          "defaultDatabase": "PerformanceMonitor",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": [
+            "Session",
+            "Blocked By",
+            "Position",
+            "Sessions Blocked",
+            "Wait Type",
+            "Wait (sec)",
+            "Database",
+            "Command",
+            "Query",
+            "Severity",
+            "Recommendation"
+          ],
+          "dataGridColumnColors": [
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ef4444"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#fbbf24"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ef4444"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#9ca3af"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ef4444"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#4caf50"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#fbbf24"
+            },
+            {
+              "column": "Severity",
+              "mode": "text-match",
+              "minColor": "",
+              "maxColor": "",
+              "matchColor": "#ff9800"
+            }
+          ]
+        }
+      ],
+      "route": "/pmhealth",
+      "showAllOption": false,
+      "description": "PM Health & Diagnostics"
+    },
+    {
+      "id": "correlation",
+      "title": "Correlated Timeline",
+      "description": "Five aligned diagnostic lanes — CPU%, wait categories, blocking snapshot, I/O latency, and memory grant pressure — displayed together to reveal causal relationships between concurrent symptoms.",
+      "navTitle": "Correlated Timeline",
+      "navIcon": "fa-solid fa-chart-gantt",
+      "navCategory": "Dashboards",
+      "navOrder": 16,
+      "source": "master",
+      "enabled": true,
+      "defaultDatabase": "master",
+      "autoRefresh": true,
+      "refreshIntervalSeconds": 30,
+      "panels": [
+        {
+          "id": "corr.cpu_pct",
+          "title": "CPU Utilisation %",
+          "description": "SQL Server CPU % from ring buffer (60s samples) — top lane for correlating all other metrics against CPU load.",
+          "enabled": true,
+          "source": "",
+          "panelType": "TimeSeries",
+          "chartType": "Line",
+          "height": 200,
+          "refreshIntervalSeconds": 60,
+          "layout": {
+            "column": 0,
+            "order": 1,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT TOP 60\n  record_time AS [Time],\n  sql_cpu_utilization AS [SQL CPU %],\n  100 - system_idle - sql_cpu_utilization AS [Other CPU %]\nFROM (\n  SELECT\n    DATEADD(ms, -1 * (i.ms_ticks - rb.timestamp), GETDATE()) AS record_time,\n    rb.record.value('(./Record/SchedulerMonitorEvent/SystemHealth/ProcessUtilization)[1]','int') AS sql_cpu_utilization,\n    rb.record.value('(./Record/SchedulerMonitorEvent/SystemHealth/SystemIdle)[1]','int') AS system_idle\n  FROM sys.dm_os_ring_buffers rb\n  CROSS JOIN sys.dm_os_sys_info i\n  WHERE rb.ring_buffer_type = N'RING_BUFFER_SCHEDULER_MONITOR'\n    AND rb.record.value('(./Record/@type)[1]','varchar(50)') = 'SCHEDULER_MONITOR_SYSTEM_HEALTH_RING_BUFFER_RECORDED'\n) x\nORDER BY record_time ASC"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "N0",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": null,
+          "dataGridColumnColors": null
+        },
+        {
+          "id": "corr.waits",
+          "title": "Top Wait Categories — ms/sec",
+          "description": "Wait time per second by category since SQL Server started — normalised so it is comparable across uptime lengths.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 260,
+          "refreshIntervalSeconds": 60,
+          "layout": {
+            "column": 0,
+            "order": 2,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT TOP 15\n  wait_type AS [Wait Type],\n  CAST(wait_time_ms * 1.0 / NULLIF(DATEDIFF(s, sqlserver_start_time, GETDATE()), 0) AS DECIMAL(10,2)) AS [ms/sec],\n  CAST(waiting_tasks_count * 1.0 / NULLIF(DATEDIFF(s, sqlserver_start_time, GETDATE()), 0) AS DECIMAL(10,4)) AS [Tasks/sec],\n  CAST(wait_time_ms * 1.0 / NULLIF(waiting_tasks_count, 0) AS DECIMAL(10,2)) AS [Avg Wait ms]\nFROM sys.dm_os_wait_stats\nCROSS JOIN sys.dm_os_sys_info\nWHERE wait_type NOT IN (\n  'SLEEP_TASK','BROKER_TO_FLUSH','BROKER_TASK_STOP','CLR_AUTO_EVENT',\n  'DISPATCHER_QUEUE_SEMAPHORE','FT_IFTS_SCHEDULER_IDLE_WAIT',\n  'HADR_WORK_QUEUE','HADR_FILESTREAM_IOMGR_IOCOMPLETION','HADR_CLUSAPI_CALL',\n  'HADR_TIMER_TASK','HADR_TRANSPORT_DRAINED','ONDEMAND_TASK_QUEUE',\n  'REQUEST_FOR_DEADLOCK_SEARCH','RESOURCE_QUEUE','SERVER_IDLE_CHECK',\n  'SLEEP_DBSTARTUP','SLEEP_DBRECOVER','SLEEP_DBTASK','SLEEP_MASTERDBREADY',\n  'SLEEP_MASTERMDREADY','SLEEP_MASTERUPGRADED','SLEEP_MSDBSTARTUP',\n  'SLEEP_TEMPDBSTARTUP','SNI_HTTP_ACCEPT','SP_SERVER_DIAGNOSTICS_SLEEP',\n  'SQLTRACE_BUFFER_FLUSH','WAITFOR','WAITFOR_TASKSHUTDOWN',\n  'WAIT_XTP_OFFLINE_CKPT_NEW_LOG','XE_DISPATCHER_WAIT','XE_TIMER_EVENT',\n  'BROKER_EVENTHANDLER','CHECKPOINT_QUEUE','DBMIRROR_EVENTS_QUEUE',\n  'SQLTRACE_INCREMENTAL_FLUSH_SLEEP','SQLTRACE_WAIT_ENTRIES','SLEEP_BUFFERPOOL_SERVIS'\n)\n  AND wait_time_ms > 0\nORDER BY [ms/sec] DESC"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "N0",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 15,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": null,
+          "dataGridColumnColors": null
+        },
+        {
+          "id": "corr.blocking_live",
+          "title": "Blocking & Deadlocks — Current Snapshot",
+          "description": "Current blocked session count and lock waits — correlate spikes here with CPU and I/O lanes.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 120,
+          "refreshIntervalSeconds": 15,
+          "layout": {
+            "column": 0,
+            "order": 3,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT\n  (SELECT COUNT(*) FROM sys.dm_exec_requests WHERE blocking_session_id > 0) AS [Blocked Sessions],\n  (SELECT COUNT(*) FROM sys.dm_exec_requests WHERE wait_type LIKE 'LCK%') AS [Lock Waits],\n  (SELECT COUNT(*) FROM sys.dm_exec_requests WHERE wait_type = 'RESOURCE_SEMAPHORE') AS [Memory Grant Waits],\n  (SELECT COUNT(*) FROM sys.dm_exec_requests WHERE wait_type LIKE 'PAGEIOLATCH%') AS [Page I/O Waits],\n  (SELECT COUNT(*) FROM sys.dm_exec_requests WHERE status = 'running') AS [Running Requests],\n  (SELECT COUNT(*) FROM sys.dm_exec_requests WHERE status = 'runnable') AS [Runnable Requests],\n  GETDATE() AS [Sampled At]"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "N0",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": null,
+          "dataGridColumnColors": null
+        },
+        {
+          "id": "corr.io_latency",
+          "title": "File I/O Latency — Top Files",
+          "description": "Read and write latency per database file — correlate high latency with CPU spikes to distinguish I/O-bound vs CPU-bound pressure.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 280,
+          "refreshIntervalSeconds": 30,
+          "layout": {
+            "column": 0,
+            "order": 4,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT TOP 20\n  DB_NAME(vfs.database_id) AS [Database],\n  RIGHT(mf.physical_name, CHARINDEX(N'\\', REVERSE(mf.physical_name)) - 1) AS [File],\n  CASE mf.type_desc WHEN 'ROWS' THEN 'Data' WHEN 'LOG' THEN 'Log' ELSE mf.type_desc END AS [Type],\n  CASE WHEN vfs.num_of_reads = 0 THEN 0\n       ELSE CAST(vfs.io_stall_read  / vfs.num_of_reads  AS DECIMAL(10,1)) END AS [Read ms],\n  CASE WHEN vfs.num_of_writes = 0 THEN 0\n       ELSE CAST(vfs.io_stall_write / vfs.num_of_writes AS DECIMAL(10,1)) END AS [Write ms],\n  vfs.num_of_reads  AS [Reads],\n  vfs.num_of_writes AS [Writes],\n  CAST((vfs.num_of_bytes_read  / 1048576.0) AS DECIMAL(10,1)) AS [MB Read],\n  CAST((vfs.num_of_bytes_written / 1048576.0) AS DECIMAL(10,1)) AS [MB Written]\nFROM sys.dm_io_virtual_file_stats(NULL,NULL) vfs\nJOIN sys.master_files mf ON vfs.database_id = mf.database_id AND vfs.file_id = mf.file_id\nWHERE vfs.num_of_reads + vfs.num_of_writes > 0\nORDER BY (vfs.io_stall_read + vfs.io_stall_write) DESC"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "N0",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 20,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": null,
+          "dataGridColumnColors": [
+            {
+              "column": "Read ms",
+              "mode": "higher-is-better",
+              "minColor": "",
+              "maxColor": "",
+              "matchValue": null,
+              "matchColor": null
+            },
+            {
+              "column": "Write ms",
+              "mode": "higher-is-better",
+              "minColor": "",
+              "maxColor": "",
+              "matchValue": null,
+              "matchColor": null
+            }
+          ]
+        },
+        {
+          "id": "corr.memory_grants",
+          "title": "Memory Grant Pressure",
+          "description": "Pending and active memory grants — RESOURCE_SEMAPHORE waits here alongside CPU spikes indicate memory-driven query slowdown.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 120,
+          "refreshIntervalSeconds": 15,
+          "layout": {
+            "column": 0,
+            "order": 5,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT\n  (SELECT COUNT(*) FROM sys.dm_exec_query_memory_grants WHERE grant_time IS NULL)        AS [Pending Grants],\n  (SELECT COUNT(*) FROM sys.dm_exec_query_memory_grants WHERE grant_time IS NOT NULL)    AS [Active Grants],\n  (SELECT ISNULL(SUM(granted_memory_kb),0)/1024  FROM sys.dm_exec_query_memory_grants WHERE grant_time IS NOT NULL)  AS [Granted MB],\n  (SELECT ISNULL(SUM(requested_memory_kb),0)/1024 FROM sys.dm_exec_query_memory_grants WHERE grant_time IS NULL)     AS [Pending MB],\n  (SELECT COUNT(*) FROM sys.dm_exec_requests WHERE wait_type = 'RESOURCE_SEMAPHORE')     AS [RESOURCE_SEMAPHORE Waits],\n  (SELECT COUNT(*) FROM sys.dm_exec_requests WHERE wait_type = 'RESOURCE_SEMAPHORE_QUERY_COMPILE') AS [Compile Waits],\n  GETDATE() AS [Sampled At]"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "N0",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": null,
+          "dataGridColumnColors": null
+        },
+        {
+          "id": "queryperf.top_queries",
+          "title": "Top N Queries by Duration (Live)",
+          "description": "Real-time top 10 queries by average execution time — identify slow-running queries that need optimization.",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 350,
+          "refreshIntervalSeconds": 10,
+          "layout": {
+            "column": 0,
+            "order": 6,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT TOP 10\n    qs.query_hash AS [Query Hash],\n    qs.execution_count AS [Exec Count],\n    CONVERT(MONEY,qs.total_elapsed_time / qs.execution_count) AS [Avg Duration (ms)],\n    qs.min_elapsed_time AS [Min (ms)],\n    qs.max_elapsed_time AS [Max (ms)],\n    qs.last_execution_time AS [Last Exec],\n    LEFT(qs.sql_text, 100) AS [SQL Preview]\nFROM sys.dm_exec_query_stats qs\nCROSS APPLY sys.dm_exec_sql_text(qs.sql_handle)\nORDER BY qs.total_elapsed_time DESC"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "N0",
+          "colorThresholds": [],
+          "dataGridIsClickable": true,
+          "dataGridMaxRows": 10,
+          "dataGridTopRows": 10,
+          "actionColumn": "Query Hash",
+          "actionColumnMode": "CopyToClipboard",
+          "dataGridColumns": null,
+          "dataGridColumnColors": [
+            {
+              "column": "Avg Duration (ms)",
+              "mode": "lower-is-better",
+              "minColor": "#00C853",
+              "maxColor": "#FF1744",
+              "matchValue": null,
+              "matchColor": null
+            }
+          ]
+        },
+        {
+          "id": "queryperf.batch_requests",
+          "title": "Batch Requests/sec & Compilations/sec",
+          "description": "Real-time query workload intensity — batch requests show throughput, compilations indicate plan cache pressure.",
+          "enabled": true,
+          "source": "",
+          "panelType": "TimeSeries",
+          "chartType": "Line",
+          "height": 250,
+          "refreshIntervalSeconds": 5,
+          "layout": {
+            "column": 1,
+            "order": 7,
+            "spanColumns": false
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT\n    h.report_time AS [Time],\n    'Batch Requests/sec' AS [Series],\n    CONVERT(MONEY,sr.batch_requests_per_sec) AS [Value]\nFROM sys.dm_exec_query_stats sr\nINNER JOIN sys.dm_os_performance_counters pc WITH (NOLOCK)\n    ON pc.instance_id = sr.sql_handle\nWHERE pc.counter_name = 'Batch Requests/sec'\nUNION ALL\nSELECT\n    h.report_time,\n    'Compilations/sec',\n    CONVERT(MONEY,sr.compilation_count / NULLIF(DATEDIFF(SECOND,MIN(h2.report_time),MAX(h2.report_time)),0))\nFROM sys.dm_exec_query_stats sr\nINNER JOIN sys.dm_os_performance_counters pc WITH (NOLOCK)\n    ON pc.instance_id = sr.sql_handle\nCROSS APPLY (\n    SELECT TOP 1 report_time FROM dbo.sqlwatch_logger_snapshot_header h2 WITH (NOLOCK)\n    WHERE h2.report_time >= DATEADD(SECOND,-60,GETDATE())\n    ORDER BY h2.report_time DESC\n) h2\nWHERE pc.counter_name = 'Compilations/sec'\nORDER BY [Time]"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "/sec",
+          "valueFormat": "N1",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": null,
+          "dataGridColumnColors": null
+        },
+        {
+          "id": "queryperf.plan_cache",
+          "title": "Plan Cache Statistics",
+          "description": "Real-time plan cache metrics — monitor compiled plans, memory usage, and cache efficiency.",
+          "enabled": true,
+          "source": "",
+          "panelType": "TimeSeries",
+          "chartType": "Line",
+          "height": 200,
+          "refreshIntervalSeconds": 10,
+          "layout": {
+            "column": 2,
+            "order": 8,
+            "spanColumns": false
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT\n    h.report_time AS [Time],\n    'Cached Plans' AS [Series],\n    COUNT(*) AS [Value]\nFROM sys.dm_exec_cached_plans cp WITH (NOLOCK)\nINNER JOIN sys.dm_os_performance_counters pc WITH (NOLOCK)\n    ON pc.instance_id = cp.plan_handle\nWHERE pc.counter_name IN ('Cache Entries','Memory Usage (KB)')\nGROUP BY h.report_time, pc.counter_name\nORDER BY [Time]"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "N0",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": null,
+          "dataGridColumnColors": null
+        },
+        {
+          "id": "queryperf.wait_stats",
+          "title": "Query Wait Statistics (Top 10)",
+          "description": "Real-time wait statistics — identify what queries are waiting on (I/O, CPU, locks, etc.).",
+          "enabled": true,
+          "source": "",
+          "panelType": "DataGrid",
+          "chartType": "Line",
+          "height": 280,
+          "refreshIntervalSeconds": 10,
+          "layout": {
+            "column": 0,
+            "order": 9,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT TOP 10\n    wait_type AS [Wait Type],\n    waiting_tasks_count AS [Waiting Tasks],\n    wait_time_ms / 1000.0 AS [Total Wait (s)],\n    signal_wait_time_ms / 1000.0 AS [Signal Wait (s)],\n    wait_stats_in_row AS [In Row Waiters]\nFROM sys.dm_os_wait_stats\nWHERE wait_type NOT IN ('BROKER_EVENTFIRE_TRIGGERED','BROKER_RECEIVE_WAITFOR','BROKER_TASK_STOP','CLR_WORKER_IDLE','DISK_IO_COMPLETION','FCB_RESTART','FCB_RETRY','ONLINE_TASK_TIMEOUT','SLEEP_TASK','SOS_SCHEDULER_YIELD','VXBRM_DISPATCHER_CONNECT_OOB','VEKTOR_DISPATCHER_CONNECT_OOB')\nORDER BY wait_time_ms DESC"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "N0",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 10,
+          "dataGridTopRows": 10,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": null,
+          "dataGridColumnColors": [
+            {
+              "column": "Total Wait (s)",
+              "mode": "lower-is-better",
+              "minColor": "#00C853",
+              "maxColor": "#FF1744",
+              "matchValue": null,
+              "matchColor": null
+            }
+          ]
+        },
+        {
+          "id": "queryperf.query_summary",
+          "title": "Query Performance Summary",
+          "description": "Aggregated query performance metrics — total queries, average/max duration, I/O stats, and blocking.",
+          "enabled": true,
+          "source": "",
+          "panelType": "StatCard",
+          "chartType": "Line",
+          "height": 180,
+          "refreshIntervalSeconds": 15,
+          "layout": {
+            "column": 1,
+            "order": 10,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "",
+            "sqlServer": "SELECT\n    COUNT(*) AS [Total Queries Executed],\n    CONVERT(MONEY,AVG(total_elapsed_time)/1000) AS [Avg Duration (s)],\n    MAX(total_elapsed_time)/1000 AS [Max Duration (s)],\n    SUM(total_logical_reads)/1024/1024 AS [Total Logical Reads (GB)],\n    SUM(total_physical_reads)/1024/1024 AS [Total Physical Reads (GB)],\n    SUM(total_writes)/1024/1024 AS [Total Writes (GB)],\n    AVG(cpu_time)/1000 AS [Avg CPU Time (s)],\n    MAX(cpu_time)/1000 AS [Max CPU Time (s)],\n    SUM(blocking_session_count) AS [Blocked Queries],\n    SUM(recompile_count) AS [Recompilations]\nFROM sys.dm_exec_query_stats"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "N2",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 500,
+          "dataGridTopRows": 0,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": null,
+          "dataGridColumnColors": null
+        }
+      ],
+      "route": "/correlation",
+      "showAllOption": false
     }
   ],
   "supportQueries": {}

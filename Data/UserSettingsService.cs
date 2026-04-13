@@ -337,7 +337,15 @@ namespace SqlHealthAssessment.Data
 
         // ── Maturity Roadmap ──
         public bool GetShowMaturityRoadmap() { lock (_lock) return _settings.ShowMaturityRoadmap; }
-        public void SetShowMaturityRoadmap(bool enabled) { lock (_lock) _settings.ShowMaturityRoadmap = enabled; SaveSettings(); }
+        public void SetShowMaturityRoadmap(bool enabled)
+        {
+            lock (_lock) _settings.ShowMaturityRoadmap = enabled;
+            SaveSettings();
+            OnShowMaturityRoadmapChanged?.Invoke(enabled);
+        }
+
+        /// <summary>Fired when Show Maturity Roadmap is toggled.</summary>
+        public event Action<bool>? OnShowMaturityRoadmapChanged;
 
         // ── Onboarding ──
         public bool GetOnboardingComplete() { lock (_lock) return _settings.OnboardingComplete; }

@@ -1,6 +1,7 @@
 @* /* In the name of God, the Merciful, the Compassionate */ *@
 @page "/service-management"
 @using SqlHealthAssessment.Data.Services
+@using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.Extensions.Logging
 @using System.Diagnostics
 @using System.IO
@@ -187,6 +188,36 @@
             </p>
         }
 
+        @* ── Manual install (server / air-gap mode) ── *@
+        <hr style="border: none; border-top: 1px solid var(--border); margin: 16px 0;" />
+        <h4 style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+            <i class="fa-solid fa-folder-open" style="color: var(--text-secondary);"></i>
+            Manual Update (Server Mode / Air-Gap)
+        </h4>
+        <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;">
+            If automatic download isn't available (browser server mode, no outbound internet), download the ZIP from GitHub
+            and load it here to stage the update.
+        </p>
+        <InputFile OnChange="HandleManualZipSelected" accept=".zip"
+                   disabled="@_stagingManual"
+                   style="display:block; margin-bottom: 8px; font-size: 12px; color: var(--text-primary);" />
+        @if (_stagingManual)
+        {
+            <p style="font-size: 12px; color: var(--text-secondary);">
+                <i class="fa-solid fa-spinner fa-spin" style="margin-right: 4px;"></i> Staging update...
+            </p>
+        }
+        @if (_manualStageMessage != null)
+        {
+            <p style="margin-top: 8px; padding: 8px; border-radius: 4px; font-size: 12px;
+                      background: @(_manualStageOk ? "rgba(78,201,176,0.1)" : "rgba(244,71,71,0.1)");
+                      border: 1px solid @(_manualStageOk ? "var(--green)" : "var(--red)");
+                      color: @(_manualStageOk ? "var(--green)" : "var(--red)");">
+                <i class="fa-solid @(_manualStageOk ? "fa-check" : "fa-circle-exclamation")" style="margin-right: 4px;"></i>
+                @_manualStageMessage
+            </p>
+        }
+
         <hr style="border: none; border-top: 1px solid var(--border); margin: 16px 0;" />
 
         <h4 style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
@@ -282,6 +313,11 @@
     private bool _downloading;
     private int _downloadProgress;
     private bool _updateStaged;
+
+    // Manual update (server mode / air-gap)
+    private bool _stagingManual;
+    private string? _manualStageMessage;
+    private bool _manualStageOk;
 
     // Script updates
     private bool _checkingScripts;
@@ -473,6 +509,48 @@
         finally
         {
             _downloading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleManualZipSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null) return;
+        if (!file.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+        {
+            _manualStageMessage = "Please select a .zip file.";
+            _manualStageOk = false;
+            return;
+        }
+
+        _stagingManual = true;
+        _manualStageMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            // Cap at 500 MB — generous for a self-contained exe zip
+            await using var stream = file.OpenReadStream(maxAllowedSize: 500 * 1024 * 1024);
+            var ok = await UpdateService.StageFromFileAsync(stream, file.Name);
+            _manualStageOk = ok;
+            _manualStageMessage = ok
+                ? "Update staged. It will be applied when the application exits."
+                : "Failed to stage update. Check logs for details.";
+            if (ok)
+            {
+                _updateStaged = true;
+                Toast.ShowSuccess("Manual update staged", "Will apply on exit.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _manualStageOk = false;
+            _manualStageMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            _stagingManual = false;
             StateHasChanged();
         }
     }

@@ -80,6 +80,7 @@
                   Data="@GridData"
                   IsClickable="@Panel.DataGridIsClickable"
                   MaxRows="@Panel.DataGridMaxRows"
+                  MaxHeight="@(Panel.Height > 0 ? Panel.Height * 3 : 0)"
                   HiddenColumns="@_planHiddenColumns"
                   PlanIndicatorColumn="@(GridData != null ? _planColumnCandidates.FirstOrDefault(c => GridData.Columns.Contains(c)) : null)"
                   OnRowClick="@OnDataGridRowClick"
@@ -98,7 +99,7 @@
         {
             <div class="panel-description">@Panel.Description</div>
         }
-        <QueryPlanModal @ref="_queryPlanModal" />
+        <QueryPlanModal @ref="_queryPlanModal" ConnectionId="@ConnectionId" DatabaseName="@DatabaseName" />
         break;
 
     case "CheckStatus":
@@ -199,6 +200,9 @@
     [Parameter] public int? TopRowsValue { get; set; }
     [Parameter] public EventCallback<int> OnTopRowsConfigChanged { get; set; }
     [Parameter] public Func<string, CancellationToken, Task<(bool success, string message)>>? OnActionExecute { get; set; }
+
+    [Parameter] public string? ConnectionId  { get; set; }
+    [Parameter] public string? DatabaseName  { get; set; }
 
     // ── Job Monitor ──
     [Parameter] public Func<string, CancellationToken, Task<(bool success, string message)>>? OnRunJob { get; set; }

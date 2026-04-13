@@ -158,9 +158,45 @@
                     <div class="script-actions">
                         @if (AllSuccessfulServers.Count > 0)
                         {
-                            <button class="btn btn-warning" @onclick="RunAgainstAllServers" disabled="@_isRunning">
-                                @(_isRunning ? "Running..." : "Run against all servers")
-                            </button>
+                            <div class="run-all-group">
+                                <div class="run-mode-toggle">
+                                    <button class="run-mode-btn @(_parallelMode ? "" : "active")"
+                                            @onclick="() => _parallelMode = false" disabled="@_isRunning"
+                                            title="Run each server one at a time">
+                                        <i class="fa-solid fa-list-ol"></i> Sequential
+                                    </button>
+                                    <button class="run-mode-btn @(_parallelMode ? "active" : "")"
+                                            @onclick="() => _parallelMode = true" disabled="@_isRunning"
+                                            title="Start all servers concurrently, staggered by delay">
+                                        <i class="fa-solid fa-bolt"></i> Parallel
+                                    </button>
+                                </div>
+                                @if (_parallelMode)
+                                {
+                                    <div class="delay-input-group" title="Seconds to wait before starting each subsequent server">
+                                        <i class="fa-solid fa-stopwatch" style="color:var(--text-secondary);font-size:12px;"></i>
+                                        <input type="number" min="0" max="300" step="1"
+                                               @bind="_parallelDelaySeconds"
+                                               style="width:52px;padding:3px 6px;border-radius:4px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);font-size:12px;"
+                                               disabled="@_isRunning" />
+                                        <span style="font-size:11px;color:var(--text-muted);">s delay</span>
+                                    </div>
+                                }
+                                <button class="btn btn-warning" @onclick="RequestRunAllServers" disabled="@_isRunning">
+                                    @if (_isRunning)
+                                    {
+                                        <span>Running...</span>
+                                    }
+                                    else if (_parallelMode)
+                                    {
+                                        <i class="fa-solid fa-bolt" style="margin-right:4px;"></i><span>Run all (@AllSuccessfulServers.Count) — Parallel</span>
+                                    }
+                                    else
+                                    {
+                                        <i class="fa-solid fa-list-ol" style="margin-right:4px;"></i><span>Run all (@AllSuccessfulServers.Count) — Sequential</span>
+                                    }
+                                </button>
+                            </div>
                         }
                         <button class="btn btn-primary" @onclick="RunSelectedScripts" disabled="@(_isRunning || _selectedScriptIds.Count == 0)">
                             @(_isRunning ? "Running..." : "Run Selected (" + _selectedScriptIds.Count + ")")
@@ -339,10 +375,59 @@
     }
 
     <!-- Connection Dialog -->
-    <ConnectionDialog 
+    <ConnectionDialog
         @bind-Show="_showConnectionDialog"
         EditingConnection="_editingConnection"
         OnConnectionSaved="OnConnectionSaved" />
+
+    <!-- Parallel Execution Confirm Modal -->
+    @if (_showParallelModal)
+    {
+        <div class="fa-modal-backdrop" @onclick="CancelParallelModal">
+            <div class="fa-modal" @onclick:stopPropagation>
+                <div class="fa-modal-header">
+                    <i class="fa-solid @(_parallelMode ? "fa-bolt" : "fa-list-ol")"
+                       style="color:@(_parallelMode ? "var(--yellow)" : "var(--accent)");font-size:20px;"></i>
+                    <h3 style="margin:0;">@(_parallelMode ? "Parallel" : "Sequential") Server Execution</h3>
+                </div>
+                <div class="fa-modal-body">
+                    @if (_parallelMode)
+                    {
+                        <p style="margin:0 0 12px;">
+                            Running audit scripts across all <strong>@AllSuccessfulServers.Count servers</strong> simultaneously
+                            may <strong>improve overall completion time</strong> but will place concurrent load on each server and on this host.
+                        </p>
+                        <p style="color:var(--yellow);font-size:13px;margin:0;">
+                            <i class="fa-solid fa-triangle-exclamation" style="margin-right:6px;"></i>
+                            This may impact the underlying infrastructure's performance in large environments.
+                        </p>
+                    }
+                    else
+                    {
+                        <p style="margin:0;">
+                            Run audit scripts across all <strong>@AllSuccessfulServers.Count servers</strong> one at a time,
+                            in order. Each server completes before the next begins.
+                        </p>
+                    }
+                </div>
+                <div class="fa-modal-footer">
+                    <button class="btn btn-secondary" @onclick="CancelParallelModal">Cancel</button>
+                    <button class="btn @(_parallelMode ? "btn-warning" : "btn-primary")" @onclick="ConfirmRun">
+                        @if (_parallelMode)
+                        {
+                            <i class="fa-solid fa-bolt" style="margin-right:5px;"></i>
+                            <span>Run Parallel</span>
+                        }
+                        else
+                        {
+                            <i class="fa-solid fa-list-ol" style="margin-right:5px;"></i>
+                            <span>Run Sequential</span>
+                        }
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
 </div>
 
 @code {
@@ -352,6 +437,11 @@
     private ServerConnection? SelectedConnection { get; set; }
     private string? SelectedServer { get; set; }
     private bool _isLoading = true;
+
+    // ── Parallel execution modal ──────────────────────────────────────────
+    private bool _showParallelModal;
+    private bool _parallelMode = false;
+    private int  _parallelDelaySeconds = 5;
 
     // ── Report Page Editor ────────────────────────────────────────────────
     private bool                  _faEditMode;
@@ -758,6 +848,105 @@
         }
     }
 
+    private void RequestRunAllServers()
+    {
+        if (GetSelectedScripts().Count == 0) return;
+        _showParallelModal = true;
+    }
+
+    private void CancelParallelModal() => _showParallelModal = false;
+
+    private async Task ConfirmRun()
+    {
+        _showParallelModal = false;
+        if (_parallelMode)
+            await RunAgainstAllServersParallel();
+        else
+            await RunAgainstAllServers();
+    }
+
+    /// <summary>
+    /// Starts each server's audit concurrently, staggered by _parallelDelaySeconds.
+    /// Each server executes its scripts serially in order; results stream back as they complete.
+    /// </summary>
+    private async Task RunAgainstAllServersParallel()
+    {
+        var allServers = AllSuccessfulServers;
+        if (allServers.Count == 0) return;
+        var selected = GetSelectedScripts();
+        if (selected.Count == 0) return;
+
+        AuditState.StartExecution(allServers.Count, selected.Count, true);
+        AuditState.ClearExecutionResults();
+
+        try
+        {
+            var tasks = new List<Task>();
+            int serverIndex = 0;
+
+            foreach (var (conn, server) in allServers)
+            {
+                serverIndex++;
+                var capturedIndex  = serverIndex;
+                var capturedConn   = conn;
+                var capturedServer = server;
+
+                // Stagger start: each server waits delay × (index-1) before beginning
+                var startDelay = TimeSpan.FromSeconds(_parallelDelaySeconds * (capturedIndex - 1));
+
+                tasks.Add(Task.Run(async () =>
+                {
+                    if (startDelay > TimeSpan.Zero)
+                        await Task.Delay(startDelay);
+
+                    await InvokeAsync(() =>
+                    {
+                        AuditState.UpdateProgress(capturedIndex, capturedServer, 0, "");
+                        StateHasChanged();
+                    });
+
+                    var results = new List<ScriptExecutionResult>();
+                    int scriptIndex = 0;
+
+                    foreach (var script in selected)
+                    {
+                        scriptIndex++;
+                        await InvokeAsync(() =>
+                        {
+                            AuditState.UpdateProgress(capturedIndex, capturedServer, scriptIndex, script.Name);
+                            StateHasChanged();
+                        });
+
+                        var result = await ScriptRunner.ExecuteScriptAsync(script, capturedConn, capturedServer);
+                        result.ScriptName = "[" + capturedServer + "] " + result.ScriptName;
+                        results.Add(result);
+
+                        await InvokeAsync(() =>
+                        {
+                            AuditState.AddExecutionResult(result);
+                            StateHasChanged();
+                        });
+                    }
+
+                    await InvokeAsync(() =>
+                    {
+                        Toast.ShowInfo("Full Audit: " + capturedServer + " complete (" + results.Count + " scripts, " + capturedIndex + "/" + allServers.Count + ")");
+                        StateHasChanged();
+                    });
+
+                    await AutoExportAuditResults(results, capturedServer);
+                }));
+            }
+
+            await Task.WhenAll(tasks);
+        }
+        finally
+        {
+            AuditState.IsRunning = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
     private async Task RunAgainstAllServers()
     {
         var allServers = AllSuccessfulServers;
@@ -904,3 +1093,102 @@
         }
     }
 }
+
+<style>
+    .run-all-group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .run-mode-toggle {
+        display: flex;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        overflow: hidden;
+    }
+
+    .run-mode-btn {
+        padding: 5px 11px;
+        font-size: 12px;
+        border: none;
+        background: var(--bg-secondary);
+        color: var(--text-secondary);
+        cursor: pointer;
+        transition: background 0.15s, color 0.15s;
+        white-space: nowrap;
+    }
+
+    .run-mode-btn:first-child {
+        border-right: 1px solid var(--border);
+    }
+
+    .run-mode-btn.active {
+        background: var(--accent);
+        color: #fff;
+    }
+
+    .run-mode-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .delay-input-group {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+
+    .fa-modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.65);
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .fa-modal {
+        background: var(--bg-panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        width: 480px;
+        max-width: 95vw;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .fa-modal-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 16px 20px;
+        border-bottom: 1px solid var(--border);
+        background: var(--bg-secondary);
+    }
+
+    .fa-modal-header h3 {
+        color: var(--text-primary);
+        font-size: 15px;
+    }
+
+    .fa-modal-body {
+        padding: 20px;
+        font-size: 13px;
+        color: var(--text-primary);
+        line-height: 1.6;
+    }
+
+    .fa-modal-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        padding: 14px 20px;
+        border-top: 1px solid var(--border);
+        background: var(--bg-secondary);
+    }
+</style>

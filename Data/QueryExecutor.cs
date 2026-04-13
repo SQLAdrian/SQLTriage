@@ -75,15 +75,20 @@ namespace SqlHealthAssessment.Data
                 cmd.CommandTimeout = _commandTimeout;
                 cmd.Connection = conn;
 
-                AddFilterParameters(cmd, filter);
+            AddFilterParameters(cmd, filter);
 
-                if (additionalParams != null)
+            if (additionalParams != null)
+            {
+                foreach (var kvp in additionalParams)
                 {
-                    foreach (var kvp in additionalParams)
+                    // Remove existing parameter if already added by AddFilterParameters to avoid duplicates
+                    if (cmd.Parameters.Contains(kvp.Key))
                     {
-                        AddParameter(cmd, kvp.Key, kvp.Value);
+                        cmd.Parameters.RemoveAt(kvp.Key);
                     }
+                    AddParameter(cmd, kvp.Key, kvp.Value);
                 }
+            }
 
                 using var reader = await cmd.ExecuteReaderAsync(ct);
                 int rowCount = 0;
@@ -238,7 +243,12 @@ namespace SqlHealthAssessment.Data
             var results = new List<string>();
             try
             {
-                using var conn = (SqlConnection)_connectionFactory.CreateConnection();
+                // Explicitly connect to SQLWATCH — HasSqlWatch flag may be false even when installed.
+                // Cast to SqlServerConnectionFactory to use the database-specific overload.
+                var sqlFactory = _connectionFactory as SqlServerConnectionFactory;
+                using var conn = sqlFactory != null
+                    ? (SqlConnection)sqlFactory.CreateConnection("SQLWATCH")
+                    : (SqlConnection)_connectionFactory.CreateConnection();
                 await conn.OpenAsync(cancellationToken);
                 using var cmd = conn.CreateCommand();
                 cmd.CommandText = sql;

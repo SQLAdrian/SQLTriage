@@ -80,5 +80,6 @@ namespace SqlHealthAssessment.Data.Services
         event Action<bool>? OnDebugLoggingChanged;
         event Action<bool>? OnNoPantsModeChanged;
         event Action<bool>? OnExperimentalModeChanged;
+        event Action<bool>? OnShowMaturityRoadmapChanged;
     }
 }

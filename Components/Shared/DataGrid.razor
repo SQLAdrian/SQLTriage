@@ -27,9 +27,10 @@
 
     @if (Data != null && Data.Rows.Count > 0)
     {
-        <div class="overflow-x-auto max-h-100 @(Data.Rows.Count > 500 ? "" : "overflow-y-auto")" tabindex="0">
+        <div class="overflow-x-auto" tabindex="0"
+             style="@(MaxHeight > 0 ? $"max-height:{MaxHeight}px;overflow-y:auto;" : "")">
             <table class="w-full border-collapse text-sm" role="table" aria-labelledby="@($"grid-title-{Title.GetHashCode()}")">
-                <thead>
+                <thead style="position:sticky;top:0;z-index:1;">
                     <tr role="row">
                         @if (!string.IsNullOrEmpty(RunJobColumn) && OnRunJob != null && Data.Columns.Contains(RunJobColumn))
                         {
@@ -220,6 +221,7 @@
     [Parameter] public EventCallback<DataRow> OnRowClick { get; set; }
     [Parameter] public bool IsClickable { get; set; } = false;
     [Parameter] public int MaxRows { get; set; } = 500;
+    [Parameter] public int MaxHeight { get; set; } = 0;
     [Parameter] public HashSet<string>? HiddenColumns { get; set; }
 
     /// <summary>Ordered list of columns to display. When set, only these columns are shown in this order.</summary>

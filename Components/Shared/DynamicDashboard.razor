@@ -322,7 +322,9 @@
                     {
                         if (_gridResults.TryGetValue(panel.Id, out var grid))
                         {
-                            <DynamicPanel Panel="panel" GridData="grid" TimezoneOffsetHours="@TimezoneOffsetHours" />
+                            <DynamicPanel Panel="panel" GridData="grid" TimezoneOffsetHours="@TimezoneOffsetHours"
+                                          ConnectionId="@ConnectionManager.CurrentServer?.Id"
+                                          DatabaseName="@ConnectionManager.CurrentServer?.Database" />
                         }
                     }
                 </div>
@@ -871,37 +873,35 @@
 
         foreach (var conn in allConnections)
         {
-            if (conn.HasSqlWatch)
+            // Always probe for SQLWATCH regardless of the HasSqlWatch flag —
+            // the flag may be stale (false on a server where SQLWATCH was installed after the connection was saved).
+            try
             {
-                // Attempt live discovery so @SqlInstance filters match @@SERVERNAME.
-                try
+                ConnectionManager.SetCurrentServer(conn.Id);
+                var discovered = await QueryExecutor.GetSqlWatchInstanceNamesAsync();
+
+                if (discovered.Count > 0)
                 {
-                    ConnectionManager.SetCurrentServer(conn.Id);
-                    var discovered = await QueryExecutor.GetSqlWatchInstanceNamesAsync();
-
-                    if (discovered.Count > 0)
-                    {
-                        foreach (var inst in discovered)
-                            _sqlWatchInstanceToConnectionId[inst] = conn.Id;
-                        allInstances.AddRange(discovered);
-                        _connectionsWithSqlWatch.Add(conn.Id);
-
-                        System.Diagnostics.Debug.WriteLine(
-                            $"[DynamicDashboard:{DashboardId}] '{conn.ServerNames}': SQLWATCH found — {string.Join(", ", discovered)}");
-                        continue; // skip configured names; use discovered names
-                    }
+                    foreach (var inst in discovered)
+                        _sqlWatchInstanceToConnectionId[inst] = conn.Id;
+                    allInstances.AddRange(discovered);
+                    _connectionsWithSqlWatch.Add(conn.Id);
 
                     System.Diagnostics.Debug.WriteLine(
-                        $"[DynamicDashboard:{DashboardId}] '{conn.ServerNames}': HasSqlWatch=true but no instances found (not installed?)");
+                        $"[DynamicDashboard:{DashboardId}] '{conn.ServerNames}': SQLWATCH found — {string.Join(", ", discovered)}");
+                    continue; // use discovered @@SERVERNAME names, not configured names
                 }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine(
-                        $"[DynamicDashboard:{DashboardId}] Discovery failed for '{conn.ServerNames}': {ex.Message}");
-                }
+
+                System.Diagnostics.Debug.WriteLine(
+                    $"[DynamicDashboard:{DashboardId}] '{conn.ServerNames}': SQLWATCH not found");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"[DynamicDashboard:{DashboardId}] Discovery failed for '{conn.ServerNames}': {ex.Message}");
             }
 
-            // HasSqlWatch=false OR SQLWATCH discovery returned nothing — use configured names.
+            // SQLWATCH not present or discovery failed — use configured server names.
             allInstances.AddRange(conn.GetServerList());
         }
 

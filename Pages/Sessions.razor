@@ -210,7 +210,9 @@
 }
 
 @* Query plan modal — shown when "View Plan" is clicked on an active session *@
-<QueryPlanModal @ref="_planModal" />
+<QueryPlanModal @ref="_planModal"
+    ConnectionId="@ConnectionManager.CurrentServer?.Id"
+    DatabaseName="@ConnectionManager.CurrentServer?.Database" />
 
 @code {
     // ENHANCEMENT: Added search, memory, row count, settings persistence, kill, CSV export, improved timer

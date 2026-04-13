@@ -10,6 +10,7 @@
 @inject AuditLogService AuditLog
 @inject IJSRuntime JS
 @inject SqlHealthAssessment.Data.Services.ConnectionHealthService ConnectionHealth
+@inject GlobalInstanceSelector InstanceSelector
 @implements IAsyncDisposable
 
 
@@ -406,15 +407,33 @@
         _noPantsMode         = UserSettings.GetNoPantsMode();
         _experimentalMode    = UserSettings.GetExperimentalMode();
         _showMaturityRoadmap = UserSettings.GetShowMaturityRoadmap();
-        ConnectionManager.OnConnectionChanged += OnServerChanged;
-        ConnectionHealth.OnStatusChanged       += OnHealthChanged;
+        ConnectionManager.OnConnectionChanged          += OnServerChanged;
+        ConnectionHealth.OnStatusChanged               += OnHealthChanged;
+        UserSettings.OnShowMaturityRoadmapChanged      += OnMaturityRoadmapChanged;
+        InstanceSelector.OnInstanceChanged             += OnInstanceChanged;
         await RefreshDbFlags();
+    }
+
+    private void OnMaturityRoadmapChanged(bool enabled)
+    {
+        _showMaturityRoadmap = enabled;
+        InvokeAsync(StateHasChanged);
     }
 
     private void OnHealthChanged() => InvokeAsync(StateHasChanged);
 
 
     private void OnServerChanged()
+    {
+        DbAvailability.InvalidateCache();
+        _ = InvokeAsync(async () =>
+        {
+            await RefreshDbFlags();
+            StateHasChanged();
+        });
+    }
+
+    private void OnInstanceChanged(string instanceName)
     {
         DbAvailability.InvalidateCache();
         _ = InvokeAsync(async () =>
@@ -452,8 +471,10 @@
 
     async ValueTask IAsyncDisposable.DisposeAsync()
     {
-        ConnectionManager.OnConnectionChanged -= OnServerChanged;
-        ConnectionHealth.OnStatusChanged       -= OnHealthChanged;
+        ConnectionManager.OnConnectionChanged     -= OnServerChanged;
+        ConnectionHealth.OnStatusChanged           -= OnHealthChanged;
+        UserSettings.OnShowMaturityRoadmapChanged  -= OnMaturityRoadmapChanged;
+        InstanceSelector.OnInstanceChanged         -= OnInstanceChanged;
         await ValueTask.CompletedTask;
     }
 }

@@ -43,12 +43,13 @@ Built on the battle-tested [SQLWATCH](https://github.com/marcingminski/sqlwatch)
 
 ### Health & Analysis
 - **Quick Check** (`Ctrl+Q`) — instant assessment: CPU, memory, blocking, missing/unused indexes
-- **Full Audit** (`Ctrl+4`) — deep-dive covering configuration, security, backups, fragmentation
+- **Full Audit** (`Ctrl+4`) — deep-dive covering configuration, security, backups, fragmentation; Sequential or Parallel execution across multiple servers with configurable stagger delay and confirmation modal
 - **Vulnerability Assessment** — SQL Server security assessment with exportable results
 - **Diagnostics Maturity Roadmap** — maps sp_triage and sp_Blitz audit output to a 5-level maturity framework (Foundation → Hardened → Performant → Observable → Optimised); multi-server, multi-file, PDF export
-- **Interactive Execution Plan Viewer (V2)** — graphical plan with hover detail pane (object path, cost breakdown, predicate, copy button); root operator always shows 100%; pane fades after 1.5 s with hover-cancel
+- **Interactive Execution Plan Viewer (V2)** — graphical plan with hover detail pane (object path, accurate per-operator cost %, predicate, copy button); root operator always shows 100%; pane fades after 1.5 s with hover-cancel; accessible from blocking chains and expensive query grids
 - **Long Query Detection** — surface queries exceeding configurable duration thresholds
 - **Wait Statistics** — categorised wait event history and trends, including locking-waits %
+- **PM Health & Diagnostics** — dedicated dashboard surfacing Erik Darling PerformanceMonitor `report.*` views: critical issues, CPU spikes, memory pressure events, plan cache bloat, memory grant pressure, scheduler runnable queue, parameter sniffing (PSP), file I/O latency, blocking chains with exact statement extraction, and FinOps cost/provisioning/peak-hours analysis
 
 ### Alerting & Notifications
 - **69 Custom Alerts** — Performance, memory, storage, HA, security with SQL 2016+ compatibility
@@ -60,16 +61,18 @@ Built on the battle-tested [SQLWATCH](https://github.com/marcingminski/sqlwatch)
 - **No-Pants Mode** — Safety toggle for destructive actions (e.g., kill sessions)
 
 ### Performance & Reliability
-- **SQLite WAL-mode cache** — panels serve cached data when SQL Server is temporarily unreachable
+- **SQLite WAL-mode cache** — panels serve cached data when SQL Server is temporarily unreachable; indexed `fetched_at` on all 6 cache tables for fast eviction scans
 - **Delta-fetch for time-series** — only new data points are fetched on each refresh
 - **Two-tier query throttling** — protects the monitored server from excessive load
 - **Zero-allocation row reading** — `ArrayPool<T>` and streaming JSON serialisation
 - **Cancellable dashboard loads** — switch servers or hit Cancel to abort in-flight queries instantly
 - **Memory pressure monitoring** — background service alerts and evicts cache under high memory load
 - **Server GC + concurrent GC** — tuned for optimal throughput in `runtimeconfig`
+- **DataGrid max-height overflow** — dashboard tables cap at 3× their configured panel height with sticky headers; prevents page-layout jitter on result-count changes
 
 ### Updates & Maintenance
-- **Squirrel.Windows Auto-Updates** — Silent, delta-based updates from GitHub releases
+- **Squirrel.Windows Auto-Updates** — Silent, delta-based updates from GitHub releases; 3-tier extraction fallback (`Expand-Archive` → .NET `ZipFile` → `Shell.Application` COM) for older Windows Server targets
+- **Manual ZIP import** — server mode / air-gap: upload a downloaded release ZIP directly via the Service Management page
 - **GitHub Actions CI/CD** — Automated build, test, and release on version tags
 
 ### Data Export
@@ -179,10 +182,11 @@ Or deploy `Dacpacs\SQLWATCH.dacpac` via SSMS (right-click Databases → Deploy D
 | Backup Health | Databases overdue for full / log backups, history | — |
 | Live Query Stats | Plan cache hit ratio, top CPU / IO / duration queries | — |
 | Live Jobs | Running jobs, failures (24 h), all-jobs status | — |
-| Live TempDB | TempDB usage, version store, long transactions | — |
+| Live TempDB | TempDB usage, version store, long transactions, contention analysis | — |
 | Replication | Publications, subscriptions, undistributed commands, agent history | — |
 | Always On AG | AG health, replica sync, redo/send queue trends, listeners | — |
 | Job Monitor | Agent jobs overview, failure detail, schedules, long-running jobs | — |
+| PM Health & Diagnostics | Erik Darling PerformanceMonitor — critical issues, collection health, CPU spikes, memory pressure, plan cache bloat, memory grant pressure, scheduler pressure, parameter sniffing, I/O latency, blocking chains, FinOps database cost/provisioning/peak-hours | — |
 | Vulnerability Assessment | SQL Server security assessment results | — |
 | Checks | Automated health check results | — |
 | Quick Check | Instant health snapshot | `Ctrl+Q` |

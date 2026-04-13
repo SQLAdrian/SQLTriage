@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
@@ -16,13 +17,15 @@ namespace SqlHealthAssessment.Data
     public class DatabaseAvailabilityService
     {
         private readonly IDbConnectionFactory _connectionFactory;
+        private readonly ServerConnectionManager? _serverConnectionManager;
         private readonly Dictionary<string, bool> _cache = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, Dictionary<string, bool>> _serverCache = new(StringComparer.OrdinalIgnoreCase);
         private readonly object _lock = new();
 
-        public DatabaseAvailabilityService(IDbConnectionFactory connectionFactory)
+        public DatabaseAvailabilityService(IDbConnectionFactory connectionFactory, ServerConnectionManager? serverConnectionManager = null)
         {
             _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
+            _serverConnectionManager = serverConnectionManager;
         }
 
         /// <summary>
@@ -39,40 +42,50 @@ namespace SqlHealthAssessment.Data
                     return cached;
             }
 
-            try
+            bool exists = false;
+
+            // Check all enabled connections — nav initialises before CurrentServer is set by the toolbar,
+            // so checking only the "current" connection misses servers added before the first dashboard loads.
+            if (_serverConnectionManager != null)
             {
-                SqlConnection conn;
-                // Always use master database to avoid connection failures
-                // when the target database doesn't exist yet
-                if (_connectionFactory is SqlServerConnectionFactory sqlFactory)
+                var connections = _serverConnectionManager.GetEnabledConnections();
+                foreach (var serverConn in connections)
                 {
-                    conn = (SqlConnection)sqlFactory.CreateConnection("master");
+                    try
+                    {
+                        var connStr = serverConn.GetConnectionString(serverConn.GetServerList().FirstOrDefault() ?? "", "master");
+                        using var sqlConn = new SqlConnection(connStr);
+                        await sqlConn.OpenAsync(cancellationToken);
+                        using var cmd = new SqlCommand("SELECT database_id FROM sys.databases WHERE name = @dbName;", sqlConn);
+                        cmd.Parameters.AddWithValue("@dbName", databaseName);
+                        cmd.CommandTimeout = 10;
+                        var result = await cmd.ExecuteScalarAsync(cancellationToken);
+                        if (result != null && result != DBNull.Value) { exists = true; break; }
+                    }
+                    catch { /* connection unavailable — try next */ }
                 }
-                else
-                {
-                    conn = (SqlConnection)_connectionFactory.CreateConnection();
-                }
-                await conn.OpenAsync(cancellationToken);
-
-                using var cmd = new SqlCommand(
-                    "SELECT database_id FROM sys.databases WHERE name = @dbName;", conn);
-                cmd.Parameters.AddWithValue("@dbName", databaseName);
-                cmd.CommandTimeout = 10;
-
-                var result = await cmd.ExecuteScalarAsync(cancellationToken);
-                bool exists = result != null && result != DBNull.Value;
-
-                lock (_lock)
-                {
-                    _cache[databaseName] = exists;
-                }
-
-                return exists;
             }
-            catch
+            else
             {
-                return false;
+                // Fallback: single connection via factory
+                try
+                {
+                    var sqlFactory = _connectionFactory as SqlServerConnectionFactory;
+                    using var conn = sqlFactory != null
+                        ? (SqlConnection)sqlFactory.CreateConnection("master")
+                        : (SqlConnection)_connectionFactory.CreateConnection();
+                    await conn.OpenAsync(cancellationToken);
+                    using var cmd = new SqlCommand("SELECT database_id FROM sys.databases WHERE name = @dbName;", conn);
+                    cmd.Parameters.AddWithValue("@dbName", databaseName);
+                    cmd.CommandTimeout = 10;
+                    var result = await cmd.ExecuteScalarAsync(cancellationToken);
+                    exists = result != null && result != DBNull.Value;
+                }
+                catch { }
             }
+
+            lock (_lock) { _cache[databaseName] = exists; }
+            return exists;
         }
 
         /// <summary>

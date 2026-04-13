@@ -179,6 +179,35 @@ namespace SqlHealthAssessment.Data
         }
 
         /// <summary>
+        /// Stages an update from a ZIP file the user has already downloaded manually.
+        /// Copies it to the update-staging folder and writes the applier script.
+        /// </summary>
+        public async Task<bool> StageFromFileAsync(Stream zipStream, string fileName)
+        {
+            try
+            {
+                var stagingDir = Path.Combine(AppContext.BaseDirectory, "update-staging");
+                Directory.CreateDirectory(stagingDir);
+
+                var zipPath = Path.Combine(stagingDir, "update.zip");
+                _logger.LogInformation("Staging manual update from uploaded file: {FileName}", fileName);
+
+                await using var fileStream = new FileStream(zipPath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true);
+                await zipStream.CopyToAsync(fileStream);
+
+                StagedUpdatePath = zipPath;
+                WriteUpdateApplierScript(stagingDir);
+                _logger.LogInformation("Manual update staged: {Path}", zipPath);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to stage manual update");
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Creates a batch script that extracts the update ZIP over the app directory.
         /// Called on app exit if an update is staged.
         /// </summary>
@@ -266,14 +295,23 @@ namespace SqlHealthAssessment.Data
             sb.Append("echo Extracting update to temp folder...").Append(nl);
             sb.Append("if exist \"" + extractDir + "\" rmdir /s /q \"" + extractDir + "\"").Append(nl);
             sb.Append("mkdir \"" + extractDir + "\"").Append(nl);
-            // PowerShell Expand-Archive — single-quoted paths inside double-quoted PS command string
-            sb.Append("powershell -NoProfile -ExecutionPolicy Bypass -Command \"Expand-Archive -Path '" + zipPath + "' -DestinationPath '" + extractDir + "' -Force\"").Append(nl);
+            // Tier 1: PowerShell 5+ Expand-Archive (Windows 10 / Server 2016+)
+            sb.Append("powershell -NoProfile -ExecutionPolicy Bypass -Command \"Expand-Archive -Path '" + zipPath + "' -DestinationPath '" + extractDir + "' -Force\" >> %LOG% 2>&1").Append(nl);
+            sb.Append("if not errorlevel 1 goto :extract_ok").Append(nl);
+            // Tier 2: .NET ZipFile class — works on any PS version that ships with .NET 4.5+ (Server 2012 R2+)
+            sb.Append("echo [%date% %time%] Expand-Archive not available, trying .NET ZipFile... >> %LOG%").Append(nl);
+            sb.Append("powershell -NoProfile -ExecutionPolicy Bypass -Command \"Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::ExtractToDirectory('" + zipPath + "', '" + extractDir + "')\" >> %LOG% 2>&1").Append(nl);
+            sb.Append("if not errorlevel 1 goto :extract_ok").Append(nl);
+            // Tier 3: Shell.Application COM — available on every Windows version (CopyHere is async, poll until done)
+            sb.Append("echo [%date% %time%] ZipFile not available, trying Shell.Application COM... >> %LOG%").Append(nl);
+            sb.Append("powershell -NoProfile -ExecutionPolicy Bypass -Command \"$sh = New-Object -ComObject Shell.Application; $zip = $sh.NameSpace('" + zipPath + "'); $dst = $sh.NameSpace('" + extractDir + "'); $count = $zip.Items().Count; $dst.CopyHere($zip.Items(), 20); $w = 0; while ((Get-ChildItem -Recurse '" + extractDir + "' | Measure-Object).Count -lt $count -and $w -lt 120) { Start-Sleep 1; $w++ }\" >> %LOG% 2>&1").Append(nl);
             sb.Append("if errorlevel 1 (").Append(nl);
-            sb.Append("    echo [%date% %time%] ERROR: Expand-Archive failed. >> %LOG%").Append(nl);
+            sb.Append("    echo [%date% %time%] ERROR: All extraction methods failed. >> %LOG%").Append(nl);
             sb.Append("    echo Update failed. See \"" + logPath + "\" for details.").Append(nl);
             sb.Append("    pause").Append(nl);
             sb.Append("    exit /b 1").Append(nl);
             sb.Append(")").Append(nl);
+            sb.Append(":extract_ok").Append(nl);
             sb.Append("echo [%date% %time%] Extraction complete. >> %LOG%").Append(nl);
             sb.Append(nl);
             // If the ZIP had a single nested folder (e.g. publish\), use that as source
