@@ -2,7 +2,9 @@
 @inject IJSRuntime JS
 @inject SqlHealthAssessment.Data.UserSettingsService UserSettings
 @inject SqlHealthAssessment.Data.ToastService Toast
+@inject ServerConnectionManager ConnectionManager
 @using SqlHealthAssessment.Data.Services
+@using Microsoft.Data.SqlClient
 
 @if (IsVisible)
 {
@@ -59,6 +61,43 @@
                        value="@_searchTerm" @oninput="OnSearchInput" style="flex:1;" />
                 <button class="settings-btn" @onclick="ClearSearch" disabled="@(string.IsNullOrEmpty(_searchTerm))">Clear</button>
             </div>
+            
+            @* Index execution options — only shown when No-Pants mode is on *@
+            @if (UserSettings.GetNoPantsMode())
+            {
+                <div class="plan-options-panel" style="display:flex;gap:12px;padding:6px 12px;border-bottom:1px solid var(--border);align-items:center;flex-wrap:wrap;background:rgba(239,68,68,0.05);">
+                    <span style="font-size:11px;font-weight:600;color:var(--red);opacity:0.8;">NO-PANTS</span>
+                    <div style="display:flex;align-items:center;gap:4px;">
+                        <input type="checkbox" id="idx-opt-online" @bind="_indexOptionOnline" />
+                        <label for="idx-opt-online" style="margin:0;font-size:12px;">ONLINE</label>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:4px;">
+                        <input type="checkbox" id="idx-opt-sorttemp" @bind="_indexOptionSortInTempDb" />
+                        <label for="idx-opt-sorttemp" style="margin:0;font-size:12px;">SORT_IN_TEMPDB</label>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:4px;">
+                        <input type="checkbox" id="idx-opt-resumable" @bind="_indexOptionResumable" />
+                        <label for="idx-opt-resumable" style="margin:0;font-size:12px;">RESUMABLE</label>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:4px;">
+                        <label style="margin:0;font-size:12px;">MAXDOP:</label>
+                        <input type="number" min="1" max="64" style="width:46px;font-size:12px;" @bind="_indexMaxDop" />
+                    </div>
+                    <div style="display:flex;align-items:center;gap:4px;">
+                        <label style="margin:0;font-size:12px;">COMPRESSION:</label>
+                        <select @bind="_indexCompression" style="width:90px;font-size:12px;">
+                            <option value="NONE">NONE</option>
+                            <option value="ROW">ROW</option>
+                            <option value="PAGE">PAGE</option>
+                        </select>
+                    </div>
+                    @if (_indexIsExecuting)
+                    {
+                        <button class="btn btn-danger btn-sm" @onclick="CancelIndexCreation">Cancel</button>
+                        <span style="font-size:12px;opacity:0.8;">@_indexExecutionStatus</span>
+                    }
+                </div>
+            }
 
             <div class="query-plan-modal-body">
                 <div id="qp-container"></div>
@@ -70,6 +109,10 @@
 @code {
     [Parameter] public string? PlanXml    { get; set; }
     [Parameter] public string? QueryText  { get; set; }
+    [Parameter] public string? ConnectionId { get; set; }
+    [Parameter] public string? DatabaseName { get; set; }
+    [Parameter] public int? ServerVersion { get; set; }
+    [Parameter] public string? ServerEdition { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
 
     public bool IsVisible { get; private set; }
@@ -78,10 +121,27 @@
     private bool _showSummary = true;
     private bool _compactView = false;
     private string _searchTerm = "";
+    
+    // Index generation options
+    private bool _indexOptionOnline = true;
+    private bool _indexOptionSortInTempDb = true;
+    private bool _indexOptionResumable = true;
+    private int _indexMaxDop = 8;
+    private string _indexNamePrefix = "IX_SQLDBA_";
+    private bool _indexAutoSuffix = true;
+    private string _indexCompression = "NONE";
+    private bool _indexOptionOptimizeForSequential = false;
+    
+    private CancellationTokenSource? _indexExecutionCts;
+    private bool _indexIsExecuting;
+    private double _indexExecutionProgress;
+    private string? _indexExecutionStatus;
 
     // ── ROLLBACK FLAG ────────────────────────────────────────────────────────
     // Set to false to instantly revert to the legacy JS-only renderer.
     private const bool UseV2Renderer = true;
+
+    private DotNetObjectReference<QueryPlanModal>? _dotNetRef;
 
     public async Task ShowAsync(string xml, string? queryText = null)
     {
@@ -98,12 +158,24 @@
             {
                 // Apply icon set preference before rendering (guard: older published versions may not have this method)
                 try { await JS.InvokeVoidAsync("queryPlanInteropV2.setUseV2Icons", UserSettings.GetUseV2PlanIcons()); } catch { }
+
+                // Register .NET reference so the operator pane can call back for index execution
+                if (UserSettings.GetNoPantsMode() && !string.IsNullOrEmpty(ConnectionId))
+                {
+                    _dotNetRef ??= DotNetObjectReference.Create(this);
+                    try { await JS.InvokeVoidAsync("queryPlanInteropV2.setDotNetRef", _dotNetRef); } catch { }
+                }
+
+                Serilog.Log.Debug("Parsing execution plan for modal: {XmlLength} chars", xml?.Length ?? 0);
                 var json = ExecutionPlanParser.ParseToJson(xml);
                 await JS.InvokeVoidAsync("queryPlanInteropV2.showPlan", "qp-container", json, xml);
                 return;
             }
             catch (Exception ex)
             {
+                Serilog.Log.Error(ex, "Failed to render execution plan in modal");
+                Toast.ShowError($"Plan parsing failed: {ex.Message}");
+                
                 // Surface parse errors in the container instead of silently falling back
                 try
                 {
@@ -126,9 +198,18 @@
         IsVisible = false;
         PlanXml   = null;
         QueryText = null;
+        _indexIsExecuting = false;
         StateHasChanged();
+        try { await JS.InvokeVoidAsync("queryPlanInteropV2.setDotNetRef", (object?)null); } catch { }
         var clearFn = UseV2Renderer ? "queryPlanInteropV2.clearPlan" : "queryPlanInterop.clearPlan";
         await JS.InvokeVoidAsync(clearFn, "qp-container");
+    }
+
+    [JSInvokable]
+    public async Task ExecuteIndexFromOperator(string ddl)
+    {
+        if (!UserSettings.GetNoPantsMode() || string.IsNullOrEmpty(ConnectionId)) return;
+        await ExecuteSingleIndex(ddl);
     }
 
     private async Task Close()
@@ -222,5 +303,89 @@
             Toast.ShowSuccess("Plan saved for comparison");
         }
         catch { /* JS not available */ }
+    }
+
+    private async Task ExecuteSingleIndex(string rawDdl)
+    {
+        if (_indexIsExecuting) return; // prevent double-fire
+
+        _indexIsExecuting = true;
+        _indexExecutionStatus = "Creating index...";
+        _indexExecutionCts = new CancellationTokenSource();
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var serverConn = ConnectionManager.GetEnabledConnections()
+                .FirstOrDefault(c => c.Id == ConnectionId || c.ServerNames == ConnectionId);
+            if (serverConn == null)
+            {
+                Toast.ShowError("Could not find server connection. Re-open the plan from a live query result.");
+                return;
+            }
+
+            var server  = serverConn.GetServerList().FirstOrDefault() ?? "";
+            var connStr = serverConn.GetConnectionString(server, DatabaseName ?? "master");
+            var ddl     = ApplyIndexOptions(rawDdl);
+
+            using var sqlConn = new SqlConnection(connStr);
+            await sqlConn.OpenAsync(_indexExecutionCts.Token);
+            using var cmd = new SqlCommand(ddl, sqlConn);
+            cmd.CommandTimeout = 0; // index creation can be long
+            await cmd.ExecuteNonQueryAsync(_indexExecutionCts.Token);
+
+            _indexExecutionStatus = "Done";
+            Toast.ShowSuccess("Index created successfully");
+        }
+        catch (OperationCanceledException)
+        {
+            _indexExecutionStatus = "Cancelled";
+            Toast.ShowWarning("Index creation cancelled");
+        }
+        catch (Exception ex)
+        {
+            _indexExecutionStatus = "Failed";
+            Serilog.Log.Error(ex, "Failed to create index from operator");
+            Toast.ShowError($"Index creation failed: {ex.Message}");
+        }
+        finally
+        {
+            _indexIsExecuting = false;
+            _indexExecutionCts?.Dispose();
+            _indexExecutionCts = null;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private string ApplyIndexOptions(string ddl)
+    {
+        // Apply user-selected options
+        ddl = ddl
+            .Replace("{ONLINE}", _indexOptionOnline ? "ON" : "OFF")
+            .Replace("{SORT_IN_TEMPDB}", _indexOptionSortInTempDb ? "ON" : "OFF")
+            .Replace("{MAXDOP}", _indexMaxDop.ToString())
+            .Replace("{COMPRESSION}", _indexCompression)
+            .Replace("{RESUMABLE}", _indexOptionResumable ? ",\n        RESUMABLE = ON" : "")
+            .Replace("{SEQUENTIAL_KEY}", _indexOptionOptimizeForSequential ? ",\n        OPTIMIZE_FOR_SEQUENTIAL_KEY = ON" : "");
+
+        // Also handle double-brace variants from the parser
+        ddl = ddl
+            .Replace("{{ONLINE}}", _indexOptionOnline ? "ON" : "OFF")
+            .Replace("{{SORT_IN_TEMPDB}}", _indexOptionSortInTempDb ? "ON" : "OFF")
+            .Replace("{{MAXDOP}}", _indexMaxDop.ToString())
+            .Replace("{{COMPRESSION}}", _indexCompression)
+            .Replace("{{RESUMABLE}}", _indexOptionResumable ? ",\n        RESUMABLE = ON" : "")
+            .Replace("{{SEQUENTIAL_KEY}}", _indexOptionOptimizeForSequential ? ",\n        OPTIMIZE_FOR_SEQUENTIAL_KEY = ON" : "");
+
+        // Strip trailing comment lines (-- ...) — SQL Server executes them fine but strip for clarity
+        var lines = ddl.Split('\n')
+            .Where(l => !l.TrimStart().StartsWith("--"))
+            .ToList();
+        return string.Join('\n', lines).Trim().TrimEnd(';') + ";";
+    }
+
+    private void CancelIndexCreation()
+    {
+        _indexExecutionCts?.Cancel();
     }
 }

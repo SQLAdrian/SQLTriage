@@ -7,6 +7,48 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [0.85.2] — 2026-04-14
+
+**Query Plan V2 — multi-statement tabs, 4-column pane, collapse/expand, cost highlights.**
+
+### Added
+- **Statement tab bar always visible** — tab bar now renders for single-statement plans too; always shown above the plan canvas; tabs clipped by `overflow:hidden` fixed by moving the bar outside `#qp-container` as a sibling in `.query-plan-modal-body`
+- **Tab cost heat colours** — statement tabs with ≥50% batch cost get a red background tint + bold red cost %, 20–49% amber tint, mirroring operator cost highlighting so the most expensive statement stands out immediately
+- **Operator detail pane — 4-column grid** — pane widened from 420 px to 660 px; short property rows are paired two-per-row (label | value | label | value); wide rows (predicates, index DDL, Object, etc.) span all four columns
+- **Index DDL — Copy DDL button always shown** — index action bar now appears whenever a suggested index exists regardless of No-Pants mode; always includes a **Copy DDL** button; **Execute on server** button only appears when No-Pants + ConnectionId are both active
+- **Tree node collapse/expand** — nodes with children show a `−` / `+` toggle on their left edge; clicking hides/shows all descendant nodes and their connecting edges; edges tagged with `data-edge-source`/`data-edge-target` for targeted hide
+- **Summary section chevrons** — every summary panel section (Parameters, Wait Stats, Statistics Used, SET Options, Trace Flags) is now individually collapsible via a `▼` / `▶` chevron; clicking the section title toggles it; sections default open
+
+### Fixed
+- **No-Pants options bar CSS** — added `.plan-options-panel` CSS rule with `flex-shrink:0`; `.query-plan-modal-body` changed to `overflow:hidden` to prevent double-scroll; `.plan-controls` search bar gets `flex-shrink:0`
+
+---
+
+## [0.85.2] — 2026-04-09
+
+**PM Health dashboard, parallel Full Audit, enhanced blocking, and reliability fixes.**
+
+### Added
+- **PM Health & Diagnostics dashboard** — 12-panel dashboard built on Erik Darling PerformanceMonitor `report.*` views: critical issues summary, collection health, daily summary (CPU/memory/waits), CPU spikes, memory pressure events, plan cache bloat stat + detail grid, memory grant pressure, CPU scheduler runnable queue StatCard, parameter sniffing (PSP) detection, file I/O latency by drive, blocking chain analysis
+- **FinOps panels** — Database Resource Cost (logical reads + CPU per database), Provisioning Assessment (allocated vs used space), and Peak Hours analysis added to the Database Health dashboard
+- **Full Audit — Sequential / Parallel execution** — inline toggle on the run-all-servers toolbar; Parallel mode fans out per-server runs with a configurable stagger delay (default 5 s), confirmation modal with amber bolt warning; Sequential mode shows a plain confirmation; both modes update the UI thread-safely via `InvokeAsync`
+- **Live Monitor — Runnable Tasks StatCard** — scheduler runnable queue depth added to the Live Monitor dashboard
+- **TempDB contention analysis panel** — `report.tempdb_contention_analysis` surfaced on the Live TempDB dashboard
+
+### Changed
+- **Blocking panel — exact statement extraction** — uses `statement_start_offset` / `statement_end_offset` from `sys.dm_exec_requests` to show the precise blocking statement rather than the full batch; `query_plan_xml` column added so the blocking query's plan opens in the Query Plan V2 viewer on click
+- **Query Plan V2 — Operator Cost display** — merged separate "Relative Cost %" row into the "Operator Cost" row (`0.003821 (14.0%)`) to match SSMS / Azure Data Studio format; leftmost root operator always shows 100.0%
+
+### Fixed
+- **DataGrid table height jitter** — dashboard DataGrid panels now cap at 3× their configured `height` in pixels with `overflow-y: auto` and a sticky `<thead>`; prevents page-layout shift when row counts change between refreshes
+- **Settings — Preview Features checkbox disabled** — `_noPantsModeActive` and `_experimentalModeActive` were not updated by the toggle handlers, leaving the dependent checkbox perpetually disabled; both fields now sync on change
+- **Maturity Roadmap nav link not updating live** — `UserSettingsService.SetShowMaturityRoadmap` now fires `OnShowMaturityRoadmapChanged`; `NavMenu` subscribes and calls `StateHasChanged` so the nav entry appears/disappears immediately without a page reload
+- **Update applier — old PowerShell fallback** — `WriteUpdateApplierScript` now uses a 3-tier extraction chain: `Expand-Archive` (PS 5+) → .NET `[System.IO.Compression.ZipFile]` → `Shell.Application` COM object; covers Server 2008 R2 / PS 2 targets
+- **Update — server mode / air-gap manual import** — Service Management page now includes a Manual Update section with an `<InputFile>` component (max 500 MB); uploaded ZIP is piped to `AutoUpdateService.StageFromFileAsync` and staged identically to an auto-downloaded update
+- **SQLite cache — eviction scan performance** — added `CREATE INDEX IF NOT EXISTS` on `fetched_at` for all 6 cache tables (`cache_timeseries`, `cache_stat`, `cache_bargauge`, `cache_datatable`, `cache_checkstatus`, `cache_metadata`); eliminates full-table scans on the 5-minute eviction cycle
+
+---
+
 ## [0.82.0] — 2026-04-02
 
 **Diagnostics Maturity Roadmap, multi-file audit aggregation, experimental mode, and UX improvements.**
@@ -232,8 +274,110 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ---
 
-[1.0.0]: https://github.com/SQLAdrian/SqlHealthAssessment/releases/tag/v1.0.0
-[0.9.0]: https://github.com/SQLAdrian/SqlHealthAssessment/releases/tag/v0.9.0
-[0.8.0]: https://github.com/SQLAdrian/SqlHealthAssessment/releases/tag/v0.8.0
-[0.7.0]: https://github.com/SQLAdrian/SqlHealthAssessment/releases/tag/v0.7.0
-[0.6.0]: https://github.com/SQLAdrian/SqlHealthAssessment/releases/tag/v0.6.0
+## [0.5.0] — 2025-01-20
+
+**WPF shell with embedded SQL scripts and a proper connection manager.**
+
+The PowerShell wrapper was outgrown. Moved to a proper .NET 8 WPF application hosting a simple WinForms-style
+grid. SQL scripts are compiled as embedded resources. First version where a non-DBA could plausibly run it.
+
+### Added
+- WPF window with DataGrid result display
+- Hardcoded set of embedded SQL health scripts (blocking, top CPU, missing indexes, wait stats)
+- Server picker dropdown — remembers last used connection in `appsettings.json`
+- "Run All" button executes each script in sequence and tabs the results
+- Copy-to-clipboard on grid selection
+- Basic error surface: red status bar on SQL connection failure
+
+### Changed
+- Connection credentials moved out of the script body into app config
+- Scripts no longer need editing before running — server name is entered once in the UI
+
+---
+
+## [0.4.0] — 2024-08-10
+
+**Dynamic script folders — drop a `.sql` file in, it appears in the menu.**
+
+Scripts outgrew the single file. Introduced a `scripts/` folder convention: any `.sql` file placed there
+shows up in the PowerShell menu automatically. Categories driven by filename prefix (`blocking_`, `memory_`, etc.).
+Shared by the team via a network share for the first time.
+
+### Added
+- Script discovery from a configurable `$ScriptsFolder` path (local or UNC)
+- Category grouping by filename prefix in the menu
+- `--server` and `--database` CLI parameters so scripts can be called from SSMS external tools
+- Basic HTML report export (`Export-HtmlReport`) — opens in the default browser
+- `config.json` for connection defaults (replaces hardcoded variables at top of script)
+
+### Changed
+- Parameterised all scripts — `$ServerName` / `$DatabaseName` injected at runtime, no per-script editing required
+- Output now shows elapsed time per script
+
+---
+
+## [0.3.0] — 2023-05-14
+
+**PowerShell rewrite — menus, colours, and shareable scripts.**
+
+The `.sql`-in-a-bat file approach hit its ceiling. Rewrote as a PowerShell `.ps1` leveraging
+`Invoke-Sqlcmd`. First version shared with colleagues; ran from a USB stick at client sites.
+
+### Added
+- Interactive numbered menu: choose a health check to run
+- Colour-coded output (`Write-Host` with `-ForegroundColor`) — red for blocking, yellow for warnings
+- `Test-Connection` pre-check before attempting SQL queries
+- Blocking chain output with lead-blocker identification
+- Top-10 queries by CPU, by reads, by duration
+- Wait statistics summary with category grouping
+- Missing index recommendations from `sys.dm_db_missing_index_details`
+- `.\healthcheck.ps1 -Server MYSERVER -Quiet` for unattended CSV output
+
+### Changed
+- Moved from `sqlcmd.exe` subprocess calls to native `Invoke-Sqlcmd`
+- All queries parameterised — no string concatenation with server/db names
+
+---
+
+## [0.2.0] — 2021-11-03
+
+**Batch file upgraded — multiple queries, basic formatting, `sqlcmd` modes.**
+
+Still a `.bat` / `.sql` pair, but grown past a single query. Introduced `sqlcmd` variables so the
+server name could be passed on the command line. Shared internally as an attachment to a wiki page.
+
+### Added
+- Five separate named queries: blocking sessions, top CPU, long-running queries, missing indexes, last backup status
+- `sqlcmd -v Server=$(SERVER)` variable substitution — server name no longer hardcoded in the file
+- `-W` flag strips trailing whitespace from output
+- `-s","` CSV mode option for piping results into Excel
+- Simple separator headers between query sections (`--- BLOCKING ---`, `--- TOP CPU ---`)
+
+### Changed
+- Moved from a single monolithic query to separate named sections
+- Output redirected to timestamped log file (`results_YYYYMMDD_HHMMSS.txt`) in addition to console
+
+---
+
+## [0.1.0] — 2019-06-01
+
+**In the beginning there was a `.sql` file and a batch script to run it.**
+
+A single `health_check.sql` dropped in a shared folder, wrapped in `run.bat` that called `sqlcmd.exe`.
+Ran on one server. Results printed to the console window and vanished when you closed it. The server
+name was hardcoded on line 3 of the batch file. It worked. It was enough. For a while.
+
+These were never trivial scripts. From day one the queries drew on `sys.dm_exec_requests`,
+`sys.dm_os_wait_stats`, `sys.dm_db_missing_index_details`, `sys.dm_exec_query_stats`, and the
+full sp_Blitz and sp_triage community scripts. A thousand lines of SQL that had been refined through
+years of client engagements — the friction was never the diagnostics, it was the ceremony of running them.
+
+### Added
+- `health_check.sql` — ~1 200 lines covering: blocking chains (lead blocker + waiters), top-25 queries by CPU / logical reads / duration, wait stats with category mapping, missing index recommendations with impact score, unused index candidates, last backup per database (full + log), VLF counts, auto-growth events, database file free space, SQL Agent job failures (last 24 h), and a server configuration review (MAXDOP, cost threshold, memory settings, instant file initialisation)
+- `sp_triage.sql` and `sp_Blitz.sql` — community scripts included verbatim; run automatically as part of the full-check sequence
+- `run.bat` — calls `sqlcmd.exe -S MYSERVER -d master -i health_check.sql -o results_<timestamp>.txt`; server name set once at the top of the file
+- Output to both console and a timestamped results file so findings survived closing the window
+
+---
+
+

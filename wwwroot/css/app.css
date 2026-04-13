@@ -1684,6 +1684,187 @@ body {
     padding: 0;
     display: flex;
     flex-direction: column;
+    min-height: 0;
+}
+
+/* No-Pants index execution options bar */
+.plan-options-panel {
+    display: flex;
+    gap: 12px;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border);
+    align-items: center;
+    flex-wrap: wrap;
+    background: rgba(239, 68, 68, 0.05);
+    flex-shrink: 0;
+}
+
+.qp-v2-statement-tabs {
+    display: flex;
+    gap: 2px;
+    background: var(--bg-secondary);
+    padding: 6px 6px 0 6px;
+    border-bottom: 1px solid var(--border);
+    min-height: 32px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex-shrink: 0;
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+.qp-v2-statement-tabs::-webkit-scrollbar {
+    height: 6px;
+    background: transparent;
+}
+
+.qp-v2-statement-tabs::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 3px;
+}
+
+.qp-v2-statement-tabs::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.qp-stmt-tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-bottom: none;
+    border-radius: 4px 4px 0 0;
+    cursor: pointer;
+    font-size: 12px;
+    min-width: 80px;
+    height: 26px;
+    white-space: nowrap;
+    transition: all 0.12s ease;
+}
+
+.qp-stmt-tab:hover {
+    background: var(--hover-bg);
+}
+
+.qp-stmt-tab.active {
+    background: var(--bg-panel);
+    border-color: var(--border-active);
+    font-weight: 500;
+    position: relative;
+    top: 1px;
+    z-index: 1;
+}
+
+.stmt-tab-num {
+    background: var(--accent-bg);
+    color: var(--accent-fg);
+    width: 18px;
+    height: 18px;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 600;
+}
+
+.stmt-tab-type {
+    flex: 1;
+    text-overflow: ellipsis;
+    overflow: hidden;
+}
+
+.stmt-tab-cost {
+    opacity: 0.8;
+    font-variant-numeric: tabular-nums;
+    min-width: 32px;
+    text-align: right;
+}
+
+.qp-render-container {
+    flex: 1;
+    width: 100%;
+    min-height: 0;
+}
+
+.qp-v2-pane-drag-handle {
+    width: 100%;
+    height: 10px;
+    background: var(--accent-bg);
+    cursor: move;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    position: relative;
+}
+
+.qp-v2-pane-drag-handle::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 40px;
+    height: 4px;
+    background: repeating-linear-gradient(
+        90deg,
+        var(--border),
+        var(--border) 4px,
+        transparent 4px,
+        transparent 8px
+    );
+    border-radius: 2px;
+    opacity: 0.7;
+}
+
+/* Statement tab cost color coding - matches operator cost thresholds */
+.qp-stmt-tab.cost-high {
+    border-left: 3px solid var(--danger, #ef4444);
+    background: rgba(239, 68, 68, 0.10);
+    box-shadow: inset 3px 0 8px -4px rgba(239, 68, 68, 0.4);
+}
+.qp-stmt-tab.cost-high .stmt-tab-cost {
+    color: #f87171;
+    font-weight: 700;
+}
+.qp-stmt-tab.cost-high .stmt-tab-num {
+    background: rgba(239, 68, 68, 0.25);
+    color: #fca5a5;
+}
+.qp-stmt-tab.cost-medium {
+    border-left: 3px solid var(--warning, #f59e0b);
+    background: rgba(245, 158, 11, 0.07);
+}
+.qp-stmt-tab.cost-medium .stmt-tab-cost {
+    color: #fbbf24;
+    font-weight: 600;
+}
+.qp-stmt-tab.cost-low {
+    border-left: 3px solid var(--success, #22c55e);
+}
+
+/* Active state for cost coloured tabs */
+.qp-stmt-tab.active.cost-high {
+    border-left-color: #f87171;
+    background: rgba(239, 68, 68, 0.16);
+    box-shadow: inset 3px 0 12px -4px rgba(239, 68, 68, 0.5);
+}
+.qp-stmt-tab.active.cost-medium { border-left-color: #fbbf24; }
+.qp-stmt-tab.active.cost-low   { border-left-color: var(--success-fg); }
+
+.stmt-tab-badge {
+    background: var(--danger-bg);
+    color: var(--danger-fg);
+    font-size: 10px;
+    font-weight: 600;
+    min-width: 16px;
+    height: 16px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 4px;
 }
 
 .query-plan-sql-box {
@@ -1706,6 +1887,7 @@ body {
 /* Search bar strip in query plan modal */
 .plan-controls {
     background: var(--bg-secondary);
+    flex-shrink: 0;
 }
 
 .plan-controls input[type="text"] {
@@ -6467,11 +6649,37 @@ tr.clickable:hover .datagrid-plan-badge {
     z-index: 50;
 }
 
+/* Collapse/expand toggle button on nodes with children */
+.qp-v2-collapse-btn {
+    position: absolute;
+    left: -16px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--bg-secondary, #252a3a);
+    border: 1px solid var(--border, #3a3f5a);
+    color: var(--text-secondary, #8892aa);
+    font-size: 10px;
+    line-height: 12px;
+    text-align: center;
+    cursor: pointer;
+    z-index: 10;
+    user-select: none;
+    transition: background 0.12s, color 0.12s;
+}
+.qp-v2-collapse-btn:hover {
+    background: var(--accent-bg, #2d3250);
+    color: var(--text-primary, #c9d1e0);
+    border-color: var(--accent, #5a9fd4);
+}
+
 /* ── V2 detail pane (JS-driven — replaces old CSS-hover tooltip) ─────────── */
 .qp-v2-pane {
     position: absolute;
     z-index: 200;
-    width: 420px;
+    width: 660px;
     /* No fixed max-height — pane auto-sizes to content.
        85vh is a safety net so it never overflows the viewport. */
     max-height: 85vh;
@@ -6529,6 +6737,27 @@ tr.clickable:hover .datagrid-plan-badge {
     border-color: var(--accent, #5a9fd4);
 }
 
+.qp-exec-btn {
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    border: 1px solid var(--red, #ef4444);
+    border-radius: 3px;
+    background: rgba(239, 68, 68, 0.12);
+    color: var(--red, #ef4444);
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.qp-exec-btn:hover:not(:disabled) {
+    background: rgba(239, 68, 68, 0.25);
+}
+
+.qp-exec-btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
 .qp-v2-pane-table {
     width: 100%;
     border-collapse: collapse;
@@ -6540,22 +6769,31 @@ tr.clickable:hover .datagrid-plan-badge {
 }
 
 .qp-v2-pane-table th {
-    padding: 3px 8px 3px 10px;
+    padding: 3px 6px 3px 10px;
     text-align: left;
     font-weight: 500;
     color: var(--text-secondary, #8892aa);
-    width: 46%;
+    width: 22%;
     white-space: nowrap;
     font-size: 10px;
     vertical-align: top;
 }
 
 .qp-v2-pane-table td {
-    padding: 3px 10px 3px 4px;
+    padding: 3px 8px 3px 3px;
     text-align: left;
     color: var(--text-primary, #c9d1e0);
     font-family: 'Consolas', 'Monaco', monospace;
     font-size: 11px;
+    width: 28%;
+}
+
+/* Wide rows (predicates, index, objects) span all 4 columns */
+.qp-v2-pane-table tr.pane-row-wide th {
+    width: auto;
+}
+.qp-v2-pane-table tr.pane-row-wide td {
+    width: auto;
 }
 
 .qp-v2-pane-table tr.pane-row-predicate td {
@@ -6733,6 +6971,25 @@ tr.clickable:hover .datagrid-plan-badge {
     text-overflow: ellipsis;
 }
 
+/* Multi-statement batch: per-statement wrapper and batch cost header */
+.qp-v2-stmt-wrap {
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--border, #2e3248);
+}
+.qp-v2-stmt-wrap:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+.qp-v2-batch-hdr {
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary, #8892aa);
+    background: var(--bg-secondary, #1a1d2e);
+    border-bottom: 1px solid var(--border, #2e3248);
+    padding: 5px 12px;
+}
+
 /* Recommendations banner */
 .qp-v2-banner {
     background: #3a2800;
@@ -6801,9 +7058,26 @@ tr.clickable:hover .datagrid-plan-badge {
 .qp-v2-summary-section { margin-top: 8px; }
 .qp-v2-summary-sec-title {
     font-weight: 600; font-size: 11px; color: var(--text-secondary);
-    margin-bottom: 4px; padding-bottom: 2px; border-bottom: 1px solid var(--border);
+    margin-bottom: 4px; padding: 3px 0 3px 0; border-bottom: 1px solid var(--border);
+    cursor: pointer; user-select: none;
+    display: flex; align-items: center; justify-content: space-between;
+    transition: color 0.12s;
 }
+.qp-v2-summary-sec-title:hover { color: var(--text-primary); }
 .qp-v2-summary-sec-title i { margin-right: 4px; color: var(--accent); }
+.qp-v2-sec-chevron {
+    font-size: 9px;
+    color: var(--text-muted);
+    transition: transform 0.15s ease;
+    margin-left: 4px;
+    flex-shrink: 0;
+}
+.qp-v2-summary-section.collapsed .qp-v2-sec-chevron {
+    transform: rotate(-90deg);
+}
+.qp-v2-summary-section.collapsed .qp-v2-sec-body {
+    display: none;
+}
 
 .qp-v2-summary-table {
     width: 100%; border-collapse: collapse; font-size: 10px;

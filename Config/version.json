@@ -1,17 +1,15 @@
 {
     "version":  "0.85.2",
-    "buildNumber":  985,
-    "buildDate":  "2026-04-09",
+    "buildNumber":  1044,
+    "buildDate":  "2026-04-14",
     "releaseType":  "Production",
     "updateCheckUrl":  "https://api.github.com/repos/SQLAdrian/SqlHealthAssessment/releases/latest",
     "whatsnew":  [
-                     "Auto-export reports now default to OFF — enable per-format in Settings \u003e Auto-Export Reports",
-                     "What\u0027s New popup: \u0027Don\u0027t show this again\u0027 checkbox; toggle also available in Settings \u003e Notifications",
-                     "Server Mode startup: overlay now shows informational message instead of blank screen",
-                     "Maturity Roadmap restored behind No-Pants + Experimental + new setting toggle",
-                     "New dashboards: Query Store Health, Database Health, and enhanced Backup Health with checksum and restore tracking",
-                     "Live Stats: Top 10 wait types by average and total wait time, with colour-coded severity gradients",
-                     "Nav sidebar: colour-coded sections (Audits, Tools, Live, SQLWATCH, PM) with per-section icon tints",
-                     "DataGrid: new text-match column colour mode for string-based cell highlighting"
+                     "Query Plan V2: statement tabs always visible — single \u0026 multi-statement; never clipped by overflow",
+                     "Query Plan V2: tabs with \u003e50% batch cost highlighted red, 20-49% amber — mirrors operator cost heat colours",
+                     "Query Plan V2: operator pane widened to 660px with 4-column grid — properties paired side-by-side",
+                     "Query Plan V2: index suggestion always shows Copy DDL; Execute on Server only when No-Pants is active",
+                     "Query Plan V2: tree node collapse/expand — toggle on left edge hides/shows entire subtree",
+                     "Query Plan V2: summary sections (Wait Stats, Statistics Used, SET Options, etc.) individually collapsible"
                  ]
 }

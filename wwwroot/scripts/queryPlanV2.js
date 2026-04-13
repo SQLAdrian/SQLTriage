@@ -20,6 +20,26 @@ window.queryPlanInteropV2 = (function () {
         return d.innerHTML;
     }
 
+    // Clipboard helper — falls back to textarea trick when Clipboard API is unavailable
+    // (non-secure context: LAN server mode accessed over plain HTTP)
+    function copyToClipboard(text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).catch(() => clipboardFallback(text));
+        } else {
+            clipboardFallback(text);
+        }
+    }
+    function clipboardFallback(text) {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        try { document.execCommand('copy'); } catch (_) {}
+        document.body.removeChild(ta);
+    }
+
     // ── Layout constants ──────────────────────────────────────────────────────
     const NODE_W = 144;   // node box width
     const NODE_H = 70;    // node box height
@@ -264,6 +284,53 @@ window.queryPlanInteropV2 = (function () {
         const pane = document.createElement('div');
         pane.className = 'qp-v2-pane';
         container.appendChild(pane);
+        
+        // Drag handle
+        const dragHandle = document.createElement('div');
+        dragHandle.className = 'qp-v2-pane-drag-handle';
+        dragHandle.title = 'Drag to move';
+        pane.appendChild(dragHandle);
+        
+        // Dragging state
+        let isDragging = false;
+        let dragOffsetX = 0;
+        let dragOffsetY = 0;
+        
+        dragHandle.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            dragOffsetX = e.clientX - pane.getBoundingClientRect().left;
+            dragOffsetY = e.clientY - pane.getBoundingClientRect().top;
+            pane.style.opacity = '0.9';
+            pane.style.zIndex = '500';
+            e.preventDefault();
+            e.stopPropagation();
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            const containerRect = pane.parentElement.getBoundingClientRect();
+            const scrollLeft = pane.parentElement.scrollLeft || 0;
+            const scrollTop = pane.parentElement.scrollTop || 0;
+            
+            let x = e.clientX - containerRect.left + scrollLeft - dragOffsetX;
+            let y = e.clientY - containerRect.top + scrollTop - dragOffsetY;
+            
+            // Keep pane inside viewport
+            x = Math.max(0, Math.min(x, containerRect.width - pane.offsetWidth));
+            y = Math.max(0, Math.min(y, containerRect.height - pane.offsetHeight));
+            
+            pane.style.left = x + 'px';
+            pane.style.top = y + 'px';
+            pane.style.right = 'auto';
+        });
+        
+        document.addEventListener('mouseup', () => {
+            if (isDragging) {
+                isDragging = false;
+                pane.style.opacity = '';
+                pane.style.zIndex = '';
+            }
+        });
 
         pane.addEventListener('mouseenter', () => cancelFade(pane));
         pane.addEventListener('mouseleave', () => startFade(pane));
@@ -287,8 +354,8 @@ window.queryPlanInteropV2 = (function () {
             let top  = (nodeRect.top   - containerRect.top  + scrollTop);
 
             // If pane would overflow right edge, place it to the left of the node
-            if (left + 430 > pane.parentElement.scrollWidth)
-                left = (nodeRect.left - containerRect.left + scrollLeft) - 430 - 12;
+            if (left + 670 > pane.parentElement.scrollWidth)
+                left = (nodeRect.left - containerRect.left + scrollLeft) - 670 - 12;
 
             // Clamp top so pane stays visible
             if (top < 4) top = 4;
@@ -297,10 +364,12 @@ window.queryPlanInteropV2 = (function () {
             pane.style.left  = left + 'px';
             pane.style.right = 'auto';
 
-            // After paint, clamp bottom edge so pane doesn't overflow the container
+            // After paint, clamp bottom edge so pane doesn't overflow the viewport
             requestAnimationFrame(() => {
                 const paneH    = pane.offsetHeight;
-                const maxTop   = (pane.parentElement.clientHeight || pane.parentElement.scrollHeight) - paneH - 4;
+                const viewportH = pane.parentElement.clientHeight;
+                // Add extra 16px margin at bottom to avoid modal window border overlap
+                const maxTop   = viewportH - paneH - 20;
                 const clamped  = Math.max(4, Math.min(top, maxTop));
                 if (clamped !== top) pane.style.top = clamped + 'px';
             });
@@ -362,29 +431,67 @@ window.queryPlanInteropV2 = (function () {
         hdr.append(titleEl, copyBtn);
         pane.appendChild(hdr);
 
-        // ── Table ─────────────────────────────────────────────────────────────
-        const rows   = buildRows(node, displayPct);
-        const tbl    = document.createElement('table');
+        // ── Table (4-column grid: short props paired 2-per-row; wide rows span all) ──
+        const rows = buildRows(node, displayPct);
+        const tbl  = document.createElement('table');
         tbl.className = 'qp-v2-pane-table';
 
-        rows.forEach(([label, value, cls]) => {
-            if (value == null || value === '') return;
-            const tr = document.createElement('tr');
-            if (cls) tr.className = cls;
-            const th = document.createElement('th');
-            th.textContent = label;
-            const td = document.createElement('td');
-            // Suggested Index renders as a <pre> code block
-            if (cls === 'pane-row-index') {
-                const pre = document.createElement('pre');
-                pre.textContent = value;
-                td.appendChild(pre);
+        // Wide rows get their own full-width row; short rows are paired left/right
+        const WIDE_CLASSES = new Set(['pane-row-predicate', 'pane-row-index']);
+        const WIDE_LABELS  = new Set(['Object', 'Warnings', 'Warning Details', 'Suggested Index',
+                                      'Predicate', 'Seek Predicate', 'Output', 'Defined Values',
+                                      'Outer References', 'Order By', 'Group By',
+                                      'Partition Columns', 'Hash Keys (Probe)', 'Hash Keys (Build)']);
+
+        const filteredRows = rows.filter(([, v]) => v != null && v !== '');
+        let i = 0;
+        while (i < filteredRows.length) {
+            const [label, value, cls] = filteredRows[i];
+            const isWide = cls && WIDE_CLASSES.has(cls) || WIDE_LABELS.has(label);
+
+            if (isWide) {
+                // Full-width row spanning all 4 columns
+                const tr = document.createElement('tr');
+                if (cls) tr.className = cls + ' pane-row-wide';
+                else tr.className = 'pane-row-wide';
+                const th = document.createElement('th');
+                th.textContent = label;
+                const td = document.createElement('td');
+                td.colSpan = 3;
+                if (cls === 'pane-row-index') {
+                    const pre = document.createElement('pre');
+                    pre.textContent = value;
+                    td.appendChild(pre);
+                } else {
+                    td.textContent = value;
+                }
+                tr.append(th, td);
+                tbl.appendChild(tr);
+                i++;
             } else {
-                td.textContent = value;
+                // Pair two short rows into one 4-column table row
+                const tr = document.createElement('tr');
+                const th1 = document.createElement('th'); th1.textContent = label;
+                const td1 = document.createElement('td'); td1.textContent = value;
+                tr.append(th1, td1);
+
+                const next = filteredRows[i + 1];
+                const nextIsWide = next && (
+                    (next[2] && WIDE_CLASSES.has(next[2])) || WIDE_LABELS.has(next[0])
+                );
+                if (next && !nextIsWide) {
+                    const th2 = document.createElement('th'); th2.textContent = next[0];
+                    const td2 = document.createElement('td'); td2.textContent = next[1];
+                    tr.append(th2, td2);
+                    i += 2;
+                } else {
+                    // Last odd row — span remaining columns
+                    td1.colSpan = 3;
+                    i++;
+                }
+                tbl.appendChild(tr);
             }
-            tr.append(th, td);
-            tbl.appendChild(tr);
-        });
+        }
         pane.appendChild(tbl);
 
         // ── Copy action ───────────────────────────────────────────────────────
@@ -393,10 +500,61 @@ window.queryPlanInteropV2 = (function () {
                 + rows.filter(([, v]) => v != null && v !== '')
                       .map(([k, v]) => k.padEnd(22) + v)
                       .join('\n');
-            navigator.clipboard.writeText(text).catch(() => {});
+            copyToClipboard(text);
             copyBtn.innerHTML = '<i class="fa-solid fa-check"></i>';
             setTimeout(() => { copyBtn.innerHTML = '<i class="fa-solid fa-copy"></i>'; }, 1800);
         });
+
+        // ── Index action bar: shown whenever a suggested index exists ────────
+        const suggestedRow = rows.find(([label]) => label === 'Suggested Index');
+        if (suggestedRow) {
+            const execBar = document.createElement('div');
+            execBar.style.cssText = 'padding:8px 10px 6px;border-top:1px solid rgba(239,68,68,0.3);display:flex;align-items:center;gap:8px;flex-wrap:wrap;';
+
+            // Copy DDL button — always available
+            const copyDdlBtn = document.createElement('button');
+            copyDdlBtn.className   = 'qp-exec-btn';
+            copyDdlBtn.style.cssText = 'background:rgba(99,102,241,0.15);border-color:rgba(99,102,241,0.4);';
+            copyDdlBtn.textContent = 'Copy DDL';
+            copyDdlBtn.title       = 'Copy CREATE INDEX statement to clipboard';
+            copyDdlBtn.addEventListener('click', () => {
+                copyToClipboard(suggestedRow[1]);
+                copyDdlBtn.textContent = 'Copied ✓';
+                setTimeout(() => { copyDdlBtn.textContent = 'Copy DDL'; }, 1800);
+            });
+            execBar.appendChild(copyDdlBtn);
+
+            // Execute on server — only when No-Pants .NET ref is registered
+            if (_dotNetRef) {
+                const execBtn = document.createElement('button');
+                execBtn.className   = 'qp-exec-btn';
+                execBtn.textContent = 'Execute on server';
+                execBtn.title       = 'No-Pants: run CREATE INDEX against the connected server';
+
+                const statusEl = document.createElement('span');
+                statusEl.style.cssText = 'font-size:11px;opacity:0.75;display:none;';
+
+                execBar.append(execBtn, statusEl);
+
+                execBtn.addEventListener('click', async () => {
+                    execBtn.disabled    = true;
+                    execBtn.textContent = 'Running…';
+                    statusEl.style.display = 'inline';
+                    statusEl.textContent   = '';
+                    try {
+                        await _dotNetRef.invokeMethodAsync('ExecuteIndexFromOperator', suggestedRow[1]);
+                        execBtn.textContent    = 'Done ✓';
+                        statusEl.textContent   = 'Index created';
+                    } catch (e) {
+                        execBtn.textContent    = 'Failed';
+                        execBtn.disabled       = false;
+                        statusEl.textContent   = e.message || 'error';
+                    }
+                });
+            }
+
+            pane.appendChild(execBar);
+        }
     }
 
     /**
@@ -551,9 +709,8 @@ window.queryPlanInteropV2 = (function () {
 
         rows.push(['CPU Cost',        (+node.estimateCPU).toFixed(6)]);
         rows.push(['I/O Cost',        (+node.estimateIO ).toFixed(6)]);
-        rows.push(['Operator Cost',   (+node.cost       ).toFixed(6)]);
+        rows.push(['Operator Cost',   (+node.cost).toFixed(6) + ' (' + displayPct.toFixed(1) + '%)']);
         rows.push(['Subtree Cost',    (+node.subTreeCost).toFixed(6)]);
-        rows.push(['Relative Cost',   displayPct.toFixed(1) + '%']);
 
         if (node.isParallel)
             rows.push(['Exec. Mode', 'Parallel']);
@@ -749,11 +906,35 @@ window.queryPlanInteropV2 = (function () {
 
             if (grid.children.length > 0) body.appendChild(grid);
 
-            // ── Parameters table ────────────────────────────────────────────────
-            if (s.parameters && s.parameters.length > 0) {
+            // Helper: create a collapsible summary section with chevron toggle
+            function makeSec(iconClass, label) {
                 const sec = document.createElement('div');
                 sec.className = 'qp-v2-summary-section';
-                sec.innerHTML = '<div class="qp-v2-summary-sec-title"><i class="fa-solid fa-at"></i> Parameters</div>';
+
+                const titleEl = document.createElement('div');
+                titleEl.className = 'qp-v2-summary-sec-title';
+                titleEl.innerHTML = '<span><i class="' + iconClass + '"></i> ' + escHtml(label) + '</span>';
+
+                const chevron = document.createElement('span');
+                chevron.className   = 'qp-v2-sec-chevron';
+                chevron.textContent = '▼';
+                titleEl.appendChild(chevron);
+
+                const secBody = document.createElement('div');
+                secBody.className = 'qp-v2-sec-body';
+
+                titleEl.addEventListener('click', function () {
+                    sec.classList.toggle('collapsed');
+                    chevron.textContent = sec.classList.contains('collapsed') ? '▶' : '▼';
+                });
+
+                sec.append(titleEl, secBody);
+                return { sec, body: secBody };
+            }
+
+            // ── Parameters table ────────────────────────────────────────────────
+            if (s.parameters && s.parameters.length > 0) {
+                const { sec, body: sb } = makeSec('fa-solid fa-at', 'Parameters');
                 const tbl = document.createElement('table');
                 tbl.className = 'qp-v2-summary-table';
                 tbl.innerHTML = '<tr><th>Name</th><th>Type</th><th>Compiled</th><th>Runtime</th></tr>';
@@ -767,15 +948,13 @@ window.queryPlanInteropV2 = (function () {
                                    '<td>' + escHtml(p.runtimeValue || '-') + '</td>';
                     tbl.appendChild(tr);
                 });
-                sec.appendChild(tbl);
+                sb.appendChild(tbl);
                 body.appendChild(sec);
             }
 
             // ── Wait stats ──────────────────────────────────────────────────────
             if (s.waitStats && s.waitStats.length > 0) {
-                const sec = document.createElement('div');
-                sec.className = 'qp-v2-summary-section';
-                sec.innerHTML = '<div class="qp-v2-summary-sec-title"><i class="fa-solid fa-hourglass-half"></i> Wait Stats</div>';
+                const { sec, body: sb } = makeSec('fa-solid fa-hourglass-half', 'Wait Stats');
                 const tbl = document.createElement('table');
                 tbl.className = 'qp-v2-summary-table';
                 tbl.innerHTML = '<tr><th>Wait Type</th><th>Time (ms)</th><th>Count</th></tr>';
@@ -786,15 +965,13 @@ window.queryPlanInteropV2 = (function () {
                                    '<td>' + w.waitCount + '</td>';
                     tbl.appendChild(tr);
                 });
-                sec.appendChild(tbl);
+                sb.appendChild(tbl);
                 body.appendChild(sec);
             }
 
             // ── Statistics used ─────────────────────────────────────────────────
             if (s.statsUsed && s.statsUsed.length > 0) {
-                const sec = document.createElement('div');
-                sec.className = 'qp-v2-summary-section';
-                sec.innerHTML = '<div class="qp-v2-summary-sec-title"><i class="fa-solid fa-chart-simple"></i> Statistics Used (' + s.statsUsed.length + ')</div>';
+                const { sec, body: sb } = makeSec('fa-solid fa-chart-simple', 'Statistics Used (' + s.statsUsed.length + ')');
                 const tbl = document.createElement('table');
                 tbl.className = 'qp-v2-summary-table';
                 tbl.innerHTML = '<tr><th>Statistic</th><th>Table</th><th>Modifications</th><th>Sampling %</th><th>Last Update</th></tr>';
@@ -809,7 +986,7 @@ window.queryPlanInteropV2 = (function () {
                                    '<td>' + escHtml(st.lastUpdate || '-') + '</td>';
                     tbl.appendChild(tr);
                 });
-                sec.appendChild(tbl);
+                sb.appendChild(tbl);
                 body.appendChild(sec);
             }
 
@@ -817,9 +994,7 @@ window.queryPlanInteropV2 = (function () {
             if (s.setOptions) {
                 const keys = Object.keys(s.setOptions);
                 if (keys.length > 0) {
-                    const sec = document.createElement('div');
-                    sec.className = 'qp-v2-summary-section';
-                    sec.innerHTML = '<div class="qp-v2-summary-sec-title"><i class="fa-solid fa-sliders"></i> SET Options</div>';
+                    const { sec, body: sb } = makeSec('fa-solid fa-sliders', 'SET Options');
                     const chips = document.createElement('div');
                     chips.className = 'qp-v2-set-options';
                     keys.forEach(function (k) {
@@ -828,16 +1003,14 @@ window.queryPlanInteropV2 = (function () {
                         chip.textContent = k + ': ' + (s.setOptions[k] ? 'ON' : 'OFF');
                         chips.appendChild(chip);
                     });
-                    sec.appendChild(chips);
+                    sb.appendChild(chips);
                     body.appendChild(sec);
                 }
             }
 
             // ── Trace flags ─────────────────────────────────────────────────────
             if (s.traceFlags && s.traceFlags.length > 0) {
-                const sec = document.createElement('div');
-                sec.className = 'qp-v2-summary-section';
-                sec.innerHTML = '<div class="qp-v2-summary-sec-title"><i class="fa-solid fa-flag"></i> Trace Flags</div>';
+                const { sec, body: sb } = makeSec('fa-solid fa-flag', 'Trace Flags');
                 const chips = document.createElement('div');
                 chips.className = 'qp-v2-set-options';
                 s.traceFlags.forEach(function (tf) {
@@ -846,7 +1019,7 @@ window.queryPlanInteropV2 = (function () {
                     chip.textContent = tf;
                     chips.appendChild(chip);
                 });
-                sec.appendChild(chips);
+                sb.appendChild(chips);
                 body.appendChild(sec);
             }
 
@@ -935,6 +1108,9 @@ window.queryPlanInteropV2 = (function () {
             path.setAttribute('stroke',        edgeColor);
             path.setAttribute('stroke-width',  mismatchTip ? Math.max(width, 3) : width);
             path.setAttribute('stroke-linecap', 'round');
+            // Data attrs used by collapse/expand toggle
+            path.dataset.edgeSource = String(edge.source);
+            path.dataset.edgeTarget = String(edge.target);
             if (mismatchTip) {
                 path.style.pointerEvents = 'stroke';
                 const titleEl = document.createElementNS(SVG_NS, 'title');
@@ -1070,6 +1246,48 @@ window.queryPlanInteropV2 = (function () {
             body.appendChild(labels);
             nodeDiv.appendChild(body);
             group.appendChild(nodeDiv);
+
+            // ── Collapse/expand toggle (shown when node has children) ─────────
+            const nodeChildren = childMap[node.id] || [];
+            if (nodeChildren.length > 0) {
+                const collapseBtn = document.createElement('div');
+                collapseBtn.className = 'qp-v2-collapse-btn';
+                collapseBtn.title     = 'Collapse subtree';
+                collapseBtn.innerHTML = '−';
+                collapseBtn.dataset.collapsed = 'false';
+                // Positioned left of the node — the button sits on the connector edge
+                collapseBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const isCollapsed = collapseBtn.dataset.collapsed === 'true';
+                    // Collect all descendant node IDs recursively
+                    function getDescendants(nid) {
+                        const kids = childMap[nid] || [];
+                        let result = [...kids];
+                        kids.forEach(k => { result = result.concat(getDescendants(k)); });
+                        return result;
+                    }
+                    const descendants = getDescendants(node.id);
+                    descendants.forEach(did => {
+                        const el = wrap.querySelector(`[data-nodeid="${did}"]`);
+                        if (el) el.style.visibility = isCollapsed ? 'visible' : 'hidden';
+                    });
+                    // Hide edges by toggling SVG paths that connect to hidden nodes
+                    const hiddenSet = new Set(isCollapsed ? [] : descendants);
+                    svg.querySelectorAll('[data-edge-source]').forEach(path => {
+                        const src = path.dataset.edgeSource;
+                        const tgt = path.dataset.edgeTarget;
+                        if (hiddenSet.has(src) || hiddenSet.has(tgt)) {
+                            path.style.visibility = isCollapsed ? 'visible' : 'hidden';
+                        }
+                    });
+                    collapseBtn.dataset.collapsed = isCollapsed ? 'false' : 'true';
+                    collapseBtn.innerHTML         = isCollapsed ? '−' : '+';
+                    collapseBtn.title             = isCollapsed ? 'Collapse subtree' : 'Expand subtree';
+                });
+                group.appendChild(collapseBtn);
+            }
+
+            group.dataset.nodeid = String(node.id);
             wrap.appendChild(group);
 
             // ── Hover events → shared pane ────────────────────────────────────
@@ -1084,7 +1302,7 @@ window.queryPlanInteropV2 = (function () {
                     + rows.filter(([, v]) => v != null && v !== '')
                           .map(([k, v]) => k.padEnd(22) + v)
                           .join('\n');
-                navigator.clipboard.writeText(text).catch(() => {});
+                copyToClipboard(text);
                 // Brief visual feedback on the node
                 nodeDiv.style.outline = '2px solid var(--accent, #2196f3)';
                 setTimeout(() => { nodeDiv.style.outline = ''; }, 900);
@@ -1298,6 +1516,9 @@ window.queryPlanInteropV2 = (function () {
     let _currentSearchTerm   = '';
     let _lastNodeElements    = {};   // written by render(), read by showPlan()
 
+    // ── No-Pants .NET reference for index execution ───────────────────────────
+    let _dotNetRef = null;
+
     function applySearchHighlight(term) {
         _currentSearchTerm = term;
         const lc = (term || '').toLowerCase().trim();
@@ -1337,10 +1558,100 @@ window.queryPlanInteropV2 = (function () {
             _currentSearchTerm   = '';
             _currentPlanXml      = planXml || null;
             try {
-                const graph = typeof jsonData === 'string' ? JSON.parse(jsonData) : jsonData;
-                render(container, graph);
-                // After render, pull node elements from the last render pass
-                _currentNodeElements = Object.assign({}, _lastNodeElements);
+                const parsed = typeof jsonData === 'string' ? JSON.parse(jsonData) : jsonData;
+                // ParseToJson now returns an array; handle both array (new) and object (legacy)
+                const graphs = Array.isArray(parsed) ? parsed : [parsed];
+
+                // Store all graphs for switching
+                window._qpCurrentGraphs = graphs;
+                window._qpRenderStatement = function(index) {
+                    document.querySelectorAll('.qp-stmt-tab').forEach((t, i) => {
+                        t.classList.toggle('active', i === index);
+                    });
+                    const renderContainer = document.getElementById('qp-render-container');
+                    if (!renderContainer) return;
+                    renderContainer.innerHTML = '';
+                    _currentNodeElements = {};
+                    render(renderContainer, graphs[index]);
+                    window._qpActiveStatementIndex = index;
+                };
+
+                // Auto select highest cost statement by default
+                let highestCostIndex = 0;
+                let highestCostValue = 0;
+                graphs.forEach((graph, idx) => {
+                    const pct = typeof graph.batchPct === 'number' ? graph.batchPct : 0;
+                    if (pct > highestCostValue) {
+                        highestCostValue = pct;
+                        highestCostIndex = idx;
+                    }
+                });
+                window._qpActiveStatementIndex = highestCostIndex;
+
+                // Statement tab bar — always shown (single or multi), placed OUTSIDE
+                // #qp-container (which uses overflow:hidden for pan/zoom) so tabs aren't clipped.
+                // We insert it as a sibling before the container in .query-plan-modal-body.
+                {
+                    // Remove any previously injected tab bar (re-render guard)
+                    const existingTabBar = container.parentElement
+                        ? container.parentElement.querySelector('.qp-v2-statement-tabs')
+                        : null;
+                    if (existingTabBar) existingTabBar.remove();
+
+                    const tabBar = document.createElement('div');
+                    tabBar.className = 'qp-v2-statement-tabs';
+
+                    graphs.forEach((graph, idx) => {
+                        const tab = document.createElement('div');
+                        const pct = typeof graph.batchPct === 'number' ? graph.batchPct : 0;
+                        const pctFixed = pct.toFixed(0);
+                        const opType = graph.query ? graph.query.split(' ')[0].toUpperCase().substring(0, 12) : 'STATEMENT';
+
+                        // Count warnings for this statement
+                        let warningCount = 0;
+                        if (graph.summary?.warnings) warningCount = graph.summary.warnings.length;
+
+                        // Cost color coding matches operator highlighting thresholds
+                        let costClass = '';
+                        if (pct >= 50) costClass = 'cost-high';
+                        else if (pct >= 20) costClass = 'cost-medium';
+                        else if (pct >= 5) costClass = 'cost-low';
+
+                        const classes = ['qp-stmt-tab'];
+                        if (idx === highestCostIndex) classes.push('active');
+                        if (costClass) classes.push(costClass);
+                        tab.className = classes.join(' ');
+
+                        const warningBadge = warningCount > 0
+                            ? `<span class="stmt-tab-badge">${warningCount}</span>` : '';
+                        tab.innerHTML = `
+                            <span class="stmt-tab-num">${idx + 1}</span>
+                            <span class="stmt-tab-type">${opType}</span>
+                            <span class="stmt-tab-cost">${pctFixed}%</span>
+                            ${warningBadge}
+                        `;
+                        tab.title = graph.query || `Statement ${idx + 1}`;
+                        tab.onclick = () => window._qpRenderStatement(idx);
+                        tabBar.appendChild(tab);
+                    });
+
+                    // Insert tab bar before #qp-container (its parent) so it sits outside overflow:hidden
+                    if (container.parentElement) {
+                        container.parentElement.insertBefore(tabBar, container);
+                    } else {
+                        container.appendChild(tabBar);
+                    }
+                }
+                
+                // Main render container
+                const renderContainer = document.createElement('div');
+                renderContainer.id = 'qp-render-container';
+                renderContainer.className = 'qp-render-container';
+                container.appendChild(renderContainer);
+                
+                // Render highest cost statement initially
+                render(renderContainer, graphs[highestCostIndex]);
+                
             } catch (e) {
                 container.innerHTML =
                     '<p style="color:#f44336;padding:16px;">Failed to render query plan: ' + e.message + '</p>';
@@ -1350,16 +1661,39 @@ window.queryPlanInteropV2 = (function () {
         showParseError: function (containerId, message) {
             const container = document.getElementById(containerId);
             if (!container) return;
-            container.innerHTML =
-                '<p style="color:#f44336;padding:24px;font-size:12px;font-family:Consolas,monospace;">' +
-                'Plan parser error: ' + (message || 'unknown error') + '</p>';
+            container.innerHTML = `
+                <div style="color:#f44336;padding:24px;font-size:12px;font-family:Consolas,monospace;">
+                    <p><strong>Plan parser error:</strong> ${message || 'unknown error'}</p>
+                    <p style="opacity:0.7;margin-top:12px;">
+                        This usually occurs with:<br>
+                        • UTF-16 encoded plans<br>
+                        • SQL Server 2012 and older showplan schema<br>
+                        • Corrupted / truncated plan XML<br>
+                        • Plans with no execution operators
+                    </p>
+                    <p style="margin-top:16px;">
+                        You can still download the raw .sqlplan file and open it in SSMS.
+                    </p>
+                </div>
+            `;
         },
 
         clearPlan: function (containerId) {
             const el = document.getElementById(containerId);
-            if (el) el.innerHTML = '';
+            if (el) {
+                el.innerHTML = '';
+                // Remove tab bar that was inserted as sibling outside the container
+                if (el.parentElement) {
+                    const tabBar = el.parentElement.querySelector('.qp-v2-statement-tabs');
+                    if (tabBar) tabBar.remove();
+                }
+            }
             _currentNodeElements = {};
             _currentPlanXml      = null;
+            // Clean up multi-statement state
+            delete window._qpCurrentGraphs;
+            delete window._qpActiveStatementIndex;
+            delete window._qpRenderStatement;
         },
 
         setUseV2Icons: function (enabled) {
@@ -1369,6 +1703,11 @@ window.queryPlanInteropV2 = (function () {
         // ── #6 Search highlight ───────────────────────────────────────────────
         setSearchTerm: function (term) {
             applySearchHighlight(term);
+        },
+
+        // ── No-Pants: register .NET reference for index execution ────────────
+        setDotNetRef: function (ref) {
+            _dotNetRef = ref || null;
         },
 
         // ── #9 Download .sqlplan ──────────────────────────────────────────────
