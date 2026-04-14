@@ -7,6 +7,11 @@ namespace SqlHealthAssessment.Data
     public class QueryDefinition
     {
         public string SqlServer { get; set; } = "";
+        /// <summary>
+        /// Optional fallback query for SQL Server versions below 2019 (major version &lt; 15).
+        /// When set, this query is used instead of SqlServer when the connected instance is SQL 2017 or earlier.
+        /// </summary>
+        public string? SqlServerLegacy { get; set; }
     }
 
     public class QueryStore

@@ -77,10 +77,21 @@ namespace SqlHealthAssessment.Data
 
                 var tagName = release.GetProperty("tag_name").GetString() ?? "";
                 // Strip common prefixes: "v1.2.3", "Release-1.2.3", "Release"
-                var latestVersion = tagName
+                var latestVersionRaw = tagName
                     .Replace("Release-", "", StringComparison.OrdinalIgnoreCase)
                     .Replace("Release", "", StringComparison.OrdinalIgnoreCase)
                     .TrimStart('v', '-', ' ');
+
+                // Extract build number from tag suffix "-buildNNNN" or "-bNNNN" before stripping
+                int latestBuild = 0;
+                var buildMatch = System.Text.RegularExpressions.Regex.Match(
+                    latestVersionRaw, @"-(?:build|b)(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (buildMatch.Success)
+                    int.TryParse(buildMatch.Groups[1].Value, out latestBuild);
+
+                // Strip build suffix so version comparison works on clean "0.85.2"
+                var latestVersion = System.Text.RegularExpressions.Regex.Replace(
+                    latestVersionRaw, @"[-_](?:build|b)\d+.*$", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
 
                 var downloadUrl = "";
 
@@ -102,7 +113,7 @@ namespace SqlHealthAssessment.Data
                     }
                 }
 
-                if (IsNewerVersion(latestVersion, _currentVersion))
+                if (IsNewerVersion(latestVersion, _currentVersion, latestBuild, _buildNumber))
                 {
                     var updateInfo = new UpdateInfo
                     {
@@ -351,11 +362,12 @@ namespace SqlHealthAssessment.Data
             _logger.LogInformation("Update applier script written to {Path}", scriptPath);
         }
 
-        private bool IsNewerVersion(string latest, string current)
+        private bool IsNewerVersion(string latest, string current,
+            int latestBuild = 0, int currentBuild = 0)
         {
             if (string.IsNullOrWhiteSpace(latest)) return false;
 
-            var latestParts = latest.Split('.');
+            var latestParts  = latest.Split('.');
             var currentParts = current.Split('.');
 
             for (int i = 0; i < Math.Min(latestParts.Length, currentParts.Length); i++)
@@ -368,7 +380,14 @@ namespace SqlHealthAssessment.Data
                 }
             }
 
-            return latestParts.Length > currentParts.Length;
+            if (latestParts.Length != currentParts.Length)
+                return latestParts.Length > currentParts.Length;
+
+            // Versions are equal — compare build numbers if available
+            if (latestBuild > 0 && currentBuild > 0)
+                return latestBuild > currentBuild;
+
+            return false;
         }
 
         public string GetCurrentVersion() => _buildNumber > 0 ? $"{_currentVersion}.{_buildNumber}" : _currentVersion;

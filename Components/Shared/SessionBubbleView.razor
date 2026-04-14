@@ -5,6 +5,17 @@
 @inject IJSRuntime JS
 
 <div class="bubble-view-container" id="bubble-view-@_instanceId">
+    @if (_blockingPairs.Count > 0)
+    {
+        <div class="blocking-chain-banner">
+            <i class="fa-solid fa-link-slash"></i>
+            @_blockingPairs.Count blocking relationship@(_blockingPairs.Count == 1 ? "" : "s") detected —
+            @foreach (var pair in _blockingPairs)
+            {
+                <span class="blocking-chain-pair">SPID&nbsp;@pair.blockerSpid&nbsp;→&nbsp;@pair.blockedSpid</span>
+            }
+        </div>
+    }
     @if (Sessions == null || Sessions.Count == 0)
     {
         <div class="chart-empty" style="padding: 60px;">No sessions to display</div>
@@ -42,6 +53,9 @@
                     <stop offset="0%" stop-color="#fff" stop-opacity="0.3" />
                     <stop offset="100%" stop-color="#fff" stop-opacity="0" />
                 </radialGradient>
+                <marker id="blockingArrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                    <path d="M0,0 L0,6 L8,3 z" fill="#f44336" opacity="0.85" />
+                </marker>
             </defs>
 
             @* Grid lines *@
@@ -62,20 +76,8 @@
             @* X-axis and Y-axis tick labels (MarkupString bypasses Blazor SVG text parser issue) *@
             @((MarkupString)BuildTickLabels())
 
-            @* Blocking chain lines *@
-            @foreach (var session in Sessions.Where(s => s.BlockingSessionId > 0))
-            {
-                var blockedBySpid = session.BlockingSessionId;
-                @if (_positionCache.TryGetValue(blockedBySpid, out var blockerPos))
-                {
-                    var blockedPos = GetPosition(session.SPID);
-                    <line x1="@blockerPos.x" y1="@blockerPos.y"
-                          x2="@blockedPos.x" y2="@blockedPos.y"
-                          class="blocking-line"
-                          data-blocker-spid="@blockedBySpid"
-                          data-blocked-spid="@session.SPID" />
-                }
-            }
+            @* Blocking chain lines — pre-computed in OnParametersSet *@
+            @((MarkupString)BuildBlockingLines())
 
             @* Bubbles (include both filtered sessions and blockers needed for blocking lines) *@
             @foreach (var session in Sessions)
@@ -174,16 +176,22 @@
     private Dictionary<int, (double x, double y)> _positionCache = new();
     private Dictionary<int, (double x, double y)> _blockerPositions = new();
     private Dictionary<int, SessionInfo> _blockersForLines = new();
+    private List<(int blockerSpid, int blockedSpid)> _blockingPairs = new();
     private string[] XAxisLabels = new[] { "0", "10", "100", "1K", "10K", "100K" };
     private string[] YAxisLabels = new[] { "0", "10", "100", "1K", "10K", "100K" };
 
     protected override void OnParametersSet()
     {
         _positionCache.Clear();
+        _blockingPairs.Clear();
         if (Sessions == null || Sessions.Count == 0) return;
 
         // First pass: identify all sessions that are blocked (have a blocker)
         var blockedSessions = Sessions.Where(s => s.BlockingSessionId > 0).ToList();
+
+        // Record blocking pairs for banner display
+        foreach (var s in blockedSessions)
+            _blockingPairs.Add((s.BlockingSessionId, s.SPID));
         
         // Collect all blocker SPIDs that we need to include for blocking lines
         var requiredBlockerSpids = new HashSet<int>(
@@ -372,6 +380,76 @@
 
             if (!hasCollision) break;
         }
+    }
+
+    /// <summary>
+    /// Builds SVG markup for all blocking-chain connector lines.
+    /// Uses pre-computed _positionCache so we never need out-var in Razor templates.
+    /// Called via MarkupString to bypass Blazor SVG namespace escaping.
+    /// </summary>
+    private string BuildBlockingLines()
+    {
+        if (Sessions == null || Sessions.Count == 0) return "";
+
+        var sb = new System.Text.StringBuilder();
+
+        foreach (var session in Sessions)
+        {
+            if (session.BlockingSessionId <= 0) continue;
+
+            var blockerSpid = session.BlockingSessionId;
+
+            if (!_positionCache.TryGetValue(blockerSpid, out var blockerPos)) continue;
+            if (!_positionCache.TryGetValue(session.SPID, out var blockedPos)) continue;
+
+            // Shorten line so it doesn't overdraw into the bubble circles
+            var blockerRadius = _positionCache.ContainsKey(blockerSpid) ? GetRadiusForSpid(blockerSpid) : 14.0;
+            var blockedRadius = GetRadiusForSpid(session.SPID);
+            var (x1, y1, x2, y2) = ShortenLine(blockerPos.x, blockerPos.y, blockedPos.x, blockedPos.y, blockerRadius + 2, blockedRadius + 4);
+
+            sb.Append($"<line x1=\"{x1.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)}\"");
+            sb.Append($" y1=\"{y1.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)}\"");
+            sb.Append($" x2=\"{x2.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)}\"");
+            sb.Append($" y2=\"{y2.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)}\"");
+            sb.Append($" class=\"blocking-line\"");
+            sb.Append($" marker-end=\"url(#blockingArrow)\"");
+            sb.Append($" data-blocker-spid=\"{blockerSpid}\"");
+            sb.Append($" data-blocked-spid=\"{session.SPID}\"");
+            sb.Append(" />");
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>Returns radius for a SPID, looking up in Sessions list.</summary>
+    private double GetRadiusForSpid(int spid)
+    {
+        var s = Sessions?.FirstOrDefault(x => x.SPID == spid);
+        return s != null ? GetRadius(s) : 14.0;
+    }
+
+    /// <summary>
+    /// Shortens a line segment so it starts and ends outside the bubble circles,
+    /// keeping the arrowhead visible at the target bubble edge.
+    /// </summary>
+    private static (double x1, double y1, double x2, double y2) ShortenLine(
+        double fromX, double fromY, double toX, double toY,
+        double startOffset, double endOffset)
+    {
+        var dx = toX - fromX;
+        var dy = toY - fromY;
+        var len = Math.Sqrt(dx * dx + dy * dy);
+        if (len < 1) return (fromX, fromY, toX, toY);
+
+        var nx = dx / len;
+        var ny = dy / len;
+
+        return (
+            fromX + nx * Math.Min(startOffset, len * 0.4),
+            fromY + ny * Math.Min(startOffset, len * 0.4),
+            toX - nx * Math.Min(endOffset, len * 0.4),
+            toY - ny * Math.Min(endOffset, len * 0.4)
+        );
     }
 
     private string BuildTickLabels()

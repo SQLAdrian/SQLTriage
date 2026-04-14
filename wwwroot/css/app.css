@@ -4269,15 +4269,6 @@ tr.clickable:hover .datagrid-plan-badge {
     filter: url(#glowSelected) brightness(1.1);
 }
 
-/* ── Blocking Lines ── */
-
-.blocking-line {
-    stroke: var(--red, #f44336);
-    stroke-width: 2;
-    stroke-opacity: 0.7;
-    stroke-dasharray: 6 3;
-}
-
 /* ── Session Detail Panel ── */
 
 .session-detail-panel {
@@ -5282,9 +5273,30 @@ tr.clickable:hover .datagrid-plan-badge {
 
 .blocking-line {
     stroke: #f44336;
-    stroke-width: 2;
-    stroke-dasharray: 5,5;
-    opacity: 0.6;
+    stroke-width: 2.5;
+    stroke-dasharray: 8,4;
+    stroke-opacity: 0.85;
+    fill: none;
+}
+
+.blocking-chain-banner {
+    background: rgba(244, 67, 54, 0.12);
+    border-bottom: 1px solid rgba(244, 67, 54, 0.35);
+    color: #ef5350;
+    font-size: 12px;
+    padding: 5px 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.blocking-chain-pair {
+    background: rgba(244, 67, 54, 0.2);
+    border-radius: 10px;
+    padding: 1px 8px;
+    font-family: 'Consolas', monospace;
+    font-size: 11px;
 }
 
 .bubble-label {

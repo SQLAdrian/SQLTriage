@@ -131,6 +131,7 @@ namespace SqlHealthAssessment
             services.AddSingleton<Data.Services.NotificationChannelService>();
             services.AddSingleton<AlertingService>();
             services.AddSingleton<Data.Services.AlertDefinitionService>();
+            services.AddSingleton<Data.Services.AlertTemplateService>();
             services.AddSingleton<Data.Services.AlertHistoryService>();
             services.AddSingleton<Data.Services.AlertEvaluationService>();
 

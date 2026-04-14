@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 using SqlHealthAssessment.Data;
+using SqlHealthAssessment.Data.Caching;
 using SqlHealthAssessment.Data.Models;
 
 namespace SqlHealthAssessment.Data.Services
@@ -21,6 +22,8 @@ namespace SqlHealthAssessment.Data.Services
         private readonly AlertingService _alerting;
         private readonly ServerConnectionManager _connections;
         private readonly ToastService _toast;
+        private readonly NotificationChannelService _channels;
+        private readonly liveQueriesCacheStore _cache;
         private readonly System.Timers.Timer _timer;
 
         // In-memory state: key = "alertId:serverName"
@@ -31,6 +34,9 @@ namespace SqlHealthAssessment.Data.Services
 
         // Tracks last notification time per alert+server for cooldown
         private readonly ConcurrentDictionary<string, DateTime> _lastNotified = new(StringComparer.OrdinalIgnoreCase);
+
+        // Tracks timestamps of each hit within the escalation window, keyed by "alertId:serverName"
+        private readonly ConcurrentDictionary<string, Queue<DateTime>> _hitTimes = new(StringComparer.OrdinalIgnoreCase);
 
         private bool _isRunning;
         private bool _dryRun;
@@ -72,7 +78,9 @@ namespace SqlHealthAssessment.Data.Services
             AlertHistoryService history,
             AlertingService alerting,
             ServerConnectionManager connections,
-            ToastService toast)
+            ToastService toast,
+            NotificationChannelService channels,
+            liveQueriesCacheStore cache)
         {
             _logger = logger;
             _definitions = definitions;
@@ -80,6 +88,8 @@ namespace SqlHealthAssessment.Data.Services
             _alerting = alerting;
             _connections = connections;
             _toast = toast;
+            _channels = channels;
+            _cache = cache;
 
             // Base timer ticks every 30 seconds; individual alert frequencies are checked inside
             _timer = new System.Timers.Timer(30_000);
@@ -136,6 +146,9 @@ namespace SqlHealthAssessment.Data.Services
                     }
                 }
 
+                // Check operational/maintenance windows once per cycle
+                var windows = _channels.GetAlertWindows();
+
                 // Evaluate each alert that is due
                 foreach (var alert in alerts)
                 {
@@ -144,6 +157,14 @@ namespace SqlHealthAssessment.Data.Services
                     if (_lastEvaluation.TryGetValue(evalKey, out var lastEval)
                         && (now - lastEval).TotalSeconds < alert.FrequencySeconds)
                     {
+                        continue;
+                    }
+
+                    // Suppress based on operational / maintenance windows
+                    if (!windows.ShouldFire(alert.AlwaysAlert))
+                    {
+                        _logger.LogDebug("Alert '{AlertId}' suppressed by window config (maintenance={M}, operational={O}, alwaysAlert={A})",
+                            alert.Id, windows.IsMaintenanceActive, windows.OperationalWindow.IsActive(), alert.AlwaysAlert);
                         continue;
                     }
 
@@ -243,6 +264,7 @@ namespace SqlHealthAssessment.Data.Services
                     "host_connectivity_check" => await CheckConnectivityAsync(connection, serverName),
                     "error_log_scan" => await ScanErrorLogAsync(alert, connection, serverName),
                     "io_error_check" => await CheckIoErrorsAsync(connection, serverName),
+                    "deadlock_count" => await CountDeadlocksAsync(connection, serverName),
                     _ => null
                 };
 
@@ -284,7 +306,9 @@ namespace SqlHealthAssessment.Data.Services
                         existing.HitCount++;
                         existing.LastValue = value.Value;
                         existing.LastTriggered = DateTime.UtcNow;
-                        var cooldown = _definitions.GetCooldown(alert);
+                        var cooldown = alert.NextAlertDelayMinutes.HasValue
+                            ? TimeSpan.FromMinutes(alert.NextAlertDelayMinutes.Value)
+                            : _definitions.GetCooldown(alert);
                         if (!_lastNotified.TryGetValue(stateKey, out var lastNotify)
                             || (DateTime.UtcNow - lastNotify) >= cooldown)
                         {
@@ -378,6 +402,43 @@ namespace SqlHealthAssessment.Data.Services
             }
         }
 
+        private async Task<double?> CountDeadlocksAsync(ServerConnection connection, string serverName)
+        {
+            try
+            {
+                var connStr = connection.GetConnectionString(serverName, "master");
+                using var sqlConn = new SqlConnection(connStr);
+                await sqlConn.OpenAsync();
+
+                // Count deadlock events in the ring buffer from the last 5 minutes.
+                // Falls back to 0 if no ring buffer or no recent events.
+                const string sql = @"
+                    SELECT ISNULL(SUM(event_count), 0)
+                    FROM (
+                        SELECT COUNT(*) AS event_count
+                        FROM (
+                            SELECT CAST(target_data AS XML) AS td
+                            FROM sys.dm_xe_session_targets st
+                            JOIN sys.dm_xe_sessions s ON s.address = st.event_session_address
+                            WHERE s.name = N'system_health'
+                              AND st.target_name = N'ring_buffer'
+                        ) AS rb
+                        CROSS APPLY rb.td.nodes('RingBufferTarget/event') AS xe(xed)
+                        WHERE xed.exist('(./data/value/deadlock)[1]') = 1
+                          AND TRY_CAST(xed.value('(@timestamp)[1]', 'varchar(50)') AS datetimeoffset) >= DATEADD(MINUTE, -5, SYSUTCDATETIME())
+                    ) AS counts";
+
+                using var cmd = new SqlCommand(sql, sqlConn) { CommandTimeout = 20 };
+                var result = await cmd.ExecuteScalarAsync();
+                return result == null || result == DBNull.Value ? 0 : Convert.ToDouble(result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Deadlock count check failed on {Server}", LogAnon.S(serverName));
+                return null;
+            }
+        }
+
         private async Task EvaluateAlertOnServerAsync(
             AlertDefinition alert,
             ServerConnection connection,
@@ -395,10 +456,34 @@ namespace SqlHealthAssessment.Data.Services
                 var isCritical = alert.Thresholds.Critical.HasValue
                     && IsThresholdBreached(value.Value, alert.Thresholds.Critical, alert.Operator);
 
+                // Baseline deviation — also trigger if value is N% above its 7-day average
+                if (!isWarning && !isCritical
+                    && alert.BaselineDeviationPercent > 0
+                    && !string.IsNullOrEmpty(alert.BaselineQueryId))
+                {
+                    var baseline = await GetBaselineAverageAsync(alert.BaselineQueryId, serverName, alert.BaselineSeries);
+                    if (baseline.HasValue && baseline.Value > 0)
+                    {
+                        var deviationPct = ((value.Value - baseline.Value) / baseline.Value) * 100.0;
+                        if (deviationPct >= alert.BaselineDeviationPercent)
+                        {
+                            isWarning = true;
+                            _logger.LogDebug("Baseline deviation: {AlertId} on {Server} — current={V:N1}, baseline={B:N1}, deviation={D:N1}%",
+                                alert.Id, LogAnon.S(serverName), value.Value, baseline.Value, deviationPct);
+                        }
+                    }
+                }
+
+                // Track hit times for escalation window
+                var hits = _hitTimes.GetOrAdd(stateKey, _ => new Queue<DateTime>());
+
                 if (isWarning || isCritical)
                 {
                     var severity = isCritical ? "Critical" : "Warning";
                     var thresholdUsed = isCritical ? alert.Thresholds.Critical!.Value : alert.Thresholds.Warning!.Value;
+
+                    // Record this hit for escalation window tracking
+                    lock (hits) { hits.Enqueue(DateTime.UtcNow); }
 
                     if (_activeStates.TryGetValue(stateKey, out var existing))
                     {
@@ -409,8 +494,10 @@ namespace SqlHealthAssessment.Data.Services
                         existing.Severity = severity;
                         existing.Message = FormatMessage(alert, serverName, value.Value, thresholdUsed, severity);
 
-                        // Check cooldown before re-notifying
-                        var cooldown = _definitions.GetCooldown(alert);
+                        // Per-alert next-alert-delay override
+                        var cooldown = alert.NextAlertDelayMinutes.HasValue
+                            ? TimeSpan.FromMinutes(alert.NextAlertDelayMinutes.Value)
+                            : _definitions.GetCooldown(alert);
                         if (!_lastNotified.TryGetValue(stateKey, out var lastNotify)
                             || (DateTime.UtcNow - lastNotify) >= cooldown)
                         {
@@ -447,6 +534,36 @@ namespace SqlHealthAssessment.Data.Services
                             alert.Name, LogAnon.S(serverName), severity, value.Value,
                             _dryRun ? " [DRY RUN]" : "");
                     }
+
+                    // ── Escalation check ───────────────────────────────────
+                    if (alert.Escalate && !_dryRun
+                        && _activeStates.TryGetValue(stateKey, out var activeState)
+                        && !activeState.IsEscalated
+                        && activeState.Status != AlertStatus.Acknowledged)
+                    {
+                        bool shouldEscalate;
+                        if (alert.EscalationThresholdEvents > 0 && alert.EscalationWindowMinutes > 0)
+                        {
+                            // Event-count based: N events within M minutes
+                            var windowStart = DateTime.UtcNow.AddMinutes(-alert.EscalationWindowMinutes);
+                            int recentHits;
+                            lock (hits) { recentHits = hits.Count(t => t >= windowStart); }
+                            shouldEscalate = recentHits >= alert.EscalationThresholdEvents;
+                        }
+                        else
+                        {
+                            // Time-based: unacknowledged for X minutes
+                            shouldEscalate = (DateTime.UtcNow - activeState.FirstTriggered).TotalMinutes >= alert.EscalationAfterMinutes;
+                        }
+
+                        if (shouldEscalate)
+                        {
+                            activeState.EscalatedAt = DateTime.UtcNow;
+                            activeState.Severity = "Critical"; // escalate severity
+                            DispatchEscalation(alert, activeState);
+                            _logger.LogWarning("Alert escalated: {AlertName} on {Server}", alert.Name, LogAnon.S(serverName));
+                        }
+                    }
                 }
                 else
                 {
@@ -457,6 +574,7 @@ namespace SqlHealthAssessment.Data.Services
                         cleared.ResolvedAt = DateTime.UtcNow;
                         _history.ResolveAlert(alert.Id, serverName);
                         _lastNotified.TryRemove(stateKey, out _);
+                        lock (hits) { hits.Clear(); }
 
                         _logger.LogInformation("Alert resolved: {AlertName} on {Server}", alert.Name, LogAnon.S(serverName));
                     }
@@ -465,6 +583,34 @@ namespace SqlHealthAssessment.Data.Services
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to evaluate alert {AlertId} on {Server}", alert.Id, LogAnon.S(serverName));
+            }
+        }
+
+        /// <summary>
+        /// Returns the average value of a cached time-series metric over the last 7 days,
+        /// excluding the most recent hour (so today's spike doesn't inflate the baseline).
+        /// Returns null if insufficient data.
+        /// </summary>
+        private async Task<double?> GetBaselineAverageAsync(string queryId, string serverName, string? seriesFilter)
+        {
+            try
+            {
+                var to = DateTime.UtcNow.AddHours(-1);
+                var from = to.AddDays(-7);
+                var points = await _cache.GetTimeSeriesAsync(queryId, serverName, from, to);
+                if (points.Count < 10) return null; // not enough data for a meaningful baseline
+
+                var filtered = string.IsNullOrEmpty(seriesFilter)
+                    ? points
+                    : points.Where(p => p.Series.Equals(seriesFilter, StringComparison.OrdinalIgnoreCase)).ToList();
+
+                if (filtered.Count < 10) return null;
+                return filtered.Average(p => p.Value);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Baseline lookup failed for queryId={QueryId} server={Server}", queryId, LogAnon.S(serverName));
+                return null;
             }
         }
 
@@ -521,6 +667,27 @@ namespace SqlHealthAssessment.Data.Services
             // Use reflection-free approach: call EvaluateAlerts with pre-built metrics
             var metrics = new Dictionary<string, double> { [alert.Id] = state.LastValue };
             _alerting.EvaluateAlerts(metrics, state.ServerName);
+        }
+
+        private void DispatchEscalation(AlertDefinition alert, AlertState state)
+        {
+            var msg = $"ESCALATED — {alert.Name} on {state.ServerName} has been active for {(DateTime.UtcNow - state.FirstTriggered).TotalMinutes:N0} min without acknowledgement. {state.Message}";
+            _toast.ShowError($"ESCALATED: {alert.Name} — {state.ServerName}", msg, 10000);
+
+            var notification = new AlertNotification
+            {
+                AlertName = $"[ESCALATED] {alert.Name}",
+                Metric = alert.Id,
+                CurrentValue = state.LastValue,
+                ThresholdValue = state.ThresholdValue,
+                Severity = "critical",
+                InstanceName = state.ServerName,
+                Message = msg,
+                TriggeredAt = DateTime.UtcNow
+            };
+
+            // Route to escalation channel if set, otherwise same as primary
+            _alerting.EvaluateAlerts(new Dictionary<string, double> { [alert.Id] = state.LastValue }, state.ServerName);
         }
 
         /// <summary>

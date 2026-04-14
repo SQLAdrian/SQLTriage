@@ -168,9 +168,40 @@
         }
         break;
 
+    case "XeStatus":
+    {
+        var xeVal = GridData?.Rows.Count > 0
+            ? GridData.Rows[0][0]?.ToString()?.Trim() ?? ""
+            : "";
+        var xeOk = xeVal.Equals("Yes", StringComparison.OrdinalIgnoreCase);
+        var xeColor = xeOk ? "var(--green)" : "var(--red)";
+        var xeIcon  = xeOk ? "fa-circle-check" : "fa-circle-xmark";
+        <div style="display: flex; align-items: center; gap: 10px; padding: 8px 14px;
+                    background: @(xeOk ? "rgba(78,201,176,0.08)" : "rgba(244,71,71,0.08)");
+                    border: 1px solid @xeColor; border-radius: 6px; font-size: 12px;">
+            <i class="fa-solid @xeIcon" style="color: @xeColor; font-size: 15px;"></i>
+            <span style="font-weight: 600; color: @xeColor;">@Panel.Title</span>
+            <span style="color: var(--text-secondary); font-weight: 500;">@(xeOk ? "Yes — session active" : "No — deadlocks will not be captured")</span>
+            @if (!xeOk)
+            {
+                <span style="margin-left: auto; font-size: 11px; color: var(--text-muted);">
+                    Deploy a session via Alerting &gt; Extended Events or run:
+                    <code style="font-family: monospace; font-size: 10px; color: var(--text-secondary);">CREATE EVENT SESSION [DeadlockMonitor] …</code>
+                </span>
+            }
+        </div>
+        break;
+    }
+
     case "Deadlock":
         <CollapsibleSection Title="@Panel.Title" IsExpanded="true">
             <DeadlockViewer DeadlockEvents="@GridData" />
+        </CollapsibleSection>
+        break;
+
+    case "BlockingTree":
+        <CollapsibleSection Title="@Panel.Title" IsExpanded="true">
+            <BlockingTreeViewer BlockingData="@GridData" />
         </CollapsibleSection>
         break;
 

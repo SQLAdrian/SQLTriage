@@ -38,12 +38,33 @@
                             Victim: SPID @parsed.Victim.Spid — @TruncateText(parsed.Victim.ProcName, 40)
                         </span>
                     }
+                    <span style="margin-left: auto; font-size: 11px; color: var(--text-muted);">
+                        @parsed.Processes.Count processes · @parsed.Resources.Count lock(s)
+                    </span>
                 </div>
 
                 @if (isExpanded && parsed.Processes.Any())
                 {
                     <div style="padding: 12px; font-size: 12px;">
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+
+                        @* ── Visual deadlock graph ── *@
+                        @{
+                            var graph = BuildGraph(parsed);
+                        }
+                        <div style="margin-bottom: 14px;">
+                            <div style="font-size: 11px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px;">
+                                <i class="fa-solid fa-diagram-project" style="margin-right: 4px;"></i> Deadlock Graph
+                                <span style="font-weight: 400; color: var(--text-muted); margin-left: 8px;">
+                                    ── holds &nbsp;&nbsp; ╌╌ waits for
+                                </span>
+                            </div>
+                            <div style="overflow-x: auto;">
+                                @((MarkupString)RenderGraphSvg(graph, idx))
+                            </div>
+                        </div>
+
+                        @* ── Process detail cards ── *@
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-bottom: 12px;">
                             @foreach (var proc in parsed.Processes)
                             {
                                 var isVictim = proc.IsVictim;
@@ -64,8 +85,22 @@
                                         <span style="color: var(--text-muted);">Database:</span> <span>@proc.Database</span>
                                         <span style="color: var(--text-muted);">Login:</span> <span>@proc.LoginName</span>
                                         <span style="color: var(--text-muted);">Host:</span> <span>@proc.HostName</span>
+                                        @if (!string.IsNullOrEmpty(proc.ClientApp))
+                                        {
+                                            <span style="color: var(--text-muted);">App:</span>
+                                            <span title="@proc.ClientApp">@TruncateText(proc.ClientApp, 35)</span>
+                                        }
                                         <span style="color: var(--text-muted);">Wait:</span> <span>@proc.WaitResource</span>
                                         <span style="color: var(--text-muted);">Lock Mode:</span> <span>@proc.LockMode</span>
+                                        @if (!string.IsNullOrEmpty(proc.TranCount) && proc.TranCount != "0")
+                                        {
+                                            <span style="color: var(--text-muted);">Tran Count:</span>
+                                            <span style="color: @(int.TryParse(proc.TranCount, out var tc) && tc > 1 ? "var(--orange)" : "inherit");">@proc.TranCount</span>
+                                        }
+                                        @if (!string.IsNullOrEmpty(proc.Priority) && proc.Priority != "0")
+                                        {
+                                            <span style="color: var(--text-muted);">Priority:</span> <span>@proc.Priority</span>
+                                        }
                                         @if (!string.IsNullOrEmpty(proc.ProcName))
                                         {
                                             <span style="color: var(--text-muted);">Procedure:</span> <span>@proc.ProcName</span>
@@ -84,6 +119,7 @@
                             }
                         </div>
 
+                        @* ── Lock resources table ── *@
                         @if (parsed.Resources.Any())
                         {
                             <div style="margin-top: 8px;">
@@ -129,13 +165,157 @@
 
     private int _expandedIndex = -1;
 
+    // ── Data model ──────────────────────────────────────────────────────────
+
     private record DeadlockProcess(string Spid, string Database, string LoginName, string HostName,
-        string WaitResource, string LockMode, string ProcName, string SqlText, bool IsVictim);
+        string WaitResource, string LockMode, string ProcName, string SqlText, bool IsVictim,
+        string Priority, string TranCount, string ClientApp);
 
     private record LockResource(string ObjectName, string LockType, string OwnerSpid, string OwnerMode,
         string WaiterSpid, string WaiterMode);
 
     private record ParsedDeadlock(List<DeadlockProcess> Processes, List<LockResource> Resources, DeadlockProcess? Victim);
+
+    // ── Graph layout model ───────────────────────────────────────────────────
+
+    private record GraphProcessNode(int X, int Y, int W, int H, string Spid, string LoginName, string LockMode, bool IsVictim);
+    private record GraphResourceNode(int X, int Y, int W, int H, string LockType, string ObjectName);
+    private record GraphEdge(int X1, int Y1, int X2, int Y2, string Label, bool IsWaiting);
+    private record DeadlockGraph(int Width, int Height,
+        List<GraphProcessNode> ProcessNodes, List<GraphResourceNode> ResourceNodes, List<GraphEdge> Edges);
+
+    // ── Graph builder ────────────────────────────────────────────────────────
+
+    private DeadlockGraph BuildGraph(ParsedDeadlock parsed)
+    {
+        // Layout constants
+        const int PW = 140, PH = 70;   // process node width/height
+        const int RW = 130, RH = 60;   // resource node width/height
+        const int ColGap = 80;         // horizontal gap between columns
+        const int RowGap = 20;         // vertical gap between nodes in same column
+        const int PadX = 20, PadY = 20;
+
+        var procs = parsed.Processes;
+        var resources = parsed.Resources;
+
+        // Process nodes: split across left and right columns for 2+ processes
+        // For 2 processes: left + right flanking the centre resources column
+        // For 1 or 3+: stack on left, resources on right
+        var procNodes = new List<GraphProcessNode>();
+        var resNodes  = new List<GraphResourceNode>();
+        var edges     = new List<GraphEdge>();
+
+        int resCount = resources.Count;
+        int procCount = procs.Count;
+
+        // Column X positions
+        int leftX  = PadX;
+        int midX   = PadX + PW + ColGap;
+        int rightX = midX + RW + ColGap;
+
+        bool twoProc = procCount == 2;
+
+        // Place process nodes
+        for (int i = 0; i < procCount; i++)
+        {
+            int x, y;
+            if (twoProc)
+            {
+                x = (i == 0) ? leftX : rightX;
+                y = PadY + (resCount > 1 ? ((resCount - 1) * (RH + RowGap)) / 2 : 0); // vertically centred
+            }
+            else
+            {
+                x = leftX;
+                y = PadY + i * (PH + RowGap);
+            }
+            var p = procs[i];
+            procNodes.Add(new GraphProcessNode(x, y, PW, PH, p.Spid, p.LoginName, p.LockMode, p.IsVictim));
+        }
+
+        // Place resource nodes in the middle column
+        int resColX = twoProc ? midX : (leftX + PW + ColGap);
+        for (int i = 0; i < resCount; i++)
+        {
+            var r = resources[i];
+            int ry = PadY + i * (RH + RowGap);
+            resNodes.Add(new GraphResourceNode(resColX, ry, RW, RH, r.LockType, r.ObjectName));
+        }
+
+        // Draw edges: for each resource, owner holds it, waiter waits for it
+        for (int ri = 0; ri < resCount; ri++)
+        {
+            var res = resources[ri];
+            var resNode = resNodes[ri];
+            int resCX = resNode.X + resNode.W / 2;
+            int resCY = resNode.Y + resNode.H / 2;
+
+            // Owner → resource (holds, solid green arrow)
+            var ownerProc = procNodes.FirstOrDefault(pn => pn.Spid == res.OwnerSpid);
+            if (ownerProc != null)
+            {
+                var (ex1, ey1) = EdgePoint(ownerProc, resNode, true);
+                var (ex2, ey2) = EdgePoint(resNode, ownerProc, false);
+                edges.Add(new GraphEdge(ex1, ey1, ex2, ey2, res.OwnerMode, false));
+            }
+
+            // Resource → waiter process (waits for, dashed orange arrow)
+            var waiterProc = procNodes.FirstOrDefault(pn => pn.Spid == res.WaiterSpid);
+            if (waiterProc != null)
+            {
+                var (wx1, wy1) = EdgePoint(resNode, waiterProc, true);
+                var (wx2, wy2) = EdgePoint(waiterProc, resNode, false);
+                edges.Add(new GraphEdge(wx1, wy1, wx2, wy2, res.WaiterMode, true));
+            }
+        }
+
+        // Calculate canvas size
+        int maxX = 0, maxY = 0;
+        foreach (var n in procNodes) { maxX = Math.Max(maxX, n.X + n.W); maxY = Math.Max(maxY, n.Y + n.H); }
+        foreach (var n in resNodes)  { maxX = Math.Max(maxX, n.X + n.W); maxY = Math.Max(maxY, n.Y + n.H); }
+        int canvasW = maxX + PadX;
+        int canvasH = maxY + PadY;
+
+        // Ensure minimum size
+        canvasW = Math.Max(canvasW, twoProc ? rightX + PW + PadX : resColX + RW + PadX);
+        canvasH = Math.Max(canvasH, PadY + Math.Max(procCount, resCount) * (PH + RowGap));
+
+        return new DeadlockGraph(canvasW, canvasH, procNodes, resNodes, edges);
+    }
+
+    /// Returns the edge connection point on the near side of a rectangular/diamond node toward a target.
+    private static (int x, int y) EdgePoint(GraphProcessNode from, GraphResourceNode to, bool fromProcess)
+    {
+        int fx = from.X + from.W / 2;
+        int fy = from.Y + from.H / 2;
+        int tx = to.X + to.W / 2;
+        int ty = to.Y + to.H / 2;
+
+        // Attach to left or right edge of the process box
+        if (tx > fx)
+            return (from.X + from.W, fy); // right side
+        else if (tx < fx)
+            return (from.X, fy);          // left side
+        else
+            return (fx, ty > fy ? from.Y + from.H : from.Y);
+    }
+
+    private static (int x, int y) EdgePoint(GraphResourceNode from, GraphProcessNode to, bool fromResource)
+    {
+        int fx = from.X + from.W / 2;
+        int fy = from.Y + from.H / 2;
+        int tx = to.X + to.W / 2;
+        int ty = to.Y + to.H / 2;
+
+        if (tx > fx)
+            return (from.X + from.W, fy);
+        else if (tx < fx)
+            return (from.X, fy);
+        else
+            return (fx, ty > fy ? from.Y + from.H : from.Y);
+    }
+
+    // ── XML parser ───────────────────────────────────────────────────────────
 
     private ParsedDeadlock ParseDeadlockXml(string xml)
     {
@@ -173,7 +353,10 @@
                     LockMode: proc.Attribute("lockMode")?.Value ?? "",
                     ProcName: procName,
                     SqlText: !string.IsNullOrEmpty(inputBuf) ? inputBuf : (execStack?.Value?.Trim() ?? ""),
-                    IsVictim: id == victimId
+                    IsVictim: id == victimId,
+                    Priority: proc.Attribute("priority")?.Value ?? "",
+                    TranCount: proc.Attribute("trancount")?.Value ?? "",
+                    ClientApp: proc.Attribute("clientapp")?.Value ?? ""
                 ));
             }
 
@@ -207,4 +390,63 @@
 
     private static string TruncateText(string text, int maxLen)
         => string.IsNullOrEmpty(text) ? "" : text.Length <= maxLen ? text : text[..maxLen] + "...";
+
+    private static string H(string s) => System.Web.HttpUtility.HtmlEncode(s);
+
+    private string RenderGraphSvg(DeadlockGraph graph, int idx)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append($"<svg width=\"{graph.Width}\" height=\"{graph.Height}\" " +
+                  "style=\"display:block;background:var(--bg-primary);border:1px solid var(--border);border-radius:4px;\">");
+
+        // Defs — arrow markers
+        sb.Append($"<defs>" +
+                  $"<marker id=\"arrowH{idx}\" markerWidth=\"8\" markerHeight=\"8\" refX=\"6\" refY=\"3\" orient=\"auto\">" +
+                  "<path d=\"M0,0 L0,6 L8,3 z\" fill=\"#4caf50\"/></marker>" +
+                  $"<marker id=\"arrowW{idx}\" markerWidth=\"8\" markerHeight=\"8\" refX=\"6\" refY=\"3\" orient=\"auto\">" +
+                  "<path d=\"M0,0 L0,6 L8,3 z\" fill=\"#ff9800\"/></marker>" +
+                  "</defs>");
+
+        // Edges
+        foreach (var e in graph.Edges)
+        {
+            var color = e.IsWaiting ? "#ff9800" : "#4caf50";
+            var marker = e.IsWaiting ? $"arrowW{idx}" : $"arrowH{idx}";
+            var dash = e.IsWaiting ? " stroke-dasharray=\"6,3\"" : "";
+            sb.Append($"<line x1=\"{e.X1}\" y1=\"{e.Y1}\" x2=\"{e.X2}\" y2=\"{e.Y2}\"" +
+                      $" stroke=\"{color}\" stroke-width=\"1.5\"{dash} marker-end=\"url(#{marker})\"/>");
+            if (!string.IsNullOrEmpty(e.Label))
+            {
+                int lx = (e.X1 + e.X2) / 2, ly = (e.Y1 + e.Y2) / 2 - 4;
+                sb.Append($"<text x=\"{lx}\" y=\"{ly}\" text-anchor=\"middle\" font-size=\"9\" fill=\"{color}\" font-family=\"monospace\">{H(e.Label)}</text>");
+            }
+        }
+
+        // Process nodes
+        foreach (var n in graph.ProcessNodes)
+        {
+            var fill   = n.IsVictim ? "rgba(244,67,54,0.15)" : "rgba(33,150,243,0.12)";
+            var stroke = n.IsVictim ? "#f44336" : "#2196f3";
+            int cx = n.X + n.W / 2;
+            sb.Append($"<rect x=\"{n.X}\" y=\"{n.Y}\" width=\"{n.W}\" height=\"{n.H}\" rx=\"4\" fill=\"{fill}\" stroke=\"{stroke}\" stroke-width=\"1.5\"/>");
+            sb.Append($"<text x=\"{cx}\" y=\"{n.Y + 15}\" text-anchor=\"middle\" font-size=\"11\" font-weight=\"600\" fill=\"{stroke}\" font-family=\"sans-serif\">SPID {H(n.Spid)}</text>");
+            if (n.IsVictim)
+                sb.Append($"<text x=\"{cx}\" y=\"{n.Y + 27}\" text-anchor=\"middle\" font-size=\"9\" fill=\"#f44336\" font-family=\"sans-serif\">VICTIM</text>");
+            sb.Append($"<text x=\"{cx}\" y=\"{n.Y + n.H - 16}\" text-anchor=\"middle\" font-size=\"9\" fill=\"#888\" font-family=\"sans-serif\">{H(TruncateText(n.LoginName, 18))}</text>");
+            sb.Append($"<text x=\"{cx}\" y=\"{n.Y + n.H - 5}\" text-anchor=\"middle\" font-size=\"9\" fill=\"#888\" font-family=\"sans-serif\">{H(TruncateText(n.LockMode, 18))}</text>");
+        }
+
+        // Resource nodes (diamond shape via polygon)
+        foreach (var n in graph.ResourceNodes)
+        {
+            int cx = n.X + n.W / 2, cy = n.Y + n.H / 2;
+            sb.Append($"<polygon points=\"{cx},{n.Y} {n.X + n.W},{cy} {cx},{n.Y + n.H} {n.X},{cy}\"" +
+                      " fill=\"rgba(156,39,176,0.12)\" stroke=\"#9c27b0\" stroke-width=\"1.5\"/>");
+            sb.Append($"<text x=\"{cx}\" y=\"{cy - 5}\" text-anchor=\"middle\" font-size=\"9\" font-weight=\"600\" fill=\"#9c27b0\" font-family=\"sans-serif\">{H(n.LockType)}</text>");
+            sb.Append($"<text x=\"{cx}\" y=\"{cy + 7}\" text-anchor=\"middle\" font-size=\"8\" fill=\"#888\" font-family=\"sans-serif\">{H(TruncateText(n.ObjectName, 16))}</text>");
+        }
+
+        sb.Append("</svg>");
+        return sb.ToString();
+    }
 }

@@ -181,23 +181,39 @@ public static class ExecutionPlanParser
         xml = xml.TrimStart('\uFEFF', '\uFFFE', '\u0000');
         var doc = XDocument.Parse(xml);
 
-        // VSCode-mssql / SSMS compatible selection - ignore namespaces completely
-        // Works across ALL showplan schema versions 2005 -> 2022
+        // VSCode-mssql / SSMS compatible selection - ignore namespaces completely.
+        // Works across ALL showplan schema versions 2005 -> 2022, including stored
+        // procedure plans with StmtCond (WHILE/IF) and deeply nested bodies.
+        //
+        // Strategy: collect every Stmt* element that owns a QueryPlan as a
+        // direct/near-direct descendant (i.e. before the next nested Stmt*).
+        // A StmtCond "owns" the condition QueryPlan (inside <Condition>).
+        // The body statements inside <Then><Statements> and <Else><Statements>
+        // are their own Stmt* elements and handled independently.
+        // We exclude a StmtCond that has NO QueryPlan within itself before
+        // the first nested Stmt* child (pure control-flow wrapper with no condition query).
         var stmts = doc.Descendants()
-            .Where(e => 
-                e.Name.LocalName.StartsWith("Stmt") &&
-                e.Descendants().Any(c => c.Name.LocalName == "QueryPlan")
-            )
+            .Where(e => e.Name.LocalName.StartsWith("Stmt", StringComparison.Ordinal))
+            .Where(e =>
+            {
+                // Does this Stmt* element directly contain a QueryPlan before any nested Stmt*?
+                foreach (var desc in e.Descendants())
+                {
+                    if (desc.Name.LocalName == "QueryPlan") return true;
+                    // Stop if we hit a nested Stmt* — it owns everything below it
+                    if (desc.Name.LocalName.StartsWith("Stmt", StringComparison.Ordinal) && desc != e) return false;
+                }
+                return false;
+            })
             .ToList();
 
         // Handle cursor plans where QueryPlan is nested inside CursorPlan > Operation
         if (stmts.Count == 0)
         {
             stmts = doc.Descendants()
-                .Where(e => 
-                    e.Name.LocalName.StartsWith("Stmt") &&
-                    e.Descendants().Any(c => c.Name.LocalName == "Operation")
-                )
+                .Where(e =>
+                    e.Name.LocalName.StartsWith("Stmt", StringComparison.Ordinal) &&
+                    e.Descendants().Any(c => c.Name.LocalName == "Operation"))
                 .ToList();
         }
 
@@ -207,7 +223,8 @@ public static class ExecutionPlanParser
             stmts = doc.Descendants()
                 .Where(e => e.Name.LocalName == "QueryPlan")
                 .Select(e => e.Parent)
-                .ToList();
+                .Where(e => e != null)
+                .ToList()!;
         }
 
         if (stmts.Count == 0) return [new PlanGraph()];
@@ -222,9 +239,10 @@ public static class ExecutionPlanParser
         return result;
     }
 
-    private static PlanGraph ParseStatement(XElement stmtSimple, int stmtNumber, double batchTotal)
+    private static PlanGraph ParseStatement(XElement? stmtSimple, int stmtNumber, double batchTotal)
     {
         var graph = new PlanGraph();
+        if (stmtSimple == null) return graph;
         graph.StatementNumber = stmtNumber;
 
         graph.Query = stmtSimple.Attribute("StatementText")?.Value;
@@ -233,9 +251,20 @@ public static class ExecutionPlanParser
         graph.BatchPct = batchTotal > 0 ? rootCost / batchTotal * 100.0 : 100.0;
         if (rootCost <= 0) rootCost = 1.0;
 
-        // .First is safe here — we already verified the child exists above
+        // Find the QueryPlan for this statement:
+        // 1. Direct child (StmtSimple normal case)
+        // 2. Under <Condition> (StmtCond WHILE/IF with condition query)
+        // 3. Any descendant before the first nested Stmt* (cursor plans, unusual shapes)
         var queryPlan = stmtSimple.Elements()
-            .First(e => e.Name.LocalName == "QueryPlan");
+                            .FirstOrDefault(e => e.Name.LocalName == "QueryPlan")
+                        ?? stmtSimple.Elements()
+                            .FirstOrDefault(e => e.Name.LocalName == "Condition")
+                            ?.Elements()
+                            .FirstOrDefault(e => e.Name.LocalName == "QueryPlan")
+                        ?? FindQueryPlanBeforeNestedStmt(stmtSimple);
+
+        if (queryPlan == null)
+            return graph;   // no operators — return empty graph, caller skips it
 
         // Missing index recommendations
         foreach (var mig in queryPlan.Descendants()
@@ -714,6 +743,23 @@ public static class ExecutionPlanParser
         // Recurse into direct RelOp children
         foreach (var child in GetDirectRelOpChildren(relOp))
             ParseRelOp(child, nodeId, graph, rootCost);
+    }
+
+    /// <summary>
+    /// Walks descendants of <paramref name="stmt"/> in document order and returns the first
+    /// QueryPlan element found before any nested Stmt* element.  Used as a fallback for
+    /// unusual plan shapes (cursor plans, nested CursorPlan wrappers, etc.).
+    /// Returns null when no QueryPlan exists before the first nested Stmt*.
+    /// </summary>
+    private static XElement? FindQueryPlanBeforeNestedStmt(XElement stmt)
+    {
+        foreach (var desc in stmt.Descendants())
+        {
+            if (desc.Name.LocalName == "QueryPlan") return desc;
+            if (desc.Name.LocalName.StartsWith("Stmt", StringComparison.Ordinal) && desc != stmt)
+                return null; // hit a nested statement before finding a QueryPlan
+        }
+        return null;
     }
 
     /// <summary>

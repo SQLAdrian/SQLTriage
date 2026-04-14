@@ -52,7 +52,6 @@ namespace SqlHealthAssessment.Data
             Dictionary<string, object>? additionalParams = null,
             System.Threading.CancellationToken cancellationToken = default)
         {
-            var sql = _configService.GetQuery(queryId, _connectionFactory.DataSourceType);
             var defaultDatabase = _configService.GetEffectiveDefaultDatabase(queryId);
 
             // Override with CurrentServer.Database if set (for Query Store database selection)
@@ -69,6 +68,12 @@ namespace SqlHealthAssessment.Data
                     ? (SqlConnection)sqlFactory.CreateConnection(defaultDatabase)
                     : (SqlConnection)_connectionFactory.CreateConnection();
                 await conn.OpenAsync(ct);
+
+                // Resolve version-aware query after connection is open (major version for legacy fallback)
+                int sqlMajorVersion = 0;
+                if (Version.TryParse(conn.ServerVersion, out var sv))
+                    sqlMajorVersion = sv.Major;
+                var sql = _configService.GetQuery(queryId, _connectionFactory.DataSourceType, sqlMajorVersion);
 
                 using var cmd = (SqlCommand)conn.CreateCommand();
                 cmd.CommandText = sql;
@@ -148,7 +153,6 @@ namespace SqlHealthAssessment.Data
             Dictionary<string, object>? additionalParams = null,
             System.Threading.CancellationToken cancellationToken = default)
         {
-            var sql = _configService.GetQuery(queryId, _connectionFactory.DataSourceType);
             var defaultDatabase = _configService.GetEffectiveDefaultDatabase(queryId);
 
             // Override with CurrentServer.Database if set (for Query Store database selection)
@@ -162,6 +166,12 @@ namespace SqlHealthAssessment.Data
                 ? (SqlConnection)sqlFactory.CreateConnection(defaultDatabase)
                 : (SqlConnection)_connectionFactory.CreateConnection();
             await conn.OpenAsync(cancellationToken);
+
+            // Resolve version-aware query after connection is open
+            int sqlMajorVersion = 0;
+            if (Version.TryParse(conn.ServerVersion, out var sv))
+                sqlMajorVersion = sv.Major;
+            var sql = _configService.GetQuery(queryId, _connectionFactory.DataSourceType, sqlMajorVersion);
 
             using var cmd = (SqlCommand)conn.CreateCommand();
             cmd.CommandText = sql;

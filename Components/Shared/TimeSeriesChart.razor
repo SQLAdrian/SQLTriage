@@ -14,6 +14,7 @@
     @if (_seriesDataCache != null && _distinctSeries != null)
     {
         <ApexChart TItem="TimeSeriesPoint"
+                   @key="_chartKey"
                    Height="@Height"
                    Options="@GetChartOptions()">
 
@@ -55,6 +56,8 @@
     private ApexChartOptions<TimeSeriesPoint>? _cachedOptions;
     private List<TimeSeriesPoint>? _adjustedDataCache;
     private int _lastOffset;
+    private string _chartKey = Guid.NewGuid().ToString();
+    private string _lastSeriesKey = "";
 
     // Get data with timezone adjustment applied and throttled to max points
     private List<TimeSeriesPoint> GetAdjustedData()
@@ -170,6 +173,10 @@
             // reflects the selected timezone without a data re-fetch.
             var adjustedData = GetAdjustedData();
 
+            // Force chart re-creation when series composition changes (prevents line accumulation).
+            // Key is finalised after baseline merge below — computed here as a base, then extended.
+            var newSeriesKey = string.Join(",", adjustedData.Select(d => d.Series).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(s => s));
+
             _distinctSeries = adjustedData
                 .Select(d => d.Series)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -206,12 +213,22 @@
                         .Where(d => string.Equals(d.Series, bs, StringComparison.OrdinalIgnoreCase))
                         .ToList();
                 }
+
+                // Include baseline in the key so toggling baseline also forces re-creation
+                newSeriesKey += "|baseline:" + string.Join(",", baselineSeries.OrderBy(s => s));
+            }
+
+            if (_lastSeriesKey != newSeriesKey)
+            {
+                _lastSeriesKey = newSeriesKey;
+                _chartKey = Guid.NewGuid().ToString();
             }
         }
         else
         {
             _distinctSeries = null;
             _seriesDataCache = null;
+            _lastSeriesKey = ""; // reset so next data arrival forces re-creation
         }
     }
 

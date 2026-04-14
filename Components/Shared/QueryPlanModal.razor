@@ -1,4 +1,5 @@
 <!--/* In the name of God, the Merciful, the Compassionate */-->
+@implements IAsyncDisposable
 @inject IJSRuntime JS
 @inject SqlHealthAssessment.Data.UserSettingsService UserSettings
 @inject SqlHealthAssessment.Data.ToastService Toast
@@ -387,5 +388,13 @@
     private void CancelIndexCreation()
     {
         _indexExecutionCts?.Cancel();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _indexExecutionCts?.Cancel();
+        _indexExecutionCts?.Dispose();
+        try { await JS.InvokeVoidAsync("queryPlanInteropV2.setDotNetRef", (object?)null); } catch { }
+        _dotNetRef?.Dispose();
     }
 }

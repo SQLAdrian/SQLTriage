@@ -312,5 +312,12 @@ namespace SqlHealthAssessment.Data.Models
 
         [JsonPropertyName("sqlServer")]
         public string SqlServer { get; set; } = "";
+
+        /// <summary>
+        /// Optional fallback query for SQL Server 2017 and earlier (major version &lt; 15).
+        /// Used when the connected instance lacks columns introduced in SQL Server 2019.
+        /// </summary>
+        [JsonPropertyName("sqlServerLegacy")]
+        public string? SqlServerLegacy { get; set; }
     }
 }

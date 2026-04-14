@@ -19,6 +19,7 @@ namespace SqlHealthAssessment.Data.Services
     public class NotificationChannelService
     {
         private readonly ILogger<NotificationChannelService> _logger;
+        private readonly AlertTemplateService _templates;
         private readonly string _configFilePath;
         private readonly object _lock = new();
         private NotificationChannelConfig _config = new();
@@ -32,9 +33,10 @@ namespace SqlHealthAssessment.Data.Services
 
         public event Action? OnConfigChanged;
 
-        public NotificationChannelService(ILogger<NotificationChannelService> logger)
+        public NotificationChannelService(ILogger<NotificationChannelService> logger, AlertTemplateService templates)
         {
             _logger = logger;
+            _templates = templates;
             _configFilePath = Path.Combine(AppContext.BaseDirectory, "Config", "notification-channels.json");
             _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
             LoadConfig();
@@ -50,6 +52,23 @@ namespace SqlHealthAssessment.Data.Services
                 SaveConfig();
             }
             OnConfigChanged?.Invoke();
+        }
+
+        /// <summary>Persists only the alert-window config without touching channel credentials.</summary>
+        public void UpdateAlertWindows(AlertWindowConfig windows)
+        {
+            lock (_lock)
+            {
+                _config.AlertWindows = windows;
+                SaveConfig();
+            }
+            OnConfigChanged?.Invoke();
+        }
+
+        /// <summary>Returns the current alert window config (thread-safe snapshot).</summary>
+        public AlertWindowConfig GetAlertWindows()
+        {
+            lock (_lock) return _config.AlertWindows;
         }
 
         private void LoadConfig()
@@ -190,12 +209,13 @@ namespace SqlHealthAssessment.Data.Services
                     string.IsNullOrEmpty(smtp.FromAddress) ? smtp.Username : smtp.FromAddress,
                     smtp.FromName);
 
+                var emailTemplate = _templates.Config.Email;
                 using var message = new MailMessage
                 {
                     From = from,
-                    Subject = $"[{notification.Severity.ToUpper()}] {notification.AlertName}",
+                    Subject = AlertTemplateService.Render(emailTemplate.Subject, notification),
                     IsBodyHtml = true,
-                    Body = BuildEmailBody(notification)
+                    Body = AlertTemplateService.Render(emailTemplate.Body, notification)
                 };
 
                 foreach (var to in smtp.ToAddresses.Where(a => !string.IsNullOrWhiteSpace(a)))

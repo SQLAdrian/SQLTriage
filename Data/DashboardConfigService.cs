@@ -372,10 +372,13 @@ namespace SqlHealthAssessment.Data
         /// <param name="dataSourceType">"SqlServer" or "liveQueries".</param>
         /// <returns>The SQL query string for the specified data source.</returns>
         /// <exception cref="KeyNotFoundException">Thrown when the query ID is not found.</exception>
-        public string GetQuery(string queryId, string dataSourceType)
+        public string GetQuery(string queryId, string dataSourceType, int sqlMajorVersion = 0)
         {
             if (_queryCache.TryGetValue(queryId, out var queryPair))
             {
+                // Use legacy query for SQL Server 2017 and earlier (major version < 15)
+                if (sqlMajorVersion > 0 && sqlMajorVersion < 15 && !string.IsNullOrEmpty(queryPair.SqlServerLegacy))
+                    return queryPair.SqlServerLegacy;
                 return queryPair.SqlServer;
             }
 

@@ -1,15 +1,18 @@
 {
     "version":  "0.85.2",
-    "buildNumber":  1046,
-    "buildDate":  "2026-04-14",
+    "buildNumber":  1093,
+    "buildDate":  "2026-04-15",
     "releaseType":  "Production",
     "updateCheckUrl":  "https://api.github.com/repos/SQLAdrian/SqlHealthAssessment/releases/latest",
     "whatsnew":  [
-                     "Query Plan V2: statement tabs always visible — single \u0026 multi-statement; never clipped by overflow",
-                     "Query Plan V2: tabs with \u003e50% batch cost highlighted red, 20-49% amber — mirrors operator cost heat colours",
-                     "Query Plan V2: operator pane widened to 660px with 4-column grid — properties paired side-by-side",
-                     "Query Plan V2: index suggestion always shows Copy DDL; Execute on Server only when No-Pants is active",
-                     "Query Plan V2: tree node collapse/expand — toggle on left edge hides/shows entire subtree",
-                     "Query Plan V2: summary sections (Wait Stats, Statistics Used, SET Options, etc.) individually collapsible"
+                     "Live Sessions: blocking-chain lines now render correctly with arrowheads and a blocking banner",
+                     "Live Sessions: blocking lines moved to MarkupString path with InvariantCulture coords — fixes locale-specific rendering failure",
+                     "Alerting: ag_listener_offline query fixed — bad listener_id join replaced with ip_address+port join via availability_group_listener_ip_addresses",
+                     "Alert definitions: all 80 alerts now carry uniform schema (alwaysAlert, primaryChannel, escalation fields, etc.)",
+                     "Alert edit modal: channel dropdowns populated from enabled channels; alwaysAlert/sendEmail/escalate always visible",
+                     "Alert Templates tab: per-channel template editors with token reference, Reset to Default, full HTML email support",
+                     "AutoUpdate: version comparison now handles GitHub tag format v0.85.2-build1046 correctly",
+                     "Query Plan: stored procedure plans (StmtCond WHILE/IF) now parse correctly — condition plan shown, body statements as separate tabs",
+                     "Query Plan: null-safety fix for fallback parent-selection path in ParseAll"
                  ]
 }

@@ -5,6 +5,8 @@
 @using SqlHealthAssessment.Data.Services
 @inject NotificationChannelService ChannelService
 @inject UserSettingsService UserSettings
+@inject XEventService XEventService
+@inject ServerConnectionManager ConnectionManager
 @implements IDisposable
 
 <div class="settings-page" style="max-width: 900px;">
@@ -426,6 +428,286 @@
         </p>
     }
 
+    @* ── Extended Events Sessions ── *@
+    <div class="settings-group" style="margin-top: 24px;">
+        <h3 style="display: flex; align-items: center; gap: 8px;">
+            <i class="fa-solid fa-bolt" style="color: var(--accent);"></i>
+            Extended Events Sessions
+            <button class="settings-btn" style="margin-left: auto; padding: 4px 10px; font-size: 11px;"
+                    @onclick="RefreshXesSessions" disabled="@_xesLoading">
+                @if (_xesLoading)
+                {
+                    <i class="fa-solid fa-spinner fa-spin" style="margin-right: 4px;"></i>
+                }
+                else
+                {
+                    <i class="fa-solid fa-rotate" style="margin-right: 4px;"></i>
+                }
+                Refresh
+            </button>
+        </h3>
+        <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
+            All Extended Event sessions defined on the currently selected server. Start/stop sessions or toggle auto-start on server boot.
+            Sessions marked <strong>Auto-start</strong> use <code>STARTUP_STATE=ON</code>.
+        </p>
+
+        @if (!string.IsNullOrEmpty(_xesStatusMessage))
+        {
+            <p style="padding: 8px 12px; border-radius: 4px; font-size: 12px; margin-bottom: 10px;
+                       background: @(_xesStatusOk ? "rgba(78,201,176,0.1)" : "rgba(244,71,71,0.1)");
+                       border: 1px solid @(_xesStatusOk ? "var(--green)" : "var(--red)");
+                       color: @(_xesStatusOk ? "var(--green)" : "var(--red)");">
+                <i class="fa-solid @(_xesStatusOk ? "fa-check-circle" : "fa-times-circle")" style="margin-right: 4px;"></i>
+                @_xesStatusMessage
+            </p>
+        }
+
+        @if (_xesSessions == null)
+        {
+            <div style="font-size: 12px; color: var(--text-muted); padding: 16px 0;">
+                <i class="fa-solid fa-info-circle" style="margin-right: 4px;"></i>
+                Click Refresh to load sessions for the currently selected server.
+            </div>
+        }
+        else if (_xesSessions.Count == 0)
+        {
+            <div style="font-size: 12px; color: var(--text-muted); padding: 16px 0;">
+                No Extended Event sessions found on this server.
+            </div>
+        }
+        else
+        {
+            <table class="results-table" style="width: 100%; font-size: 12px;">
+                <thead>
+                    <tr>
+                        <th style="padding: 6px 10px; text-align: left;">Session</th>
+                        <th style="padding: 6px 10px; text-align: center;">Status</th>
+                        <th style="padding: 6px 10px; text-align: center;">Auto-start</th>
+                        <th style="padding: 6px 10px; text-align: right;">Events Emitted</th>
+                        <th style="padding: 6px 10px; text-align: right;">Buffer</th>
+                        <th style="padding: 6px 10px; text-align: center;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var ses in _xesSessions)
+                    {
+                        <tr>
+                            <td style="padding: 6px 10px; font-weight: 500;">@ses.Name</td>
+                            <td style="padding: 6px 10px; text-align: center;">
+                                @if (ses.IsRunning)
+                                {
+                                    <span class="severity-badge severity-ok" style="font-size: 10px;">
+                                        <i class="fa-solid fa-circle" style="font-size: 7px; margin-right: 3px;"></i>Running
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="severity-badge" style="font-size: 10px; background: var(--bg-tertiary); color: var(--text-muted);">
+                                        <i class="fa-solid fa-circle" style="font-size: 7px; margin-right: 3px;"></i>Stopped
+                                    </span>
+                                }
+                            </td>
+                            <td style="padding: 6px 10px; text-align: center;">
+                                <label style="display: inline-flex; align-items: center; gap: 5px; cursor: pointer;">
+                                    <input type="checkbox" checked="@ses.StartupState"
+                                           @onchange="async e => await ToggleStartupState(ses, (bool)(e.Value ?? false))"
+                                           style="width: auto; cursor: pointer;" />
+                                    <span style="font-size: 11px; color: @(ses.StartupState ? "var(--green)" : "var(--text-muted)");">
+                                        @(ses.StartupState ? "On" : "Off")
+                                    </span>
+                                </label>
+                            </td>
+                            <td style="padding: 6px 10px; text-align: right; color: var(--text-secondary);">
+                                @(ses.IsRunning ? ses.TotalEventsEmitted.ToString("N0") : "—")
+                            </td>
+                            <td style="padding: 6px 10px; text-align: right; color: var(--text-secondary);">
+                                @(ses.IsRunning && ses.BufferSizeBytes > 0 ? FormatBytes(ses.BufferSizeBytes) : "—")
+                            </td>
+                            <td style="padding: 6px 10px; text-align: center;">
+                                <div style="display: flex; gap: 6px; justify-content: center;">
+                                    @if (ses.IsRunning)
+                                    {
+                                        <button class="settings-btn" style="padding: 3px 8px; font-size: 11px; background: rgba(244,71,71,0.12); color: var(--red);"
+                                                @onclick="async () => await StopXesSession(ses.Name)"
+                                                title="Stop session">
+                                            <i class="fa-solid fa-stop"></i> Stop
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <button class="settings-btn" style="padding: 3px 8px; font-size: 11px; background: rgba(78,201,176,0.12); color: var(--green);"
+                                                @onclick="async () => await StartXesSession(ses.Name)"
+                                                title="Start session">
+                                            <i class="fa-solid fa-play"></i> Start
+                                        </button>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+
+    @* ── Operational Windows ── *@
+    <div class="settings-group" style="margin-top: 24px;">
+        <h3 style="display: flex; align-items: center; gap: 8px;">
+            <i class="fa-solid fa-clock" style="color: var(--accent);"></i>
+            Operational Windows
+        </h3>
+        <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 16px;">
+            Control when alerts fire. During <strong>operational hours</strong> all alerts fire normally.
+            Outside those hours only alerts marked <em>Always Alert</em> fire.
+            During a <strong>maintenance window</strong> all alerts are suppressed — including Always Alert ones.
+        </p>
+
+        @* Maintenance now banner *@
+        @if (_windows.IsManualMaintenanceActive)
+        {
+            <div style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 6px;
+                        background: rgba(244,71,71,0.1); border: 1px solid var(--red); margin-bottom: 14px; font-size: 12px;">
+                <i class="fa-solid fa-tools" style="color: var(--red);"></i>
+                <span style="color: var(--red); font-weight: 500;">Maintenance active</span>
+                <span style="color: var(--text-secondary);">— all alerts suppressed until @_windows.MaintenanceActiveUntil!.Value.ToString("HH:mm")</span>
+                <button class="settings-btn" style="margin-left: auto; padding: 3px 10px; font-size: 11px; background: rgba(244,71,71,0.15); color: var(--red);"
+                        @onclick="EndMaintenanceNow">End now</button>
+            </div>
+        }
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+
+            @* ── Operational window ── *@
+            <div style="border: 1px solid var(--border); border-radius: 6px; padding: 14px;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                    <i class="fa-solid fa-sun" style="color: var(--yellow);"></i>
+                    <strong style="font-size: 13px;">Operational Hours</strong>
+                    <label style="margin-left: auto; display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: normal; cursor: pointer;">
+                        <input type="checkbox" @bind="_windows.OperationalWindow.Enabled" style="width: auto;" />
+                        <span style="color: var(--text-secondary);">Enabled</span>
+                    </label>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                    <div class="settings-field">
+                        <label>Start time</label>
+                        <input type="time" value="@_windows.OperationalWindow.StartTime"
+                               @onchange="e => _windows.OperationalWindow.StartTime = e.Value?.ToString() ?? _windows.OperationalWindow.StartTime"
+                               disabled="@(!_windows.OperationalWindow.Enabled)" />
+                    </div>
+                    <div class="settings-field">
+                        <label>End time</label>
+                        <input type="time" value="@_windows.OperationalWindow.EndTime"
+                               @onchange="e => _windows.OperationalWindow.EndTime = e.Value?.ToString() ?? _windows.OperationalWindow.EndTime"
+                               disabled="@(!_windows.OperationalWindow.Enabled)" />
+                    </div>
+                </div>
+                <div class="settings-field">
+                    <label style="margin-bottom: 6px; display: block;">Active days</label>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                        @foreach (var day in _allDays)
+                        {
+                            var flag = day.Flag;
+                            var active = (_windows.OperationalWindow.Days & flag) != 0;
+                            <label style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; cursor: pointer;
+                                          padding: 3px 8px; border-radius: 4px;
+                                          background: @(active ? "rgba(0,122,204,0.15)" : "var(--bg-tertiary)");
+                                          border: 1px solid @(active ? "var(--accent)" : "var(--border)");
+                                          color: @(active ? "var(--accent)" : "var(--text-secondary)");
+                                          opacity: @(_windows.OperationalWindow.Enabled ? "1" : "0.5");">
+                                <input type="checkbox" checked="@active"
+                                       @onchange="e => ToggleOperationalDay(flag, (bool)(e.Value ?? false))"
+                                       disabled="@(!_windows.OperationalWindow.Enabled)"
+                                       style="width: auto;" />
+                                @day.Label
+                            </label>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            @* ── Maintenance window ── *@
+            <div style="border: 1px solid var(--border); border-radius: 6px; padding: 14px;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                    <i class="fa-solid fa-tools" style="color: var(--red);"></i>
+                    <strong style="font-size: 13px;">Maintenance Window</strong>
+                    <label style="margin-left: auto; display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: normal; cursor: pointer;">
+                        <input type="checkbox" @bind="_windows.MaintenanceWindow.Enabled" style="width: auto;" />
+                        <span style="color: var(--text-secondary);">Scheduled</span>
+                    </label>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                    <div class="settings-field">
+                        <label>Start time</label>
+                        <input type="time" value="@_windows.MaintenanceWindow.StartTime"
+                               @onchange="e => _windows.MaintenanceWindow.StartTime = e.Value?.ToString() ?? _windows.MaintenanceWindow.StartTime"
+                               disabled="@(!_windows.MaintenanceWindow.Enabled)" />
+                    </div>
+                    <div class="settings-field">
+                        <label>End time</label>
+                        <input type="time" value="@_windows.MaintenanceWindow.EndTime"
+                               @onchange="e => _windows.MaintenanceWindow.EndTime = e.Value?.ToString() ?? _windows.MaintenanceWindow.EndTime"
+                               disabled="@(!_windows.MaintenanceWindow.Enabled)" />
+                    </div>
+                </div>
+                <div class="settings-field" style="margin-bottom: 12px;">
+                    <label style="margin-bottom: 6px; display: block;">Active days</label>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                        @foreach (var day in _allDays)
+                        {
+                            var flag = day.Flag;
+                            var active = (_windows.MaintenanceWindow.Days & flag) != 0;
+                            <label style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; cursor: pointer;
+                                          padding: 3px 8px; border-radius: 4px;
+                                          background: @(active ? "rgba(244,71,71,0.12)" : "var(--bg-tertiary)");
+                                          border: 1px solid @(active ? "var(--red)" : "var(--border)");
+                                          color: @(active ? "var(--red)" : "var(--text-secondary)");
+                                          opacity: @(_windows.MaintenanceWindow.Enabled ? "1" : "0.5");">
+                                <input type="checkbox" checked="@active"
+                                       @onchange="e => ToggleMaintenanceDay(flag, (bool)(e.Value ?? false))"
+                                       disabled="@(!_windows.MaintenanceWindow.Enabled)"
+                                       style="width: auto;" />
+                                @day.Label
+                            </label>
+                        }
+                    </div>
+                </div>
+
+                @* Start now dropdown *@
+                <div style="border-top: 1px solid var(--border); padding-top: 10px; display: flex; align-items: center; gap: 8px;">
+                    <i class="fa-solid fa-play-circle" style="color: var(--text-muted); font-size: 13px;"></i>
+                    <span style="font-size: 12px; color: var(--text-secondary);">Start maintenance now for</span>
+                    <select @bind="_maintenanceNowMinutes" style="width: auto; padding: 3px 6px; font-size: 12px;">
+                        <option value="5">5 minutes</option>
+                        <option value="15">15 minutes</option>
+                        <option value="30">30 minutes</option>
+                        <option value="60">60 minutes</option>
+                    </select>
+                    <button class="settings-btn" style="padding: 3px 10px; font-size: 11px;"
+                            @onclick="StartMaintenanceNow">
+                        <i class="fa-solid fa-play" style="margin-right: 4px;"></i>Start
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_windowsStatusMessage))
+        {
+            <p style="margin-top: 12px; padding: 8px 12px; border-radius: 4px; font-size: 12px;
+                       background: @(_windowsStatusOk ? "rgba(78,201,176,0.1)" : "rgba(244,71,71,0.1)");
+                       border: 1px solid @(_windowsStatusOk ? "var(--green)" : "var(--red)");
+                       color: @(_windowsStatusOk ? "var(--green)" : "var(--red)");">
+                <i class="fa-solid @(_windowsStatusOk ? "fa-check-circle" : "fa-times-circle")" style="margin-right: 4px;"></i>
+                @_windowsStatusMessage
+            </p>
+        }
+
+        <div style="margin-top: 14px; display: flex; gap: 10px;">
+            <button class="settings-btn settings-btn-primary" @onclick="SaveWindowConfig">
+                <i class="fa-solid fa-save" style="margin-right: 6px;"></i>Save Window Config
+            </button>
+        </div>
+    </div>
+
 </div>
 
 @code {
@@ -470,6 +752,126 @@
     private bool _testingPagerDuty;
     private bool _testingServiceNow;
     private bool _testingWhatsApp;
+
+    // Extended Events
+    private List<XEventSessionInfo>? _xesSessions;
+    private bool _xesLoading;
+    private string? _xesStatusMessage;
+    private bool _xesStatusOk;
+
+    // Operational Windows
+    private AlertWindowConfig _windows = new();
+    private int _maintenanceNowMinutes = 15;
+    private string? _windowsStatusMessage;
+    private bool _windowsStatusOk;
+
+    private record DayItem(string Label, WindowDays Flag);
+    private static readonly DayItem[] _allDays =
+    [
+        new("Mon", WindowDays.Monday),
+        new("Tue", WindowDays.Tuesday),
+        new("Wed", WindowDays.Wednesday),
+        new("Thu", WindowDays.Thursday),
+        new("Fri", WindowDays.Friday),
+        new("Sat", WindowDays.Saturday),
+        new("Sun", WindowDays.Sunday),
+    ];
+
+    private string? GetCurrentConnectionString()
+    {
+        var server = ConnectionManager.CurrentServer;
+        if (server == null) return null;
+        var name = server.ServerNames.Split(',')[0].Trim();
+        return server.GetConnectionString(name, "master");
+    }
+
+    private async Task RefreshXesSessions()
+    {
+        var connStr = GetCurrentConnectionString();
+        if (connStr == null) { _xesStatusMessage = "No server selected."; _xesStatusOk = false; return; }
+        _xesLoading = true;
+        _xesStatusMessage = null;
+        await InvokeAsync(StateHasChanged);
+        _xesSessions = await XEventService.GetAllSessionsAsync(connStr);
+        _xesLoading = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task StartXesSession(string name)
+    {
+        var connStr = GetCurrentConnectionString();
+        if (connStr == null) return;
+        var result = await XEventService.StartSessionAsync(connStr, name);
+        _xesStatusOk = !result.StartsWith("Error");
+        _xesStatusMessage = result;
+        await RefreshXesSessions();
+    }
+
+    private async Task StopXesSession(string name)
+    {
+        var connStr = GetCurrentConnectionString();
+        if (connStr == null) return;
+        var result = await XEventService.StopSessionAsync(connStr, name);
+        _xesStatusOk = !result.StartsWith("Error");
+        _xesStatusMessage = result;
+        await RefreshXesSessions();
+    }
+
+    private async Task ToggleStartupState(XEventSessionInfo ses, bool newValue)
+    {
+        var connStr = GetCurrentConnectionString();
+        if (connStr == null) return;
+        var result = await XEventService.SetStartupStateAsync(connStr, ses.Name, newValue);
+        _xesStatusOk = !result.StartsWith("Error");
+        _xesStatusMessage = result;
+        ses.StartupState = newValue; // optimistic update
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes >= 1_048_576) return $"{bytes / 1_048_576.0:F1} MB";
+        if (bytes >= 1_024)     return $"{bytes / 1_024.0:F1} KB";
+        return $"{bytes} B";
+    }
+
+    private void ToggleOperationalDay(WindowDays flag, bool on)
+    {
+        if (on) _windows.OperationalWindow.Days |= flag;
+        else    _windows.OperationalWindow.Days &= ~flag;
+    }
+
+    private void ToggleMaintenanceDay(WindowDays flag, bool on)
+    {
+        if (on) _windows.MaintenanceWindow.Days |= flag;
+        else    _windows.MaintenanceWindow.Days &= ~flag;
+    }
+
+    private void StartMaintenanceNow()
+    {
+        _windows.MaintenanceActiveUntil = DateTime.Now.AddMinutes(_maintenanceNowMinutes);
+        ChannelService.UpdateAlertWindows(_windows);
+        _windowsStatusOk = true;
+        _windowsStatusMessage = $"Maintenance mode active for {_maintenanceNowMinutes} min — all alerts suppressed until {_windows.MaintenanceActiveUntil.Value:HH:mm}.";
+        StateHasChanged();
+    }
+
+    private void EndMaintenanceNow()
+    {
+        _windows.MaintenanceActiveUntil = null;
+        ChannelService.UpdateAlertWindows(_windows);
+        _windowsStatusOk = true;
+        _windowsStatusMessage = "Maintenance mode ended.";
+        StateHasChanged();
+    }
+
+    private void SaveWindowConfig()
+    {
+        ChannelService.UpdateAlertWindows(_windows);
+        _windowsStatusOk = true;
+        _windowsStatusMessage = "Window configuration saved.";
+        StateHasChanged();
+    }
 
     protected override void OnInitialized()
     {
@@ -553,6 +955,27 @@
         };
         _hasExistingWhatsAppToken = !string.IsNullOrEmpty(config.WhatsApp.AccessToken);
         _whatsAppRecipients = string.Join(", ", _whatsApp.RecipientNumbers);
+
+        // Load window config
+        var wc = config.AlertWindows;
+        _windows = new AlertWindowConfig
+        {
+            OperationalWindow = new AlertTimeWindow
+            {
+                Enabled = wc.OperationalWindow.Enabled,
+                StartTime = wc.OperationalWindow.StartTime,
+                EndTime = wc.OperationalWindow.EndTime,
+                Days = wc.OperationalWindow.Days
+            },
+            MaintenanceWindow = new AlertTimeWindow
+            {
+                Enabled = wc.MaintenanceWindow.Enabled,
+                StartTime = wc.MaintenanceWindow.StartTime,
+                EndTime = wc.MaintenanceWindow.EndTime,
+                Days = wc.MaintenanceWindow.Days
+            },
+            MaintenanceActiveUntil = wc.MaintenanceActiveUntil
+        };
 
         ChannelService.OnConfigChanged += OnConfigChanged;
     }

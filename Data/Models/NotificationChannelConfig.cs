@@ -31,6 +31,9 @@ namespace SqlHealthAssessment.Data.Models
         [JsonPropertyName("whatsApp")]
         public WhatsAppChannelConfig WhatsApp { get; set; } = new();
 
+        [JsonPropertyName("alertWindows")]
+        public AlertWindowConfig AlertWindows { get; set; } = new();
+
         [JsonPropertyName("lastModified")]
         public DateTime? LastModified { get; set; }
     }

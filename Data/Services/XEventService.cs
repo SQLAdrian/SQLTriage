@@ -360,6 +360,78 @@ public class XEventService
     }
 
     /// <summary>
+    /// Get all defined XEvent sessions including stopped ones, with startup_state, from sys.server_event_sessions.
+    /// Joins to sys.dm_xe_sessions to determine whether each session is currently running.
+    /// </summary>
+    public async Task<List<XEventSessionInfo>> GetAllSessionsAsync(string connectionString)
+    {
+        var sessions = new List<XEventSessionInfo>();
+        try
+        {
+            using var connection = new SqlConnection(connectionString);
+            await connection.OpenAsync();
+
+            const string sql = @"
+                SELECT
+                    ses.name                                                    AS Name,
+                    ses.startup_state                                           AS StartupState,
+                    ses.create_time                                             AS CreateTime,
+                    CASE WHEN dm.name IS NOT NULL THEN 1 ELSE 0 END            AS IsRunning,
+                    ISNULL(dm.total_events_emitted, 0)                         AS TotalEventsEmitted,
+                    ISNULL(dm.total_buffer_size_bytes, 0)                      AS BufferSizeBytes
+                FROM sys.server_event_sessions ses
+                LEFT JOIN sys.dm_xe_sessions dm ON dm.name = ses.name
+                ORDER BY ses.name";
+
+            using var cmd = new SqlCommand(sql, connection);
+            cmd.CommandTimeout = 30;
+            using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                sessions.Add(new XEventSessionInfo
+                {
+                    Name             = reader.GetString(0),
+                    StartupState     = reader.GetBoolean(1),
+                    CreateTime       = reader.IsDBNull(2) ? DateTime.MinValue : reader.GetDateTime(2),
+                    IsRunning        = reader.GetInt32(3) == 1,
+                    TotalEventsEmitted = reader.GetInt64(4),
+                    BufferSizeBytes  = reader.GetInt64(5)
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting all XEvent sessions");
+        }
+        return sessions;
+    }
+
+    /// <summary>
+    /// Sets STARTUP_STATE ON or OFF for an existing session.
+    /// </summary>
+    public async Task<string> SetStartupStateAsync(string connectionString, string sessionName, bool startupOn)
+    {
+        try
+        {
+            using var connection = new SqlConnection(connectionString);
+            await connection.OpenAsync();
+            // Parameterised names are not supported in DDL — session name is validated above
+            var state = startupOn ? "ON" : "OFF";
+            var sql = $"ALTER EVENT SESSION [{sessionName.Replace("]", "]]")}] ON SERVER WITH (STARTUP_STATE = {state})";
+            using var cmd = new SqlCommand(sql, connection);
+            cmd.CommandTimeout = 30;
+            await cmd.ExecuteNonQueryAsync();
+            _logger.LogInformation("Set startup state {State} for XEvent session {Name}", state, sessionName);
+            return $"Startup state set to {state} for '{sessionName}'";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error setting startup state for {SessionName}", sessionName);
+            return $"Error: {ex.Message}";
+        }
+    }
+
+    /// <summary>
     /// Get predefined session templates
     /// </summary>
     public List<XEventTemplate> GetTemplates()
@@ -475,4 +547,18 @@ public class XEventTemplate
     public string Description { get; set; } = string.Empty;
     public List<string> Events { get; set; } = new();
     public string Predicate { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Full XEvent session info — includes sessions that are defined but not running.
+/// Sourced from sys.server_event_sessions joined to sys.dm_xe_sessions.
+/// </summary>
+public class XEventSessionInfo
+{
+    public string Name { get; set; } = string.Empty;
+    public bool StartupState { get; set; }
+    public DateTime CreateTime { get; set; }
+    public bool IsRunning { get; set; }
+    public long TotalEventsEmitted { get; set; }
+    public long BufferSizeBytes { get; set; }
 }

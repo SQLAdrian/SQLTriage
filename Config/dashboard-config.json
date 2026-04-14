@@ -1308,10 +1308,10 @@
         {
           "id": "live.blocking",
           "title": "Blocking Chains",
-          "description": "Number of blocked sessions from sys.dm_exec_requests where blocking_session_id > 0.",
+          "description": "Active blocking sessions with wait durations and SQL text, displayed as a chain tree from head blocker to deepest blocked session.",
           "enabled": true,
           "source": "",
-          "panelType": "DataGrid",
+          "panelType": "BlockingTree",
           "chartType": "Line",
           "height": 300,
           "refreshIntervalSeconds": 5,
@@ -1351,12 +1351,12 @@
           "refreshIntervalSeconds": 60,
           "layout": {
             "column": 1,
-            "order": 10,
+            "order": 11,
             "spanColumns": true
           },
           "query": {
             "source": "sqlwatch",
-            "sqlServer": "SELECT TOP 20 xed.value('(@timestamp)', 'DATETIME2') AS event_time, xed.query('.') AS deadlock_xml FROM (SELECT CAST(target_data AS XML) AS target_data FROM sys.dm_xe_session_targets st JOIN sys.dm_xe_sessions s ON s.address = st.event_session_address WHERE s.name = 'system_health' AND st.target_name = 'ring_buffer') AS data CROSS APPLY target_data.nodes('RingBufferTarget/event[@name=\"xml_deadlock_report\"]') AS xevent(xed) ORDER BY event_time DESC"
+            "sqlServer": "SELECT TOP 20 xed.value('(@timestamp)[1]', 'DATETIME2') AS event_time, xed.query('(./data/value/deadlock)[1]') AS deadlock_xml FROM (SELECT CAST(st.target_data AS XML) AS target_data FROM sys.dm_xe_session_targets st JOIN sys.dm_xe_sessions s ON s.address = st.event_session_address WHERE s.name = 'system_health' AND st.target_name = 'ring_buffer') AS rb CROSS APPLY rb.target_data.nodes('RingBufferTarget/event') AS xevent(xed) WHERE xed.exist('(./data/value/deadlock)[1]') = 1 ORDER BY event_time DESC"
           },
           "defaultDatabase": "master",
           "statUnit": "",
@@ -1385,7 +1385,7 @@
           "refreshIntervalSeconds": null,
           "layout": {
             "column": 1,
-            "order": 11,
+            "order": 12,
             "spanColumns": true
           },
           "query": {
@@ -1419,7 +1419,7 @@
           "refreshIntervalSeconds": null,
           "layout": {
             "column": 0,
-            "order": 12,
+            "order": 13,
             "spanColumns": true
           },
           "query": {
@@ -1472,7 +1472,7 @@
           "refreshIntervalSeconds": null,
           "layout": {
             "column": 1,
-            "order": 13,
+            "order": 14,
             "spanColumns": true
           },
           "query": {
@@ -1506,7 +1506,7 @@
           "refreshIntervalSeconds": null,
           "layout": {
             "column": 0,
-            "order": 14,
+            "order": 15,
             "spanColumns": false
           },
           "query": {
@@ -1540,7 +1540,7 @@
           "refreshIntervalSeconds": null,
           "layout": {
             "column": 0,
-            "order": 15,
+            "order": 16,
             "spanColumns": false
           },
           "query": {
@@ -1593,7 +1593,7 @@
           "refreshIntervalSeconds": null,
           "layout": {
             "column": 0,
-            "order": 16,
+            "order": 17,
             "spanColumns": false
           },
           "query": {
@@ -1640,7 +1640,7 @@
           "refreshIntervalSeconds": null,
           "layout": {
             "column": 0,
-            "order": 17,
+            "order": 18,
             "spanColumns": false
           },
           "query": {
@@ -1674,7 +1674,7 @@
           "refreshIntervalSeconds": null,
           "layout": {
             "column": 0,
-            "order": 18,
+            "order": 19,
             "spanColumns": false
           },
           "query": {
@@ -1708,7 +1708,7 @@
           "refreshIntervalSeconds": null,
           "layout": {
             "column": 0,
-            "order": 19,
+            "order": 20,
             "spanColumns": false
           },
           "query": {
@@ -1742,7 +1742,7 @@
           "refreshIntervalSeconds": null,
           "layout": {
             "column": 0,
-            "order": 20,
+            "order": 21,
             "spanColumns": true
           },
           "query": {
@@ -1776,7 +1776,7 @@
           "refreshIntervalSeconds": null,
           "layout": {
             "column": 0,
-            "order": 21,
+            "order": 22,
             "spanColumns": false
           },
           "query": {
@@ -1810,7 +1810,7 @@
           "refreshIntervalSeconds": null,
           "layout": {
             "column": 0,
-            "order": 22,
+            "order": 23,
             "spanColumns": false
           },
           "query": {
@@ -1844,7 +1844,7 @@
           "refreshIntervalSeconds": 30,
           "layout": {
             "column": 0,
-            "order": 23,
+            "order": 24,
             "spanColumns": true
           },
           "query": {
@@ -1861,6 +1861,40 @@
           "dataGridIsClickable": false,
           "dataGridMaxRows": 500,
           "dataGridTopRows": 50,
+          "actionColumn": null,
+          "actionColumnMode": null,
+          "dataGridColumns": null,
+          "dataGridColumnColors": null
+        },
+        {
+          "id": "live.xe_deadlock_status",
+          "title": "Deadlock XE Running",
+          "description": "Checks whether any running Extended Event session captures xml_deadlock_report events. A session must be running to populate the Recent Deadlocks panel.",
+          "enabled": true,
+          "source": "",
+          "panelType": "XeStatus",
+          "chartType": "Line",
+          "height": 50,
+          "refreshIntervalSeconds": 60,
+          "layout": {
+            "column": 1,
+            "order": 10,
+            "spanColumns": true
+          },
+          "query": {
+            "source": "sqlwatch",
+            "sqlServer": "SELECT CASE WHEN COUNT(*) > 0 THEN 'Yes' ELSE 'No' END AS value FROM sys.dm_xe_sessions s JOIN sys.dm_xe_session_events se ON se.event_session_address = s.address WHERE se.event_name = 'xml_deadlock_report'"
+          },
+          "defaultDatabase": "master",
+          "statUnit": "",
+          "statThresholdKey": null,
+          "barGaugeThresholdKey": null,
+          "barGaugeUnitSuffix": "",
+          "valueFormat": "",
+          "colorThresholds": [],
+          "dataGridIsClickable": false,
+          "dataGridMaxRows": 1,
+          "dataGridTopRows": 0,
           "actionColumn": null,
           "actionColumnMode": null,
           "dataGridColumns": null,
@@ -5012,7 +5046,8 @@
           },
           "query": {
             "source": "",
-            "sqlServer": "SELECT d.name AS [Database], d.compatibility_level AS [Compat], d.recovery_model_desc AS [Recovery], CASE d.is_encrypted WHEN 1 THEN 'Yes' ELSE 'No' END AS [TDE], ISNULL((SELECT state_desc FROM sys.dm_database_encryption_keys ek WHERE ek.database_id=d.database_id),'N/A') AS [Encrypt State], CASE d.is_read_committed_snapshot_on WHEN 1 THEN 'Yes' ELSE 'No' END AS [RCSI], CASE d.is_accelerated_database_recovery_on WHEN 1 THEN 'Yes' ELSE 'No' END AS [ADR], CASE d.is_query_store_on WHEN 1 THEN 'Yes' ELSE 'No' END AS [QStore], d.page_verify_option_desc AS [Page Verify], d.is_auto_close_on AS [AutoClose], d.is_auto_shrink_on AS [AutoShrink] FROM sys.databases d WHERE d.database_id > 4 AND d.state_desc = 'ONLINE' ORDER BY d.name"
+            "sqlServer": "SELECT d.name AS [Database], d.compatibility_level AS [Compat], d.recovery_model_desc AS [Recovery], CASE d.is_encrypted WHEN 1 THEN 'Yes' ELSE 'No' END AS [TDE], ISNULL((SELECT state_desc FROM sys.dm_database_encryption_keys ek WHERE ek.database_id=d.database_id),'N/A') AS [Encrypt State], CASE d.is_read_committed_snapshot_on WHEN 1 THEN 'Yes' ELSE 'No' END AS [RCSI], CASE d.is_accelerated_database_recovery_on WHEN 1 THEN 'Yes' ELSE 'No' END AS [ADR], CASE d.is_query_store_on WHEN 1 THEN 'Yes' ELSE 'No' END AS [QStore], d.page_verify_option_desc AS [Page Verify], d.is_auto_close_on AS [AutoClose], d.is_auto_shrink_on AS [AutoShrink] FROM sys.databases d WHERE d.database_id > 4 AND d.state_desc = 'ONLINE' ORDER BY d.name",
+            "sqlServerLegacy": "SELECT d.name AS [Database], d.compatibility_level AS [Compat], d.recovery_model_desc AS [Recovery], CASE d.is_encrypted WHEN 1 THEN 'Yes' ELSE 'No' END AS [TDE], ISNULL((SELECT state_desc FROM sys.dm_database_encryption_keys ek WHERE ek.database_id=d.database_id),'N/A') AS [Encrypt State], CASE d.is_read_committed_snapshot_on WHEN 1 THEN 'Yes' ELSE 'No' END AS [RCSI], 'N/A' AS [ADR], CASE d.is_query_store_on WHEN 1 THEN 'Yes' ELSE 'No' END AS [QStore], d.page_verify_option_desc AS [Page Verify], d.is_auto_close_on AS [AutoClose], d.is_auto_shrink_on AS [AutoShrink] FROM sys.databases d WHERE d.database_id > 4 AND d.state_desc = 'ONLINE' ORDER BY d.name"
           },
           "defaultDatabase": "master",
           "statUnit": "",
