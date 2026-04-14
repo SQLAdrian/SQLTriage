@@ -120,6 +120,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="MailKit" Version="4.15.1" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.Google" Version="8.0.*" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.MicrosoftAccount" Version="8.0.*" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebView.Wpf" Version="8.0.*" />
@@ -336,14 +337,14 @@
     </PropertyGroup>
     <RemoveDir Directories="$(PublishDir)bin" ContinueOnError="true" />
     <!-- Strip dev/research artefacts that must never ship in a release -->
-    <RemoveDir Directories="$(PublishDir)BPScripts\Ignore"  ContinueOnError="true" />
+    <RemoveDir Directories="$(PublishDir)BPScripts\Ignore" ContinueOnError="true" />
     <RemoveDir Directories="$(PublishDir)research_output" ContinueOnError="true" />
-    <RemoveDir Directories="$(PublishDir)research_logs"   ContinueOnError="true" />
-    <RemoveDir Directories="$(PublishDir)temp"            ContinueOnError="true" />
-    <RemoveDir Directories="$(PublishDir)win-x64"         ContinueOnError="true" />
-    <RemoveDir Directories="$(PublishDir).git"            ContinueOnError="true" />
+    <RemoveDir Directories="$(PublishDir)research_logs" ContinueOnError="true" />
+    <RemoveDir Directories="$(PublishDir)temp" ContinueOnError="true" />
+    <RemoveDir Directories="$(PublishDir)win-x64" ContinueOnError="true" />
+    <RemoveDir Directories="$(PublishDir).git" ContinueOnError="true" />
     <!-- Strip test/coverage infrastructure that leaks in from SqlHealthAssessment.Tests -->
-    <RemoveDir Directories="$(PublishDir)CodeCoverage"         ContinueOnError="true" />
+    <RemoveDir Directories="$(PublishDir)CodeCoverage" ContinueOnError="true" />
     <RemoveDir Directories="$(PublishDir)InstrumentationEngine" ContinueOnError="true" />
     <!-- coverlet + code coverage -->
     <Delete Files="$(PublishDir)coverlet.collector.dll;$(PublishDir)coverlet.collector.pdb;$(PublishDir)coverlet.collector.deps.json;$(PublishDir)coverlet.collector.targets;$(PublishDir)coverlet.core.dll;$(PublishDir)coverlet.core.pdb" ContinueOnError="true" />

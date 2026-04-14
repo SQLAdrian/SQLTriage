@@ -3,9 +3,11 @@
 using System.IO;
 using System.Net;
 using System.Net.Http;
-using System.Net.Mail;
 using System.Text;
 using System.Text.Json;
+using MailKit.Net.Smtp;
+using MailKit.Security;
+using MimeKit;
 using Microsoft.Extensions.Logging;
 using SqlHealthAssessment.Data.Models;
 
@@ -217,37 +219,29 @@ namespace SqlHealthAssessment.Data.Services
                 throw new InvalidOperationException("SMTP host is not configured.");
 
             var password = DecryptIfNeeded(smtp.Password);
-
-            using var client = new SmtpClient(smtp.Host, smtp.Port)
-            {
-                EnableSsl = smtp.UseTls,
-                DeliveryMethod = SmtpDeliveryMethod.Network,
-                Timeout = 15000
-            };
-
-            if (!string.IsNullOrEmpty(smtp.Username) && !string.IsNullOrEmpty(password))
-                client.Credentials = new NetworkCredential(smtp.Username, password);
-
-            var from = new MailAddress(
-                string.IsNullOrEmpty(smtp.FromAddress) ? smtp.Username : smtp.FromAddress,
-                smtp.FromName);
+            var fromAddress = string.IsNullOrEmpty(smtp.FromAddress) ? smtp.Username : smtp.FromAddress;
 
             var emailTemplate = _templates.Config.Email;
-            using var message = new MailMessage
+
+            var message = new MimeMessage();
+            message.From.Add(new MailboxAddress(smtp.FromName, fromAddress));
+            foreach (var to in smtp.ToAddresses.Where(a => !string.IsNullOrWhiteSpace(a)))
+                message.To.Add(MailboxAddress.Parse(to.Trim()));
+            if (!string.IsNullOrWhiteSpace(smtp.ReplyToAddress))
+                message.ReplyTo.Add(MailboxAddress.Parse(smtp.ReplyToAddress.Trim()));
+            message.Subject = AlertTemplateService.Render(emailTemplate.Subject, notification);
+            message.Body = new TextPart(MimeKit.Text.TextFormat.Html)
             {
-                From = from,
-                Subject = AlertTemplateService.Render(emailTemplate.Subject, notification),
-                IsBodyHtml = true,
-                Body = AlertTemplateService.Render(emailTemplate.Body, notification)
+                Text = AlertTemplateService.Render(emailTemplate.Body, notification)
             };
 
-            foreach (var to in smtp.ToAddresses.Where(a => !string.IsNullOrWhiteSpace(a)))
-                message.To.Add(to.Trim());
-
-            if (!string.IsNullOrWhiteSpace(smtp.ReplyToAddress))
-                message.ReplyToList.Add(new MailAddress(smtp.ReplyToAddress.Trim()));
-
-            await client.SendMailAsync(message);
+            using var client = new SmtpClient();
+            var secureOption = smtp.UseTls ? SecureSocketOptions.StartTls : SecureSocketOptions.Auto;
+            await client.ConnectAsync(smtp.Host, smtp.Port, secureOption);
+            if (!string.IsNullOrEmpty(smtp.Username) && !string.IsNullOrEmpty(password))
+                await client.AuthenticateAsync(smtp.Username, password);
+            await client.SendAsync(message);
+            await client.DisconnectAsync(true);
         }
 
         // ── OAuth2 via Microsoft Graph API ────────────────────────────────────
