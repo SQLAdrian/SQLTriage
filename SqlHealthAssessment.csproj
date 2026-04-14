@@ -336,6 +336,7 @@
     </PropertyGroup>
     <RemoveDir Directories="$(PublishDir)bin" ContinueOnError="true" />
     <!-- Strip dev/research artefacts that must never ship in a release -->
+    <RemoveDir Directories="$(PublishDir)BPScripts\Ignore"  ContinueOnError="true" />
     <RemoveDir Directories="$(PublishDir)research_output" ContinueOnError="true" />
     <RemoveDir Directories="$(PublishDir)research_logs"   ContinueOnError="true" />
     <RemoveDir Directories="$(PublishDir)temp"            ContinueOnError="true" />
