@@ -341,6 +341,21 @@
     <RemoveDir Directories="$(PublishDir)temp"            ContinueOnError="true" />
     <RemoveDir Directories="$(PublishDir)win-x64"         ContinueOnError="true" />
     <RemoveDir Directories="$(PublishDir).git"            ContinueOnError="true" />
+    <!-- Strip test/coverage infrastructure that leaks in from SqlHealthAssessment.Tests -->
+    <RemoveDir Directories="$(PublishDir)CodeCoverage"         ContinueOnError="true" />
+    <RemoveDir Directories="$(PublishDir)InstrumentationEngine" ContinueOnError="true" />
+    <!-- coverlet + code coverage -->
+    <Delete Files="$(PublishDir)coverlet.collector.dll;$(PublishDir)coverlet.collector.pdb;$(PublishDir)coverlet.collector.deps.json;$(PublishDir)coverlet.collector.targets;$(PublishDir)coverlet.core.dll;$(PublishDir)coverlet.core.pdb" ContinueOnError="true" />
+    <Delete Files="$(PublishDir)Microsoft.CodeCoverage.Core.dll;$(PublishDir)Microsoft.CodeCoverage.Instrumentation.dll;$(PublishDir)Microsoft.CodeCoverage.Interprocess.dll;$(PublishDir)Microsoft.CodeCoverage.props;$(PublishDir)Microsoft.CodeCoverage.targets" ContinueOnError="true" />
+    <Delete Files="$(PublishDir)Microsoft.VisualStudio.CodeCoverage.Shim.dll;$(PublishDir)Microsoft.VisualStudio.TraceDataCollector.dll" ContinueOnError="true" />
+    <!-- xunit + test platform -->
+    <Delete Files="$(PublishDir)xunit.abstractions.dll;$(PublishDir)xunit.assert.dll;$(PublishDir)xunit.core.dll;$(PublishDir)xunit.execution.dotnet.dll" ContinueOnError="true" />
+    <Delete Files="$(PublishDir)xunit.runner.reporters.netcoreapp10.dll;$(PublishDir)xunit.runner.utility.netcoreapp10.dll;$(PublishDir)xunit.runner.visualstudio.dotnetcore.testadapter.dll" ContinueOnError="true" />
+    <Delete Files="$(PublishDir)testhost.dll;$(PublishDir)testhost.exe" ContinueOnError="true" />
+    <Delete Files="$(PublishDir)Microsoft.TestPlatform.CommunicationUtilities.dll;$(PublishDir)Microsoft.TestPlatform.CoreUtilities.dll;$(PublishDir)Microsoft.TestPlatform.CrossPlatEngine.dll;$(PublishDir)Microsoft.TestPlatform.PlatformAbstractions.dll;$(PublishDir)Microsoft.TestPlatform.Utilities.dll" ContinueOnError="true" />
+    <Delete Files="$(PublishDir)Microsoft.VisualStudio.TestPlatform.Common.dll;$(PublishDir)Microsoft.VisualStudio.TestPlatform.ObjectModel.dll" ContinueOnError="true" />
+    <!-- test project outputs -->
+    <Delete Files="$(PublishDir)SqlHealthAssessment.Tests.dll;$(PublishDir)SqlHealthAssessment.Tests.pdb;$(PublishDir)SqlHealthAssessment.Tests.deps.json;$(PublishDir)SqlHealthAssessment.Tests.runtimeconfig.json" ContinueOnError="true" />
     <MakeDir Directories="$(ReleaseDir)" />
     <ZipDirectory SourceDirectory="$(PublishDir)" DestinationFile="$(ZipFilePath)" Overwrite="true" />
     <Message Importance="high" Text="Release ZIP created: $(ZipFilePath)" />
