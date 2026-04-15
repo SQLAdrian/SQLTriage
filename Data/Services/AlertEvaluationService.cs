@@ -675,7 +675,8 @@ namespace SqlHealthAssessment.Data.Services
                 Severity = state.Severity.ToLowerInvariant(),
                 InstanceName = state.ServerName,
                 Message = state.Message,
-                TriggeredAt = state.LastTriggered
+                TriggeredAt = state.LastTriggered,
+                SendEmail = alert.SendEmail
             };
 
             _ = _channels.DispatchAsync(notification);

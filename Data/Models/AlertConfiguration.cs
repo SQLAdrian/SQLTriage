@@ -47,6 +47,12 @@ namespace SqlHealthAssessment.Data.Models
         /// The instance this notification was triggered for (empty = global).
         /// </summary>
         public string InstanceName { get; set; } = string.Empty;
+
+        /// <summary>
+        /// When false, email is suppressed for this notification (per alert definition).
+        /// Escalation notifications always send email regardless.
+        /// </summary>
+        public bool SendEmail { get; set; } = true;
     }
 
     public class AlertEvaluationResult

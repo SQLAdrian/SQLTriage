@@ -139,7 +139,7 @@ namespace SqlHealthAssessment.Data.Services
         {
             var tasks = new List<Task>();
 
-            if (_config.Smtp.Enabled && MeetsSeverity(notification.Severity, _config.Smtp.MinimumSeverity))
+            if (_config.Smtp.Enabled && notification.SendEmail && MeetsSeverity(notification.Severity, _config.Smtp.MinimumSeverity))
             {
                 tasks.Add(SendEmailAsync(notification));
             }
