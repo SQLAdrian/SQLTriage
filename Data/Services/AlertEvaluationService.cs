@@ -678,9 +678,7 @@ namespace SqlHealthAssessment.Data.Services
                 TriggeredAt = state.LastTriggered
             };
 
-            // Use reflection-free approach: call EvaluateAlerts with pre-built metrics
-            var metrics = new Dictionary<string, double> { [alert.Id] = state.LastValue };
-            _alerting.EvaluateAlerts(metrics, state.ServerName);
+            _ = _channels.DispatchAsync(notification);
         }
 
         private void DispatchEscalation(AlertDefinition alert, AlertState state)
@@ -700,8 +698,7 @@ namespace SqlHealthAssessment.Data.Services
                 TriggeredAt = DateTime.UtcNow
             };
 
-            // Route to escalation channel if set, otherwise same as primary
-            _alerting.EvaluateAlerts(new Dictionary<string, double> { [alert.Id] = state.LastValue }, state.ServerName);
+            _ = _channels.DispatchAsync(notification);
         }
 
         /// <summary>
