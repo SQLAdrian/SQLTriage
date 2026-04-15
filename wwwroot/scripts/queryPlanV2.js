@@ -1065,8 +1065,14 @@ window.queryPlanInteropV2 = (function () {
         const svg    = document.createElementNS(SVG_NS, 'svg');
         svg.setAttribute('width',  canvasW);
         svg.setAttribute('height', canvasH);
-        svg.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;overflow:visible;';
+        svg.style.cssText = 'position:absolute;top:0;left:0;overflow:visible;';
         wrap.appendChild(svg);
+
+        // ── Edge hover tooltip (shared, one per render) ───────────────────────
+        const edgeTip = document.createElement('div');
+        edgeTip.className = 'qp-edge-tooltip';
+        edgeTip.style.display = 'none';
+        container.appendChild(edgeTip);
 
         const maxRows = Math.max(1, ...graph.edges.map(e => e.rowCount || 1));
 
@@ -1089,15 +1095,16 @@ window.queryPlanInteropV2 = (function () {
             const targetNode   = nodeMap[edge.target];
             const estRows      = targetNode ? (targetNode.estimateRows || 0) : 0;
             const actRows      = targetNode ? (targetNode.actualRows   ?? null) : null;
+            const avgRowSize   = targetNode ? (targetNode.avgRowSize   || 0)  : 0;
             let   edgeColor    = '#5a5a5a';
             let   mismatchTip  = null;
             if (actRows !== null && estRows > 0) {
                 const ratio = actRows / estRows;
                 if (ratio > 10) {
-                    edgeColor   = '#e53935';   // red  — actual >> estimated (under-estimate)
+                    edgeColor   = '#e53935';
                     mismatchTip = `Estimate: ${fmt(estRows)} → Actual: ${fmt(actRows)} (×${ratio.toFixed(0)} over)`;
                 } else if (ratio < 0.1) {
-                    edgeColor   = '#f59e0b';   // amber — actual << estimated (over-estimate)
+                    edgeColor   = '#f59e0b';
                     mismatchTip = `Estimate: ${fmt(estRows)} → Actual: ${fmt(actRows)} (×${(1/ratio).toFixed(0)} under)`;
                 }
             }
@@ -1108,15 +1115,55 @@ window.queryPlanInteropV2 = (function () {
             path.setAttribute('stroke',        edgeColor);
             path.setAttribute('stroke-width',  mismatchTip ? Math.max(width, 3) : width);
             path.setAttribute('stroke-linecap', 'round');
+            path.style.pointerEvents = 'stroke';
+            path.style.cursor = 'pointer';
             // Data attrs used by collapse/expand toggle
             path.dataset.edgeSource = String(edge.source);
             path.dataset.edgeTarget = String(edge.target);
-            if (mismatchTip) {
-                path.style.pointerEvents = 'stroke';
-                const titleEl = document.createElementNS(SVG_NS, 'title');
-                titleEl.textContent = mismatchTip;
-                path.appendChild(titleEl);
-            }
+
+            // ── Edge hover tooltip content ────────────────────────────────────
+            const srcNode = nodeMap[edge.source];
+            const dstNode = nodeMap[edge.target];
+            const dataBytes = rows * avgRowSize;
+            const dataSizeStr = dataBytes >= 1048576
+                ? (dataBytes / 1048576).toFixed(1) + ' MB'
+                : dataBytes >= 1024
+                    ? (dataBytes / 1024).toFixed(1) + ' KB'
+                    : dataBytes.toFixed(0) + ' B';
+
+            const outputCols = targetNode?.outputList?.length
+                ? targetNode.outputList.slice(0, 8).join(', ') + (targetNode.outputList.length > 8 ? ` (+${targetNode.outputList.length - 8} more)` : '')
+                : null;
+
+            path.addEventListener('mouseenter', ev => {
+                let html = `<div class="qp-edge-tip-title">Data Flow</div>`;
+                html += `<table class="qp-edge-tip-table">`;
+                if (srcNode) html += `<tr><td>From</td><td>${srcNode.type || srcNode.physicalType || ''}</td></tr>`;
+                if (dstNode) html += `<tr><td>To</td><td>${dstNode.type || dstNode.physicalType || ''}</td></tr>`;
+                html += `<tr><td>Est. Rows</td><td>${fmt(estRows || rows)}</td></tr>`;
+                if (actRows !== null) html += `<tr><td>Actual Rows</td><td>${fmt(actRows)}</td></tr>`;
+                if (avgRowSize > 0) html += `<tr><td>Row Size</td><td>${avgRowSize} B</td></tr>`;
+                if (avgRowSize > 0) html += `<tr><td>Est. Data Size</td><td>${dataSizeStr}</td></tr>`;
+                if (mismatchTip) html += `<tr><td colspan="2" style="color:#e53935;font-size:11px;">${mismatchTip}</td></tr>`;
+                if (outputCols) html += `<tr><td>Output</td><td style="font-size:10px;max-width:220px;word-break:break-all;">${outputCols}</td></tr>`;
+                html += `</table>`;
+                edgeTip.innerHTML = html;
+                edgeTip.style.display = 'block';
+                const vp = container.getBoundingClientRect();
+                const tipX = ev.clientX - vp.left + 14;
+                const tipY = ev.clientY - vp.top  + 14;
+                edgeTip.style.left = tipX + 'px';
+                edgeTip.style.top  = tipY + 'px';
+            });
+            path.addEventListener('mousemove', ev => {
+                const vp = container.getBoundingClientRect();
+                edgeTip.style.left = (ev.clientX - vp.left + 14) + 'px';
+                edgeTip.style.top  = (ev.clientY - vp.top  + 14) + 'px';
+            });
+            path.addEventListener('mouseleave', () => {
+                edgeTip.style.display = 'none';
+            });
+
             svg.appendChild(path);
 
             // Mismatch warning icon on the edge midpoint
@@ -1456,7 +1503,7 @@ window.queryPlanInteropV2 = (function () {
             mmSvg.appendChild(mmViewport);
 
             minimapEl.appendChild(mmSvg);
-            container.appendChild(minimapEl);
+            viewport.appendChild(minimapEl);
 
             // Minimap drag to pan
             let mmDragging = false;
@@ -1601,6 +1648,13 @@ window.queryPlanInteropV2 = (function () {
                     const tabBar = document.createElement('div');
                     tabBar.className = 'qp-v2-statement-tabs';
 
+                    // ── Prev / Next nav buttons ──────────────────────────────
+                    const btnPrev = document.createElement('button');
+                    btnPrev.className = 'qp-stmt-nav';
+                    btnPrev.innerHTML = '&#8249;';
+                    btnPrev.title = 'Previous statement';
+                    tabBar.appendChild(btnPrev);
+
                     graphs.forEach((graph, idx) => {
                         const tab = document.createElement('div');
                         const pct = typeof graph.batchPct === 'number' ? graph.batchPct : 0;
@@ -1634,6 +1688,34 @@ window.queryPlanInteropV2 = (function () {
                         tab.onclick = () => window._qpRenderStatement(idx);
                         tabBar.appendChild(tab);
                     });
+
+                    const btnNext = document.createElement('button');
+                    btnNext.className = 'qp-stmt-nav';
+                    btnNext.innerHTML = '&#8250;';
+                    btnNext.title = 'Next statement';
+                    tabBar.appendChild(btnNext);
+
+                    // Wire up prev/next
+                    btnPrev.onclick = () => {
+                        const cur = window._qpActiveStatementIndex ?? 0;
+                        if (cur > 0) window._qpRenderStatement(cur - 1);
+                    };
+                    btnNext.onclick = () => {
+                        const cur = window._qpActiveStatementIndex ?? 0;
+                        if (cur < graphs.length - 1) window._qpRenderStatement(cur + 1);
+                    };
+                    const updateNavBtns = () => {
+                        const cur = window._qpActiveStatementIndex ?? 0;
+                        btnPrev.disabled = cur === 0;
+                        btnNext.disabled = cur === graphs.length - 1;
+                    };
+                    updateNavBtns();
+                    // Patch _qpRenderStatement to also update nav button state
+                    const _origRender = window._qpRenderStatement;
+                    window._qpRenderStatement = function(index) {
+                        _origRender(index);
+                        updateNavBtns();
+                    };
 
                     // Insert tab bar before #qp-container (its parent) so it sits outside overflow:hidden
                     if (container.parentElement) {

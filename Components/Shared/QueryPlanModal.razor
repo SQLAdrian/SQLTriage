@@ -66,6 +66,17 @@
             @* Index execution options — only shown when No-Pants mode is on *@
             @if (UserSettings.GetNoPantsMode())
             {
+                <div style="display:flex;align-items:center;gap:6px;padding:4px 12px;border-bottom:1px solid var(--border);background:rgba(239,68,68,0.04);">
+                    <button type="button" @onclick="() => _showNoPantsPanel = !_showNoPantsPanel"
+                            title="@(_showNoPantsPanel ? "Hide index options" : "Show index options")"
+                            style="background:none;border:none;cursor:pointer;padding:2px 4px;font-size:14px;color:@(_showNoPantsPanel ? "#ef4444" : "var(--text-muted)");line-height:1;">
+                        <i class="fa-solid fa-person-pants-burst"></i>
+                    </button>
+                    <span style="font-size:11px;color:var(--text-muted);">Index options</span>
+                </div>
+            }
+            @if (UserSettings.GetNoPantsMode() && _showNoPantsPanel)
+            {
                 <div class="plan-options-panel" style="display:flex;gap:12px;padding:6px 12px;border-bottom:1px solid var(--border);align-items:center;flex-wrap:wrap;background:rgba(239,68,68,0.05);">
                     <span style="font-size:11px;font-weight:600;color:var(--red);opacity:0.8;">NO-PANTS</span>
                     <div style="display:flex;align-items:center;gap:4px;">
@@ -123,6 +134,9 @@
     private bool _compactView = false;
     private string _searchTerm = "";
     
+    // No-pants panel visibility (collapsed by default)
+    private bool _showNoPantsPanel = false;
+
     // Index generation options
     private bool _indexOptionOnline = true;
     private bool _indexOptionSortInTempDb = true;

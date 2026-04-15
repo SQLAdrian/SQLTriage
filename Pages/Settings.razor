@@ -192,12 +192,19 @@
 
     <div class="settings-group">
         <h3>Modes</h3>
-        <div class="settings-field" style="display: flex; align-items: center; gap: 8px;">
-            <input type="checkbox" id="noPantsMode" checked="@_noPantsMode"
-                   @onchange="OnNoPantsModeChanged" style="width: auto;" />
-            <label for="noPantsMode" style="margin: 0; font-weight: normal;">
-                <strong style="color:#ef4444;">No-Pants Mode</strong> — show dangerous server controls (deployment, drop database, force restarts)
-            </label>
+        <div class="settings-field" style="display: flex; align-items: center; gap: 10px;">
+            <button type="button" @onclick="OnNoPantsModeChanged"
+                    title="@(_noPantsMode ? "No-Pants Mode ON — click to disable" : "No-Pants Mode OFF — click to enable")"
+                    style="background:none;border:none;cursor:pointer;padding:2px 6px;border-radius:4px;font-size:18px;line-height:1;color:@(_noPantsMode ? "#ef4444" : "var(--text-muted)");transition:color 0.2s;">
+                <i class="fa-solid fa-person-pants-burst"></i>
+            </button>
+            <span style="font-size:13px;color:var(--text-secondary);">
+                <strong style="color:@(_noPantsMode ? "#ef4444" : "var(--text-muted)");">No-Pants Mode</strong>
+                @if (_noPantsMode)
+                {
+                    <span style="color:#ef4444;"> — ON</span>
+                }
+            </span>
         </div>
         <div class="settings-field" style="display: flex; align-items: center; gap: 8px;">
             <input type="checkbox" id="experimentalMode" checked="@_experimentalMode"
@@ -794,9 +801,9 @@
         try { await JS.InvokeVoidAsync("queryPlanInteropV2.setUseV2Icons", _useV2PlanIcons); } catch { }
     }
 
-    private void OnNoPantsModeChanged(ChangeEventArgs e)
+    private void OnNoPantsModeChanged()
     {
-        _noPantsMode = (bool)(e.Value ?? false);
+        _noPantsMode = !_noPantsMode;
         _noPantsModeActive = _noPantsMode;
         UserSettings.SetNoPantsMode(_noPantsMode);
         // disclaimer is implicitly accepted when enabled via Settings
