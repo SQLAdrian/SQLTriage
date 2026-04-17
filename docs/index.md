@@ -63,10 +63,12 @@ title: LiveMonitor — Free SQL Server Monitoring
 </div>
 
 <div class="badge-row">
+  <img src="https://img.shields.io/badge/version-0.85.2-00ff00?style=flat-square&labelColor=000" alt="Version 0.85.2">
   <img src="https://img.shields.io/badge/Platform-Windows-0078d4?style=flat-square" alt="Windows">
   <img src="https://img.shields.io/badge/SQL%20Server-2016%2B-CC2927?style=flat-square" alt="SQL Server 2016+">
   <img src="https://img.shields.io/badge/License-GPLv3-blue?style=flat-square" alt="GPL v3">
   <img src="https://img.shields.io/badge/Price-Free-00ff00?style=flat-square&labelColor=000" alt="Free">
+  <img src="https://github.com/SQLAdrian/SqlHealthAssessment/actions/workflows/codeql.yml/badge.svg?style=flat-square" alt="CodeQL">
 </div>
 
 ---
@@ -194,6 +196,14 @@ No software is installed on your SQL Servers. Everything runs from a single exe 
   <div class="feature-card">
     <h3>☁️ Azure Blob Export</h3>
     <p>Auto-upload audit results as CSV to Azure Blob Storage. Supports SAS tokens, User Delegation SAS, and AzCopy fallback.</p>
+  </div>
+  <div class="feature-card">
+    <h3>🌐 Environment Map</h3>
+    <p>Force-directed topology graph showing all servers, their AG relationships, and connection health at a glance.</p>
+  </div>
+  <div class="feature-card">
+    <h3>🔐 Role-Based Access</h3>
+    <p>In Service mode: Admin, Operator, and Viewer roles. OAuth login via Google or Microsoft. Desktop mode is always Admin.</p>
   </div>
 </div>
 
@@ -362,6 +372,15 @@ No software is installed on your SQL Servers. Everything runs from a single exe 
       <td class="no">✗</td>
     </tr>
     <tr>
+      <td>Role-based access</td>
+      <td class="yes">✓ Admin/Operator/Viewer</td>
+      <td class="no">✗</td>
+      <td class="no">✗</td>
+      <td class="yes">✓</td>
+      <td class="yes">✓</td>
+      <td class="yes">✓</td>
+    </tr>
+    <tr>
       <td>Open source</td>
       <td class="yes">✓ GPL v3</td>
       <td class="yes">✓ MIT</td>
@@ -380,11 +399,43 @@ No software is installed on your SQL Servers. Everything runs from a single exe 
 
 ---
 
+<div class="section-label">// download</div>
+
+<style>
+  .dl-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px,1fr));
+             gap: 1rem; margin: 1rem 0 1.5rem; }
+  .dl-card  { border: 1px solid #1e3a1e; border-radius: 6px; padding: 1rem 1.1rem;
+              background: #050f05; }
+  .dl-card h3 { margin: 0 0 0.3rem; font-size: 0.95rem; color: #00ff00; }
+  .dl-card p  { margin: 0 0 0.7rem; font-size: 0.82rem; color: #aaa; line-height: 1.5; }
+  .dl-card a  { color: #00ff00; font-size: 0.85rem; }
+  .version-note { font-size: 0.8rem; color: #555; margin: -0.5rem 0 1.5rem;
+                  border-left: 2px solid #1e3a1e; padding-left: 0.8rem; }
+</style>
+
+<p class="version-note">
+  Current release: <strong style="color:#aaa">v0.85.2</strong> — production-quality, actively developed.
+  Suitable for production DBA use. Both options below are self-contained: .NET runtime and WebView2 are bundled.
+</p>
+
+<div class="dl-grid">
+  <div class="dl-card">
+    <h3>⬇ LiveMonitor-Setup.exe</h3>
+    <p>Guided installer. Start menu shortcut, optional Windows Service install, upgrade detection, "Launch now" on finish. Recommended for most users.</p>
+    <a href="https://github.com/SQLAdrian/SqlHealthAssessment/releases/latest">Download from Releases →</a>
+  </div>
+  <div class="dl-card">
+    <h3>📦 LiveMonitor.zip</h3>
+    <p>Extract to any folder (e.g. <code>C:\Tools\LiveMonitor</code>) and run <code>LiveMonitor.exe</code>. No installation required. Good for air-gapped or portable use.</p>
+    <a href="https://github.com/SQLAdrian/SqlHealthAssessment/releases/latest">Download from Releases →</a>
+  </div>
+</div>
+
 <div class="section-label">// quick start</div>
 
 <ol class="qs">
-  <li>Download <code>LiveMonitor.exe</code> from the <a href="https://github.com/SQLAdrian/SqlHealthAssessment/releases">Releases page</a></li>
-  <li>Run it — no installer, no prerequisites</li>
+  <li>Download from the <a href="https://github.com/SQLAdrian/SqlHealthAssessment/releases/latest">Releases page</a> — Setup.exe or ZIP</li>
+  <li>Run it — no prerequisites to install separately</li>
   <li>Go to <strong>Servers → Add Server</strong>, enter your SQL Server name, click <strong>Test → Save</strong></li>
   <li>Open <strong>Live Monitor</strong> <kbd>Ctrl+2</kbd> to see live sessions, wait stats, and top queries</li>
   <li>Run a <strong>Quick Check</strong> <kbd>Ctrl+Q</kbd> for an instant health snapshot</li>
@@ -392,7 +443,7 @@ No software is installed on your SQL Servers. Everything runs from a single exe 
 
 The built-in onboarding wizard guides you through the setup on first run. SQLWATCH is optional — it unlocks additional historical dashboards but is not required to start monitoring.
 
-**SQL Server permissions needed:** `VIEW SERVER STATE` · `VIEW DATABASE STATE`
+**SQL Server permissions needed:** `VIEW SERVER STATE` · `VIEW DATABASE STATE` — no sysadmin, no agent install on the SQL Server.
 
 ---
 
@@ -405,6 +456,12 @@ The built-in onboarding wizard guides you through the setup on first run. SQLWAT
   <tr><td><a href="https://github.com/erikdarlingdata/DarlingData">PerformanceMonitor</a></td><td>Erik Darling — Performance Monitor framework and diagnostic queries</td></tr>
   <tr><td><a href="https://github.com/MadeiraData/MadeiraToolbox">MadeiraToolbox</a></td><td>Eitan Blumin — SQL Server maintenance and best-practice scripts</td></tr>
   <tr><td><a href="https://github.com/microsoft/tigertoolbox">TigerToolbox</a></td><td>Pedro Lopes (Microsoft) — SQL Server tools and utilities</td></tr>
+  <tr><td><a href="https://ola.hallengren.com">Ola Hallengren</a></td><td>SQL Server Maintenance Solution — industry-standard backup, integrity check, and index maintenance scripts</td></tr>
+  <tr><td><a href="https://github.com/microsoft/tigertoolbox">Glenn Berry</a></td><td>SQL Server Diagnostic Information queries — DMV-based diagnostic scripts used widely in the community</td></tr>
+  <tr><td><a href="https://github.com/ktaranov/sqlserver-kit">Konstantin Taranov</a></td><td>sqlserver-kit — curated SQL Server scripts and best practices collection</td></tr>
+  <tr><td><a href="https://github.com/wayneSheffield">Wayne Sheffield</a></td><td>SQL Server community scripts for performance and configuration analysis</td></tr>
+  <tr><td><a href="https://github.com/tboggiano">Tracy Boggiano</a></td><td>SQL Server community scripts and DBA toolkit contributions</td></tr>
+  <tr><td><a href="https://github.com/timothyford">Tim Ford</a></td><td>SQL Agent Jobs and SQL Server community diagnostic scripts</td></tr>
 </table>
 
 ---
