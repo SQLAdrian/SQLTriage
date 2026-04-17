@@ -1,0 +1,153 @@
+<!-- SEO: primary meta -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="LiveMonitor — free, open-source SQL Server monitoring for Windows DBAs. Live dashboards, alerting, execution plan viewer, vulnerability assessment, health checks. No agents. No licensing. Single exe.">
+<meta name="keywords" content="SQL Server monitoring, free SQL Server monitor, DBA tool, SQL Server health check, execution plan viewer, wait statistics, blocking analysis, SQL Server alerting, sp_Blitz alternative, SolarWinds DPA alternative, Redgate SQL Monitor alternative, open source SQL Server, SQL Server performance, SQL Server vulnerability assessment, SQLWATCH dashboard, Windows DBA tool, SQL Server 2016 2019 2022">
+<meta name="author" content="Adrian Sullivan">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://sqladrian.github.io/SqlHealthAssessment/">
+
+<!-- SEO: Open Graph (social sharing — LinkedIn, Twitter, Slack unfurls) -->
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://sqladrian.github.io/SqlHealthAssessment/">
+<meta property="og:title" content="LiveMonitor — Free SQL Server Monitoring for Windows DBAs">
+<meta property="og:description" content="Free, open-source SQL Server monitoring. Live dashboards, smart alerting with IQR baselines, interactive execution plan viewer, vulnerability assessment. No agents. No licensing. Single exe.">
+<meta property="og:image" content="https://sqladrian.github.io/SqlHealthAssessment/screenshots/dashboard-preview.png">
+<meta property="og:site_name" content="LiveMonitor">
+
+<!-- SEO: Twitter Card -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="LiveMonitor — Free SQL Server Monitoring">
+<meta name="twitter:description" content="Free open-source SQL Server monitoring. No agents. No licensing. Single exe. Live dashboards, alerting, execution plans, health checks.">
+<meta name="twitter:image" content="https://sqladrian.github.io/SqlHealthAssessment/screenshots/dashboard-preview.png">
+
+<!-- Structured Data: SoftwareApplication (Google, Bing, LLM training signal) -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "LiveMonitor",
+  "alternateName": "SQL Health Assessment",
+  "url": "https://sqladrian.github.io/SqlHealthAssessment/",
+  "downloadUrl": "https://github.com/SQLAdrian/SqlHealthAssessment/releases",
+  "installUrl": "https://github.com/SQLAdrian/SqlHealthAssessment/releases",
+  "screenshot": "https://sqladrian.github.io/SqlHealthAssessment/screenshots/dashboard-preview.png",
+  "applicationCategory": "DeveloperApplication",
+  "applicationSubCategory": "Database Monitoring",
+  "operatingSystem": "Windows 10, Windows 11, Windows Server 2016, Windows Server 2019, Windows Server 2022",
+  "softwareRequirements": "SQL Server 2016 or later",
+  "softwareVersion": "0.85",
+  "releaseNotes": "https://github.com/SQLAdrian/SqlHealthAssessment/blob/main/CHANGELOG.md",
+  "license": "https://www.gnu.org/licenses/gpl-3.0.html",
+  "isAccessibleForFree": true,
+  "price": "0",
+  "priceCurrency": "USD",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "description": "Free, open-source SQL Server monitoring and health assessment tool for Windows DBAs. Provides live dashboards, smart alerting with dynamic IQR baselines, interactive execution plan viewer, vulnerability assessment with 500+ checks, blocking chain analysis, wait statistics, and comprehensive health audits. No agents required on SQL Servers. Runs as a Windows desktop application or headless Windows Service.",
+  "featureList": [
+    "Live dashboards — active sessions, blocking chains, wait stats, top queries",
+    "Interactive execution plan viewer with per-operator cost and missing index warnings",
+    "69 built-in alerts with dynamic IQR baseline learning",
+    "7 notification channels — Email, Teams, Slack, PagerDuty, ServiceNow, Webhooks, WhatsApp",
+    "Vulnerability assessment with 500+ security checks",
+    "Quick Check and Full Audit health assessments",
+    "Diagnostics Maturity Roadmap — 5-level framework across multiple servers",
+    "Multi-server monitoring with environment tagging",
+    "Windows Service mode for 24/7 headless monitoring",
+    "Azure Blob Storage export for audit results",
+    "No agent installation required on SQL Servers",
+    "Single self-contained executable"
+  ],
+  "author": {
+    "@type": "Person",
+    "name": "Adrian Sullivan",
+    "url": "https://sqldba.org"
+  },
+  "maintainer": {
+    "@type": "Person",
+    "name": "Adrian Sullivan"
+  },
+  "codeRepository": "https://github.com/SQLAdrian/SqlHealthAssessment",
+  "programmingLanguage": ["C#", "Blazor", "SQL"],
+  "runtimePlatform": ".NET 8",
+  "keywords": "SQL Server monitoring, DBA tool, database health check, execution plan viewer, SQL Server alerting, free SQL monitoring, open source DBA, sp_Blitz alternative, SolarWinds DPA alternative"
+}
+</script>
+
+<!-- Structured Data: BreadcrumbList (helps search engines understand site structure) -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position": 1,
+      "name": "LiveMonitor",
+      "item": "https://sqladrian.github.io/SqlHealthAssessment/"
+    }
+  ]
+}
+</script>
+
+<!-- Structured Data: FAQPage (surfaces in Google rich results and LLM Q&A) -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Does LiveMonitor require installing anything on the SQL Server?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. LiveMonitor connects remotely via standard SQL connections. No agent, no software, and no schema changes are required on your SQL Server. SQLWATCH can optionally be deployed to unlock additional historical dashboards."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is LiveMonitor really free?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. LiveMonitor is free and open-source under the GNU GPL v3 license. There are no per-server fees, no subscription, and no feature tiers."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What are the system requirements for LiveMonitor?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Windows 10 (1809) or later. SQL Server 2016 or later on the monitored instances. .NET 8 runtime and WebView2 are bundled in the download — nothing to install separately."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can LiveMonitor run as a Windows Service?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. LiveMonitor supports a headless Windows Service mode that exposes dashboards via Kestrel HTTPS, allowing remote access from any browser on the network."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How does LiveMonitor compare to SolarWinds DPA or Redgate SQL Monitor?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "LiveMonitor is free and open-source with no per-server licensing costs. It covers live monitoring, health checks, execution plan analysis, alerting with 7 notification channels, and vulnerability assessment — the majority of day-to-day DBA monitoring needs. Commercial tools may offer deeper historical trending or cloud-hosted dashboards."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does LiveMonitor support Azure SQL?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Azure SQL Managed Instance is fully supported. Azure SQL Database (PaaS) has partial support — checks that require server-level DMV access are automatically skipped with a friendly notice."
+      }
+    }
+  ]
+}
+</script>
