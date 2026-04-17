@@ -178,8 +178,12 @@
         if (firstRender)
         {
             _dotNetRef = DotNetObjectReference.Create(this);
-            await JS.InvokeVoidAsync("environmentView.setHostCallback",
-                DotNetObjectReference.Create(this));
+            try
+            {
+                await JS.InvokeVoidAsync("environmentView.setHostCallback",
+                    DotNetObjectReference.Create(this));
+            }
+            catch { /* JS not ready on first navigation — harmless */ }
         }
 
         if (_needsTopologyRender)
@@ -261,7 +265,7 @@
                 if (r != null) results.Add(r);
             }
 
-            _serverResults = results;
+            _serverResults = MergeByPhysicalHost(results);
 
             if (_serverResults.Count == 0) { _errorMessage = "No results returned."; return; }
 
@@ -331,6 +335,84 @@
         _selectedHost = null;
         _selectedHostServer = "";
         _errorMessage = null;
+    }
+
+    // ── Physical host deduplication ──────────────────────────────────────
+    // When two SQL instances share the same physical machine (e.g. MSI and MSI\NEW2022),
+    // merge them into one result keyed on the machine name.
+    private static List<ServerEnvironmentResult> MergeByPhysicalHost(List<ServerEnvironmentResult> results)
+    {
+        // Group by the machine name (everything before the first backslash)
+        var groups = new Dictionary<string, List<ServerEnvironmentResult>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in results)
+        {
+            var machine = r.ServerName.Split('\\')[0];
+            if (!groups.TryGetValue(machine, out var g)) groups[machine] = g = new();
+            g.Add(r);
+        }
+
+        var merged = new List<ServerEnvironmentResult>();
+        foreach (var (machine, group) in groups)
+        {
+            if (group.Count == 1) { merged.Add(group[0]); continue; }
+
+            // Pick a display name: prefer the bare machine name entry if it exists,
+            // otherwise use the first sorted entry.
+            var primary = group.FirstOrDefault(r =>
+                string.Equals(r.ServerName, machine, StringComparison.OrdinalIgnoreCase))
+                ?? group.OrderBy(r => r.ServerName).First();
+
+            // Collect all hosts from all instances, dedup by hostname,
+            // merge connection details when the same host appears on multiple instances.
+            var allHosts = group
+                .Where(r => r.Error == null && r.Hosts != null)
+                .SelectMany(r => r.Hosts!)
+                .ToList();
+
+            var mergedHosts = allHosts
+                .GroupBy(h => h.Hostname, StringComparer.OrdinalIgnoreCase)
+                .Select(hg => new HostNode
+                {
+                    Hostname        = hg.Key,
+                    Connections     = hg.SelectMany(h => h.Connections).ToList(),
+                    ConnectionCount = hg.Sum(h => h.ConnectionCount),
+                    UniqueApps      = hg.SelectMany(h => h.Connections).Select(c => c.App)
+                                       .Where(a => !string.IsNullOrEmpty(a)).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+                    UniqueUsers     = hg.SelectMany(h => h.Connections).Select(c => c.User)
+                                       .Where(u => !string.IsNullOrEmpty(u)).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+                    UniqueDbs       = hg.SelectMany(h => h.Connections).Select(c => c.Database)
+                                       .Where(d => !string.IsNullOrEmpty(d)).Distinct(StringComparer.OrdinalIgnoreCase).Count()
+                })
+                .OrderByDescending(h => h.ConnectionCount)
+                .ToList();
+
+            // Label with all instance names so the user knows which instances were merged
+            var instanceNames = string.Join(" + ", group.Select(r => r.ServerName).OrderBy(n => n));
+
+            merged.Add(new ServerEnvironmentResult
+            {
+                ServerName = instanceNames,
+                Error      = group.All(r => r.Error != null)
+                               ? string.Join("; ", group.Where(r => r.Error != null).Select(r => r.Error))
+                               : null,
+                Hosts      = mergedHosts,
+                HostCount  = mergedHosts.Count,
+                AppCount   = mergedHosts.SelectMany(h => h.Connections).Select(c => c.App)
+                               .Where(a => !string.IsNullOrEmpty(a)).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+                UserCount  = mergedHosts.SelectMany(h => h.Connections).Select(c => c.User)
+                               .Where(u => !string.IsNullOrEmpty(u)).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+                DbCount    = mergedHosts.SelectMany(h => h.Connections).Select(c => c.Database)
+                               .Where(d => !string.IsNullOrEmpty(d)).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+                IpCount    = mergedHosts.SelectMany(h => h.Connections).Select(c => c.IP)
+                               .Where(ip => !string.IsNullOrEmpty(ip)).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+                AuthCount  = mergedHosts.SelectMany(h => h.Connections).Select(c => c.AuthScheme)
+                               .Where(a => !string.IsNullOrEmpty(a)).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+                EncrCount  = mergedHosts.SelectMany(h => h.Connections).Select(c => c.EncryptOption)
+                               .Where(e => !string.IsNullOrEmpty(e)).Distinct(StringComparer.OrdinalIgnoreCase).Count()
+            });
+        }
+
+        return merged.OrderBy(r => r.ServerName).ToList();
     }
 
     // ── Cross-link helpers ───────────────────────────────────────────────

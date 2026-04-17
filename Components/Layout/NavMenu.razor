@@ -10,6 +10,7 @@
 @inject AuditLogService AuditLog
 @inject IJSRuntime JS
 @inject SqlHealthAssessment.Data.Services.ConnectionHealthService ConnectionHealth
+@inject SqlHealthAssessment.Data.Services.AppUserState UserState
 @inject GlobalInstanceSelector InstanceSelector
 @implements IAsyncDisposable
 
@@ -248,6 +249,8 @@
                 }
             </div>
         }
+        @if (RbacService.HasPermission(UserState.Role, "run_scripts"))
+        {
         <div class="nav-toggle-row">
             <span class="no-pants-icon @(_noPantsMode ? "no-pants-active" : "")">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
@@ -262,6 +265,7 @@
                 </div>
             </div>
         </div>
+        } @* end RBAC guard: run_scripts *@
         <div class="nav-toggle-row">
             <span class="experimental-icon @(_experimentalMode ? "experimental-active" : "")">
                 <i class="fa-solid fa-flask" style="font-size:13px;"></i>
@@ -273,6 +277,54 @@
                     <div class="no-pants-thumb @(_experimentalMode ? "no-pants-thumb-on" : "")"></div>
                 </div>
             </div>
+        </div>
+        <!-- ── Report / Feedback button ── -->
+        <div class="nav-report-row">
+            <button class="nav-report-btn" @onclick="ToggleReportMenu" title="Report a bug or give feedback">
+                <i class="fa-solid fa-flag"></i>
+                @if (!_collapsed) { <span>Report / Feedback</span> }
+            </button>
+            @if (_showReportMenu)
+            {
+                <div class="nav-report-popover" @onclick:stopPropagation>
+                    <div class="nav-report-popover-title">Report or Connect</div>
+                    <a class="nav-report-item" href="https://github.com/SQLAdrian/SqlHealthAssessment/issues/new" target="_blank" @onclick="() => _showReportMenu = false">
+                        <i class="fa-brands fa-github"></i>
+                        <span>
+                            <strong>Report a Bug</strong>
+                            <small>Open a GitHub issue</small>
+                        </span>
+                    </a>
+                    <a class="nav-report-item" href="https://github.com/SQLAdrian/SqlHealthAssessment/discussions/new?category=ideas" target="_blank" @onclick="() => _showReportMenu = false">
+                        <i class="fa-regular fa-lightbulb"></i>
+                        <span>
+                            <strong>Feature Request</strong>
+                            <small>GitHub Discussions</small>
+                        </span>
+                    </a>
+                    <a class="nav-report-item" href="mailto:adrian@sqldba.org?subject=LiveMonitor Feedback" target="_blank" @onclick="() => _showReportMenu = false">
+                        <i class="fa-solid fa-envelope"></i>
+                        <span>
+                            <strong>Email Adrian</strong>
+                            <small>adrian@sqldba.org</small>
+                        </span>
+                    </a>
+                    <a class="nav-report-item" href="https://www.linkedin.com/in/milliondollardba/" target="_blank" @onclick="() => _showReportMenu = false">
+                        <i class="fa-brands fa-linkedin"></i>
+                        <span>
+                            <strong>LinkedIn</strong>
+                            <small>Connect or message</small>
+                        </span>
+                    </a>
+                    <a class="nav-report-item" href="https://sqldba.org" target="_blank" @onclick="() => _showReportMenu = false">
+                        <i class="fa-solid fa-globe"></i>
+                        <span>
+                            <strong>sqldba.org</strong>
+                            <small>Blog & resources</small>
+                        </span>
+                    </a>
+                </div>
+            }
         </div>
         <div class="p-3 pt-0 text-center">
             <small class="text-2xs text-app-text-secondary">Ctrl+1-9: Quick Nav</small>
@@ -350,6 +402,9 @@
 
     private void ToggleNoPantsMode()
     {
+        if (!RbacService.HasPermission(UserState.Role, "run_scripts"))
+            return; // silently blocked — toggle is hidden for viewers
+
         if (!_noPantsMode)
         {
             // Turning ON — check if disclaimer was previously accepted
@@ -394,6 +449,10 @@
     {
         _showNoPantsModal = false;
     }
+
+    // ── Report / Feedback popover ────────────────────────────────────────
+    private bool _showReportMenu = false;
+    private void ToggleReportMenu() => _showReportMenu = !_showReportMenu;
 
     // ── Experimental Mode ─────────────────────────────────────────────────
     private bool _experimentalMode = false;

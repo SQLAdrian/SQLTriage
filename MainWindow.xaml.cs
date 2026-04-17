@@ -118,6 +118,19 @@ namespace SqlHealthAssessment
                 menu.Items.Add(_trayServerModeItem);
                 menu.Items.Add(_trayOpenBrowserItem);
                 menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+
+                // Feedback submenu
+                var feedbackMenu = new System.Windows.Forms.ToolStripMenuItem("Report / Feedback");
+                feedbackMenu.Image = MakeDotIcon(System.Drawing.Color.FromArgb(99, 102, 241));
+                feedbackMenu.DropDownItems.Add("Report a Bug (GitHub)", null, (_, _) => OpenUrl("https://github.com/SQLAdrian/SqlHealthAssessment/issues/new"));
+                feedbackMenu.DropDownItems.Add("Feature Request (GitHub Discussions)", null, (_, _) => OpenUrl("https://github.com/SQLAdrian/SqlHealthAssessment/discussions/new?category=ideas"));
+                feedbackMenu.DropDownItems.Add(new System.Windows.Forms.ToolStripSeparator());
+                feedbackMenu.DropDownItems.Add("Email: adrian@sqldba.org", null, (_, _) => OpenUrl("mailto:adrian@sqldba.org?subject=LiveMonitor Feedback"));
+                feedbackMenu.DropDownItems.Add("LinkedIn: milliondollardba", null, (_, _) => OpenUrl("https://www.linkedin.com/in/milliondollardba/"));
+                feedbackMenu.DropDownItems.Add("sqldba.org", null, (_, _) => OpenUrl("https://sqldba.org"));
+                menu.Items.Add(feedbackMenu);
+
+                menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
                 menu.Items.Add("Exit", null, (_, _) => TrayExit());
                 _trayIcon.ContextMenuStrip = menu;
                 _trayIcon.DoubleClick += (_, _) => TrayShow();
@@ -285,6 +298,12 @@ namespace SqlHealthAssessment
             _trayIcon?.Dispose();
             _trayIcon = null;
             Application.Current.Shutdown();
+        }
+
+        private static void OpenUrl(string url)
+        {
+            try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
+            catch { /* best-effort */ }
         }
 
         private void OnStateChanged(object? sender, EventArgs e)

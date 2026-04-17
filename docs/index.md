@@ -83,20 +83,70 @@ No software is installed on your SQL Servers. Everything runs from a single exe 
 
 <div class="screenshot-row">
   <div class="screenshot-box">
-    <span>Live Monitor — active sessions, blocking chains, top queries</span>
+    <img src="screenshots/1-addserver.jpg" alt="Add Server — connect to any SQL Server instance in seconds">
+    <span>Add Server — connect to any SQL Server instance in seconds</span>
   </div>
   <div class="screenshot-box">
-    <span>Execution Plan Viewer — graphical plan, per-operator cost %, missing index warnings</span>
+    <img src="screenshots/2-whats-new.jpg" alt="What's New — in-app release notes and update notifications">
+    <span>What's New — in-app release notes and update notifications</span>
   </div>
   <div class="screenshot-box">
-    <span>Alerting — 69 alerts, IQR dynamic baselines, 7 notification channels</span>
+    <img src="screenshots/3-wait-state.jpg" alt="Wait Stats — real-time and historical wait category analysis">
+    <span>Wait Stats — real-time and historical wait category analysis</span>
   </div>
   <div class="screenshot-box">
-    <span>Diagnostics Maturity Roadmap — 5-level framework across multiple servers</span>
+    <img src="screenshots/4-live-sessions.jpg" alt="Live Sessions — active sessions, blocking chains, top queries">
+    <span>Live Sessions — active sessions, blocking chains, top queries</span>
+  </div>
+  <div class="screenshot-box">
+    <img src="screenshots/5-database-health.jpg" alt="Database Health — per-database metrics, growth trends, backup status">
+    <span>Database Health — per-database metrics, growth trends, backup status</span>
+  </div>
+  <div class="screenshot-box">
+    <img src="screenshots/6-instance-overview.jpg" alt="Instance Overview — key metrics dashboard with time-series charts">
+    <span>Instance Overview — key metrics dashboard with time-series charts</span>
+  </div>
+  <div class="screenshot-box">
+    <img src="screenshots/7-environment-map.jpg" alt="Environment Map — force-directed topology graph across all servers">
+    <span>Environment Map — force-directed topology graph across all servers</span>
+  </div>
+  <div class="screenshot-box">
+    <img src="screenshots/8-servers-easily-monitor-50-instances-or-more.jpg" alt="Multi-Server — monitor 50+ SQL Server instances from one place">
+    <span>Multi-Server — monitor 50+ SQL Server instances from one place</span>
+  </div>
+  <div class="screenshot-box">
+    <img src="screenshots/9-run-full-sql-audits.jpg" alt="Full SQL Audit — comprehensive health check across all connected instances">
+    <span>Full SQL Audit — comprehensive health check across all connected instances</span>
+  </div>
+  <div class="screenshot-box">
+    <img src="screenshots/10-microsoft-sql-vulnerability-assessment.jpg" alt="Vulnerability Assessment — Microsoft SQL Assessment API with 472+ checks">
+    <span>Vulnerability Assessment — Microsoft SQL Assessment API with 472+ checks</span>
+  </div>
+  <div class="screenshot-box">
+    <img src="screenshots/11-upload-results-securely-to-azure-blob-storage.jpg" alt="Azure Blob Export — securely upload audit results to Azure Blob Storage">
+    <span>Azure Blob Export — securely upload audit results to Azure Blob Storage</span>
+  </div>
+  <div class="screenshot-box">
+    <img src="screenshots/12-multiple-notification-channels.jpg" alt="Notification Channels — Email, Teams, Slack, PagerDuty, ServiceNow, Webhooks, WhatsApp">
+    <span>Notification Channels — Email, Teams, Slack, PagerDuty, ServiceNow, Webhooks, WhatsApp</span>
+  </div>
+  <div class="screenshot-box">
+    <img src="screenshots/13-maturity-roadmap.jpg" alt="Maturity Roadmap — 5-level DBA maturity framework across all servers">
+    <span>Maturity Roadmap — 5-level DBA maturity framework across all servers</span>
+  </div>
+  <div class="screenshot-box">
+    <img src="screenshots/14-alerting.jpg" alt="Alerting — 80 alerts with IQR dynamic baselines and escalation policies">
+    <span>Alerting — 80 alerts with IQR dynamic baselines and escalation policies</span>
+  </div>
+  <div class="screenshot-box">
+    <img src="screenshots/15-query-plan-viewer.jpg" alt="Query Plan Viewer — interactive graphical execution plan with per-operator cost %">
+    <span>Query Plan Viewer — interactive graphical execution plan with per-operator cost %</span>
+  </div>
+  <div class="screenshot-box">
+    <img src="screenshots/16-risk-register-compliance-mapping-ISO-SOC2-NIST.jpg" alt="Risk Register — compliance mapping to ISO 27001, SOC 2, and NIST frameworks">
+    <span>Risk Register — compliance mapping to ISO 27001, SOC 2, and NIST frameworks</span>
   </div>
 </div>
-
-> 📸 Screenshots and a demo GIF are coming. [Contribute one](https://github.com/SQLAdrian/SqlHealthAssessment/blob/main/CONTRIBUTING.md) if you get there first.
 
 ---
 

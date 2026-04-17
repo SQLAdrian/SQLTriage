@@ -68,9 +68,24 @@ if (-not (Test-Path $zipPath)) {
 $zipSize = (Get-Item $zipPath).Length / 1MB
 Write-Host "  ZIP: $zipName ($([math]::Round($zipSize, 1)) MB)" -ForegroundColor Cyan
 
+# ── Locate Inno Setup installer (compiled by csproj BuildInstaller target) ──
+# The csproj BuildInstaller target runs iscc automatically during dotnet publish.
+$setupName = "LiveMonitor-v$version-build$buildNumber-Setup.exe"
+$setupPath = "release\$setupName"
+
+if (Test-Path $setupPath) {
+    $setupSize = (Get-Item $setupPath).Length / 1MB
+    Write-Host "  Setup: $setupName ($([math]::Round($setupSize, 1)) MB)" -ForegroundColor Cyan
+} else {
+    Write-Host "  WARNING: Installer not found at $setupPath — was Inno Setup 6 installed?" -ForegroundColor Yellow
+    Write-Host "    Expected at C:\GitHub\Inno Setup 6\iscc.exe" -ForegroundColor DarkYellow
+    $setupPath = $null
+}
+
 if ($NoPush) {
     Write-Host ""
     Write-Host "ZIP created at: $zipPath" -ForegroundColor Green
+    if ($setupPath) { Write-Host "Installer created at: $setupPath" -ForegroundColor Green }
     Write-Host "Skipping GitHub release (use without -NoPush to upload)." -ForegroundColor Yellow
     exit 0
 }
@@ -100,16 +115,25 @@ $releaseNotes = @"
 
 ### Changes
 $($commitLog | ForEach-Object { "- $_" } | Out-String)
-### Install
-Download and extract the ZIP to your desired location. Run ``SqlHealthAssessment.exe``.
+### Install — Option A: Installer (recommended)
+Download ``$setupName`` and run it. Adds a Start Menu entry, desktop shortcut, and uninstaller.
+No .NET or WebView2 installation required — everything is bundled.
+
+### Install — Option B: ZIP (portable / shared installs)
+Download and extract ``$zipName`` to any folder (e.g. ``C:\Tools\LiveMonitor``).
+Run ``SqlHealthAssessment.exe``. No installer needed.
 
 ### Update
 Existing installations will detect this release automatically via the in-app updater.
-User configuration files (server connections, alerts, notification channels, scheduled tasks, dashboard customizations) are preserved during update.
+User configuration (server connections, alerts, notification channels, dashboards) is preserved on upgrade.
 "@
 
+# Build asset list — always include ZIP; include installer if it was compiled
+$assets = @($zipPath)
+if ($setupPath) { $assets += $setupPath }
+
 # Create release with gh CLI
-gh release create $tag $zipPath `
+gh release create $tag @assets `
     --title $releaseName `
     --notes $releaseNotes `
     --latest
@@ -122,5 +146,6 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host ""
 Write-Host "Release created successfully!" -ForegroundColor Green
 Write-Host "  Tag:     $tag" -ForegroundColor Cyan
-Write-Host "  Asset:   $zipName" -ForegroundColor Cyan
+Write-Host "  ZIP:     $zipName" -ForegroundColor Cyan
+if ($setupPath) { Write-Host "  Setup:   $setupName" -ForegroundColor Cyan }
 Write-Host "  URL:     https://github.com/SQLAdrian/SqlHealthAssessment/releases/tag/$tag" -ForegroundColor Cyan

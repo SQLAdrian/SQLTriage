@@ -84,8 +84,8 @@
 
     protected override void OnInitialized()
     {
-        // Show onboarding wizard on first run (no servers configured and not dismissed before)
-        if (!UserSettings.GetOnboardingComplete() && ConnectionManager.GetConnections().Count == 0)
+        // Show onboarding wizard whenever there are no servers configured
+        if (ConnectionManager.GetConnections().Count == 0)
         {
             _showOnboarding = true;
         }
@@ -128,6 +128,15 @@
     {
         _showOnboarding = false;
         UserSettings.SetOnboardingComplete(true);
+
+        // After onboarding, check if a "What's new" notice is also pending
+        // (happens on first-ever install where LastSeenVersion was never set)
+        var currentVersion = GetCurrentVersion();
+        if (!string.IsNullOrEmpty(currentVersion)
+            && UserSettings.GetLastSeenVersion() != currentVersion
+            && UserSettings.GetShowReleaseNotesOnUpdate())
+            _showReleaseNotes = true;
+
         StateHasChanged();
     }
 

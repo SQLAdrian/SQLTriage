@@ -383,7 +383,7 @@ window.environmentView = (function () {
             '<button data-action="zoomin"   title="Zoom in">+</button>' +
             '<button data-action="zoomout"  title="Zoom out">−</button>' +
             '<button data-action="fit"      title="Fit to screen">⤢</button>' +
-            '<button data-action="relayout" title="Re-run layout (unpins all nodes)" style="font-size:11px;padding:2px 8px;">↺ Re-layout</button>' +
+            '<button data-action="relayout" title="Re-run layout (unpins all nodes)" class="env-fd-btn-wide">↺ Re-layout</button>' +
             '<span class="env-fd-legend">' +
                 '<span class="env-fd-leg-dot" style="background:#10b981"></span>SQL Server ' +
                 '<span class="env-fd-leg-dot" style="background:#6366f1;margin-left:8px"></span>Host ' +

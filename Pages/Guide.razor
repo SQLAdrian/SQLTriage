@@ -6,6 +6,36 @@
     <h1>Component Guide</h1>
     <p>This guide explains the major components of the navigation menu and what you can do in each section.</p>
 
+    <!-- ── Feedback / Report section — first thing ── -->
+    <div class="guide-section" style="border:1px solid rgba(99,102,241,0.3);background:rgba(99,102,241,0.05);border-radius:8px;padding:18px 20px;margin-bottom:24px;">
+        <h2 style="margin-top:0;"><i class="fa-solid fa-flag" style="color:var(--accent);"></i> Found a bug? Have a suggestion?</h2>
+        <p style="margin-bottom:14px;color:var(--text-secondary);">
+            This is free software built by one person. Feedback, bug reports, and feature requests are always welcome — they genuinely shape what gets built next.
+        </p>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;">
+            <a href="https://github.com/SQLAdrian/SqlHealthAssessment/issues/new" target="_blank"
+               style="display:inline-flex;align-items:center;gap:7px;padding:8px 14px;background:rgba(255,255,255,0.06);border:1px solid var(--border-color);border-radius:6px;text-decoration:none;color:var(--text-primary);font-size:13px;transition:background 0.15s;"
+               onmouseover="this.style.background='rgba(99,102,241,0.15)'" onmouseout="this.style.background='rgba(255,255,255,0.06)'">
+                <i class="fa-brands fa-github" style="color:var(--accent);"></i> Report a Bug (GitHub)
+            </a>
+            <a href="https://github.com/SQLAdrian/SqlHealthAssessment/discussions/new?category=ideas" target="_blank"
+               style="display:inline-flex;align-items:center;gap:7px;padding:8px 14px;background:rgba(255,255,255,0.06);border:1px solid var(--border-color);border-radius:6px;text-decoration:none;color:var(--text-primary);font-size:13px;transition:background 0.15s;"
+               onmouseover="this.style.background='rgba(99,102,241,0.15)'" onmouseout="this.style.background='rgba(255,255,255,0.06)'">
+                <i class="fa-regular fa-lightbulb" style="color:var(--accent);"></i> Feature Request
+            </a>
+            <a href="mailto:adrian@sqldba.org?subject=LiveMonitor Feedback" target="_blank"
+               style="display:inline-flex;align-items:center;gap:7px;padding:8px 14px;background:rgba(255,255,255,0.06);border:1px solid var(--border-color);border-radius:6px;text-decoration:none;color:var(--text-primary);font-size:13px;transition:background 0.15s;"
+               onmouseover="this.style.background='rgba(99,102,241,0.15)'" onmouseout="this.style.background='rgba(255,255,255,0.06)'">
+                <i class="fa-solid fa-envelope" style="color:var(--accent);"></i> Email Adrian
+            </a>
+            <a href="https://www.linkedin.com/in/milliondollardba/" target="_blank"
+               style="display:inline-flex;align-items:center;gap:7px;padding:8px 14px;background:rgba(255,255,255,0.06);border:1px solid var(--border-color);border-radius:6px;text-decoration:none;color:var(--text-primary);font-size:13px;transition:background 0.15s;"
+               onmouseover="this.style.background='rgba(99,102,241,0.15)'" onmouseout="this.style.background='rgba(255,255,255,0.06)'">
+                <i class="fa-brands fa-linkedin" style="color:#0a66c2;"></i> LinkedIn
+            </a>
+        </div>
+    </div>
+
     <!-- Nav Map: inline replica of the sidebar grouped by section -->
     <div class="guide-section nav-map-section">
         <h2><i class="fa-solid fa-map"></i> Navigation Map</h2>

@@ -363,6 +363,50 @@
     <Message Importance="high" Text="Release ZIP created: $(ZipFilePath)" />
   </Target>
 
+  <!-- Build Inno Setup installer and convert screenshots after ZIP is created -->
+  <Target Name="BuildInstaller" AfterTargets="CreateReleaseZip" Condition="'$(Configuration)' == 'Release'">
+    <PropertyGroup>
+      <IsccExe Condition="Exists('C:\GitHub\Inno Setup 6\iscc.exe')">C:\GitHub\Inno Setup 6\iscc.exe</IsccExe>
+      <IsccExe Condition="'$(IsccExe)' == '' AND Exists('C:\Program Files (x86)\Inno Setup 6\iscc.exe')">C:\Program Files (x86)\Inno Setup 6\iscc.exe</IsccExe>
+      <IsccExe Condition="'$(IsccExe)' == '' AND Exists('C:\Program Files\Inno Setup 6\iscc.exe')">C:\Program Files\Inno Setup 6\iscc.exe</IsccExe>
+      <FfmpegExe Condition="Exists('C:\GitHub\TranscriptExtractor\ffmpeg.exe')">C:\GitHub\TranscriptExtractor\ffmpeg.exe</FfmpegExe>
+      <ScreenshotSrc>$(MSBuildProjectDirectory)\docs\screenshots\src</ScreenshotSrc>
+      <ScreenshotOut>$(MSBuildProjectDirectory)\docs\screenshots</ScreenshotOut>
+    </PropertyGroup>
+
+    <!-- Generate installer\version.iss with current version/build so iscc doesn't need to parse JSON -->
+    <Exec Command="powershell -ExecutionPolicy Bypass -Command &quot;$v=Get-Content 'Config\version.json' -Raw|ConvertFrom-Json; Set-Content 'installer\version.iss' &quot;&quot;#define AppVersion `&quot;$($v.version)`&quot;`r`n#define BuildNumber `&quot;$($v.buildNumber)`&quot;&quot;&quot;&quot;"
+          Condition="'$(IsccExe)' != ''"
+          ContinueOnError="true" />
+
+    <!-- Inno Setup installer -->
+    <Message Importance="high" Text="Building Inno Setup installer..." Condition="'$(IsccExe)' != ''" />
+    <Exec Command="&quot;$(IsccExe)&quot; installer\LiveMonitor.iss"
+          Condition="'$(IsccExe)' != ''"
+          ContinueOnError="true" />
+    <Message Importance="high" Text="iscc.exe not found — skipping installer build" Condition="'$(IsccExe)' == ''" />
+
+    <!-- Convert source screenshots to web-ready JPEGs (1280px wide, q:v 4) -->
+    <Message Importance="high" Text="Converting screenshots for GitHub Pages..." Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)')" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\1-addserver.jpg&quot;                                        -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\1-addserver.jpg&quot;"                                        Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\1-addserver.jpg')"                                        ContinueOnError="true" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\2-whats-new.jpg&quot;                                        -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\2-whats-new.jpg&quot;"                                        Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\2-whats-new.jpg')"                                        ContinueOnError="true" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\3-wait-state.jpg&quot;                                        -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\3-wait-state.jpg&quot;"                                        Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\3-wait-state.jpg')"                                        ContinueOnError="true" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\4-live-sessions.jpg&quot;                                     -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\4-live-sessions.jpg&quot;"                                     Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\4-live-sessions.jpg')"                                     ContinueOnError="true" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\5-database-health.jpg&quot;                                   -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\5-database-health.jpg&quot;"                                   Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\5-database-health.jpg')"                                   ContinueOnError="true" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\6-instance-overview.jpg&quot;                                 -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\6-instance-overview.jpg&quot;"                                 Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\6-instance-overview.jpg')"                                 ContinueOnError="true" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\7-environment-map.jpg&quot;                                  -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\7-environment-map.jpg&quot;"                                  Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\7-environment-map.jpg')"                                  ContinueOnError="true" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\8-servers-easily-monitor-50-instances-or-more.jpg&quot;     -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\8-servers-easily-monitor-50-instances-or-more.jpg&quot;"     Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\8-servers-easily-monitor-50-instances-or-more.jpg')"     ContinueOnError="true" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\9-run-full-sql-audits.jpg&quot;                             -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\9-run-full-sql-audits.jpg&quot;"                             Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\9-run-full-sql-audits.jpg')"                             ContinueOnError="true" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\10-microsoft-sql-vulnerability-assessment.jpg&quot;         -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\10-microsoft-sql-vulnerability-assessment.jpg&quot;"         Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\10-microsoft-sql-vulnerability-assessment.jpg')"         ContinueOnError="true" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\11-upload-results-securely-to-azure-blob-storage.jpg&quot;  -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\11-upload-results-securely-to-azure-blob-storage.jpg&quot;"  Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\11-upload-results-securely-to-azure-blob-storage.jpg')"  ContinueOnError="true" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\12-multiple-notification-channels.jpg&quot;               -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\12-multiple-notification-channels.jpg&quot;"               Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\12-multiple-notification-channels.jpg')"               ContinueOnError="true" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\13-maturity-roadmap.jpg&quot;                               -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\13-maturity-roadmap.jpg&quot;"                               Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\13-maturity-roadmap.jpg')"                               ContinueOnError="true" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\14-alerting.jpg&quot;                                        -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\14-alerting.jpg&quot;"                                        Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\14-alerting.jpg')"                                        ContinueOnError="true" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\15-query-plan-viewer.jpg&quot;                              -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\15-query-plan-viewer.jpg&quot;"                              Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\15-query-plan-viewer.jpg')"                              ContinueOnError="true" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\16-risk-register-compliance-mapping-ISO-SOC2-NIST.jpg&quot; -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\16-risk-register-compliance-mapping-ISO-SOC2-NIST.jpg&quot;" Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\16-risk-register-compliance-mapping-ISO-SOC2-NIST.jpg')" ContinueOnError="true" />
+    <Message Importance="high" Text="ffmpeg not found — skipping screenshot conversion" Condition="'$(FfmpegExe)' == ''" />
+  </Target>
+
   <!-- Remove redundant publish folder and other unnecessary files -->
   <Target Name="RemoveRedundantPublishFolder" AfterTargets="Build;Publish">
     <RemoveDir Directories="$(OutputPath)publish;$(OutputPath)BenchmarkSuite1;$(OutputPath)Tests;$(OutputPath)PerformanceMonitor-main;$(PublishDir)publish" ContinueOnError="true" />

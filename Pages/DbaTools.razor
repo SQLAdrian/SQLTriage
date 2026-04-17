@@ -1,6 +1,7 @@
 <!--/* In the name of God, the Merciful, the Compassionate */-->
 @page "/dbatools"
 @inject SqlHealthAssessment.Data.Services.PowerShellService PS
+@inject SqlHealthAssessment.Data.ServerConnectionManager ConnectionManager
 @inject IJSRuntime JS
 @using System.Data
 @using System.Linq
@@ -92,7 +93,26 @@
             }
             @if (_showInstanceParam)
             {
-                <input @bind="_paramInstance" placeholder="SqlInstance (e.g. SERVER\INST)" class="dba-param-input" title="SQL Server instance" />
+                @if (_availableInstances.Count > 0)
+                {
+                    <select @bind="_paramInstance" class="server-select" style="min-width:200px;"
+                            title="SQL Server instance">
+                        <option value="">-- Select instance --</option>
+                        @foreach (var inst in _availableInstances)
+                        {
+                            <option value="@inst">@inst</option>
+                        }
+                        <option value="__custom__">Custom…</option>
+                    </select>
+                    @if (_paramInstance == "__custom__")
+                    {
+                        <input @bind="_paramInstanceCustom" placeholder="SERVER\INST" class="dba-param-input" title="Custom instance name" />
+                    }
+                }
+                else
+                {
+                    <input @bind="_paramInstance" placeholder="SqlInstance (e.g. SERVER\INST)" class="dba-param-input" title="SQL Server instance" />
+                }
             }
             @if (_showDiscoveryType)
             {
@@ -213,6 +233,17 @@
 </div>
 
 @code {
+    protected override void OnInitialized()
+    {
+        _availableInstances = ConnectionManager.GetEnabledConnections()
+            .SelectMany(c => c.GetServerList())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(s => s)
+            .ToList();
+        if (_availableInstances.Count > 0)
+            _paramInstance = _availableInstances[0];
+    }
+
     // ── State ────────────────────────────────────────────────────────────────
     private string _command = "";
     private bool _running = false;
@@ -235,10 +266,14 @@
     // Preset params
     private string _paramComputer = ".";
     private string _paramInstance = "";
+    private string _paramInstanceCustom = "";
     private string _paramDiscoveryType = "DataSourceEnumeration";
     private bool _showComputerParam = false;
     private bool _showInstanceParam = false;
     private bool _showDiscoveryType = false;
+    private List<string> _availableInstances = new();
+    // Resolves the effective instance: custom text input overrides dropdown when "Custom…" selected
+    private string EffectiveInstance => _paramInstance == "__custom__" ? _paramInstanceCustom : _paramInstance;
 
     private async Task RunCommand()
     {
@@ -274,10 +309,14 @@
                 else
                 {
                     _gridData = result.Data;
-                    // If JSON parse failed but we have output, show as text
+                    // If JSON parse failed (e.g. command returned WARNING: lines instead of JSON),
+                    // fall back to showing raw output as text rather than a red error
                     if (!string.IsNullOrEmpty(result.ParseError))
                     {
-                        _errorOutput = $"JSON parse failed: {result.ParseError}\n\nRaw output:\n{result.Output}";
+                        _asText = true;
+                        _textOutput = string.IsNullOrEmpty(result.Output)
+                            ? $"(No output — parse error: {result.ParseError})"
+                            : result.Output;
                     }
                 }
             }
@@ -338,7 +377,7 @@
                 _showInstanceParam = true;
                 _usesDbatools = true;
                 _asText = false;
-                _command = BuildDbatoolsCommand("Get-DbaDatabase", $"-SqlInstance '{_paramInstance}'",
+                _command = BuildDbatoolsCommand("Get-DbaDatabase", $"-SqlInstance '{EffectiveInstance}'",
                     "| Select-Object SqlInstance, Name, Status, RecoveryModel, SizeMB, Compatibility, Owner");
                 break;
 
@@ -346,7 +385,7 @@
                 _showInstanceParam = true;
                 _usesDbatools = true;
                 _asText = false;
-                _command = BuildDbatoolsCommand("Get-DbaLogin", $"-SqlInstance '{_paramInstance}'",
+                _command = BuildDbatoolsCommand("Get-DbaLogin", $"-SqlInstance '{EffectiveInstance}'",
                     "| Select-Object SqlInstance, Name, LoginType, IsDisabled, HasAccess, MustChangePassword");
                 break;
 
@@ -354,7 +393,7 @@
                 _showInstanceParam = true;
                 _usesDbatools = true;
                 _asText = false;
-                _command = BuildDbatoolsCommand("Get-DbaAgentJob", $"-SqlInstance '{_paramInstance}'",
+                _command = BuildDbatoolsCommand("Get-DbaAgentJob", $"-SqlInstance '{EffectiveInstance}'",
                     "| Select-Object SqlInstance, Name, Category, IsEnabled, LastRunDate, LastRunOutcome, NextRunDate");
                 break;
 
@@ -362,14 +401,14 @@
                 _showInstanceParam = true;
                 _usesDbatools = true;
                 _asText = false;
-                _command = BuildDbatoolsCommand("Get-DbaMaxMemory", $"-SqlInstance '{_paramInstance}'");
+                _command = BuildDbatoolsCommand("Get-DbaMaxMemory", $"-SqlInstance '{EffectiveInstance}'");
                 break;
 
             case "get-build":
                 _showInstanceParam = true;
                 _usesDbatools = true;
                 _asText = false;
-                _command = BuildDbatoolsCommand("Get-DbaBuild", $"-SqlInstance '{_paramInstance}'",
+                _command = BuildDbatoolsCommand("Get-DbaBuild", $"-SqlInstance '{EffectiveInstance}'",
                     "| Select-Object SqlInstance, Build, NameLevel, SPLevel, CULevel, KBLevel, SupportedUntil");
                 break;
 

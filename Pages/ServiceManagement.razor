@@ -623,27 +623,51 @@
 
     private static async Task<(int ExitCode, string Output)> RunCommandAsync(string fileName, string arguments)
     {
-        var psi = new ProcessStartInfo(fileName, arguments)
+        // Attempt with output capture first (works when already elevated)
+        try
         {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            Verb = "runas"
+            var psi = new ProcessStartInfo(fileName, arguments)
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+
+            using var proc = Process.Start(psi);
+            if (proc != null)
+            {
+                var output = await proc.StandardOutput.ReadToEndAsync();
+                var error  = await proc.StandardError.ReadToEndAsync();
+                await proc.WaitForExitAsync();
+                var combined = output;
+                if (!string.IsNullOrEmpty(error)) combined += "\n" + error;
+                if (proc.ExitCode == 0 || !combined.Contains("Administrator", StringComparison.OrdinalIgnoreCase))
+                    return (proc.ExitCode, combined);
+            }
+        }
+        catch { /* not elevated — fall through to UAC prompt */ }
+
+        // Re-launch with UAC elevation (UseShellExecute=true required for Verb=runas)
+        var elevated = new ProcessStartInfo(fileName, arguments)
+        {
+            UseShellExecute = true,
+            Verb = "runas",
+            CreateNoWindow = false
         };
 
-        using var proc = Process.Start(psi);
-        if (proc == null)
-            return (-1, "Failed to start process");
-
-        var output = await proc.StandardOutput.ReadToEndAsync();
-        var error = await proc.StandardError.ReadToEndAsync();
-        await proc.WaitForExitAsync();
-
-        var combined = output;
-        if (!string.IsNullOrEmpty(error))
-            combined += "\n" + error;
-
-        return (proc.ExitCode, combined);
+        try
+        {
+            using var proc = Process.Start(elevated);
+            if (proc == null) return (-1, "Failed to start elevated process");
+            await proc.WaitForExitAsync();
+            return (proc.ExitCode, proc.ExitCode == 0
+                ? "Service operation completed (elevated)."
+                : "Service operation failed — check Windows Event Log.");
+        }
+        catch (Exception ex)
+        {
+            return (-1, $"Elevation cancelled or failed: {ex.Message}");
+        }
     }
 }

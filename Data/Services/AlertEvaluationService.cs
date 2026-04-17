@@ -383,7 +383,7 @@ namespace SqlHealthAssessment.Data.Services
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Error log scan failed for alert {AlertId} on {Server}", alert.Id, LogAnon.S(serverName));
+                _logger.LogDebug(ex, "Error log scan failed for alert {AlertId} on {Server}: {Msg}", alert.Id, LogAnon.S(serverName), ex.Message);
                 return null;
             }
         }
@@ -629,6 +629,12 @@ namespace SqlHealthAssessment.Data.Services
                     }
                 }
             }
+            catch (Microsoft.Data.SqlClient.SqlException sqlEx)
+            {
+                // Connection failures and SQL errors are expected (server offline, AG not configured, etc.)
+                // Log at Debug to avoid spamming the log on every evaluation cycle
+                _logger.LogDebug(sqlEx, "Alert query failed (SQL) {AlertId} on {Server}: {Msg}", alert.Id, LogAnon.S(serverName), sqlEx.Message);
+            }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to evaluate alert {AlertId} on {Server}", alert.Id, LogAnon.S(serverName));
@@ -693,12 +699,9 @@ namespace SqlHealthAssessment.Data.Services
 
         private void DispatchNotification(AlertDefinition alert, AlertState state)
         {
-            // Toast notification
-            var toastMethod = state.Severity == "Critical"
-                ? (Action<string, string, int>)_toast.ShowError
-                : _toast.ShowWarning;
-            toastMethod($"{alert.Name} — {state.ServerName}",
-                state.Message, 6000);
+            // Toast notification — uses alert channel so flood muting applies
+            _toast.ShowAlert($"{alert.Name} — {state.ServerName}",
+                state.Message, critical: state.Severity == "Critical", duration: 6000);
 
             // Feed into existing AlertingService notification pipeline for email/Teams
             var notification = new AlertNotification
