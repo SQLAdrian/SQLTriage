@@ -44,6 +44,7 @@ namespace SqlHealthAssessment.Data.Caching
 
         private readonly string _connectionString;
         private readonly DataProtectionService? _dataProtection;
+        private readonly UserSettingsService? _userSettings;
 
         // Per-(queryId:instanceKey) semaphores for concurrent panel writes.
         // Global ops (eviction, vacuum) use _globalWriteLock exclusively.
@@ -59,9 +60,10 @@ namespace SqlHealthAssessment.Data.Caching
             PropertyNameCaseInsensitive = true
         };
 
-        public liveQueriesCacheStore(DataProtectionService? dataProtection = null)
+        public liveQueriesCacheStore(DataProtectionService? dataProtection = null, UserSettingsService? userSettings = null)
         {
             _dataProtection = dataProtection;
+            _userSettings = userSettings;
             var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "SqlHealthAssessment-cache.db");
             _connectionString = $"Data Source={dbPath};Mode=ReadWriteCreate;Cache=Shared";
             InitializeSchema();
@@ -540,8 +542,9 @@ namespace SqlHealthAssessment.Data.Caching
         /// <summary>
         /// Reads cached time-series data within the specified time window.
         /// </summary>
-        // Maximum data points returned per chart series to prevent memory pressure
-        private const int MaxChartDataPoints = 2000;
+        // Maximum data points returned per chart series to prevent memory pressure.
+        // Reads from UserSettings if available, falls back to 2000.
+        private int MaxChartDataPoints => _userSettings?.GetChartDataPointCap() ?? 2000;
 
         public async Task<List<TimeSeriesPoint>> GetTimeSeriesAsync(
             string queryId, string instanceKey, DateTime from, DateTime to)

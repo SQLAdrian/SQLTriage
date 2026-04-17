@@ -98,6 +98,10 @@ namespace SqlHealthAssessment.Data
             /// <summary>Maximum number of sessions to display.</summary>
             public int SessionsMaxDisplay { get; set; } = 500;
 
+            // ── Cache ──
+            /// <summary>Maximum data points returned per chart series from the SQLite cache. Lower = less memory, faster render.</summary>
+            public int ChartDataPointCap { get; set; } = 2000;
+
             // ── Alert Baseline ──
             /// <summary>When true, alert evaluation collects baseline samples and applies IQR-based dynamic thresholds.</summary>
             public bool AlertBaselineEnabled { get; set; } = true;
@@ -416,6 +420,9 @@ namespace SqlHealthAssessment.Data
 
         public int GetSessionsMaxDisplay() { lock (_lock) return _settings.SessionsMaxDisplay; }
         public void SetSessionsMaxDisplay(int count) { lock (_lock) _settings.SessionsMaxDisplay = count; SaveSettings(); }
+
+        public int GetChartDataPointCap() { lock (_lock) return _settings.ChartDataPointCap; }
+        public void SetChartDataPointCap(int cap) { lock (_lock) _settings.ChartDataPointCap = Math.Clamp(cap, 500, 10000); SaveSettings(); }
 
         // ── Auto-Export Accessors ──
         public UserSettings GetSettings() { lock (_lock) return _settings; }

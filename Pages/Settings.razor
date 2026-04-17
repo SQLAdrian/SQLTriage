@@ -330,6 +330,19 @@
             <label>sqlite Integrity Check Frequency</label>
             <input type="text" value="Every @(Configuration.GetValue<int>("sqliteIntegrityCheckEveryNRuns", 6)) maintenance runs" readonly />
         </div>
+        <div class="settings-field">
+            <label>Chart Data Point Cap</label>
+            <div style="display:flex;align-items:center;gap:12px;">
+                <input type="range" min="500" max="10000" step="500"
+                       value="@_chartDataPointCap"
+                       @oninput="OnChartCapChanged"
+                       style="width:180px;" />
+                <span style="font-size:13px;min-width:60px;">@_chartDataPointCap pts</span>
+            </div>
+            <p style="font-size:12px;color:var(--text-secondary);margin-top:4px;">
+                Max data points per chart series from SQLite cache. Lower = faster render and less memory. Takes effect on next dashboard load.
+            </p>
+        </div>
         <div style="display: flex; gap: 8px; margin-top: 10px;">
             <button class="settings-btn" @onclick="FlushCache" disabled="@IsFlushingCache">@(IsFlushingCache ? "Flushing..." : "Flush All Cache")</button>
             <button class="settings-btn" @onclick="RunMaintenance" disabled="@IsRunningMaintenance">@(IsRunningMaintenance ? "Running..." : "Run Maintenance")</button>
@@ -882,6 +895,7 @@
     private bool IsFlushingCache;
     private string? FlushCacheResult;
     private bool FlushCacheSuccess;
+    private int _chartDataPointCap = 2000;
     private bool IsRunningMaintenance;
     private string? MaintenanceResult;
     private bool MaintenanceSuccess;
@@ -963,6 +977,8 @@
         // Get cache file size
         UpdateCacheFileSize();
 
+        _chartDataPointCap = UserSettings.GetChartDataPointCap();
+
         // Load Azure Blob config
         _azureAuthMode = BlobExport.AuthMode == "sastoken" ? "sastoken" : "connectionstring";
         _azureContainer = BlobExport.ContainerName ?? "sqlhealthassessment";
@@ -995,6 +1011,15 @@
 
         // Load RBAC settings
         LoadRbacSettings();
+    }
+
+    private void OnChartCapChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var cap))
+        {
+            _chartDataPointCap = cap;
+            UserSettings.SetChartDataPointCap(cap);
+        }
     }
 
     private void OnZoomLevelChanged(ChangeEventArgs e)
