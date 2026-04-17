@@ -77,6 +77,20 @@
         border-color: rgba(99,102,241,.3);
     }
 
+    /* Category chips */
+    .cv-cat-chip {
+        font-size: 11px; padding: 2px 8px;
+        background: var(--bg-primary); color: var(--text-secondary);
+        border: 1px solid var(--border); border-radius: 10px;
+        cursor: pointer; transition: background .1s, color .1s;
+        white-space: nowrap;
+    }
+    .cv-cat-chip:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+    .cv-cat-chip.active {
+        background: rgba(99,102,241,.15); color: var(--accent);
+        border-color: rgba(99,102,241,.4);
+    }
+
     /* Progress */
     .cv-progress {
         margin-top: 12px; padding: 10px 14px;
@@ -198,16 +212,53 @@
             SQL Checks
             <span class="cv-tab-count">@_sqlCheckRows.Count</span>
         </button>
+        <!-- quick-filter by category chips -->
+        @{
+            var categorySource = _activeTab == "Alerts" ? _alertRows : _sqlCheckRows;
+            var cats = categorySource.Select(r => r.Category).Distinct().OrderBy(c => c).ToList();
+        }
+        @if (cats.Count > 1)
+        {
+            <div style="display:flex;gap:4px;flex-wrap:wrap;margin-left:8px;align-items:center;">
+                @foreach (var cat in cats)
+                {
+                    var isActive = _searchText == cat;
+                    <button class="cv-cat-chip @(isActive ? "active" : "")"
+                            @onclick="() => _searchText = isActive ? string.Empty : cat">
+                        @cat
+                    </button>
+                }
+            </div>
+        }
+    </div>
+
+    <!-- ── Search ───────────────────────────────────────────────────── -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+        <div style="position:relative;flex:1;max-width:380px;">
+            <i class="fa-solid fa-magnifying-glass" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:13px;pointer-events:none;"></i>
+            <input type="search" placeholder="Search by name, category, description…"
+                   @bind="_searchText" @bind:event="oninput"
+                   style="width:100%;padding:6px 10px 6px 30px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:6px;font-size:13px;" />
+        </div>
+        @if (!string.IsNullOrWhiteSpace(_searchText))
+        {
+            <span style="font-size:12px;color:var(--text-muted);">
+                @(FilteredRows.Count) of @(_activeTab == "Alerts" ? _alertRows.Count : _sqlCheckRows.Count)
+            </span>
+            <button style="background:transparent;border:none;color:var(--text-muted);cursor:pointer;font-size:12px;" @onclick="() => _searchText = string.Empty">
+                <i class="fa-solid fa-xmark"></i> Clear
+            </button>
+        }
     </div>
 
     <!-- ── Table ──────────────────────────────────────────────────────── -->
     @if (_activeTab == "Alerts")
     {
-        <CheckValidatorTable Rows="_alertRows" OnTest="TestAlertRow" OnEdit="EditAlertRow" ShowAlertColumns="true" />
+        <CheckValidatorTable Rows="FilteredRows" OnTest="TestAlertRow" OnEdit="EditAlertRow" ShowAlertColumns="true" />
     }
     else
     {
-        <CheckValidatorTable Rows="_sqlCheckRows" OnTest="TestSqlCheckRow" OnEdit="EditSqlCheckRow" ShowAlertColumns="false" />
+        <CheckValidatorTable Rows="FilteredRows" OnTest="TestSqlCheckRow" OnEdit="EditSqlCheckRow" ShowAlertColumns="false" />
     }
 
     @if (_running)
@@ -347,10 +398,26 @@
 
 @code {
     private string _activeTab = "Alerts";
+    private string _searchText = string.Empty;
     private List<string> _servers = new();
     private string _selectedServer = "";
     private List<CheckValidatorTable.CheckRow> _alertRows = new();
     private List<CheckValidatorTable.CheckRow> _sqlCheckRows = new();
+
+    private List<CheckValidatorTable.CheckRow> FilteredRows
+    {
+        get
+        {
+            var source = _activeTab == "Alerts" ? _alertRows : _sqlCheckRows;
+            if (string.IsNullOrWhiteSpace(_searchText)) return source;
+            var q = _searchText.Trim();
+            return source.Where(r =>
+                r.Name.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                r.Category.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                (r.Description?.Contains(q, StringComparison.OrdinalIgnoreCase) == true))
+                .ToList();
+        }
+    }
     private bool _running;
     private int _progressCurrent, _progressTotal;
     private string _globalError = "";
