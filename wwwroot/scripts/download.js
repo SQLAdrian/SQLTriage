@@ -153,3 +153,28 @@ function downloadFile(fileName, content, contentType) {
         alert('Error downloading file: ' + e.message);
     }
 }
+
+// Clean base64 download helper for Blazor — used by credential export and similar features.
+// blazorDownloadFile(fileName, mimeType, base64Content)
+function blazorDownloadFile(fileName, mimeType, base64) {
+    try {
+        var byteCharacters = atob(base64);
+        var byteNumbers = new Array(byteCharacters.length);
+        for (var i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        var byteArray = new Uint8Array(byteNumbers);
+        var blob = new Blob([byteArray], { type: mimeType });
+        var url  = URL.createObjectURL(blob);
+        var link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', fileName);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    } catch (e) {
+        console.error('blazorDownloadFile error:', e);
+    }
+}

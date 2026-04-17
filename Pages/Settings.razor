@@ -23,6 +23,7 @@
 @inject SqlHealthAssessment.Data.ToastService Toast
 @inject SqlHealthAssessment.Data.Services.AppUserState UserState
 @inject SqlHealthAssessment.Data.Services.RbacService RbacService
+@inject SqlHealthAssessment.Data.ServerConnectionManager ConnectionManager
 
 @if (!RbacService.HasPermission(UserState.Role, "settings"))
 {
@@ -357,6 +358,63 @@
         }
     </div>
 
+
+    <div class="settings-group">
+        <h3>Server Credentials</h3>
+        <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">
+            Export all server connections (including SQL auth passwords) to a portable <code>.lmcreds</code> file
+            protected by a passphrase. Use this to move credentials to another machine.
+            Windows auth connections are exported without a password.
+        </p>
+
+        <div style="display:flex;gap:24px;flex-wrap:wrap;">
+            <!-- Export -->
+            <div style="flex:1;min-width:240px;">
+                <strong style="font-size:13px;display:block;margin-bottom:8px;">Export</strong>
+                <div class="settings-field" style="margin-bottom:8px;">
+                    <label>Passphrase</label>
+                    <input type="password" @bind="_credsExportPassphrase" placeholder="Choose a passphrase…"
+                           style="width:100%;" autocomplete="new-password" />
+                </div>
+                <div class="settings-field" style="margin-bottom:8px;">
+                    <label>Confirm</label>
+                    <input type="password" @bind="_credsExportConfirm" placeholder="Repeat passphrase…"
+                           style="width:100%;" autocomplete="new-password" />
+                </div>
+                <button class="settings-btn" @onclick="ExportCredentials"
+                        disabled="@_credsExporting">
+                    @(_credsExporting ? "Exporting…" : "⬇ Export .lmcreds")
+                </button>
+            </div>
+
+            <!-- Import -->
+            <div style="flex:1;min-width:240px;">
+                <strong style="font-size:13px;display:block;margin-bottom:8px;">Import</strong>
+                <div class="settings-field" style="margin-bottom:8px;">
+                    <label>.lmcreds file</label>
+                    <InputFile OnChange="OnCredsFileSelected" accept=".lmcreds,.json"
+                               style="font-size:12px;color:var(--text-secondary);" />
+                </div>
+                <div class="settings-field" style="margin-bottom:8px;">
+                    <label>Passphrase</label>
+                    <input type="password" @bind="_credsImportPassphrase" placeholder="Enter the export passphrase…"
+                           style="width:100%;" autocomplete="current-password" />
+                </div>
+                <p style="font-size:11px;color:var(--text-secondary);margin-bottom:8px;">
+                    Existing servers with matching IDs will be skipped. New servers are added.
+                </p>
+                <button class="settings-btn" @onclick="ImportCredentials"
+                        disabled="@(_credsImporting || _credsFileContent == null)">
+                    @(_credsImporting ? "Importing…" : "⬆ Import .lmcreds")
+                </button>
+            </div>
+        </div>
+
+        @if (_credsMessage != null)
+        {
+            <p style="margin-top:10px;font-size:13px;color:@(_credsSuccess ? "var(--green)" : "var(--red)");">@_credsMessage</p>
+        }
+    </div>
 
     <!-- Azure Blob Export Section -->
     <div class="settings-group">
@@ -896,6 +954,16 @@
     private string? FlushCacheResult;
     private bool FlushCacheSuccess;
     private int _chartDataPointCap = 2000;
+
+    // ── Credential Export/Import ──
+    private string _credsExportPassphrase = "";
+    private string _credsExportConfirm    = "";
+    private string _credsImportPassphrase = "";
+    private string? _credsFileContent;
+    private bool _credsExporting;
+    private bool _credsImporting;
+    private string? _credsMessage;
+    private bool _credsSuccess;
     private bool IsRunningMaintenance;
     private string? MaintenanceResult;
     private bool MaintenanceSuccess;
@@ -1020,6 +1088,102 @@
             _chartDataPointCap = cap;
             UserSettings.SetChartDataPointCap(cap);
         }
+    }
+
+    private async Task OnCredsFileSelected(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            using var stream = e.File.OpenReadStream(maxAllowedSize: 1024 * 1024); // 1 MB cap
+            using var reader = new System.IO.StreamReader(stream);
+            _credsFileContent = await reader.ReadToEndAsync();
+            _credsMessage = null;
+        }
+        catch (Exception ex)
+        {
+            _credsMessage = $"Could not read file: {ex.Message}";
+            _credsSuccess = false;
+        }
+    }
+
+    private async Task ExportCredentials()
+    {
+        _credsMessage = null;
+        if (string.IsNullOrWhiteSpace(_credsExportPassphrase))
+        {
+            _credsMessage = "Enter a passphrase."; _credsSuccess = false; return;
+        }
+        if (_credsExportPassphrase != _credsExportConfirm)
+        {
+            _credsMessage = "Passphrases do not match."; _credsSuccess = false; return;
+        }
+
+        _credsExporting = true;
+        try
+        {
+            var connections = ConnectionManager.GetConnections();
+            var json = CredentialPorter.Export(connections, _credsExportPassphrase);
+            var fileName = $"LiveMonitor-credentials-{DateTime.Now:yyyyMMdd-HHmm}.lmcreds";
+            var bytes = System.Text.Encoding.UTF8.GetBytes(json);
+            var base64 = Convert.ToBase64String(bytes);
+            await JS.InvokeVoidAsync("blazorDownloadFile", fileName, "application/json", base64);
+            _credsMessage = $"Exported {connections.Count} server(s) to {fileName}.";
+            _credsSuccess = true;
+            _credsExportPassphrase = "";
+            _credsExportConfirm = "";
+        }
+        catch (Exception ex)
+        {
+            _credsMessage = $"Export failed: {ex.Message}";
+            _credsSuccess = false;
+        }
+        finally
+        {
+            _credsExporting = false;
+        }
+    }
+
+    private async Task ImportCredentials()
+    {
+        _credsMessage = null;
+        if (_credsFileContent == null) { _credsMessage = "Select a .lmcreds file first."; _credsSuccess = false; return; }
+        if (string.IsNullOrWhiteSpace(_credsImportPassphrase)) { _credsMessage = "Enter the passphrase."; _credsSuccess = false; return; }
+
+        _credsImporting = true;
+        try
+        {
+            var imported = CredentialPorter.Import(_credsFileContent, _credsImportPassphrase);
+            var existing = ConnectionManager.GetConnections();
+            var existingIds = new System.Collections.Generic.HashSet<string>(existing.Select(c => c.Id));
+
+            int added = 0, skipped = 0;
+            foreach (var conn in imported)
+            {
+                if (existingIds.Contains(conn.Id)) { skipped++; continue; }
+                ConnectionManager.AddConnection(conn);
+                added++;
+            }
+
+            _credsMessage = $"Import complete: {added} added, {skipped} skipped (already exist).";
+            _credsSuccess = true;
+            _credsFileContent = null;
+            _credsImportPassphrase = "";
+        }
+        catch (System.Security.Cryptography.CryptographicException)
+        {
+            _credsMessage = "Wrong passphrase — could not decrypt the file.";
+            _credsSuccess = false;
+        }
+        catch (Exception ex)
+        {
+            _credsMessage = $"Import failed: {ex.Message}";
+            _credsSuccess = false;
+        }
+        finally
+        {
+            _credsImporting = false;
+        }
+        await Task.CompletedTask;
     }
 
     private void OnZoomLevelChanged(ChangeEventArgs e)
