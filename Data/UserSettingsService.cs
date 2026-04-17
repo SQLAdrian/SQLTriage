@@ -102,6 +102,10 @@ namespace SqlHealthAssessment.Data
             /// <summary>Maximum data points returned per chart series from the SQLite cache. Lower = less memory, faster render.</summary>
             public int ChartDataPointCap { get; set; } = 2000;
 
+            // ── Updates ──
+            /// <summary>Optional HTTP/HTTPS proxy URL for update checks. Null = use system proxy.</summary>
+            public string? UpdateProxyUrl { get; set; }
+
             // ── Alert Baseline ──
             /// <summary>When true, alert evaluation collects baseline samples and applies IQR-based dynamic thresholds.</summary>
             public bool AlertBaselineEnabled { get; set; } = true;
@@ -423,6 +427,9 @@ namespace SqlHealthAssessment.Data
 
         public int GetChartDataPointCap() { lock (_lock) return _settings.ChartDataPointCap; }
         public void SetChartDataPointCap(int cap) { lock (_lock) _settings.ChartDataPointCap = Math.Clamp(cap, 500, 10000); SaveSettings(); }
+
+        public string? GetUpdateProxyUrl() { lock (_lock) return _settings.UpdateProxyUrl; }
+        public void SetUpdateProxyUrl(string? url) { lock (_lock) _settings.UpdateProxyUrl = string.IsNullOrWhiteSpace(url) ? null : url.Trim(); SaveSettings(); }
 
         // ── Auto-Export Accessors ──
         public UserSettings GetSettings() { lock (_lock) return _settings; }

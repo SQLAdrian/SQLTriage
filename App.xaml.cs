@@ -196,6 +196,11 @@ namespace SqlHealthAssessment
 
             Services = services.BuildServiceProvider();
 
+            // Apply saved proxy to AutoUpdateService (before background check starts)
+            var savedProxy = Services.GetService<UserSettingsService>()?.GetUpdateProxyUrl();
+            if (!string.IsNullOrWhiteSpace(savedProxy))
+                Services.GetService<AutoUpdateService>()?.SetManualProxyUrl(savedProxy);
+
             // Wire up debug logging toggle — switches Serilog level at runtime without restart
             var userSettings = Services.GetService<UserSettingsService>();
             if (userSettings != null)

@@ -4,6 +4,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
+using System.Net;
 using System.Net.Http;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -23,10 +24,11 @@ namespace SqlHealthAssessment.Data
     public class AutoUpdateService
     {
         private readonly ILogger<AutoUpdateService> _logger;
-        private readonly HttpClient _httpClient;
+        private HttpClient _httpClient;
         private string _currentVersion = "1.0.0";
         private int _buildNumber = 0;
         private string _updateCheckUrl = "https://api.github.com/repos/SQLAdrian/SqlHealthAssessment/releases/latest";
+        private string? _manualProxyUrl;
 
         /// <summary>Path to the staged update ZIP, ready to apply on exit.</summary>
         public string? StagedUpdatePath { get; private set; }
@@ -40,15 +42,44 @@ namespace SqlHealthAssessment.Data
         /// <summary>True if a newer version was found in the last background check.</summary>
         public bool IsUpdateAvailable => LastCheckResult?.Available == true;
 
+        /// <summary>Human-readable error from the last failed update check. Null if last check succeeded.</summary>
+        public string? LastCheckError { get; private set; }
+
         /// <summary>Fires on the thread pool when a background check finds a newer version.</summary>
         public event Action<UpdateInfo>? OnUpdateAvailable;
 
         public AutoUpdateService(ILogger<AutoUpdateService> logger)
         {
             _logger = logger;
-            _httpClient = new HttpClient();
-            _httpClient.DefaultRequestHeaders.Add("User-Agent", "SqlHealthAssessment");
+            _httpClient = BuildHttpClient(null);
             LoadVersionInfo();
+        }
+
+        /// <summary>
+        /// Sets (or clears) a manual proxy URL override. Rebuilds the HttpClient.
+        /// Pass null or empty to revert to system proxy auto-detection.
+        /// </summary>
+        public void SetManualProxyUrl(string? proxyUrl)
+        {
+            _manualProxyUrl = string.IsNullOrWhiteSpace(proxyUrl) ? null : proxyUrl.Trim();
+            _httpClient.Dispose();
+            _httpClient = BuildHttpClient(_manualProxyUrl);
+            _logger.LogInformation("Update proxy set to: {Proxy}", _manualProxyUrl ?? "(system default)");
+        }
+
+        private static HttpClient BuildHttpClient(string? manualProxyUrl)
+        {
+            var handler = new HttpClientHandler { UseProxy = true };
+
+            if (!string.IsNullOrWhiteSpace(manualProxyUrl))
+            {
+                handler.Proxy = new WebProxy(manualProxyUrl, true);
+            }
+            // else: UseProxy=true + null Proxy = use system/IE proxy settings automatically
+
+            var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
+            client.DefaultRequestHeaders.Add("User-Agent", "SqlHealthAssessment-LiveMonitor");
+            return client;
         }
 
         private void LoadVersionInfo()
@@ -78,6 +109,7 @@ namespace SqlHealthAssessment.Data
 
         public async Task<(bool Available, UpdateInfo? Info)> CheckForUpdatesAsync()
         {
+            LastCheckError = null;
             try
             {
                 _logger.LogInformation("Checking for updates at {Url}", _updateCheckUrl);
@@ -139,11 +171,46 @@ namespace SqlHealthAssessment.Data
                 _logger.LogInformation("No update available. Current: v{Current}, Latest: v{Latest}", _currentVersion, latestVersion);
                 return (false, null);
             }
+            catch (HttpRequestException ex)
+            {
+                LastCheckError = BuildHttpError(ex);
+                _logger.LogError(ex, "Failed to check for updates (HTTP): {Error}", LastCheckError);
+                return (false, null);
+            }
+            catch (TaskCanceledException ex) when (ex.InnerException is TimeoutException || !ex.CancellationToken.IsCancellationRequested)
+            {
+                LastCheckError = "Request timed out after 30 seconds. Check your network connection or configure a proxy.";
+                _logger.LogError(ex, "Update check timed out");
+                return (false, null);
+            }
             catch (Exception ex)
             {
+                LastCheckError = $"Unexpected error: {ex.Message}";
                 _logger.LogError(ex, "Failed to check for updates");
                 return (false, null);
             }
+        }
+
+        private static string BuildHttpError(HttpRequestException ex)
+        {
+            // Provide actionable detail based on the inner exception type
+            var inner = ex.InnerException;
+            if (inner is System.Net.Sockets.SocketException sock)
+                return $"Network error ({sock.SocketErrorCode}): {sock.Message}. " +
+                       "Possible causes: no internet access, DNS failure, or proxy required.";
+
+            if (inner?.Message.Contains("proxy", StringComparison.OrdinalIgnoreCase) == true ||
+                ex.Message.Contains("407", StringComparison.Ordinal))
+                return "Proxy authentication required (HTTP 407). " +
+                       "Configure a proxy URL in Settings → Updates.";
+
+            if (ex.StatusCode == HttpStatusCode.Forbidden)
+                return "GitHub API rate-limited (HTTP 403). Try again in a few minutes.";
+
+            if (ex.StatusCode != null)
+                return $"HTTP {(int)ex.StatusCode}: {ex.Message}";
+
+            return ex.Message;
         }
 
         /// <summary>

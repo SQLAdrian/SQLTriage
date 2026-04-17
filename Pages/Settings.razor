@@ -155,10 +155,24 @@
             <label>Current Version</label>
             <input type="text" value="@UpdateService.GetCurrentVersion()" readonly />
         </div>
+        <div class="settings-field">
+            <label>Proxy URL <span style="font-weight:normal;color:var(--text-secondary);font-size:11px;">(optional — leave blank to use system proxy)</span></label>
+            <div style="display:flex;gap:8px;align-items:center;">
+                <input type="text" @bind="_updateProxyUrl" placeholder="http://proxy.corp.example.com:8080"
+                       style="flex:1;" />
+                <button class="settings-btn" @onclick="SaveUpdateProxy" style="white-space:nowrap;">Save</button>
+            </div>
+        </div>
         <button class="settings-btn" @onclick="CheckForUpdates" disabled="@IsCheckingUpdates">@(IsCheckingUpdates ? "Checking..." : "Check for Updates")</button>
         @if (UpdateCheckResult != null)
         {
             <p style="margin-top: 8px; color: @(UpdateAvailable ? "var(--orange)" : "var(--green)");">@UpdateCheckResult</p>
+            @if (!UpdateAvailable && UpdateService.LastCheckError != null)
+            {
+                <p style="margin-top:4px;font-size:12px;color:var(--red);background:var(--bg-secondary);padding:8px 10px;border-radius:4px;border-left:3px solid var(--red);">
+                    <strong>Detail:</strong> @UpdateService.LastCheckError
+                </p>
+            }
             @if (UpdateAvailable && UpdateInfo != null)
             {
                 <div style="margin-top: 12px; padding: 12px; background: var(--bg-secondary); border-radius: 4px;">
@@ -947,6 +961,7 @@
     private bool IsCheckingUpdates;
     private string? UpdateCheckResult;
     private bool UpdateAvailable;
+    private string _updateProxyUrl = "";
     private UpdateInfo? UpdateInfo;
     private bool _downloading;
     private int _downloadProgress;
@@ -1046,6 +1061,7 @@
         UpdateCacheFileSize();
 
         _chartDataPointCap = UserSettings.GetChartDataPointCap();
+        _updateProxyUrl = UserSettings.GetUpdateProxyUrl() ?? "";
 
         // Load Azure Blob config
         _azureAuthMode = BlobExport.AuthMode == "sastoken" ? "sastoken" : "connectionstring";
@@ -1079,6 +1095,15 @@
 
         // Load RBAC settings
         LoadRbacSettings();
+    }
+
+    private void SaveUpdateProxy()
+    {
+        UserSettings.SetUpdateProxyUrl(_updateProxyUrl);
+        UpdateService.SetManualProxyUrl(_updateProxyUrl);
+        Toast.ShowSuccess(string.IsNullOrWhiteSpace(_updateProxyUrl)
+            ? "Proxy cleared — using system proxy settings."
+            : $"Proxy saved: {_updateProxyUrl}");
     }
 
     private void OnChartCapChanged(ChangeEventArgs e)
