@@ -148,6 +148,7 @@ namespace SQLTriage
             services.AddSingleton<SessionManager>();
             services.AddSingleton<UserSettingsService>();
             services.AddSingleton<Data.Services.IUserSettingsService>(sp => sp.GetRequiredService<UserSettingsService>());
+            services.AddSingleton<IChartThemeService, ChartThemeService>();
             services.AddSingleton<SessionDataService>();
             services.AddSingleton<ToastService>();
             services.AddSingleton<LogCleanupService>();

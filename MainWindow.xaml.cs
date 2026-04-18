@@ -42,7 +42,10 @@ namespace SQLTriage
 
             // Listen for zoom changes from settings UI
             if (_userSettings != null)
+            {
                 _userSettings.OnZoomChanged += OnZoomChanged;
+                _userSettings.OnSelectedThemeChanged += OnSelectedThemeChanged;
+            }
 
             InitializeTrayIcon(version);
         }
@@ -414,6 +417,7 @@ namespace SQLTriage
                     {
                         _logger?.LogDebug("WebView navigation completed successfully");
                         ApplyZoom(_userSettings?.GetZoomLevel() ?? 150);
+                        ApplyTheme(_userSettings?.GetSelectedTheme() ?? "default");
                     }
                     else
                     {
@@ -449,6 +453,28 @@ namespace SQLTriage
         private void OnZoomChanged(int zoomPercent)
         {
             Dispatcher.Invoke(() => ApplyZoom(zoomPercent));
+        }
+
+        private void OnSelectedThemeChanged(string theme)
+        {
+            Dispatcher.Invoke(() => ApplyTheme(theme));
+        }
+
+        private void ApplyTheme(string theme)
+        {
+            if (BlazorWebView?.WebView?.CoreWebView2 == null) return;
+            try
+            {
+                // Escape the theme string for JS injection
+                var escaped = theme.Replace("'", "\\'");
+                var script = $"document.documentElement.setAttribute('data-theme', '{escaped}');";
+                BlazorWebView.WebView.CoreWebView2.ExecuteScript(script);
+                _logger?.LogInformation("Applied UI theme: {Theme}", theme);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Failed to set data-theme attribute");
+            }
         }
 
         private void OnWebViewZoomFactorChanged(object? sender, object e)

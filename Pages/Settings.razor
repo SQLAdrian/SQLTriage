@@ -296,24 +296,35 @@
     </div>
 
     <!-- Appearance Section -->
-    <div class="settings-group">
-        <h3>Appearance</h3>
-        <div class="settings-field">
-            <label>Zoom Level</label>
-            <select value="@_zoomLevel" @onchange="OnZoomLevelChanged" style="width: 200px;">
-                <option value="75">75%</option>
-                <option value="80">80%</option>
-                <option value="90">90%</option>
-                <option value="100">100%</option>
-                <option value="110">110%</option>
-                <option value="125">125%</option>
-                <option value="150">150% (default)</option>
-                <option value="175">175%</option>
-                <option value="200">200%</option>
-            </select>
-            <small style="color: var(--text-secondary);">Controls the UI zoom level. Changes apply immediately.</small>
-        </div>
-    </div>
+     <div class="settings-group">
+         <h3>Appearance</h3>
+         <div class="settings-field">
+             <label>UI Theme</label>
+             <select value="@_selectedTheme" @onchange="OnThemeChanged" style="width: 200px;">
+                 <option value="default">Default (balanced)</option>
+                 <option value="rolls-royce">Rolls Royce (soft, luxurious)</option>
+                 <option value="amg">AMG (sharp, aggressive)</option>
+             </select>
+             <small style="display: block; margin-top: 4px; color: var(--text-secondary);">
+                 Controls colours, rounding, shadows, and motion feel. Changes apply immediately.
+             </small>
+         </div>
+         <div class="settings-field">
+             <label>Zoom Level</label>
+             <select value="@_zoomLevel" @onchange="OnZoomLevelChanged" style="width: 200px;">
+                 <option value="75">75%</option>
+                 <option value="80">80%</option>
+                 <option value="90">90%</option>
+                 <option value="100">100%</option>
+                 <option value="110">110%</option>
+                 <option value="125">125%</option>
+                 <option value="150">150% (default)</option>
+                 <option value="175">175%</option>
+                 <option value="200">200%</option>
+             </select>
+             <small style="color: var(--text-secondary);">Controls the UI zoom level. Changes apply immediately.</small>
+         </div>
+     </div>
 
     </div>@* ── end 2-column grid ── *@
 
@@ -985,6 +996,7 @@
     private string CacheFileSize = "N/A";
 
     private int _zoomLevel = 150;
+    private string _selectedTheme = "default";
 
     // Azure Blob Export
     private string _azureAuthMode = "connectionstring";
@@ -1043,6 +1055,7 @@
         _alertBaselinePerServer  = UserSettings.GetAlertBaselinePerServer();
         DefaultDashboardId = UserSettings.GetDefaultDashboardId();
         _zoomLevel = UserSettings.GetZoomLevel();
+        _selectedTheme = UserSettings.GetSelectedTheme();
     }
 
     protected override void OnInitialized()
@@ -1217,6 +1230,16 @@
         {
             _zoomLevel = zoom;
             UserSettings.SetZoomLevel(zoom);
+        }
+    }
+
+    private void OnThemeChanged(ChangeEventArgs e)
+    {
+        var theme = e.Value?.ToString();
+        if (!string.IsNullOrEmpty(theme) && (theme == "default" || theme == "rolls-royce" || theme == "amg"))
+        {
+            _selectedTheme = theme;
+            UserSettings.SetSelectedTheme(theme);
         }
     }
 

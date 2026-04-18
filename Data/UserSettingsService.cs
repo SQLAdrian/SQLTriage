@@ -30,7 +30,8 @@ namespace SQLTriage.Data
         /// </summary>
         public class UserSettings
         {
-            public string SelectedTheme { get; set; } = "cyberpunk";
+            /// <summary>App UI theme personality: "default", "rolls-royce", or "amg"</summary>
+            public string SelectedTheme { get; set; } = "default";
             public int RefreshIntervalSeconds { get; set; } = 15;
             public bool AutoRefresh { get; set; } = true;
             public int DefaultTimeRangeMinutes { get; set; } = 60;
@@ -226,7 +227,11 @@ namespace SQLTriage.Data
         {
             lock (_lock) _settings.SelectedTheme = theme;
             SaveSettings();
+            OnSelectedThemeChanged?.Invoke(theme);
         }
+
+        /// <summary>Fired when the UI theme changes so the app can update <html data-theme> and chart colours.</summary>
+        public event Action<string>? OnSelectedThemeChanged;
 
         public int GetRefreshInterval() { lock (_lock) return _settings.RefreshIntervalSeconds; }
 
