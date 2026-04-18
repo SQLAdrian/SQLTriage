@@ -4,6 +4,7 @@
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078d4.svg)](https://github.com/SQLAdrian/SqlHealthAssessment/releases)
 [![SQL Server 2016+](https://img.shields.io/badge/SQL%20Server-2016%2B-red.svg)](https://www.microsoft.com/en-us/sql-server)
 [![Version](https://img.shields.io/badge/version-0.85.2-blue.svg)](https://github.com/SQLAdrian/SqlHealthAssessment/releases/latest)
+[![Contributors: Human+AI](https://img.shields.io/badge/contributors-human_%2B_ai-FF6B6B?style=flat-square)](CONTRIBUTORS.md)
 
 > **Free, open-source SQL Server monitoring — no agents, no per-server licensing, single exe.**
 > A lightweight alternative to SolarWinds DPA, Redgate SQL Monitor, SentryOne, and Idera SQL Diagnostic Manager.
