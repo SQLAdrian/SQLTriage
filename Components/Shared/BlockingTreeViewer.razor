@@ -1,0 +1,246 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using System.Data
+
+<div class="blocking-tree-viewer">
+    @if (BlockingData == null || BlockingData.Rows.Count == 0)
+    {
+        <div style="text-align: center; padding: 24px; color: var(--text-muted);">
+            <i class="fa-solid fa-check-circle" style="font-size: 24px; margin-bottom: 8px; color: var(--green);"></i>
+            <div>No active blocking detected</div>
+        </div>
+    }
+    else
+    {
+        var chains = BuildChains(BlockingData);
+
+        <div style="margin-bottom: 8px; display: flex; align-items: center; gap: 12px;">
+            <span style="font-size: 12px; color: var(--text-muted);">
+                @chains.Sum(c => c.TotalBlocked) blocked session(s) · @chains.Count head blocker(s)
+            </span>
+        </div>
+
+        @foreach (var chain in chains.OrderByDescending(c => c.HeadWaitMs))
+        {
+            <div style="border: 1px solid var(--border); border-radius: 6px; margin-bottom: 8px; overflow: hidden;">
+                @* Head blocker row *@
+                <div style="display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+                             background: rgba(244,67,54,0.08); border-bottom: 1px solid var(--border); cursor: pointer;"
+                     @onclick="() => ToggleExpand(chain.HeadSpid)">
+                    <i class="fa-solid @(_expandedSpids.Contains(chain.HeadSpid) ? "fa-chevron-down" : "fa-chevron-right")"
+                       style="font-size: 10px; color: var(--text-muted); width: 12px; flex-shrink: 0;"></i>
+                    <i class="fa-solid fa-skull-crossbones" style="color: #f44336; font-size: 11px;"></i>
+                    <span style="font-weight: 600; color: #f44336; font-size: 12px;">SPID @chain.HeadSpid</span>
+                    <span class="severity-badge severity-high" style="font-size: 10px;">HEAD BLOCKER</span>
+                    @if (!string.IsNullOrEmpty(chain.HeadDatabase))
+                    {
+                        <span style="font-size: 11px; color: var(--text-muted);">@chain.HeadDatabase</span>
+                    }
+                    <span style="font-size: 11px; color: var(--text-muted);">@chain.HeadWaitType</span>
+                    <span style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+                        <span style="font-size: 11px; font-weight: 600; color: @WaitColor(chain.HeadWaitMs);">
+                            @FormatMs(chain.HeadWaitMs)
+                        </span>
+                        <span style="font-size: 10px; color: var(--text-muted);">
+                            blocking @chain.TotalBlocked session(s)
+                        </span>
+                    </span>
+                </div>
+
+                @* Head blocker SQL *@
+                @if (_expandedSpids.Contains(chain.HeadSpid) && !string.IsNullOrEmpty(chain.HeadBlockerStatement))
+                {
+                    <div style="padding: 6px 12px; background: var(--bg-secondary); border-bottom: 1px solid var(--border);">
+                        <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 2px;">Blocker SQL:</div>
+                        <pre style="background: var(--bg-primary); border: 1px solid var(--border); border-radius: 3px;
+                                    padding: 6px 8px; font-size: 10px; color: var(--text-primary); white-space: pre-wrap;
+                                    word-break: break-all; max-height: 100px; overflow-y: auto; margin: 0;">@chain.HeadBlockerStatement</pre>
+                    </div>
+                }
+
+                @* Blocked sessions tree *@
+                @if (_expandedSpids.Contains(chain.HeadSpid))
+                {
+                    @foreach (var blocked in chain.BlockedSessions)
+                    {
+                        <div style="display: flex; align-items: flex-start; gap: 8px; padding: 7px 12px 7px @(12 + blocked.Depth * 20)px;
+                                     border-bottom: 1px solid var(--border); background: var(--bg-tertiary);">
+                            <i class="fa-solid fa-arrow-right" style="color: #ff9800; font-size: 10px; margin-top: 2px; flex-shrink: 0;"></i>
+                            <div style="flex: 1; min-width: 0;">
+                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                    <span style="font-weight: 600; font-size: 12px; color: var(--text-primary);">SPID @blocked.Spid</span>
+                                    <span style="font-size: 11px; color: var(--text-muted);">@blocked.WaitType</span>
+                                    @if (!string.IsNullOrEmpty(blocked.DatabaseName))
+                                    {
+                                        <span style="font-size: 11px; color: var(--text-muted);">@blocked.DatabaseName</span>
+                                    }
+                                    <span style="font-size: 11px; font-weight: 600; color: @WaitColor(blocked.WaitDurationMs);">
+                                        @FormatMs(blocked.WaitDurationMs)
+                                    </span>
+                                    <span style="font-size: 10px; color: var(--text-muted);">blocked by @blocked.BlockerSpid</span>
+                                </div>
+                                @if (!string.IsNullOrEmpty(blocked.WaitStatement))
+                                {
+                                    <pre style="background: var(--bg-primary); border: 1px solid var(--border); border-radius: 3px;
+                                                padding: 5px 7px; font-size: 10px; color: var(--text-primary); white-space: pre-wrap;
+                                                word-break: break-all; max-height: 80px; overflow-y: auto; margin: 4px 0 0 0;">@blocked.WaitStatement</pre>
+                                }
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public DataTable? BlockingData { get; set; }
+
+    private HashSet<string> _expandedSpids = new();
+
+    private void ToggleExpand(string spid)
+    {
+        if (!_expandedSpids.Add(spid))
+            _expandedSpids.Remove(spid);
+    }
+
+    private record BlockedSession(string Spid, string BlockerSpid, string DatabaseName,
+        string WaitType, long WaitDurationMs, string WaitStatement, int Depth);
+
+    private record BlockingChain(string HeadSpid, string HeadDatabase, string HeadWaitType,
+        long HeadWaitMs, string HeadBlockerStatement, List<BlockedSession> BlockedSessions)
+    {
+        public int TotalBlocked => BlockedSessions.Count;
+    }
+
+    private List<BlockingChain> BuildChains(DataTable dt)
+    {
+        // Map column names case-insensitively
+        string Col(string name) => dt.Columns.Contains(name) ? name :
+            dt.Columns.Cast<DataColumn>().FirstOrDefault(c =>
+                string.Equals(c.ColumnName, name, StringComparison.OrdinalIgnoreCase))?.ColumnName ?? name;
+
+        var waitSpidCol     = Col("WaitSpid");
+        var blockerSpidCol  = Col("BlockerSpid");
+        var dbCol           = Col("DatabaseName");
+        var waitTypeCol     = Col("WaitType");
+        var waitDurCol      = Col("WaitDurationMs");
+        var waitStmtCol     = Col("WaitStatement");
+        var blockerStmtCol  = Col("BlockerStatement");
+        var lockTypeCol     = Col("LockType");
+
+        // Build flat list of blocked sessions
+        var sessions = new List<(string Spid, string Blocker, string Db, string WaitType, long WaitMs, string WaitStmt, string BlockerStmt)>();
+        foreach (DataRow row in dt.Rows)
+        {
+            string Get(string col) => dt.Columns.Contains(col) ? row[col]?.ToString() ?? "" : "";
+            long GetLong(string col) => dt.Columns.Contains(col) && long.TryParse(row[col]?.ToString(), out var v) ? v : 0;
+
+            sessions.Add((
+                Spid:        Get(waitSpidCol),
+                Blocker:     Get(blockerSpidCol),
+                Db:          Get(dbCol),
+                WaitType:    Get(waitTypeCol),
+                WaitMs:      GetLong(waitDurCol),
+                WaitStmt:    Get(waitStmtCol),
+                BlockerStmt: Get(blockerStmtCol)
+            ));
+        }
+
+        // Find head blockers: sessions that block others but are not themselves blocked in this data
+        var blockedSpids  = sessions.Select(s => s.Spid).ToHashSet();
+        var blockerSpids  = sessions.Select(s => s.Blocker).Where(b => !string.IsNullOrEmpty(b)).ToHashSet();
+        var headBlockers  = blockerSpids.Except(blockedSpids).ToHashSet();
+
+        var chains = new List<BlockingChain>();
+
+        foreach (var head in headBlockers)
+        {
+            // Find the first row that mentions this head blocker to get its statement
+            var headRow = sessions.FirstOrDefault(s => s.Blocker == head);
+            var headStmt = headRow.BlockerStmt ?? "";
+            var headDb   = headRow.Db ?? "";
+
+            // BFS to collect all blocked sessions in depth order
+            var allBlocked = new List<BlockedSession>();
+            var queue = new Queue<(string spid, int depth)>();
+            queue.Enqueue((head, 0));
+            var visited = new HashSet<string> { head };
+
+            while (queue.Count > 0)
+            {
+                var (current, depth) = queue.Dequeue();
+                if (depth == 0) continue; // skip the head itself
+
+                var row = sessions.FirstOrDefault(s => s.Spid == current);
+                if (row.Spid == null) continue;
+
+                allBlocked.Add(new BlockedSession(
+                    Spid: row.Spid,
+                    BlockerSpid: row.Blocker,
+                    DatabaseName: row.Db,
+                    WaitType: row.WaitType,
+                    WaitDurationMs: row.WaitMs,
+                    WaitStatement: row.WaitStmt,
+                    Depth: depth
+                ));
+            }
+
+            // Redo: BFS starting with direct victims of head
+            allBlocked.Clear();
+            var directVictims = sessions.Where(s => s.Blocker == head).Select(s => s.Spid).ToList();
+            var bfsQueue = new Queue<(string spid, int depth)>(directVictims.Select(s => (s, 1)));
+            var seen = new HashSet<string>(directVictims) { head };
+
+            while (bfsQueue.Count > 0)
+            {
+                var (spid, depth) = bfsQueue.Dequeue();
+                var row = sessions.FirstOrDefault(s => s.Spid == spid);
+                if (row.Spid == null) continue;
+
+                allBlocked.Add(new BlockedSession(
+                    Spid: row.Spid,
+                    BlockerSpid: row.Blocker,
+                    DatabaseName: row.Db,
+                    WaitType: row.WaitType,
+                    WaitDurationMs: row.WaitMs,
+                    WaitStatement: row.WaitStmt,
+                    Depth: depth
+                ));
+
+                foreach (var child in sessions.Where(s => s.Blocker == spid && !seen.Contains(s.Spid)))
+                {
+                    seen.Add(child.Spid);
+                    bfsQueue.Enqueue((child.Spid, depth + 1));
+                }
+            }
+
+            long maxWaitMs = allBlocked.Count > 0 ? allBlocked.Max(b => b.WaitDurationMs) : 0;
+
+            chains.Add(new BlockingChain(
+                HeadSpid: head,
+                HeadDatabase: headDb,
+                HeadWaitType: sessions.FirstOrDefault(s => s.Blocker == head).WaitType ?? "",
+                HeadWaitMs: maxWaitMs,
+                HeadBlockerStatement: headStmt,
+                BlockedSessions: allBlocked.OrderBy(b => b.Depth).ThenByDescending(b => b.WaitDurationMs).ToList()
+            ));
+        }
+
+        return chains;
+    }
+
+    private static string FormatMs(long ms)
+    {
+        if (ms >= 60_000) return $"{ms / 60_000}m {(ms % 60_000) / 1000}s";
+        if (ms >= 1_000)  return $"{ms / 1000.0:F1}s";
+        return $"{ms}ms";
+    }
+
+    private static string WaitColor(long ms)
+    {
+        if (ms >= 30_000) return "#f44336";  // red ≥ 30s
+        if (ms >= 5_000)  return "#ff9800";  // amber ≥ 5s
+        return "var(--text-secondary)";
+    }
+}

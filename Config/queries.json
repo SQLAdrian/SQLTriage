@@ -1,0 +1,32 @@
+{
+  "_comment": "SQLTriage query metadata. Loaded by SqlQueryRepository at startup with FileSystemWatcher hot-reload. Edit via Settings page or directly.",
+  "_schema": {
+    "file":        "relative path under Data/Sql/ to the .sql file",
+    "description": "one-line human description",
+    "category":    "Security | Performance | Reliability | Cost | Compliance",
+    "severity":    "CRITICAL | HIGH | MEDIUM | LOW | INFO (Information-level findings — excluded from Quick Check scoring)",
+    "status":      "working | broken | deprecated — broken checks skipped at load; resolves 343 vs 489 count ambiguity via per-check flag",
+    "quick":       "boolean — included in Quick Check ≤60s subset (Information-priority auto-excluded)",
+    "audience":    "array of dba|it|exec — who sees the translated finding",
+    "governance":  "optional per-check scoring override {categoryWeight?: number, perFindingCap?: number} — primary scoring binds to check_id, category mapping lives in source check YAML (not in governance-weights.json)",
+    "controls":    "array of compliance control IDs (SOC2-CC6.1, HIPAA-164.312, ...)",
+    "timeoutSec":  "optional per-check command timeout; defaults to Settings value"
+  },
+
+  "_example_fill_in_during_week_1": {
+    "VA-001": {
+      "file": "HealthChecks/BackupValidation.sql",
+      "description": "Validates recent backup existence and restore verification per DB",
+      "category": "Reliability",
+      "severity": "CRITICAL",
+      "status": "working",
+      "quick": true,
+      "audience": ["dba", "it", "exec"],
+      "controls": ["SOC2-CC7.4", "ISO27001-A.12.3"],
+      "timeoutSec": 8
+    }
+  },
+
+  "schemaVersion": 1,
+  "queries": {}
+}

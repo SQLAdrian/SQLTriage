@@ -1,0 +1,29 @@
+{
+  "_comment": "SQLTriage governance scoring weights. Reloadable at runtime via IOptionsMonitor. Edit via Settings page or this file directly.",
+  "_rationale": "Compliance raised to 20% (not 5%) because tagline is audit-prep. Security is primary; Performance/Reliability equal secondary; Cost is tertiary.",
+
+  "categories": {
+    "Security":    0.25,
+    "Performance": 0.20,
+    "Reliability": 0.20,
+    "Cost":        0.15,
+    "Compliance":  0.20
+  },
+
+  "caps": {
+    "_comment": "Three-level clamp. perFinding prevents one critical from dominating; perCategory enforces category weight ceiling; overall = 100.",
+    "perFinding":  40,
+    "perCategory": 100,
+    "overall":     100
+  },
+
+  "bands": {
+    "Emerging": [ 0, 20],
+    "Bronze":   [21, 40],
+    "Silver":   [41, 60],
+    "Gold":     [61, 80],
+    "Platinum": [81,100]
+  },
+
+  "schemaVersion": 1
+}
