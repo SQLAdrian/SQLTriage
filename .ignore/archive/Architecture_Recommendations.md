@@ -1,3 +1,6 @@
+<!-- In the name of God, the Merciful, the Compassionate -->
+<!-- Bismillah ar-Rahman ar-Raheem -->
+
 # Architecture Recommendations for LiveMonitor System
 
 This document summarizes architectural findings from analyzing `ConnectionManager`, `CheckExecutionService`, and `AlertingService`. The primary goal of these recommendations is to improve modularity, robustness, scalability, and maintainability by adopting modern C# patterns.

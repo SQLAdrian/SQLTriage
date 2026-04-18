@@ -1,3 +1,6 @@
+<!-- In the name of God, the Merciful, the Compassionate -->
+<!-- Bismillah ar-Rahman ar-Raheem -->
+
 ### **3. Comprehensive Framework Execution**
 **CRITICAL REQUIREMENT**: Modify assessment execution to run ALL checks from ALL selected frameworks simultaneously, not just Microsoft's VA checks.
 

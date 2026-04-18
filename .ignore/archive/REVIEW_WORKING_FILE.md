@@ -1,3 +1,6 @@
+<!-- In the name of God, the Merciful, the Compassionate -->
+<!-- Bismillah ar-Rahman ar-Raheem -->
+
 # SQL Health Assessment - Application Review Working File
 
 ## Review Progress
@@ -163,3 +166,4 @@ SqlHealthAssessment/
 - PerformanceStudio submodule for query plan analysis
 - Automatic language folder cleanup to reduce footprint
 - Build number auto-increment on release builds
+

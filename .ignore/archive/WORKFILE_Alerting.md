@@ -1,3 +1,6 @@
+<!-- In the name of God, the Merciful, the Compassionate -->
+<!-- Bismillah ar-Rahman ar-Raheem -->
+
 # Alerting Feature - Working File
 
 **Created:** 2026-03-23
@@ -325,3 +328,4 @@ WHERE h.step_id = 0 AND h.run_status = 0
 - [ ] Build alert evaluation service
 - [ ] Build alert notification service
 - [ ] Build alert configuration UI page
+
