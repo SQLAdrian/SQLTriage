@@ -18,7 +18,7 @@
 <div class="nav-menu @(_collapsed ? "collapsed" : "")">
     <div style="padding:8px 12px 12px; border-bottom:1px solid var(--border); margin-bottom:8px; display:flex; align-items:center; gap:8px;">
         <span class="nav-brand-icon"><i class="fa-solid fa-heart-pulse"></i></span>
-        <span class="nav-brand-text nav-link-text">SQLTriage</span>
+        <span class="nav-brand-text">SQLTriage</span>
         <button class="nav-collapse-btn" title="@(_collapsed ? "Expand sidebar" : "Collapse sidebar")"
                 @onclick="ToggleCollapse">
             <i class="fa-solid @(_collapsed ? "fa-angles-right" : "fa-angles-left")"></i>
@@ -29,16 +29,16 @@
         <div class="nav-section-label s-audits">Audits</div>
         <div class="nav-section s-audits">
             <NavLink href="/servers" class="nav-link" title="Ctrl+8">
-                <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-server"></i></span> Servers
+                <span class="nav-icon"><i class="fa-solid fa-server"></i></span><span class="nav-link-text"> Servers</span>
             </NavLink>
             <NavLink href="/quickcheck" class="nav-link" title="Ctrl+0">
-                <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-bolt-lightning"></i></span> Quick Check
+                <span class="nav-icon"><i class="fa-solid fa-bolt-lightning"></i></span><span class="nav-link-text"> Quick Check</span>
             </NavLink>
             <NavLink href="/fullaudit" class="nav-link" title="Ctrl+4">
-                <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-clipboard-check"></i></span> Full Audit
+                <span class="nav-icon"><i class="fa-solid fa-clipboard-check"></i></span><span class="nav-link-text"> Full Audit</span>
             </NavLink>
             <NavLink href="/vulnerabilityassessment" class="nav-link">
-                <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-shield-halved"></i></span> Vulnerability Assessment
+                <span class="nav-icon"><i class="fa-solid fa-shield-halved"></i></span><span class="nav-link-text"> Vulnerability Assessment</span>
             </NavLink>
             @* Config-driven Audits dashboards *@
             @foreach (var dashboard in DashboardConfig.Config.Dashboards
@@ -46,7 +46,7 @@
                 .OrderBy(d => d.NavOrder))
             {
                 <NavLink href="@dashboard.Route" class="nav-link">
-                    @NavIcon(dashboard.NavIcon) @dashboard.NavTitle
+                    @NavIcon(dashboard.NavIcon) <span class="nav-link-text">@dashboard.NavTitle</span>
                 </NavLink>
             }
         </div>
@@ -57,40 +57,40 @@
             @if (_experimentalMode)
             {
                 <NavLink href="/plan-analysis" class="nav-link">
-                    <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-diagram-project"></i></span> Plan Analyzer
+                    <span class="nav-icon"><i class="fa-solid fa-diagram-project"></i></span><span class="nav-link-text"> Plan Analyzer</span>
                 </NavLink>
             }
             @if (_experimentalMode)
             {
                 <NavLink href="/bestpractice" class="nav-link">
-                    <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-list-check"></i></span> BP Scripts
+                    <span class="nav-icon"><i class="fa-solid fa-list-check"></i></span><span class="nav-link-text"> BP Scripts</span>
                 </NavLink>
             }
             @if (_noPantsMode)
             {
                 <NavLink href="/dbatools" class="nav-link">
-                    <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-brands fa-windows"></i></span> dbatools
+                    <span class="nav-icon"><i class="fa-brands fa-windows"></i></span><span class="nav-link-text"> dbatools</span>
                 </NavLink>
             }
             <NavLink href="/environment" class="nav-link">
-                <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-network-wired"></i></span> Environment View
+                <span class="nav-icon"><i class="fa-solid fa-network-wired"></i></span><span class="nav-link-text"> Environment View</span>
             </NavLink>
             @if (_experimentalMode)
             {
                 <NavLink href="/capacity" class="nav-link">
-                    <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-chart-line"></i></span> Capacity Planning
+                    <span class="nav-icon"><i class="fa-solid fa-chart-line"></i></span><span class="nav-link-text"> Capacity Planning</span>
                 </NavLink>
             }
             @if (_noPantsMode && _experimentalMode && _showMaturityRoadmap)
             {
                 <NavLink href="/diagnostics-roadmap" class="nav-link">
-                    <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-road"></i></span> Maturity Roadmap
+                    <span class="nav-icon"><i class="fa-solid fa-road"></i></span><span class="nav-link-text"> Maturity Roadmap</span>
                 </NavLink>
             }
             @if (ShowToolsSection)
             {
                 <NavLink href="/xevents" class="nav-link">
-                    <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-list-check"></i></span> XEvent / Profiler
+                    <span class="nav-icon"><i class="fa-solid fa-list-check"></i></span><span class="nav-link-text"> XEvent / Profiler</span>
                 </NavLink>
             }
         </div>
@@ -98,13 +98,12 @@
         <br />
         <div class="nav-section-label s-live">Live</div>
         <div class="nav-section s-live">
-            @* Dynamic dashboards — master DB, Dashboards category only *@
             @foreach (var dashboard in DashboardConfig.Config.Dashboards
                 .Where(d => d.Enabled && d.NavCategory == "Dashboards" && d.DefaultDatabase == "master")
                 .OrderBy(d => d.NavOrder))
             {
                 <NavLink href="@($"/dashboard/{dashboard.Id}")" class="nav-link">
-                    @NavIcon(dashboard.NavIcon) @dashboard.NavTitle
+                    @NavIcon(dashboard.NavIcon) <span class="nav-link-text">@dashboard.NavTitle</span>
                 </NavLink>
             }
         </div>
@@ -119,13 +118,13 @@
                     .OrderBy(d => d.NavOrder))
                 {
                     <NavLink href="@($"/dashboard/{dashboard.Id}")" class="nav-link">
-                        @NavIcon(dashboard.NavIcon) @dashboard.NavTitle
+                        @NavIcon(dashboard.NavIcon) <span class="nav-link-text">@dashboard.NavTitle</span>
                     </NavLink>
                 }
             }
             else
             {
-                <span class="block px-4 py-1 text-xs text-app-text-muted italic">SQLWATCH database not installed</span>
+                <span class="nav-link-text block px-4 py-1 text-xs text-app-text-muted italic">SQLWATCH database not installed</span>
             }
         </div>
 
@@ -139,13 +138,13 @@
                     .OrderBy(d => d.NavOrder))
                 {
                     <NavLink href="@($"/dashboard/{dashboard.Id}")" class="nav-link">
-                        @NavIcon(dashboard.NavIcon) @dashboard.NavTitle
+                        @NavIcon(dashboard.NavIcon) <span class="nav-link-text">@dashboard.NavTitle</span>
                     </NavLink>
                 }
             }
             else
             {
-                <span class="block px-4 py-1 text-xs text-app-text-muted italic">PerformanceMonitor database not installed</span>
+                <span class="nav-link-text block px-4 py-1 text-xs text-app-text-muted italic">PerformanceMonitor database not installed</span>
             }
         </div>
 
@@ -153,10 +152,10 @@
         <div class="nav-section-label s-deploy">Monitoring new server</div>
         <div class="nav-section s-deploy">
             <NavLink href="/deploysqlwatch" class="nav-link">
-                <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-eye"></i></span> SQLWATCH
+                <span class="nav-icon"><i class="fa-solid fa-eye"></i></span><span class="nav-link-text"> SQLWATCH</span>
             </NavLink>
             <NavLink href="/deploydarlingPM" class="nav-link">
-                <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-chart-simple"></i></span> Darling Perf Monitor
+                <span class="nav-icon"><i class="fa-solid fa-chart-simple"></i></span><span class="nav-link-text"> Darling Perf Monitor</span>
             </NavLink>
         </div>
 
@@ -164,46 +163,46 @@
         <div class="nav-section-label s-config">Configure</div>
         <div class="nav-section s-config">
             <NavLink href="/settings" class="nav-link" title="Ctrl+6">
-                <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-gear"></i></span> Settings
+                <span class="nav-icon"><i class="fa-solid fa-gear"></i></span><span class="nav-link-text"> Settings</span>
             </NavLink>
             @if (_noPantsMode)
             {
                 <NavLink href="/dashboard-editor" class="nav-link" title="Ctrl+7">
-                    <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-table-columns"></i></span> Dashboard Editor
+                    <span class="nav-icon"><i class="fa-solid fa-table-columns"></i></span><span class="nav-link-text"> Dashboard Editor</span>
                 </NavLink>
             }
             <NavLink href="/alerts" class="nav-link">
-                <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-bell"></i></span> Alerting
+                <span class="nav-icon"><i class="fa-solid fa-bell"></i></span><span class="nav-link-text"> Alerting</span>
             </NavLink>
             <NavLink href="/alerts-noc" class="nav-link">
-                <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-tower-broadcast"></i></span> NOC Board
+                <span class="nav-icon"><i class="fa-solid fa-tower-broadcast"></i></span><span class="nav-link-text"> NOC Board</span>
             </NavLink>
             @if (_experimentalMode)
             {
                 <NavLink href="/alerting-config" class="nav-link">
-                    <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-envelope"></i></span> Notifications
+                    <span class="nav-icon"><i class="fa-solid fa-envelope"></i></span><span class="nav-link-text"> Notifications</span>
                 </NavLink>
             }
             @if (_noPantsMode)
             {
                 <NavLink href="/scheduled-tasks" class="nav-link">
-                    <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-clock"></i></span> Scheduled Tasks
+                    <span class="nav-icon"><i class="fa-solid fa-clock"></i></span><span class="nav-link-text"> Scheduled Tasks</span>
                 </NavLink>
             }
             @if (_noPantsMode)
             {
                 <NavLink href="/check-validator" class="nav-link">
-                    <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-vial"></i></span> Check Validator
+                    <span class="nav-icon"><i class="fa-solid fa-vial"></i></span><span class="nav-link-text"> Check Validator</span>
                 </NavLink>
             }
             <NavLink href="/service-management" class="nav-link">
-                <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-microchip"></i></span> Service & Updates
+                <span class="nav-icon"><i class="fa-solid fa-microchip"></i></span><span class="nav-link-text"> Service &amp; Updates</span>
             </NavLink>
             <NavLink href="/guide" class="nav-link">
-                <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-map"></i></span> Guide
+                <span class="nav-icon"><i class="fa-solid fa-map"></i></span><span class="nav-link-text"> Guide</span>
             </NavLink>
             <NavLink href="/about" class="nav-link">
-                <span class="w-4 inline-flex items-center justify-center text-sm"><i class="fa-solid fa-info-circle"></i></span> About
+                <span class="nav-icon"><i class="fa-solid fa-info-circle"></i></span><span class="nav-link-text"> About</span>
             </NavLink>
         </div>
     </nav>
@@ -216,8 +215,8 @@
         }
         @if (healthAll.Count > 0)
         {
-            <div style="padding:6px 12px 4px; border-bottom:1px solid var(--border);">
-                <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+            <div class="nav-health-strip" style="padding:6px 12px 4px; border-bottom:1px solid var(--border);">
+                <div class="nav-link-text" style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
                     <span style="font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-muted);">Server Health</span>
                     <span style="font-size:10px; color:var(--text-muted);">
                         @if (healthOffline > 0)
@@ -244,7 +243,7 @@
                         : kvp.Value.Status.ToString();
                     <div style="display:flex; align-items:center; gap:5px; padding:1px 0;" title="@tip">
                         <span style="width:7px; height:7px; border-radius:50%; background:@dot; flex-shrink:0; @(kvp.Value.Status == SQLTriage.Data.Services.ConnectionHealthService.ServerStatus.Offline ? "box-shadow:0 0 4px #e2583e66;" : "")"></span>
-                        <span style="font-size:10px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">@kvp.Key</span>
+                        <span class="nav-link-text" style="font-size:10px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">@kvp.Key</span>
                     </div>
                 }
             </div>
@@ -257,9 +256,9 @@
                     <path d="M4 4h16v2l-2 14h-4l-1-8h-2l-1 8H6L4 6V4zm2 2v.5l1.8 12.5h2.4l1-8h1.6l1 8h2.4L18 6.5V6H6z"/>
                 </svg>
             </span>
-            <span class="nav-toggle-label">No Pants</span>
-            <div class="nav-toggle-spacer"></div>
-            <div class="no-pants-toggle" @onclick="ToggleNoPantsMode" title="No-Pants Mode: show dangerous server controls">
+            <span class="nav-toggle-label nav-link-text">No Pants</span>
+            <div class="nav-toggle-spacer nav-link-text"></div>
+            <div class="no-pants-toggle nav-link-text" @onclick="ToggleNoPantsMode" title="No-Pants Mode: show dangerous server controls">
                 <div class="no-pants-track @(_noPantsMode ? "no-pants-track-on" : "")">
                     <div class="no-pants-thumb @(_noPantsMode ? "no-pants-thumb-on" : "")"></div>
                 </div>
@@ -270,9 +269,9 @@
             <span class="experimental-icon @(_experimentalMode ? "experimental-active" : "")">
                 <i class="fa-solid fa-flask" style="font-size:13px;"></i>
             </span>
-            <span class="nav-toggle-label">Experimental</span>
-            <div class="nav-toggle-spacer"></div>
-            <div class="no-pants-toggle" @onclick="ToggleExperimentalMode" title="Experimental Mode: show preview features">
+            <span class="nav-toggle-label nav-link-text">Experimental</span>
+            <div class="nav-toggle-spacer nav-link-text"></div>
+            <div class="no-pants-toggle nav-link-text" @onclick="ToggleExperimentalMode" title="Experimental Mode: show preview features">
                 <div class="no-pants-track @(_experimentalMode ? "experimental-track-on" : "")">
                     <div class="no-pants-thumb @(_experimentalMode ? "no-pants-thumb-on" : "")"></div>
                 </div>
@@ -282,7 +281,7 @@
         <div class="nav-report-row">
             <button class="nav-report-btn" @onclick="ToggleReportMenu" title="Report a bug or give feedback">
                 <i class="fa-solid fa-flag"></i>
-                @if (!_collapsed) { <span>Report / Feedback</span> }
+                <span class="nav-link-text">Report / Feedback</span>
             </button>
             @if (_showReportMenu)
             {
@@ -326,7 +325,7 @@
                 </div>
             }
         </div>
-        <div class="p-3 pt-0 text-center">
+        <div class="nav-link-text p-3 pt-0 text-center">
             <small class="text-2xs text-app-text-secondary">Ctrl+1-9: Quick Nav</small>
         </div>
     </div>
@@ -403,17 +402,15 @@
     private void ToggleNoPantsMode()
     {
         if (!RbacService.HasPermission(UserState.Role, "run_scripts"))
-            return; // silently blocked — toggle is hidden for viewers
+            return;
 
         if (!_noPantsMode)
         {
-            // Turning ON — check if disclaimer was previously accepted
             if (!UserSettings.GetNoPantsDisclaimerAccepted())
             {
                 _showNoPantsModal = true;
                 return;
             }
-            // Already accepted before — just enable
             _noPantsMode = true;
             UserSettings.SetNoPantsMode(true);
             AuditLog.LogSecurityEvent(
@@ -423,7 +420,6 @@
         }
         else
         {
-            // Turning OFF — no confirmation needed
             _noPantsMode = false;
             UserSettings.SetNoPantsMode(false);
             AuditLog.LogSecurityEvent(
@@ -483,7 +479,6 @@
     }
 
     private void OnHealthChanged() => InvokeAsync(StateHasChanged);
-
 
     private void OnServerChanged()
     {

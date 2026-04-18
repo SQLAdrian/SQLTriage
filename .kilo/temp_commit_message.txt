@@ -1,0 +1,23 @@
+refactor: rename project from SqlHealthAssessment to SQLTriage
+
+Complete brand rename across codebase, documentation, and tooling.
+
+Key changes:
+- Solution/project: SqlHealthAssessment.sln/.csproj → SQLTriage.sln/.csproj
+- Namespaces: SqlHealthAssessment.* → SQLTriage.* (187 files)
+- Assembly/root: SqlHealthAssessment → SQLTriage
+- Icons: SQLHealthAssessment.ico/png → SQLTriage.ico/png
+- Test project: SqlHealthAssessment.Tests → SQLTriage.Tests
+- Build scripts: all .bat/.ps1 updated
+- Installer: LiveMonitor.iss → SQLTriage.iss, AppName = SQLTriage
+- GitHub Actions: build SQLTriage.sln
+- Package: name sqltriage in package.json
+- Config: appsettings.json container = sqltriage
+- Docs: README, DEPLOYMENT_GUIDE, CONTRIBUTING, SUPPORT, docs/index, head-custom.html, CHANGELOG
+- app.manifest assemblyIdentity name updated
+- confuser.crproj module path updated
+
+Note: GitHub repo URL stays as github.com/SQLAdrian/SqlHealthAssessment (repo name unchanged).
+
+Co-Authored-By: Claude Opus 4 <noreply@anthropic.com>
+Co-Authored-By: Kilo <noreply@kilo.ai>
