@@ -1,3 +1,6 @@
+<!-- In the name of God, the Merciful, the Compassionate -->
+<!-- Bismillah ar-Rahman ar-Raheem -->
+
 # SQL Health Assessment - Deployment Guide
 
 ## System Requirements
@@ -441,3 +444,4 @@ HKEY_CURRENT_USER\SOFTWARE\SqlHealthAssessment
 **Document Version:** 1.0
 **Last Updated:** 2026-03-23
 **Applies To:** SQL Health Assessment v0.79.0+
+

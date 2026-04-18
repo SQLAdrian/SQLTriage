@@ -1,3 +1,6 @@
+<!-- In the name of God, the Merciful, the Compassionate -->
+<!-- Bismillah ar-Rahman ar-Raheem -->
+
 # Project Gap Analysis
 
 ## Missing Critical Elements
@@ -416,3 +419,4 @@ public static string ToCsv(this DataTable dt) =>
 3. Implement Polly retry policies
 4. Add OpenTelemetry
 5. Build MSI installer
+

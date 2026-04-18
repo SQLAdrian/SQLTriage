@@ -1,3 +1,6 @@
+<!-- In the name of God, the Merciful, the Compassionate -->
+<!-- Bismillah ar-Rahman ar-Raheem -->
+
 # SQL Health Assessment - Features & Roadmap
 
 ## Overview

@@ -1,3 +1,6 @@
+<!-- In the name of God, the Merciful, the Compassionate -->
+<!-- Bismillah ar-Rahman ar-Raheem -->
+
 # Application Footprint Reduction Guide
 
 ## Current Size: ~350 MB (Published)
@@ -259,3 +262,4 @@ These have NO functional impact:
 6. ✅ Enable SingleFile with compression
 
 **Expected result: 350 MB → 120 MB with zero functionality loss**
+

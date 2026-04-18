@@ -1,3 +1,6 @@
+<!-- In the name of God, the Merciful, the Compassionate -->
+<!-- Bismillah ar-Rahman ar-Raheem -->
+
 ---
 layout: default
 title: LiveMonitor — Free SQL Server Monitoring
@@ -478,3 +481,4 @@ Released under the [GNU General Public License v3.0](https://github.com/SQLAdria
 <footer class="site-footer">
   LiveMonitor · Free SQL Server monitoring · Built by a DBA, for DBAs
 </footer>
+

@@ -1,3 +1,6 @@
+<!-- In the name of God, the Merciful, the Compassionate -->
+<!-- Bismillah ar-Rahman ar-Raheem -->
+
 # DacPac Removal Summary
 
 ## Changes Made
@@ -74,3 +77,4 @@ Then restore the NuGet packages:
 ```bash
 dotnet restore
 ```
+

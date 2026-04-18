@@ -1,3 +1,6 @@
+<!-- In the name of God, the Merciful, the Compassionate -->
+<!-- Bismillah ar-Rahman ar-Raheem -->
+
 # Changelog
 
 All notable changes to SQL Health Assessment are documented here.
@@ -379,5 +382,6 @@ years of client engagements — the friction was never the diagnostics, it was t
 - Output to both console and a timestamped results file so findings survived closing the window
 
 ---
+
 
 

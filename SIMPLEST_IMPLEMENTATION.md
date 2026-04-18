@@ -1,3 +1,6 @@
+<!-- In the name of God, the Merciful, the Compassionate -->
+<!-- Bismillah ar-Rahman ar-Raheem -->
+
 # Simplest Native Windows Implementation
 
 ## Recommended Approach: .NET 8 WPF + WebView2
@@ -559,3 +562,4 @@ Run with: `dotnet run` or build to EXE.
 - Native Windows experience
 
 The console approach is only suitable for one-time reports, not monitoring.
+

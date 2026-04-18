@@ -1,3 +1,6 @@
+<!-- In the name of God, the Merciful, the Compassionate -->
+<!-- Bismillah ar-Rahman ar-Raheem -->
+
 # Authors and Contributors
 
 ## Project Lead
@@ -34,3 +37,4 @@ This project stands on the shoulders of giants:
 <!-- Contributors will be listed here as the project grows -->
 
 Want to contribute? See [CONTRIBUTING.md](CONTRIBUTING.md)!
+

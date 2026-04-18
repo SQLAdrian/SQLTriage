@@ -1,3 +1,6 @@
+<!-- In the name of God, the Merciful, the Compassionate -->
+<!-- Bismillah ar-Rahman ar-Raheem -->
+
 # Modern Frameworks for Windows Server 2016+
 
 ## Quick Answer
@@ -323,3 +326,4 @@ Copy-Item "MyMonitorApp.exe" "C:\Program Files\MyMonitorApp\"
 - Mature tooling and support
 
 If you absolutely need Tauri/Wails features, **upgrade to Windows Server 2019+** first.
+

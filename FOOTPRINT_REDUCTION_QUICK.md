@@ -1,3 +1,6 @@
+<!-- In the name of God, the Merciful, the Compassionate -->
+<!-- Bismillah ar-Rahman ar-Raheem -->
+
 # Footprint Reduction - Quick Reference
 
 ## Current Size: 350 MB → Target: 120 MB (66% reduction)
@@ -109,3 +112,4 @@ dotnet build
 ## 📚 Full Documentation
 
 See [FOOTPRINT_REDUCTION_GUIDE.md](FOOTPRINT_REDUCTION_GUIDE.md) for detailed explanations and advanced options.
+

@@ -1,3 +1,6 @@
+<!-- In the name of God, the Merciful, the Compassionate -->
+<!-- Bismillah ar-Rahman ar-Raheem -->
+
 # SQL Health Assessment — Quick Start
 
 Get from zero to a live health snapshot in under 5 minutes.
@@ -117,3 +120,4 @@ Go to **Settings → Debug Logging** and toggle it on. The log file opens from t
 ---
 
 [← Back to README](README.md) · [Full Screenshots →](https://sqladrian.github.io/SqlHealthAssessment/)
+

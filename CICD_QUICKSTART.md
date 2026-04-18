@@ -1,3 +1,6 @@
+<!-- In the name of God, the Merciful, the Compassionate -->
+<!-- Bismillah ar-Rahman ar-Raheem -->
+
 # CI/CD Quick Start Guide
 
 ## Yes, It's Automatic! 🚀
@@ -180,3 +183,4 @@ Shows build status: ![Build](https://img.shields.io/badge/build-passing-brightgr
 - Download from Releases page
 
 **That's it!** Push code → CI/CD handles the rest.
+

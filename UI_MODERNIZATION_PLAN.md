@@ -1,3 +1,6 @@
+<!-- In the name of God, the Merciful, the Compassionate -->
+<!-- Bismillah ar-Rahman ar-Raheem -->
+
 # UI Modernization Plan - Implementation Guide
 
 ## Current Status
@@ -66,3 +69,4 @@ This will generate `wwwroot/css/tailwind.css` (~100KB minified).
 - [ ] Add chart animations
 - [ ] Enhance stat displays
 - [ ] Improve progress indicators
+

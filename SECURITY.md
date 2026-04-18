@@ -1,3 +1,6 @@
+<!-- In the name of God, the Merciful, the Compassionate -->
+<!-- Bismillah ar-Rahman ar-Raheem -->
+
 # Security Policy
 
 ## Supported Versions
@@ -48,3 +51,4 @@ When using SQL Health Assessment:
 - Comprehensive audit logging
 - Rate limiting for query execution
 - No plain-text password storage
+

@@ -1,3 +1,6 @@
+<!-- In the name of God, the Merciful, the Compassionate -->
+<!-- Bismillah ar-Rahman ar-Raheem -->
+
 # Contributing to SQL Health Assessment
 
 Thank you for your interest in contributing! This project is a free tool for the SQL Server DBA community, and all forms of contribution are valued.
@@ -165,3 +168,4 @@ Update SQLWATCH deployment to version 4.x dacpac
 ## License
 
 By contributing, you agree that your contributions will be licensed under the [GNU General Public License v3.0](LICENSE.txt).
+

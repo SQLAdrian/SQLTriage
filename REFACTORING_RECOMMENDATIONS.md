@@ -1,3 +1,6 @@
+<!-- In the name of God, the Merciful, the Compassionate -->
+<!-- Bismillah ar-Rahman ar-Raheem -->
+
 # Refactoring Implementation Guide
 
 > **For AI Assistants**: This document provides step-by-step instructions to refactor the SQL Health Assessment application. Each task is self-contained with clear inputs, outputs, and validation steps.
@@ -643,3 +646,4 @@ TASK 2 completed. Files modified:
 
 Next: Run 'dotnet build' to validate.
 ```
+

@@ -1,3 +1,6 @@
+<!-- In the name of God, the Merciful, the Compassionate -->
+<!-- Bismillah ar-Rahman ar-Raheem -->
+
 # Building a New Monitoring Application - Architecture Guide
 
 ## Overview
@@ -1354,3 +1357,4 @@ dotnet publish -c Release -r osx-x64 --self-contained -p:PublishSingleFile=true
 - [ ] Create prototype with single panel
 - [ ] Test on all target platforms
 - [ ] Review and approve migration plan
+

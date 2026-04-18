@@ -1,3 +1,6 @@
+<!-- In the name of God, the Merciful, the Compassionate -->
+<!-- Bismillah ar-Rahman ar-Raheem -->
+
 # Support
 
 ## Getting Help
@@ -66,3 +69,4 @@ Have an idea? Use the [feature request template](.github/ISSUE_TEMPLATE/feature_
 **Do not report security vulnerabilities through public issues.**
 
 See [SECURITY.md](SECURITY.md) for responsible disclosure procedures.
+

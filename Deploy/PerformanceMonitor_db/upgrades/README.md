@@ -1,3 +1,6 @@
+<!-- In the name of God, the Merciful, the Compassionate -->
+<!-- Bismillah ar-Rahman ar-Raheem -->
+
 # Upgrade Scripts
 
 This folder contains version-specific upgrade scripts for the Performance Monitor system.
@@ -76,3 +79,4 @@ GO
 - **2.0.0**: Add server_start_time and delta columns to memory_grant_stats for delta framework; drop unused warning columns; new Memory Grants charts
 
 Future upgrade folders will be added here as new versions are released.
+
