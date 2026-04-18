@@ -11,7 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
-namespace SqlHealthAssessment.Data.Services
+namespace SQLTriage.Data.Services
 {
     /// <summary>
     /// Executes PowerShell commands locally and captures output.

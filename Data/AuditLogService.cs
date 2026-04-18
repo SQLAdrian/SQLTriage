@@ -10,7 +10,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     /// <summary>
     /// Enterprise audit logging service for tracking security-relevant actions.
@@ -171,7 +171,7 @@ namespace SqlHealthAssessment.Data
             {
                 EventType = AuditEventType.ApplicationLifecycle,
                 Severity = AuditSeverity.Info,
-                Message = "SqlHealthAssessment application started",
+                Message = "SQLTriage application started",
                 Details = new Dictionary<string, string>
                 {
                     ["User"] = Environment.UserName,

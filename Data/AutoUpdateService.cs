@@ -10,7 +10,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     public class UpdateInfo
     {
@@ -27,7 +27,7 @@ namespace SqlHealthAssessment.Data
         private HttpClient _httpClient;
         private string _currentVersion = "1.0.0";
         private int _buildNumber = 0;
-        private string _updateCheckUrl = "https://api.github.com/repos/SQLAdrian/SqlHealthAssessment/releases/latest";
+        private string _updateCheckUrl = "https://api.github.com/repos/SQLAdrian/SQLTriage/releases/latest";
         private string? _manualProxyUrl;
 
         /// <summary>Path to the staged update ZIP, ready to apply on exit.</summary>
@@ -78,7 +78,7 @@ namespace SqlHealthAssessment.Data
             // else: UseProxy=true + null Proxy = use system/IE proxy settings automatically
 
             var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
-            client.DefaultRequestHeaders.Add("User-Agent", "SqlHealthAssessment-LiveMonitor");
+            client.DefaultRequestHeaders.Add("User-Agent", "SQLTriage-SQLTriage");
             return client;
         }
 
@@ -373,7 +373,7 @@ namespace SqlHealthAssessment.Data
             var extractDir = Path.Combine(stagingDir, "extracted");
             var logPath = Path.Combine(stagingDir, "update.log");
             var scriptPath = Path.Combine(stagingDir, "apply-update.cmd");
-            var exeName = "SqlHealthAssessment.exe";
+            var exeName = "SQLTriage.exe";
             var exePath = Path.Combine(appDir, exeName);
 
             // Build backup/restore lines for each protected config file.
@@ -391,7 +391,7 @@ namespace SqlHealthAssessment.Data
             sb.Append("@echo off").Append(nl);
             sb.Append("setlocal").Append(nl);
             sb.Append("set LOG=\"" + logPath + "\"").Append(nl);
-            sb.Append("echo [%date% %time%] SQL Health Assessment Update Applier started >> %LOG%").Append(nl);
+            sb.Append("echo [%date% %time%] SQLTriage Update Applier started >> %LOG%").Append(nl);
             sb.Append(nl);
             sb.Append("echo Waiting for application to close...").Append(nl);
             sb.Append(":wait").Append(nl);
@@ -507,8 +507,8 @@ namespace SqlHealthAssessment.Data
             try
             {
                 // Derive the Contents API URL from the releases URL
-                // e.g. https://api.github.com/repos/SQLAdrian/SqlHealthAssessment/releases/latest
-                //    → https://api.github.com/repos/SQLAdrian/SqlHealthAssessment/contents/scripts
+                // e.g. https://api.github.com/repos/SQLAdrian/SQLTriage/releases/latest
+                //    → https://api.github.com/repos/SQLAdrian/SQLTriage/contents/scripts
                 var repoBase = _updateCheckUrl;
                 var releasesIdx = repoBase.IndexOf("/releases/", StringComparison.OrdinalIgnoreCase);
                 if (releasesIdx < 0)

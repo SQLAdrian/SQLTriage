@@ -4,7 +4,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 using System.Data;
 
-namespace SqlHealthAssessment.Data.Services;
+namespace SQLTriage.Data.Services;
 
 /// <summary>
 /// Service for managing Extended Events sessions and monitoring

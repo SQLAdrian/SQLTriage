@@ -16,7 +16,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
 
-namespace SqlHealthAssessment.Data.Services
+namespace SQLTriage.Data.Services
 {
     public class PMInstallationProgress
     {
@@ -86,7 +86,7 @@ namespace SqlHealthAssessment.Data.Services
                 InitialCatalog = "master",
                 TrustServerCertificate = trustCertificate,
                 IntegratedSecurity = useWindowsAuth,
-                ApplicationName = "SQL Health Assessment"
+                ApplicationName = "SQLTriage"
             };
 
             builder.Encrypt = encryption switch

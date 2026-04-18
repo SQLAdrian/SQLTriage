@@ -366,7 +366,7 @@ MigrationBackup/
 FodyWeavers.xsd
 nul
 
-# SQL Health Assessment — project-specific excludes
+# SQLTriage — project-specific excludes
 
 # User-specific settings (connection strings, personal preferences)
 user-settings.json
@@ -424,4 +424,16 @@ in_progress/
 input/
 unknown/
 Output/
+Data/
+# Ignore test build output but keep the test project source
+Tests/**/obj/
+Tests/**/bin/
+Tests/*.Tests/obj/
+Tests/*.Tests/bin/
+# Keep test project source files
+!Tests/SQLTriage.Tests/
+!Tests/SQLTriage.Tests/**
+# Re-ignore build output within the test project
+Tests/SQLTriage.Tests/obj/
+Tests/SQLTriage.Tests/bin/
 

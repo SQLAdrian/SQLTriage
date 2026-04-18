@@ -7,12 +7,12 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using SqlHealthAssessment.Data.Models;
+using SQLTriage.Data.Models;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     /// <summary>
     /// Executes enabled SQL checks from the check repository against configured
@@ -320,7 +320,7 @@ namespace SqlHealthAssessment.Data
             var condition = (check.RowCountCondition ?? "equals").ToLowerInvariant();
             return condition switch
             {
-                // SqlHealthAssessment format (snake_case)
+                // SQLTriage format (snake_case)
                 "equals" => rowCount == check.ExpectedValue,
                 "greater_than" => rowCount > check.ExpectedValue,
                 "less_than" => rowCount < check.ExpectedValue,

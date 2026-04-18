@@ -3,9 +3,9 @@
 using System.IO;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using SqlHealthAssessment.Data.Models;
+using SQLTriage.Data.Models;
 
-namespace SqlHealthAssessment.Data.Services
+namespace SQLTriage.Data.Services
 {
     /// <summary>
     /// Role-based access control service. Manages user-role mappings and OAuth

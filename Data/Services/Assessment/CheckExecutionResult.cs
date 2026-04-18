@@ -2,7 +2,7 @@
 
 using System.Collections.Generic;
 
-namespace SqlHealthAssessment.Data.Services.Assessment
+namespace SQLTriage.Data.Services.Assessment
 {
     /// <summary>
     /// Result returned by each executor (Sql, PowerShell, Wmi, Registry).

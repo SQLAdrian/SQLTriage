@@ -3,7 +3,7 @@
 using System;
 using System.Threading.Tasks;
 
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     /// <summary>
     /// Handles application startup logic including server configuration prompts.

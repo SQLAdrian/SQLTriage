@@ -2,7 +2,7 @@
 
 using System;
 
-namespace SqlHealthAssessment.Data.Models
+namespace SQLTriage.Data.Models
 {
     /// <summary>
     /// Result of executing a SQL check against a specific instance.

@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 
 
 #pragma warning disable CA1416 // Windows-only API — project targets net8.0-windows
-namespace SqlHealthAssessment.Data.Services.Assessment
+namespace SQLTriage.Data.Services.Assessment
 {
     /// <summary>
     /// Executes Registry-based assessment checks via Microsoft.Win32.Registry.

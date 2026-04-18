@@ -4,9 +4,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Serialization;
-using SqlHealthAssessment.Data;
+using SQLTriage.Data;
 
-namespace SqlHealthAssessment.Data.Models
+namespace SQLTriage.Data.Models
 {
     public class ServerConnection
     {

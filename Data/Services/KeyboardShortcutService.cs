@@ -2,7 +2,7 @@
 
 using System;
 
-namespace SqlHealthAssessment.Data.Services
+namespace SQLTriage.Data.Services
 {
     /// <summary>
     /// Singleton service that broadcasts keyboard shortcut events to any subscribed page.

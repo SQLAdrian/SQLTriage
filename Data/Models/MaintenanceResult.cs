@@ -2,7 +2,7 @@
 
 using System;
 
-namespace SqlHealthAssessment.Data.Models
+namespace SQLTriage.Data.Models
 {
     public class MaintenanceResult
     {

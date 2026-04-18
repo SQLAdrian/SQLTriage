@@ -2,7 +2,7 @@ using Microsoft.Data.SqlClient;
 using Polly;
 using Polly.Retry;
 
-namespace SqlHealthAssessment.Data;
+namespace SQLTriage.Data;
 
 public class ResilienceService
 {

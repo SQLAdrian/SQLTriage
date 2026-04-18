@@ -1,9 +1,9 @@
 <!--/* In the name of God, the Merciful, the Compassionate */-->
 @page "/alerts"
 
-@using SqlHealthAssessment.Data
-@using SqlHealthAssessment.Data.Models
-@using SqlHealthAssessment.Data.Services
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
 @inject AlertDefinitionService Definitions
 @inject AlertEvaluationService Engine
 @inject AlertHistoryService History
@@ -15,7 +15,7 @@
 @inject XEventService XEventService
 @inject IJSRuntime JS
 @inject AlertBaselineService Baseline
-@inject SqlHealthAssessment.Data.Services.AppUserState UserState
+@inject SQLTriage.Data.Services.AppUserState UserState
 @using System.Data
 @using Microsoft.Data.SqlClient
 @implements IDisposable
@@ -585,7 +585,7 @@
                        style="color: @(_templateCards.FirstOrDefault(c => c.ChannelKey == _editingTemplateKey)?.Color ?? "var(--accent)"); font-size: 16px;"></i>
                     <h3 style="margin: 0; flex: 1;">@(_templateCards.FirstOrDefault(c => c.ChannelKey == _editingTemplateKey)?.Label ?? _editingTemplateKey) Template</h3>
                     <div style="font-size: 11px; color: var(--text-muted);">
-                        Tokens: @string.Join("  ", SqlHealthAssessment.Data.Models.ChannelTemplate.Tokens.Take(6))…
+                        Tokens: @string.Join("  ", SQLTriage.Data.Models.ChannelTemplate.Tokens.Take(6))…
                     </div>
                 </div>
                 <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 16px;">
@@ -617,7 +617,7 @@
                              border-radius: 4px; border: 1px solid var(--border);">
                     <div style="font-size: 10px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;">AVAILABLE TOKENS</div>
                     <div style="display: flex; flex-wrap: wrap; gap: 6px;">
-                        @foreach (var token in SqlHealthAssessment.Data.Models.ChannelTemplate.Tokens)
+                        @foreach (var token in SQLTriage.Data.Models.ChannelTemplate.Tokens)
                         {
                             <code style="font-size: 10px; background: var(--bg-tertiary); padding: 2px 6px;
                                          border-radius: 3px; cursor: pointer; color: var(--accent);"

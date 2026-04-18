@@ -5,13 +5,13 @@ using System.IO;
 using System.Windows;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
-using SqlHealthAssessment.Data;
-using SqlHealthAssessment.Data.Services;
+using SQLTriage.Data;
+using SQLTriage.Data.Services;
 using System.Windows.Threading;
 
 
 #pragma warning disable CA1416 // Windows-only API — project targets net8.0-windows
-namespace SqlHealthAssessment
+namespace SQLTriage
 {
     public partial class MainWindow : Window
     {
@@ -33,7 +33,7 @@ namespace SqlHealthAssessment
             _userSettings = App.Services?.GetService<UserSettingsService>();
 
             var version = App.Services?.GetService<AutoUpdateService>()?.GetCurrentVersion() ?? "0.79.0";
-            Title = $"SQL Health Assessment v{version}";
+            Title = $"SQLTriage v{version}";
 
             // Add keyboard shortcut for DevTools (F12)
             KeyDown += OnKeyDown;
@@ -78,7 +78,7 @@ namespace SqlHealthAssessment
                     icon = System.Drawing.Icon.ExtractAssociatedIcon(exePath);
                 if (icon == null)
                 {
-                    var iconPath = Path.Combine(AppContext.BaseDirectory, "SQLHealthAssessment.ico");
+                    var iconPath = Path.Combine(AppContext.BaseDirectory, "SQLTriage.ico");
                     icon = File.Exists(iconPath)
                         ? new System.Drawing.Icon(iconPath)
                         : System.Drawing.SystemIcons.Application;
@@ -87,7 +87,7 @@ namespace SqlHealthAssessment
                 _trayIcon = new System.Windows.Forms.NotifyIcon
                 {
                     Icon = icon,
-                    Text = $"SQL Health Assessment v{version}",
+                    Text = $"SQLTriage v{version}",
                     Visible = true
                 };
 
@@ -124,10 +124,10 @@ namespace SqlHealthAssessment
                 // Feedback submenu
                 var feedbackMenu = new System.Windows.Forms.ToolStripMenuItem("Report / Feedback");
                 feedbackMenu.Image = MakeDotIcon(System.Drawing.Color.FromArgb(99, 102, 241));
-                feedbackMenu.DropDownItems.Add("Report a Bug (GitHub)", null, (_, _) => OpenUrl("https://github.com/SQLAdrian/SqlHealthAssessment/issues/new"));
-                feedbackMenu.DropDownItems.Add("Feature Request (GitHub Discussions)", null, (_, _) => OpenUrl("https://github.com/SQLAdrian/SqlHealthAssessment/discussions/new?category=ideas"));
+                feedbackMenu.DropDownItems.Add("Report a Bug (GitHub)", null, (_, _) => OpenUrl("https://github.com/SQLAdrian/SQLTriage/issues/new"));
+                feedbackMenu.DropDownItems.Add("Feature Request (GitHub Discussions)", null, (_, _) => OpenUrl("https://github.com/SQLAdrian/SQLTriage/discussions/new?category=ideas"));
                 feedbackMenu.DropDownItems.Add(new System.Windows.Forms.ToolStripSeparator());
-                feedbackMenu.DropDownItems.Add("Email: adrian@sqldba.org", null, (_, _) => OpenUrl("mailto:adrian@sqldba.org?subject=LiveMonitor Feedback"));
+                feedbackMenu.DropDownItems.Add("Email: adrian@sqldba.org", null, (_, _) => OpenUrl("mailto:adrian@sqldba.org?subject=SQLTriage Feedback"));
                 feedbackMenu.DropDownItems.Add("LinkedIn: milliondollardba", null, (_, _) => OpenUrl("https://www.linkedin.com/in/milliondollardba/"));
                 feedbackMenu.DropDownItems.Add("sqldba.org", null, (_, _) => OpenUrl("https://sqldba.org"));
                 menu.Items.Add(feedbackMenu);
@@ -180,7 +180,7 @@ namespace SqlHealthAssessment
                 _trayServerModeItem.Text = "Start Server Mode";
                 _trayOpenBrowserItem.Text = "Open in Browser";
                 _trayOpenBrowserItem.Enabled = false;
-                _trayIcon.Text = $"SQL Health Assessment v{version}";
+                _trayIcon.Text = $"SQLTriage v{version}";
             }
 
             // ── Connected servers row ────────────────────────────────────
@@ -248,14 +248,14 @@ namespace SqlHealthAssessment
                     await serverMode.StopAsync();
                     _logger?.LogInformation("Server mode stopped from tray");
                     Dispatcher.Invoke(UpdateTrayServerStatus);
-                    _trayIcon?.ShowBalloonTip(2000, "SQL Health Assessment", "Server mode stopped", System.Windows.Forms.ToolTipIcon.Info);
+                    _trayIcon?.ShowBalloonTip(2000, "SQLTriage", "Server mode stopped", System.Windows.Forms.ToolTipIcon.Info);
                 }
                 else
                 {
                     await serverMode.StartAsync();
                     _logger?.LogInformation("Server mode started from tray");
                     Dispatcher.Invoke(UpdateTrayServerStatus);
-                    _trayIcon?.ShowBalloonTip(2000, "SQL Health Assessment", $"Server mode started — {serverMode.Url}", System.Windows.Forms.ToolTipIcon.Info);
+                    _trayIcon?.ShowBalloonTip(2000, "SQLTriage", $"Server mode started — {serverMode.Url}", System.Windows.Forms.ToolTipIcon.Info);
                 }
             }
             catch (Exception ex)
@@ -280,12 +280,12 @@ namespace SqlHealthAssessment
                 await serverMode.StartAsync();
                 _logger?.LogInformation("Server mode started automatically");
                 Dispatcher.Invoke(UpdateTrayServerStatus);
-                _trayIcon?.ShowBalloonTip(2000, "SQL Health Assessment", "Server mode started automatically", System.Windows.Forms.ToolTipIcon.Info);
+                _trayIcon?.ShowBalloonTip(2000, "SQLTriage", "Server mode started automatically", System.Windows.Forms.ToolTipIcon.Info);
             }
             catch (Exception ex)
             {
                 _logger?.LogError(ex, "Failed to start server mode automatically");
-                _trayIcon?.ShowBalloonTip(2000, "SQL Health Assessment", "Failed to start server mode", System.Windows.Forms.ToolTipIcon.Error);
+                _trayIcon?.ShowBalloonTip(2000, "SQLTriage", "Failed to start server mode", System.Windows.Forms.ToolTipIcon.Error);
             }
         }
 

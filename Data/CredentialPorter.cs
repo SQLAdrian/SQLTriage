@@ -6,10 +6,10 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using SqlHealthAssessment.Data.Models;
+using SQLTriage.Data.Models;
 
 #pragma warning disable CA1416 // Windows-only API — project targets net8.0-windows
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     /// <summary>
     /// Exports and imports server credentials as a portable encrypted bundle.

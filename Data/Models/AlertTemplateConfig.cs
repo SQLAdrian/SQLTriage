@@ -2,7 +2,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace SqlHealthAssessment.Data.Models
+namespace SQLTriage.Data.Models
 {
     /// <summary>
     /// Stores per-channel notification templates.
@@ -86,7 +86,7 @@ namespace SqlHealthAssessment.Data.Models
     <div style=""margin-top:16px;padding:10px;background:#0d1117;border-radius:4px;font-size:13px;"">
       {{message}}
     </div>
-    <p style=""margin-top:16px;font-size:11px;color:#666;"">Sent by SQL Health Assessment — {{machine}}</p>
+    <p style=""margin-top:16px;font-size:11px;color:#666;"">Sent by SQLTriage — {{machine}}</p>
   </div>
 </div>"
         };
@@ -134,7 +134,7 @@ namespace SqlHealthAssessment.Data.Models
       { ""title"": ""Hit Count"",     ""value"": ""{{hit_count}}"",     ""short"": true },
       { ""title"": ""Message"",       ""value"": ""{{message}}"",       ""short"": false }
     ],
-    ""footer"": ""SQL Health Assessment | {{triggered_at}}""
+    ""footer"": ""SQLTriage | {{triggered_at}}""
   }]
 }"
         };

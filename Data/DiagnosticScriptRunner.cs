@@ -1,7 +1,7 @@
 /* In the name of God, the Merciful, the Compassionate */
 
 using ApexCharts;
-using SqlHealthAssessment.Data.Models;
+using SQLTriage.Data.Models;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
@@ -14,7 +14,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     public class DiagnosticScriptRunner
     {

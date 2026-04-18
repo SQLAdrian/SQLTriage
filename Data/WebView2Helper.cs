@@ -6,7 +6,7 @@ using System.Reflection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Web.WebView2.Core;
 
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     /// <summary>
     /// Service to detect and install WebView2 runtime on Windows Server 2016 and later.
@@ -142,7 +142,7 @@ namespace SqlHealthAssessment.Data
 
                 // Download the installer
                 using var client = new System.Net.Http.HttpClient();
-                client.DefaultRequestHeaders.UserAgent.ParseAdd("SqlHealthAssessment/1.0");
+                client.DefaultRequestHeaders.UserAgent.ParseAdd("SQLTriage/1.0");
 
                 var response = await client.GetAsync(WebView2DownloadUrl, System.Net.Http.HttpCompletionOption.ResponseHeadersRead);
                 response.EnsureSuccessStatusCode();

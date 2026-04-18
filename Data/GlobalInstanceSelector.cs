@@ -3,7 +3,7 @@
 using System;
 using Microsoft.Extensions.Logging;
 
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     /// <summary>
     /// Global service that maintains the currently selected SQL Server instance

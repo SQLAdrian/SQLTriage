@@ -1,17 +1,17 @@
 <!--/* In the name of God, the Merciful, the Compassionate */-->
 @page "/sessions"
 @page "/dashboard/sessions"
-@using SqlHealthAssessment.Data
-@using SqlHealthAssessment.Data.Models
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
 @inject SessionDataService SessionService
 @inject ServerConnectionManager ConnectionManager
 @inject IDbConnectionFactory ConnectionFactory
 @inject GlobalInstanceSelector InstanceSelector
-@inject SqlHealthAssessment.Data.Services.PrintService PrintSvc
-@inject SqlHealthAssessment.Data.ToastService Toast
+@inject SQLTriage.Data.Services.PrintService PrintSvc
+@inject SQLTriage.Data.ToastService Toast
 @inject IJSRuntime JSRuntime
-@inject SqlHealthAssessment.Data.UserSettingsService UserSettings
-@inject SqlHealthAssessment.Data.Services.AppUserState UserState
+@inject SQLTriage.Data.UserSettingsService UserSettings
+@inject SQLTriage.Data.Services.AppUserState UserState
 @implements IDisposable
 
 <!-- Charts Modal -->

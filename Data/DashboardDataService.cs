@@ -5,9 +5,9 @@ using System.Collections.Generic;
 using System.Data;
 using System.Linq;
 using System.Threading.Tasks;
-using SqlHealthAssessment.Data.Models;
+using SQLTriage.Data.Models;
 
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     /// <summary>
     /// High-level data service that provides typed dashboard data.

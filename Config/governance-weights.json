@@ -25,5 +25,28 @@
     "Platinum": [81,100]
   },
 
+  "categoryMapping": {
+    "_comment": "Maps consolidated_checks.sql YAML 'category:' values → 5 governance dimensions. Used by agent pass to populate queries.json 'category' field. Any YAML category not listed here maps to 'Reliability' by default.",
+    "Security":           "Security",
+    "Authentication":     "Security",
+    "Authorization":      "Security",
+    "Encryption":         "Security",
+    "Auditing":           "Compliance",
+    "Compliance":         "Compliance",
+    "Data_Protection":    "Compliance",
+    "Surface_Area":       "Security",
+    "Configuration":      "Reliability",
+    "DefaultRuleset":     "Reliability",
+    "Backup":             "Reliability",
+    "Monitoring":         "Reliability",
+    "Reliability":        "Reliability",
+    "Performance":        "Performance",
+    "Memory":             "Performance",
+    "Network":            "Performance",
+    "Patching":           "Compliance",
+    "Cost":               "Cost",
+    "Custom":             "Reliability"
+  },
+
   "schemaVersion": 1
 }

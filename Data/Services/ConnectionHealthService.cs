@@ -7,9 +7,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
-using SqlHealthAssessment.Data.Models;
+using SQLTriage.Data.Models;
 
-namespace SqlHealthAssessment.Data.Services
+namespace SQLTriage.Data.Services
 {
     /// <summary>
     /// Background singleton that pings each enabled server connection every 30 seconds
@@ -99,7 +99,7 @@ namespace SqlHealthAssessment.Data.Services
             try
             {
                 var connStr = conn.GetConnectionString(serverName, "master") +
-                              ";Connect Timeout=5;Application Name=SQLHealthAssessment-HealthCheck";
+                              ";Connect Timeout=5;Application Name=SQLTriage-HealthCheck";
 
                 using var sql = new SqlConnection(connStr);
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(6));

@@ -303,10 +303,10 @@ Each prompt is designed for Gemma 4 9B. Keep them blunt and paste-ready.
 
 ### Prompt 1 — Build Cleanup (Wk 0.5)
 ```
-Task: Make SqlHealthAssessment.sln build with zero warnings.
+Task: Make SQLTriage.sln build with zero warnings.
 
 Steps:
-1. Open SqlHealthAssessment.csproj (and any sub-projects). Add <Nullable>enable</Nullable> and <TreatWarningsAsErrors>false</TreatWarningsAsErrors> (keep warnings visible but not blocking for now).
+1. Open SQLTriage.csproj (and any sub-projects). Add <Nullable>enable</Nullable> and <TreatWarningsAsErrors>false</TreatWarningsAsErrors> (keep warnings visible but not blocking for now).
 2. Add [assembly: SupportedOSPlatform("windows")] to AssemblyInfo.cs OR set <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion> in csproj. Goal: silence CA1416.
 3. Run `dotnet build` and iterate on CS8602/CS8604 (null dereference, possible null arg). Fix by either `?.` access or null-guard; do NOT add `!` null-forgiving unless you can prove non-null.
 4. After all warnings cleared, flip <TreatWarningsAsErrors>true</TreatWarningsAsErrors>.

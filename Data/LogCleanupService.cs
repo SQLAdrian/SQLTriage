@@ -5,7 +5,7 @@ using System;
 using System.IO;
 using System.Threading;
 
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     /// <summary>
     /// Deletes log files older than 7 days from .\logs and .\audit-logs.

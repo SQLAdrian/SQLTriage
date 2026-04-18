@@ -9,7 +9,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Radzen;
 using Serilog;
-using SqlHealthAssessment.Data.Caching;
+using SQLTriage.Data.Caching;
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -24,7 +24,7 @@ using System.Threading.Tasks;
 
 
 #pragma warning disable CA1416 // Windows-only API — project targets net8.0-windows
-namespace SqlHealthAssessment.Data.Services
+namespace SQLTriage.Data.Services
 {
     /// <summary>
     /// Runs the Blazor Server UI as a headless Windows Service (no WPF).
@@ -32,9 +32,9 @@ namespace SqlHealthAssessment.Data.Services
     /// </summary>
     public class WindowsServiceHost
     {
-        public const string ServiceName = "SqlHealthAssessment";
-        public const string ServiceDisplayName = "SQL Health Assessment Server";
-        public const string ServiceDescription = "SQL Health Assessment — Blazor Server monitoring dashboard";
+        public const string ServiceName = "SQLTriage";
+        public const string ServiceDisplayName = "SQLTriage Server";
+        public const string ServiceDescription = "SQLTriage — Blazor Server monitoring dashboard";
 
         public static void Run(string[] args)
         {
@@ -61,7 +61,7 @@ namespace SqlHealthAssessment.Data.Services
                 .MinimumLevel.Information()
                 .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
                 .Enrich.FromLogContext()
-                .Enrich.WithProperty("Application", "SqlHealthAssessment.Service")
+                .Enrich.WithProperty("Application", "SQLTriage.Service")
                 .Enrich.WithProperty("User", Environment.UserName)
                 .Enrich.WithProperty("Machine", Environment.MachineName)
                 .WriteTo.File(
@@ -72,7 +72,7 @@ namespace SqlHealthAssessment.Data.Services
                 .WriteTo.Console(outputTemplate: "{Timestamp:HH:mm:ss} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
                 .CreateLogger();
 
-            Log.Information("SQL Health Assessment Service starting...");
+            Log.Information("SQLTriage Service starting...");
 
             try
             {
@@ -166,17 +166,17 @@ namespace SqlHealthAssessment.Data.Services
                 // Initialize background services
                 InitializeBackgroundServices(app.Services);
 
-                Log.Information("SQL Health Assessment Service started on port {Port}" + (selfSignedCert != null ? " (HTTPS: {HttpsPort})" : ""),
+                Log.Information("SQLTriage Service started on port {Port}" + (selfSignedCert != null ? " (HTTPS: {HttpsPort})" : ""),
                     port, selfSignedCert != null ? httpsPort : 0);
                 app.Run();
             }
             catch (Exception ex)
             {
-                Log.Fatal(ex, "SQL Health Assessment Service failed to start");
+                Log.Fatal(ex, "SQLTriage Service failed to start");
             }
             finally
             {
-                Log.Information("SQL Health Assessment Service stopped");
+                Log.Information("SQLTriage Service stopped");
                 Log.CloseAndFlush();
             }
         }
@@ -269,7 +269,7 @@ namespace SqlHealthAssessment.Data.Services
 
         private static string ResolveWebRoot()
         {
-            var manifestPath = Path.Combine(AppContext.BaseDirectory, "SqlHealthAssessment.staticwebassets.runtime.json");
+            var manifestPath = Path.Combine(AppContext.BaseDirectory, "SQLTriage.staticwebassets.runtime.json");
             if (File.Exists(manifestPath))
             {
                 try
@@ -303,7 +303,7 @@ namespace SqlHealthAssessment.Data.Services
 
             using var rsa = RSA.Create(2048);
             var request = new CertificateRequest(
-                $"CN=SQL Health Assessment Service ({hostName})",
+                $"CN=SQLTriage Service ({hostName})",
                 rsa,
                 HashAlgorithmName.SHA256,
                 RSASignaturePadding.Pkcs1);
@@ -357,7 +357,7 @@ namespace SqlHealthAssessment.Data.Services
         public static void InstallService(string[] args)
         {
             var exePath = Process.GetCurrentProcess().MainModule?.FileName
-                ?? Path.Combine(AppContext.BaseDirectory, "SqlHealthAssessment.exe");
+                ?? Path.Combine(AppContext.BaseDirectory, "SQLTriage.exe");
 
             // Parse optional service account
             string? username = null;
@@ -397,7 +397,7 @@ namespace SqlHealthAssessment.Data.Services
                 Console.WriteLine($"  Path: {binPath}");
                 if (!string.IsNullOrEmpty(username))
                     Console.WriteLine($"  Account: {username}");
-                Console.WriteLine("\nStart with: sc start SqlHealthAssessment");
+                Console.WriteLine("\nStart with: sc start SQLTriage");
             }
             else
             {

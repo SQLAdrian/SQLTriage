@@ -5,9 +5,9 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using SqlHealthAssessment.Data.Models;
+using SQLTriage.Data.Models;
 
-namespace SqlHealthAssessment.Data.Services
+namespace SQLTriage.Data.Services
 {
     public class AlertTemplateService
     {

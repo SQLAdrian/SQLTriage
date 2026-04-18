@@ -1,6 +1,6 @@
 /* In the name of God, the Merciful, the Compassionate */
 
-namespace SqlHealthAssessment.Data.Services
+namespace SQLTriage.Data.Services
 {
     /// <summary>
     /// Broadcasts Radzen UI theme changes across the component tree.

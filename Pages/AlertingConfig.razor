@@ -1,13 +1,13 @@
 @* In the name of God, the Merciful, the Compassionate *@
 @page "/alerting-config"
-@using SqlHealthAssessment.Data
-@using SqlHealthAssessment.Data.Models
-@using SqlHealthAssessment.Data.Services
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
 @inject NotificationChannelService ChannelService
 @inject UserSettingsService UserSettings
 @inject XEventService XEventService
 @inject ServerConnectionManager ConnectionManager
-@inject SqlHealthAssessment.Data.Services.AppUserState UserState
+@inject SQLTriage.Data.Services.AppUserState UserState
 @implements IDisposable
 
 @if (!RbacService.HasPermission(UserState.Role, "manage_alerts"))
@@ -179,7 +179,7 @@
             </div>
             <div class="settings-field">
                 <label>Bot Username</label>
-                <input type="text" @bind="_slack.Username" @bind:event="oninput" placeholder="SQL Health Assessment" />
+                <input type="text" @bind="_slack.Username" @bind:event="oninput" placeholder="SQLTriage" />
             </div>
         </div>
 

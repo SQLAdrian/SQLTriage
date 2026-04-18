@@ -3,7 +3,7 @@
 using Microsoft.AspNetCore.Components.Server.Circuits;
 using Microsoft.Extensions.Logging;
 
-namespace SqlHealthAssessment.Data.Services
+namespace SQLTriage.Data.Services
 {
     /// <summary>
     /// Monitors Blazor Server circuit lifecycle for diagnostics and cleanup.

@@ -2,7 +2,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace SqlHealthAssessment.Data.Models
+namespace SQLTriage.Data.Models
 {
     /// <summary>
     /// Represents a query performance metric data point for time-series visualization.

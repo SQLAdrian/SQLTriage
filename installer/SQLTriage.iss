@@ -1,19 +1,19 @@
-; LiveMonitor — Inno Setup installer script
+; SQLTriage — Inno Setup installer script
 ; Requires Inno Setup 6.x (https://jrsoftware.org/isinfo.php)
 ;
 ; Build instructions:
 ;   1. Run from project root:
-;        dotnet publish SqlHealthAssessment.csproj -c Release -r win-x64 -o publish\win-x64
+;        dotnet publish SQLTriage.csproj -c Release -r win-x64 -o publish\win-x64
 ;   2. Open this .iss in Inno Setup Compiler and click Build > Compile
-;      OR run headless:  "C:\GitHub\Inno Setup 6\iscc.exe" installer\LiveMonitor.iss
+;      OR run headless:  "C:\GitHub\Inno Setup 6\iscc.exe" installer\SQLTriage.iss
 ;
-; The compiled Setup EXE lands in: release\LiveMonitor-vX.Y.Z-buildNNNN-Setup.exe
+; The compiled Setup EXE lands in: release\SQLTriage-vX.Y.Z-buildNNNN-Setup.exe
 
-#define AppName      "SQL Health Assessment"
-#define AppShortName "LiveMonitor"
+#define AppName      "SQLTriage"
+#define AppShortName "SQLTriage"
 #define AppPublisher "Adrian Sullivan"
-#define AppURL       "https://sqladrian.github.io/SqlHealthAssessment/"
-#define AppExeName   "SqlHealthAssessment.exe"
+#define AppURL       "https://sqladrian.github.io/SQLTriage/"
+#define AppExeName   "SQLTriage.exe"
 #define SourceDir    "..\publish\win-x64"
 #define OutputDir    "..\release"
 
@@ -38,7 +38,7 @@ AllowNoIcons=yes
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 OutputDir={#OutputDir}
-OutputBaseFilename=LiveMonitor-v{#AppVersion}-build{#BuildNumber}-Setup
+OutputBaseFilename=SQLTriage-v{#AppVersion}-build{#BuildNumber}-Setup
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern

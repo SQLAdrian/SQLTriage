@@ -2,9 +2,9 @@
 @page "/diagnostics-roadmap"
 @implements IDisposable
 
-@using SqlHealthAssessment.Data
-@using SqlHealthAssessment.Data.Models
-@using SqlHealthAssessment.Data.Services
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
 @using Microsoft.Extensions.Logging
 @using System.IO
 @using System.Globalization
@@ -13,7 +13,7 @@
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 @inject UserSettingsService UserSettings
-@inject SqlHealthAssessment.Data.Services.KeyboardShortcutService ShortcutSvc
+@inject SQLTriage.Data.Services.KeyboardShortcutService ShortcutSvc
 
 @* ══════════════════════════════════════════════════════
    Print / PDF styles — enterprise report look
@@ -300,7 +300,7 @@
                 <div style="margin-bottom:32px;">
                     <i class="fa-solid fa-heart-pulse" style="font-size:64px; color:#e2583e;"></i>
                 </div>
-                <div style="font-size:11px; font-weight:700; letter-spacing:0.15em; text-transform:uppercase; color:#888; margin-bottom:8px;">SQL Health Assessment</div>
+                <div style="font-size:11px; font-weight:700; letter-spacing:0.15em; text-transform:uppercase; color:#888; margin-bottom:8px;">SQLTriage</div>
                 <div style="font-size:32px; font-weight:800; color:#222; margin-bottom:8px; line-height:1.2;">Diagnostics Maturity Roadmap</div>
                 @{ var coverDomains = _availableServers.Where(s => s.IsSelected).Select(s => s.Domain).Where(d => !string.IsNullOrEmpty(d)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(d => d); }
                 <div style="font-size:15px; color:#555; margin-bottom:40px;">@string.Join(" · ", coverDomains)</div>
@@ -1500,7 +1500,7 @@
         var sb = new System.Text.StringBuilder();
 
         // ── Report header ──
-        sb.AppendLine(CsvQuote($"SQL Health Assessment — Diagnostics Maturity Roadmap — Action Plan"));
+        sb.AppendLine(CsvQuote($"SQLTriage — Diagnostics Maturity Roadmap — Action Plan"));
         sb.AppendLine(CsvQuote($"Generated: {DateTime.Now:dd MMM yyyy HH:mm}"));
         sb.AppendLine(CsvQuote($"Servers: {string.Join("; ", selectedServers.Select(s => s.SqlInstance))}"));
         sb.AppendLine(CsvQuote($"Overall Level: L{_overallLevel} — {GetMaturityName(_overallLevel)}  |  Score: {_overallScore:N0}%  |  {_passedFindings}/{_totalFindings} checks passed  |  {_totalItemsImpacted} items impacted"));
@@ -1666,13 +1666,13 @@
             : domains.Count >= 1
                 ? $"{string.Join(", ", domains)} ({selectedServers.Count} servers)"
                 : $"{selectedServers.Count} servers";
-        var footerCentre = System.Web.HttpUtility.HtmlEncode($"SQL Health Assessment — Diagnostics Maturity Roadmap — {serverNames} — {DateTime.Now:dd MMM yyyy HH:mm}");
+        var footerCentre = System.Web.HttpUtility.HtmlEncode($"SQLTriage — Diagnostics Maturity Roadmap — {serverNames} — {DateTime.Now:dd MMM yyyy HH:mm}");
         var footerRight  = System.Web.HttpUtility.HtmlEncode(_pdfFooterLeft);
         await JS.InvokeVoidAsync("eval",
             $"var f=document.createElement('div');" +
             $"f.id='pdf-footer-bar';" +
             $"f.style='position:fixed;bottom:0;left:0;right:0;height:22px;display:flex;justify-content:space-between;align-items:center;padding:0 14px;font-size:8px;font-family:Arial,sans-serif;color:#555;border-top:2px solid #e2583e;background:linear-gradient(to right,#fff8f6,#ffffff);z-index:9999;';" +
-            $"f.innerHTML='<span style=\"display:flex;align-items:center;gap:5px;font-weight:700;color:#e2583e;\"><i class=\"fa-solid fa-heart-pulse\" style=\"font-size:10px;\"></i> SQL Health Assessment</span><span style=\"color:#444;\">{footerCentre}</span><span style=\"color:#888;font-style:italic;\">{footerRight}</span>';" +
+            $"f.innerHTML='<span style=\"display:flex;align-items:center;gap:5px;font-weight:700;color:#e2583e;\"><i class=\"fa-solid fa-heart-pulse\" style=\"font-size:10px;\"></i> SQLTriage</span><span style=\"color:#444;\">{footerCentre}</span><span style=\"color:#888;font-style:italic;\">{footerRight}</span>';" +
             $"document.body.appendChild(f);");
 
         var (success, path, error) = await PrintSvc.PrintToPdfAsync(fileName,
@@ -1712,8 +1712,8 @@
     }
 
     // Delegate to shared CsvParser utility (testable, single source of truth)
-    private static char         DetectDelimiter(string headerLine)                  => SqlHealthAssessment.Data.CsvParser.DetectDelimiter(headerLine);
-    private static List<string> ParseCsvLine(string line, char delimiter = ',')     => SqlHealthAssessment.Data.CsvParser.ParseLine(line, delimiter);
+    private static char         DetectDelimiter(string headerLine)                  => SQLTriage.Data.CsvParser.DetectDelimiter(headerLine);
+    private static List<string> ParseCsvLine(string line, char delimiter = ',')     => SQLTriage.Data.CsvParser.ParseLine(line, delimiter);
 
     private static string GetMaturityColor(int level) => level switch
     {

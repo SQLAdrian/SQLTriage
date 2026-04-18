@@ -2,7 +2,7 @@
 
 using System.Collections.Generic;
 
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     /// <summary>
     /// Shared CSV/DSV parsing utilities used by DiagnosticsRoadmap, VulnerabilityAssessment, and tests.

@@ -50,7 +50,7 @@ This tool will be judged on first impression. One broken thing = lost user + bad
 - [ ] Solution file renamed: `SQLTriage.sln`
 - [ ] Project file renamed: `SQLTriage.csproj`
 - [ ] Output assembly: `SQLTriage.dll` / `SQLTriage.exe`
-- [ ] All UI strings updated (search for "Health Assessment", "LiveMonitor")
+- [ ] All UI strings updated (search for "Health Assessment", "SQLTriage")
 - [ ] Title bar shows "SQLTriage v1.0.0"
 - [ ] About dialog shows correct version and branding
 - [ ] Favicon and app icon replaced with SQLTriage logo

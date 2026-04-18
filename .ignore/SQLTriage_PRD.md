@@ -1071,6 +1071,8 @@ CREATE TABLE GovernanceFindings (
 - [ ] Basmalah header present on every .cs/.razor/.css/.js/.md file (pre-commit hook active, CI lint passing)
 - [ ] Website copy revised to "SQLTriage — Governance & Translation Platform"; 16 screenshots captured & committed; sample Governance Report PDF hosted
 - [ ] 5 beta testers confirm: "I can see why my manager would care about this" (translation layer validated)
+- [ ] **AuditLog tamper recovery:** when startup chain validation detects HMAC mismatch, app enters read-only mode (banner visible, dashboard accessible, Report export + RBAC changes disabled); Admin can acknowledge via Settings (requires Admin role + reason string + password re-entry ≥ zxcvbn 3); acknowledgement logged to Windows Event Log independent of tampered chain; app resumes writes after ack; no data loss
+- [ ] INFO severity findings surface in IFindingTranslator output (DBA/IT/Executive renditions) but contribute 0 points to GovernanceService score and do not appear in Maturity band calculation
 - [ ] No P1 bugs open at release candidate; clean build (zero warnings); single-exe publish (win-x64) succeeds
 
 ---

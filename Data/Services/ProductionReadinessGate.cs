@@ -5,7 +5,7 @@ using System.IO;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
-namespace SqlHealthAssessment.Data.Services
+namespace SQLTriage.Data.Services
 {
     /// <summary>
     /// Checks whether the application has reached production readiness (v1.x+)

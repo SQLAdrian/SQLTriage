@@ -2,7 +2,7 @@
 
 using System.Collections.Concurrent;
 
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     /// <summary>
     /// Replaces real server/instance names with stable opaque aliases (SRV-001, SRV-002 …) in log output.

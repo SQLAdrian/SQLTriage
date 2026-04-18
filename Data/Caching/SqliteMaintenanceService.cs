@@ -2,11 +2,11 @@
 
 using System;
 using System.Threading;
-using SqlHealthAssessment.Data.Models;
+using SQLTriage.Data.Models;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
-namespace SqlHealthAssessment.Data.Caching
+namespace SQLTriage.Data.Caching
 {
     /// <summary>
     /// Runs periodic liveQueries database maintenance on a timer.

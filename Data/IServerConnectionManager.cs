@@ -2,9 +2,9 @@
 
 using System;
 using System.Collections.Generic;
-using SqlHealthAssessment.Data.Models;
+using SQLTriage.Data.Models;
 
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     /// <summary>
     /// Abstraction over ServerConnectionManager — enables testing without live SQL connections.

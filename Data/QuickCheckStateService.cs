@@ -1,9 +1,9 @@
 /* In the name of God, the Merciful, the Compassionate */
 
 using Microsoft.Extensions.Logging;
-using SqlHealthAssessment.Data.Models;
+using SQLTriage.Data.Models;
 
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     /// <summary>
     /// Singleton state container for the Quick Check page.

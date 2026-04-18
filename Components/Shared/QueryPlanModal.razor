@@ -1,10 +1,10 @@
 <!--/* In the name of God, the Merciful, the Compassionate */-->
 @implements IAsyncDisposable
 @inject IJSRuntime JS
-@inject SqlHealthAssessment.Data.UserSettingsService UserSettings
-@inject SqlHealthAssessment.Data.ToastService Toast
+@inject SQLTriage.Data.UserSettingsService UserSettings
+@inject SQLTriage.Data.ToastService Toast
 @inject ServerConnectionManager ConnectionManager
-@using SqlHealthAssessment.Data.Services
+@using SQLTriage.Data.Services
 @using Microsoft.Data.SqlClient
 
 @if (IsVisible)

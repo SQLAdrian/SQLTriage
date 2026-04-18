@@ -5,7 +5,7 @@ using System.Diagnostics;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
-namespace SqlHealthAssessment.Data.Services.Assessment
+namespace SQLTriage.Data.Services.Assessment
 {
     /// <summary>
     /// Executes PowerShell-based assessment checks via powershell.exe.

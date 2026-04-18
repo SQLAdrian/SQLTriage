@@ -1,9 +1,9 @@
 /* In the name of God, the Merciful, the Compassionate */
 
 using System;
-using SqlHealthAssessment.Data;
+using SQLTriage.Data;
 
-namespace SqlHealthAssessment.Data.Services
+namespace SQLTriage.Data.Services
 {
     /// <summary>
     /// Abstraction over UserSettingsService — enables testing and future alternative implementations.

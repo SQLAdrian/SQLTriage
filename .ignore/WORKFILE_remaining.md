@@ -108,11 +108,11 @@ This worklist is part of a 4-document set:
 
 #### 2. Brand unification — rename to SQLTriage
 **Files:** Everywhere — `.sln`, `.csproj`, `App.xaml`, `MainWindow.xaml`, all `.razor`, `README.md`, website, GitHub settings
-**Problem:** Website/external branding says "LiveMonitor", codebase says "SqlHealthAssessment"; need unified "SQLTriage" brand
+**Problem:** Website/external branding says "SQLTriage", codebase says "SqlHealthAssessment"; need unified "SQLTriage" brand
 **How:**
-1. **Rename solution/project:** `SqlHealthAssessment.sln` → `SQLTriage.sln`
+1. **Rename solution/project:** `SQLTriage.sln` → `SQLTriage.sln`
 2. **Rename csproj:** output assembly and root namespace to `SQLTriage`
-3. **Replace all hardcoded** "SqlHealthAssessment" / "LiveMonitor" strings in UI/pages with "SQLTriage"
+3. **Replace all hardcoded** "SqlHealthAssessment" / "SQLTriage" strings in UI/pages with "SQLTriage"
 4. **Update README** title, badges, navigation references
 5. **Update website** (`docs/index.md`) to use SQLTriage throughout
 6. **Update release asset names**, installer names, shortcuts

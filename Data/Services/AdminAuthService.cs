@@ -3,7 +3,7 @@
 using Microsoft.Extensions.Configuration;
 using System.Security.Cryptography;
 
-namespace SqlHealthAssessment.Data.Services;
+namespace SQLTriage.Data.Services;
 
 /// <summary>
 /// PBKDF2-SHA256 based admin authentication.

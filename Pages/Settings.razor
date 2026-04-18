@@ -7,9 +7,9 @@
 @using System.Text.Json
 @using Microsoft.Data.SqlClient
 @using Microsoft.JSInterop
-@using SqlHealthAssessment.Data
-@using SqlHealthAssessment.Data.Models
-@using SqlHealthAssessment.Data.Services
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
 @inject IDbConnectionFactory ConnectionFactory
 @inject SqlServerConnectionFactory SqlServerConnectionFactory
 @inject IConfiguration Configuration
@@ -20,10 +20,10 @@
 @inject ConfigurationValidator ConfigValidator
 @inject AutoUpdateService UpdateService
 @inject AzureBlobExportService BlobExport
-@inject SqlHealthAssessment.Data.ToastService Toast
-@inject SqlHealthAssessment.Data.Services.AppUserState UserState
-@inject SqlHealthAssessment.Data.Services.RbacService RbacService
-@inject SqlHealthAssessment.Data.ServerConnectionManager ConnectionManager
+@inject SQLTriage.Data.ToastService Toast
+@inject SQLTriage.Data.Services.AppUserState UserState
+@inject SQLTriage.Data.Services.RbacService RbacService
+@inject SQLTriage.Data.ServerConnectionManager ConnectionManager
 
 @if (!RbacService.HasPermission(UserState.Role, "settings"))
 {
@@ -480,7 +480,7 @@
         <div class="settings-field">
             <label>Container Name</label>
             <input type="text" @bind="_azureContainer" @bind:event="oninput"
-                   placeholder="sqlhealthassessment" />
+                   placeholder="SQLTriage" />
         </div>
         <div class="settings-field">
             <label>Blob Prefix (optional)</label>
@@ -991,7 +991,7 @@
     private string? _azureConnStr;
     private string? _azureSasToken;
     private string? _azureAccountName;
-    private string _azureContainer = "sqlhealthassessment";
+    private string _azureContainer = "SQLTriage";
     private string? _azurePrefix;
     private string _azureUploadMethod = "sdk";
     private string? _azureAzCopyPath;
@@ -1065,7 +1065,7 @@
 
         // Load Azure Blob config
         _azureAuthMode = BlobExport.AuthMode == "sastoken" ? "sastoken" : "connectionstring";
-        _azureContainer = BlobExport.ContainerName ?? "sqlhealthassessment";
+        _azureContainer = BlobExport.ContainerName ?? "SQLTriage";
         _azurePrefix = BlobExport.BlobPrefix;
         _azureUploadMethod = BlobExport.UploadMethod ?? "sdk";
         _azureAzCopyPath = BlobExport.AzCopyPath;
@@ -1148,7 +1148,7 @@
         {
             var connections = ConnectionManager.GetConnections();
             var json = CredentialPorter.Export(connections, _credsExportPassphrase);
-            var fileName = $"LiveMonitor-credentials-{DateTime.Now:yyyyMMdd-HHmm}.lmcreds";
+            var fileName = $"SQLTriage-credentials-{DateTime.Now:yyyyMMdd-HHmm}.lmcreds";
             var bytes = System.Text.Encoding.UTF8.GetBytes(json);
             var base64 = Convert.ToBase64String(bytes);
             await JS.InvokeVoidAsync("blazorDownloadFile", fileName, "application/json", base64);
@@ -1639,7 +1639,7 @@
 
         try
         {
-            var cacheStore = App.Services?.GetService<SqlHealthAssessment.Data.Caching.liveQueriesCacheStore>();
+            var cacheStore = App.Services?.GetService<SQLTriage.Data.Caching.liveQueriesCacheStore>();
             if (cacheStore != null)
             {
                 await cacheStore.InvalidateAllAsync();
@@ -1669,7 +1669,7 @@
     {
         try
         {
-            var dbPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "SqlHealthAssessment-cache.db");
+            var dbPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "SQLTriage-cache.db");
             if (System.IO.File.Exists(dbPath))
             {
                 var fileInfo = new System.IO.FileInfo(dbPath);
@@ -1695,7 +1695,7 @@
 
         try
         {
-            var dbPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "SqlHealthAssessment-cache.db");
+            var dbPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "SQLTriage-cache.db");
             if (!System.IO.File.Exists(dbPath))
             {
                 MaintenanceResult = "No cache file to maintain.";

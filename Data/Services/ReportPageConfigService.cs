@@ -3,9 +3,9 @@
 using System.IO;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using SqlHealthAssessment.Data.Models;
+using SQLTriage.Data.Models;
 
-namespace SqlHealthAssessment.Data.Services
+namespace SQLTriage.Data.Services
 {
     /// <summary>
     /// Loads and persists per-page report-section layout from Config/report-pages.json.

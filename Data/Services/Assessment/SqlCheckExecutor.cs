@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 
-namespace SqlHealthAssessment.Data.Services.Assessment
+namespace SQLTriage.Data.Services.Assessment
 {
     /// <summary>
     /// Executes SQL-based assessment checks against an open SqlConnection.

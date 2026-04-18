@@ -7,11 +7,11 @@ using System.Data;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using SqlHealthAssessment.Data.Models;
+using SQLTriage.Data.Models;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
-namespace SqlHealthAssessment.Data.Caching
+namespace SQLTriage.Data.Caching
 {
     /// <summary>
     /// Decorator around <see cref="QueryExecutor"/> that adds local liveQueries caching
@@ -426,7 +426,7 @@ namespace SqlHealthAssessment.Data.Caching
         /// Any panel with no cached data is simply absent from the returned dictionaries.
         /// </summary>
         public async Task PreloadFromCacheAsync(
-            IEnumerable<SqlHealthAssessment.Data.Models.PanelDefinition> panels,
+            IEnumerable<SQLTriage.Data.Models.PanelDefinition> panels,
             DashboardFilter filter,
             ConcurrentDictionary<string, List<TimeSeriesPoint>> tsResults,
             ConcurrentDictionary<string, StatValue> statResults,

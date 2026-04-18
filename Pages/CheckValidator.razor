@@ -1,9 +1,9 @@
 <!--/* In the name of God, the Merciful, the Compassionate */-->
 @page "/check-validator"
-@using SqlHealthAssessment.Data
-@using SqlHealthAssessment.Data.Models
-@using SqlHealthAssessment.Data.Services
-@using SqlHealthAssessment.Components.Shared
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@using SQLTriage.Components.Shared
 @using Microsoft.Data.SqlClient
 @using System.Data
 @using System.Text.Json
@@ -13,7 +13,7 @@
 @inject UserSettingsService UserSettings
 @inject LocalLogService Log
 @inject ToastService Toast
-@inject SqlHealthAssessment.Data.Services.AppUserState UserState
+@inject SQLTriage.Data.Services.AppUserState UserState
 
 <style>
     /* ── Check Validator scoped styles ── */
@@ -478,7 +478,7 @@
             .ToList();
     }
 
-    private static string BuildAlertExpectedDisplay(SqlHealthAssessment.Data.Models.AlertDefinition a)
+    private static string BuildAlertExpectedDisplay(SQLTriage.Data.Models.AlertDefinition a)
     {
         var op = a.Operator switch
         {

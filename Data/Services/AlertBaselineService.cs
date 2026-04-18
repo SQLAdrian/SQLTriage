@@ -9,10 +9,10 @@ using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
-using SqlHealthAssessment.Data.Caching;
-using SqlHealthAssessment.Data.Models;
+using SQLTriage.Data.Caching;
+using SQLTriage.Data.Models;
 
-namespace SqlHealthAssessment.Data.Services
+namespace SQLTriage.Data.Services
 {
     /// <summary>
     /// Collects alert metric samples and computes per-server IQR-based dynamic thresholds.

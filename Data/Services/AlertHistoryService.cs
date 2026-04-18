@@ -3,9 +3,9 @@
 using System.IO;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
-using SqlHealthAssessment.Data.Models;
+using SQLTriage.Data.Models;
 
-namespace SqlHealthAssessment.Data.Services
+namespace SQLTriage.Data.Services
 {
     /// <summary>
     /// Persists alert history to a local SQLite database (alert-history.db).

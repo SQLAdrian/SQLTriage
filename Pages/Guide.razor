@@ -13,17 +13,17 @@
             This is free software built by one person. Feedback, bug reports, and feature requests are always welcome — they genuinely shape what gets built next.
         </p>
         <div style="display:flex;flex-wrap:wrap;gap:10px;">
-            <a href="https://github.com/SQLAdrian/SqlHealthAssessment/issues/new" target="_blank"
+            <a href="https://github.com/SQLAdrian/SQLTriage/issues/new" target="_blank"
                style="display:inline-flex;align-items:center;gap:7px;padding:8px 14px;background:rgba(255,255,255,0.06);border:1px solid var(--border-color);border-radius:6px;text-decoration:none;color:var(--text-primary);font-size:13px;transition:background 0.15s;"
                onmouseover="this.style.background='rgba(99,102,241,0.15)'" onmouseout="this.style.background='rgba(255,255,255,0.06)'">
                 <i class="fa-brands fa-github" style="color:var(--accent);"></i> Report a Bug (GitHub)
             </a>
-            <a href="https://github.com/SQLAdrian/SqlHealthAssessment/discussions/new?category=ideas" target="_blank"
+            <a href="https://github.com/SQLAdrian/SQLTriage/discussions/new?category=ideas" target="_blank"
                style="display:inline-flex;align-items:center;gap:7px;padding:8px 14px;background:rgba(255,255,255,0.06);border:1px solid var(--border-color);border-radius:6px;text-decoration:none;color:var(--text-primary);font-size:13px;transition:background 0.15s;"
                onmouseover="this.style.background='rgba(99,102,241,0.15)'" onmouseout="this.style.background='rgba(255,255,255,0.06)'">
                 <i class="fa-regular fa-lightbulb" style="color:var(--accent);"></i> Feature Request
             </a>
-            <a href="mailto:adrian@sqldba.org?subject=LiveMonitor Feedback" target="_blank"
+            <a href="mailto:adrian@sqldba.org?subject=SQLTriage Feedback" target="_blank"
                style="display:inline-flex;align-items:center;gap:7px;padding:8px 14px;background:rgba(255,255,255,0.06);border:1px solid var(--border-color);border-radius:6px;text-decoration:none;color:var(--text-primary);font-size:13px;transition:background 0.15s;"
                onmouseover="this.style.background='rgba(99,102,241,0.15)'" onmouseout="this.style.background='rgba(255,255,255,0.06)'">
                 <i class="fa-solid fa-envelope" style="color:var(--accent);"></i> Email Adrian
@@ -65,7 +65,7 @@
 
             <div class="nav-map-group">
                 <div class="nav-map-label">Live Dashboards</div>
-                <a href="/dashboard/livemonitor" class="nav-map-item"><i class="fa-solid fa-eye"></i><span>Live Monitor</span><span class="nav-map-hint">Sessions, blocks, top queries</span></a>
+                <a href="/dashboard/SQLTriage" class="nav-map-item"><i class="fa-solid fa-eye"></i><span>Live Monitor</span><span class="nav-map-hint">Sessions, blocks, top queries</span></a>
                 <a href="/dashboard/instanceoverview" class="nav-map-item"><i class="fa-solid fa-chart-area"></i><span>Instance Overview</span><span class="nav-map-hint">CPU, memory, I/O trends</span></a>
                 <a href="/dashboard/waitstats" class="nav-map-item"><i class="fa-solid fa-clock-rotate-left"></i><span>Wait Events</span><span class="nav-map-hint">Wait stat analysis</span></a>
             </div>
@@ -109,7 +109,7 @@
             <div class="guide-card">
                 <h3><i class="fa-solid fa-eye"></i> Live Monitor</h3>
                 <p>View real-time sessions, blocking chains, top queries, and execution plans. Ideal for troubleshooting active issues.</p>
-                <button class="btn btn-primary" @onclick="GoToLiveMonitor">
+                <button class="btn btn-primary" @onclick="GoToSQLTriage">
                     Open Live Monitor
                 </button>
             </div>
@@ -283,7 +283,7 @@
         <div class="guide-cards">
             <div class="guide-card">
                 <h3><i class="fa-solid fa-circle-info"></i> Application Info</h3>
-                <p>Learn about the SQL Health Assessment tool, its features, licensing, and development credits.</p>
+                <p>Learn about the SQLTriage tool, its features, licensing, and development credits.</p>
                 <button class="btn btn-primary" @onclick="GoToAbout">
                     Learn About the App
                 </button>
@@ -369,7 +369,7 @@
 </style>
 
 @code {
-    private void GoToLiveMonitor() => Navigation.NavigateTo("/dashboard/livemonitor");
+    private void GoToSQLTriage() => Navigation.NavigateTo("/dashboard/SQLTriage");
     private void GoToInstanceOverview() => Navigation.NavigateTo("/dashboard/instanceoverview");
     private void GoToWaitEvents() => Navigation.NavigateTo("/dashboard/waitstats");
     private void GoToRepository() => Navigation.NavigateTo("/dashboard/repository");

@@ -3,7 +3,7 @@
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
-namespace SqlHealthAssessment.Data.Models
+namespace SQLTriage.Data.Models
 {
     public class BPScriptConfig
     {

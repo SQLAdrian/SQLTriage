@@ -6,12 +6,12 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
-using SqlHealthAssessment.Data.Models;
+using SQLTriage.Data.Models;
 
 // Required for SqlServerConnectionFactory.CreateConnection(initialDatabase)
-using SqlHealthAssessment.Data;
+using SQLTriage.Data;
 
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     /// <summary>
     /// Real-time session data service that queries sys.dm_exec_sessions and

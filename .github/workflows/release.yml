@@ -8,8 +8,8 @@ on:
 env:
   DOTNET_VERSION: '8.0.x'
   PUBLISH_DIR: publish
-  EXE_NAME: LiveMonitor.exe
-  INSTALLER_NAME: LiveMonitor-Setup.exe
+  EXE_NAME: SQLTriage.exe
+  INSTALLER_NAME: SQLTriage-Setup.exe
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
@@ -45,12 +45,12 @@ jobs:
 
       # ── 4. Restore ───────────────────────────────────────────────────────
       - name: Restore NuGet packages
-        run: dotnet restore SqlHealthAssessment.sln
+        run: dotnet restore SQLTriage.sln
 
       # ── 5. Build & Publish (self-contained, win-x64) ─────────────────────
       - name: Publish
         run: |
-          dotnet publish SqlHealthAssessment.sln `
+          dotnet publish SQLTriage.sln `
             -c Release `
             -r win-x64 `
             --self-contained true `
@@ -60,7 +60,7 @@ jobs:
 
       # ── 6. Code-sign exe (skipped if secret not configured) ──────────────
       - name: Sign executable
-        if: ${{ secrets.CODESIGN_CERT_BASE64 != '' }}
+        if: secrets.CODESIGN_CERT_BASE64 != ''
         shell: pwsh
         env:
           CERT_BASE64:  ${{ secrets.CODESIGN_CERT_BASE64 }}
@@ -85,12 +85,12 @@ jobs:
             /td sha256 `
             /f $certPath `
             /p $env:CERT_PASSWORD `
-            "${{ env.PUBLISH_DIR }}\SqlHealthAssessment.exe"
+            "${{ env.PUBLISH_DIR }}\SQLTriage.exe"
 
           Remove-Item $certPath -Force
           Write-Host "Executable signed successfully."
 
-      # ── 7. Rename exe to LiveMonitor.exe ─────────────────────────────────
+      # ── 7. Rename exe to SQLTriage.exe ─────────────────────────────────
       - name: Rename exe
         shell: pwsh
         run: |
@@ -104,7 +104,7 @@ jobs:
       - name: Create ZIP
         shell: pwsh
         run: |
-          $zipName = "LiveMonitor-${{ steps.ver.outputs.version }}.zip"
+          $zipName = "SQLTriage-${{ steps.ver.outputs.version }}.zip"
           Compress-Archive -Path "${{ env.PUBLISH_DIR }}\${{ env.EXE_NAME }}" `
                            -DestinationPath $zipName
           echo "ZIP_NAME=$zipName" >> $env:GITHUB_ENV
@@ -127,7 +127,7 @@ jobs:
           $outputDir = "$workspace\installer\Output"
 
           $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
-          & $iscc installer\LiveMonitor.iss `
+          & $iscc installer\SQLTriage.iss `
             /DSourceDir="$sourceDir" `
             /DOutputDir="$outputDir"
 
@@ -136,7 +136,7 @@ jobs:
 
       # ── 10. Sign installer ───────────────────────────────────────────────
       - name: Sign installer
-        if: ${{ secrets.CODESIGN_CERT_BASE64 != '' }}
+        if: secrets.CODESIGN_CERT_BASE64 != ''
         shell: pwsh
         env:
           CERT_BASE64:   ${{ secrets.CODESIGN_CERT_BASE64 }}
@@ -178,7 +178,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: "LiveMonitor v${{ steps.ver.outputs.version }}"
+          name: "SQLTriage v${{ steps.ver.outputs.version }}"
           body_path: release_notes.md
           draft: false
           prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}

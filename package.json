@@ -1,12 +1,12 @@
 {
-  "name": "sqlhealthassessment",
-  "version": "1.0.0",
-  "description": "SQL Health Assessment Tool",
-  "scripts": {
-    "build:css": "tailwindcss -i wwwroot/css/tailwind-input.css -o wwwroot/css/tailwind.css --minify",
-    "watch:css": "tailwindcss -i wwwroot/css/tailwind-input.css -o wwwroot/css/tailwind.css --watch"
-  },
-  "devDependencies": {
-    "tailwindcss": "^3.4.17"
-  }
+    "name":  "sqltriage",
+    "version":  "1.0.0",
+    "description":  "SQLTriage Tool",
+    "scripts":  {
+                    "build:css":  "tailwindcss -i wwwroot/css/tailwind-input.css -o wwwroot/css/tailwind.css --minify",
+                    "watch:css":  "tailwindcss -i wwwroot/css/tailwind-input.css -o wwwroot/css/tailwind.css --watch"
+                },
+    "devDependencies":  {
+                            "tailwindcss":  "^3.4.17"
+                        }
 }

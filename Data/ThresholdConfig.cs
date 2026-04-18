@@ -1,7 +1,7 @@
 /* In the name of God, the Merciful, the Compassionate */
 
 using System.Collections.Generic;
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     public class Threshold
     {

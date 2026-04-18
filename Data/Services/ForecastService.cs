@@ -1,10 +1,10 @@
 /* In the name of God, the Merciful, the Compassionate */
 
-using SqlHealthAssessment.Data.Caching;
-using SqlHealthAssessment.Data.Models;
+using SQLTriage.Data.Caching;
+using SQLTriage.Data.Models;
 using Microsoft.Extensions.Logging;
 
-namespace SqlHealthAssessment.Data.Services
+namespace SQLTriage.Data.Services
 {
     /// <summary>
     /// Provides linear regression-based forecasting for time-series metrics.

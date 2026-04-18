@@ -7,7 +7,7 @@ using System.Text;
 
 
 #pragma warning disable CA1416 // Windows-only API — project targets net8.0-windows
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     /// <summary>
     /// Encrypts and decrypts sensitive strings using layered encryption:
@@ -20,7 +20,7 @@ namespace SqlHealthAssessment.Data
     public static class CredentialProtector
     {
         private static readonly byte[] AppEntropy =
-            Encoding.UTF8.GetBytes("SqlHealthAssessment.LiveMonitor.v1");
+            Encoding.UTF8.GetBytes("SQLTriage.SQLTriage.v1");
 
         // AES key file location — next to the exe, protected by NTFS + DPAPI machine scope
         private static readonly string KeyFilePath =

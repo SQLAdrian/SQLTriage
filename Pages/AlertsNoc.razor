@@ -1,15 +1,15 @@
 <!--/* In the name of God, the Merciful, the Compassionate */-->
 @page "/alerts-noc"
-@using SqlHealthAssessment.Data
-@using SqlHealthAssessment.Data.Models
-@using SqlHealthAssessment.Data.Services
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
 @inject AlertDefinitionService Definitions
 @inject AlertEvaluationService Engine
 @inject AlertHistoryService History
 @inject ServerConnectionManager ConnectionManager
 @inject AlertBaselineService Baseline
-@inject SqlHealthAssessment.Data.Services.AppUserState UserState
-@inject SqlHealthAssessment.Data.ToastService Toast
+@inject SQLTriage.Data.Services.AppUserState UserState
+@inject SQLTriage.Data.ToastService Toast
 @implements IDisposable
 
 <div style="padding: 16px; max-width: 100%;">

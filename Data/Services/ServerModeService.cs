@@ -13,8 +13,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Radzen;
 using Serilog;
-using SqlHealthAssessment.Data.Caching;
-using SqlHealthAssessment.Data.Models;
+using SQLTriage.Data.Caching;
+using SQLTriage.Data.Models;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
@@ -24,7 +24,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
-namespace SqlHealthAssessment.Data.Services
+namespace SQLTriage.Data.Services
 {
     /// <summary>
     /// Manages a Blazor Server (Kestrel) host that serves the same UI via browser.
@@ -59,7 +59,7 @@ namespace SqlHealthAssessment.Data.Services
                 Port = FindAvailablePort(Port);
 
                 // Resolve the source project wwwroot (not in build output for Blazor Hybrid)
-                var manifestPath = Path.Combine(AppContext.BaseDirectory, "SqlHealthAssessment.staticwebassets.runtime.json");
+                var manifestPath = Path.Combine(AppContext.BaseDirectory, "SQLTriage.staticwebassets.runtime.json");
                 string webRoot;
                 if (File.Exists(manifestPath))
                 {
@@ -389,7 +389,7 @@ namespace SqlHealthAssessment.Data.Services
 
             using var rsa = RSA.Create(2048);
             var request = new CertificateRequest(
-                $"CN=SQL Health Assessment ({hostName})",
+                $"CN=SQLTriage ({hostName})",
                 rsa,
                 HashAlgorithmName.SHA256,
                 RSASignaturePadding.Pkcs1);
@@ -478,7 +478,7 @@ namespace SqlHealthAssessment.Data.Services
                 var html = $@"<!DOCTYPE html>
 <html><head><title>Sign In</title></head>
 <body style='background:#1a1a2e;color:#eee;font-family:Consolas;padding:40px;text-align:center'>
-<h1>SQL Health Assessment</h1>
+<h1>SQLTriage</h1>
 <h2>Sign In</h2>
 <div style='margin:20px'>{string.Join("<br/><br/>", providers)}</div>
 </body></html>";

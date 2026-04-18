@@ -4,13 +4,15 @@
     "file":        "relative path under Data/Sql/ to the .sql file",
     "description": "one-line human description",
     "category":    "Security | Performance | Reliability | Cost | Compliance",
-    "severity":    "CRITICAL | HIGH | MEDIUM | LOW | INFO (Information-level findings — excluded from Quick Check scoring)",
-    "status":      "working | broken | deprecated — broken checks skipped at load; resolves 343 vs 489 count ambiguity via per-check flag",
-    "quick":       "boolean — included in Quick Check ≤60s subset (Information-priority auto-excluded)",
-    "audience":    "array of dba|it|exec — who sees the translated finding",
-    "governance":  "optional per-check scoring override {categoryWeight?: number, perFindingCap?: number} — primary scoring binds to check_id, category mapping lives in source check YAML (not in governance-weights.json)",
-    "controls":    "array of compliance control IDs (SOC2-CC6.1, HIPAA-164.312, ...)",
-    "timeoutSec":  "optional per-check command timeout; defaults to Settings value"
+    "severity":         "CRITICAL | HIGH | MEDIUM | LOW | INFO (Information-level findings — excluded from Quick Check scoring, contribute 0 to governance score)",
+    "status":           "working | broken | deprecated — broken checks skipped at load; resolves 343 vs 489 count ambiguity via per-check flag",
+    "quick":            "boolean — included in Quick Check ≤60s subset (Information-priority auto-excluded)",
+    "audience":         "array of dba|it|exec — who sees the translated finding",
+    "governance":       "optional per-check scoring override {categoryWeight?: number, perFindingCap?: number} — primary scoring binds to check_id; category mapping in governance-weights.json categoryMapping block",
+    "controls":         "array of compliance control IDs populated by agent pass from evidence_based_findings via Config/control_mappings_lookup.md — e.g. ['SOC2-CC6.1', 'HIPAA-164.312']",
+    "timeoutSec":       "optional per-check command timeout override; defaults to severity-based value (CRITICAL/HIGH=8s, MEDIUM=12s, HIGH-complexity=20s)",
+    "sourceYamlHash":   "SHA256 of the source YAML block in consolidated_checks.sql at agent-pass time — CI warns if source changed but entry not regenerated",
+    "wanBanner":        "optional override for WAN degraded-performance banner text; default: 'Remote server detected — results may take longer on high-latency connections (>15ms RTT)'"
   },
 
   "_example_fill_in_during_week_1": {

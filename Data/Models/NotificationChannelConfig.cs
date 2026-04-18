@@ -2,7 +2,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace SqlHealthAssessment.Data.Models
+namespace SQLTriage.Data.Models
 {
     /// <summary>
     /// Root configuration for all outbound notification channels.
@@ -65,7 +65,7 @@ namespace SqlHealthAssessment.Data.Models
         public string FromAddress { get; set; } = string.Empty;
 
         [JsonPropertyName("fromName")]
-        public string FromName { get; set; } = "SQL Health Assessment";
+        public string FromName { get; set; } = "SQLTriage";
 
         [JsonPropertyName("replyToAddress")]
         public string ReplyToAddress { get; set; } = string.Empty;
@@ -134,7 +134,7 @@ namespace SqlHealthAssessment.Data.Models
         public string Channel { get; set; } = string.Empty;
 
         [JsonPropertyName("username")]
-        public string Username { get; set; } = "SQL Health Assessment";
+        public string Username { get; set; } = "SQLTriage";
 
         [JsonPropertyName("minimumSeverity")]
         public string MinimumSeverity { get; set; } = "warning";

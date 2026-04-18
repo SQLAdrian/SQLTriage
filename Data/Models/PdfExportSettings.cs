@@ -1,6 +1,6 @@
 /* In the name of God, the Merciful, the Compassionate */
 
-namespace SqlHealthAssessment.Data.Models;
+namespace SQLTriage.Data.Models;
 
 /// <summary>Settings returned when the user confirms a PDF export via PdfExportModal.</summary>
 public class PdfExportSettings

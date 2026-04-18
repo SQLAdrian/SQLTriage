@@ -3,7 +3,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     public class ToastService
     {

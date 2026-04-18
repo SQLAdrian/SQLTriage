@@ -1,6 +1,6 @@
 @* /* In the name of God, the Merciful, the Compassionate */ *@
 @page "/service-management"
-@using SqlHealthAssessment.Data.Services
+@using SQLTriage.Data.Services
 @using Microsoft.AspNetCore.Components.Forms
 @using Microsoft.Extensions.Logging
 @using System.Diagnostics
@@ -8,7 +8,7 @@
 @inject ILogger<ServiceManagement> Logger
 @inject ToastService Toast
 @inject AutoUpdateService UpdateService
-@inject SqlHealthAssessment.Data.Services.AppUserState UserState
+@inject SQLTriage.Data.Services.AppUserState UserState
 
 @if (!RbacService.HasPermission(UserState.Role, "settings"))
 {
@@ -292,12 +292,12 @@
     <div class="settings-group">
         <h3><i class="fa-solid fa-terminal" style="color: var(--text-secondary); margin-right: 8px;"></i>Command Line Reference</h3>
         <div style="font-size: 12px; font-family: monospace; color: var(--text-secondary); line-height: 1.8;">
-            <div><span style="color: var(--accent);">Install:</span> SqlHealthAssessment.exe --service --install</div>
-            <div><span style="color: var(--accent);">Install (custom):</span> SqlHealthAssessment.exe --service --install --username DOMAIN\User --password ***</div>
-            <div><span style="color: var(--accent);">Uninstall:</span> SqlHealthAssessment.exe --service --uninstall</div>
-            <div><span style="color: var(--accent);">Run (console):</span> SqlHealthAssessment.exe --service</div>
-            <div><span style="color: var(--accent);">Start:</span> sc start SqlHealthAssessment</div>
-            <div><span style="color: var(--accent);">Stop:</span> sc stop SqlHealthAssessment</div>
+            <div><span style="color: var(--accent);">Install:</span> SQLTriage.exe --service --install</div>
+            <div><span style="color: var(--accent);">Install (custom):</span> SQLTriage.exe --service --install --username DOMAIN\User --password ***</div>
+            <div><span style="color: var(--accent);">Uninstall:</span> SQLTriage.exe --service --uninstall</div>
+            <div><span style="color: var(--accent);">Run (console):</span> SQLTriage.exe --service</div>
+            <div><span style="color: var(--accent);">Start:</span> sc start SQLTriage</div>
+            <div><span style="color: var(--accent);">Stop:</span> sc stop SQLTriage</div>
         </div>
     </div>
 </div>
@@ -337,7 +337,7 @@
     protected override void OnInitialized()
     {
         _exePath = Process.GetCurrentProcess().MainModule?.FileName
-            ?? Path.Combine(AppContext.BaseDirectory, "SqlHealthAssessment.exe");
+            ?? Path.Combine(AppContext.BaseDirectory, "SQLTriage.exe");
         _ = RefreshStatus();
     }
 

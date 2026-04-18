@@ -1,9 +1,9 @@
 /* In the name of God, the Merciful, the Compassionate */
 
 using System.Collections.Generic;
-using SqlHealthAssessment.Data.Models;
+using SQLTriage.Data.Models;
 
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     /// <summary>
     /// Generates the default dashboard configuration that matches the current hardcoded behavior exactly.

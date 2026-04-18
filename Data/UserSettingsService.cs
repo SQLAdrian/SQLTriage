@@ -4,7 +4,7 @@ using System;
 using System.IO;
 using System.Text.Json;
 
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     /// <summary>
     /// Service for managing user settings that persist across sessions.
@@ -19,7 +19,7 @@ namespace SqlHealthAssessment.Data
 
         public UserSettingsService()
         {
-            var appDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SqlHealthAssessment");
+            var appDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SQLTriage");
             Directory.CreateDirectory(appDataDir);
             _settingsFilePath = Path.Combine(appDataDir, "user-settings.json");
             _settings = LoadSettings();

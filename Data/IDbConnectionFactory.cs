@@ -3,7 +3,7 @@
 using System.Data;
 using System.Threading.Tasks;
 
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     public interface IDbConnectionFactory
     {

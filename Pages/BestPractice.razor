@@ -1,12 +1,12 @@
 @page "/bestpractice"
-@using SqlHealthAssessment.Data
-@using SqlHealthAssessment.Data.Models
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
 @using System.Data
 @using Microsoft.Data.SqlClient
 @inject BPScriptService BPService
 @inject IDbConnectionFactory ConnectionFactory
 @inject NavigationManager Nav
-@inject SqlHealthAssessment.Data.Services.AppUserState UserState
+@inject SQLTriage.Data.Services.AppUserState UserState
 
 @if (!RbacService.HasPermission(UserState.Role, "run_scripts"))
 {

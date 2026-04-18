@@ -1,15 +1,15 @@
 /* In the name of God, the Merciful, the Compassionate */
 
 using Microsoft.Data.SqlClient;
-using SqlHealthAssessment.Data;
-using SqlHealthAssessment.Data.Services.Assessment;
+using SQLTriage.Data;
+using SQLTriage.Data.Services.Assessment;
 using Microsoft.Extensions.Logging;
 using Microsoft.SqlServer.Management.Assessment;
 using Microsoft.SqlServer.Management.Common;
 using System.IO;
 using System.Text.Json;
 
-namespace SqlHealthAssessment.Data.Services;
+namespace SQLTriage.Data.Services;
 
 /// <summary>
 /// Service for running SQL Vulnerability Assessment using Microsoft SQL Assessment API

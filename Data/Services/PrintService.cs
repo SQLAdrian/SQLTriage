@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.JSInterop;
 using Microsoft.Web.WebView2.Core;
 
-namespace SqlHealthAssessment.Data.Services
+namespace SQLTriage.Data.Services
 {
     /// <summary>
     /// Wraps CoreWebView2.PrintToPdfAsync to export the current page as a multi-page PDF,

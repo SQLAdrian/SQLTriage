@@ -3,7 +3,7 @@
 using System;
 using System.Security.Cryptography;
 
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     /// <summary>
     /// Shared AES-256-GCM encrypt/decrypt primitives.

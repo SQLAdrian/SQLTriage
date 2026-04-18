@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 using Microsoft.JSInterop;
 using Microsoft.Web.WebView2.Core;
 
-namespace SqlHealthAssessment.Data.Services
+namespace SQLTriage.Data.Services
 {
     /// <summary>
     /// Abstraction over PrintService — enables testing and server-mode fallback without WebView2 dependency.

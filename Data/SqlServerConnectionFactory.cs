@@ -6,9 +6,9 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Data.SqlClient;
 using System.Threading.Tasks;
-using SqlHealthAssessment.Data.Models;
+using SQLTriage.Data.Models;
 
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     public class SqlServerConnectionFactory : IDbConnectionFactory
     {
@@ -54,7 +54,7 @@ namespace SqlHealthAssessment.Data
             // Enterprise Polish: Set Application Name for better observability in SQL traces/Audit
             if (string.IsNullOrEmpty(builder.ApplicationName) || builder.ApplicationName == ".Net SqlClient Data Provider")
             {
-                builder.ApplicationName = "SQL Health Assessment";
+                builder.ApplicationName = "SQLTriage";
             }
             return builder.ConnectionString;
         }

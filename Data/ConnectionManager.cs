@@ -6,9 +6,9 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using SqlHealthAssessment.Data.Models;
+using SQLTriage.Data.Models;
 
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     public class ServerConnectionManager : IServerConnectionManager
     {

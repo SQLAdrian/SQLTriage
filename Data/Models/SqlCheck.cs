@@ -2,7 +2,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace SqlHealthAssessment.Data.Models
+namespace SQLTriage.Data.Models
 {
     /// <summary>
     /// Represents a SQLWATCH check configuration stored in sql-checks.json

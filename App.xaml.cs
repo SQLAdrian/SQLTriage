@@ -7,13 +7,13 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Serilog;
 using Serilog.Core;
-using SqlHealthAssessment.Data;
-using SqlHealthAssessment.Data.Caching;
-using SqlHealthAssessment.Data.Models;
+using SQLTriage.Data;
+using SQLTriage.Data.Caching;
+using SQLTriage.Data.Models;
 
 #pragma warning disable CA1416 // Windows-only API — project targets net8.0-windows
 
-namespace SqlHealthAssessment
+namespace SQLTriage
 {
     public partial class App : Application
     {
@@ -43,7 +43,7 @@ namespace SqlHealthAssessment
                 .MinimumLevel.ControlledBy(LogLevelSwitch)
                 .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
                 .Enrich.FromLogContext()
-                .Enrich.WithProperty("Application", "SqlHealthAssessment")
+                .Enrich.WithProperty("Application", "SQLTriage")
                 .Enrich.WithProperty("User", Environment.UserName)
                 .Enrich.WithProperty("Machine", Environment.MachineName)
                 .WriteTo.File(

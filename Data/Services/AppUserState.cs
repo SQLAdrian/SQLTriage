@@ -3,9 +3,9 @@
 using System.Net.Http;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using SqlHealthAssessment.Data.Models;
+using SQLTriage.Data.Models;
 
-namespace SqlHealthAssessment.Data.Services
+namespace SQLTriage.Data.Services
 {
     /// <summary>
     /// Scoped service that holds the current user's role for the duration of a Blazor circuit.

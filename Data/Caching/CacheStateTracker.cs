@@ -3,7 +3,7 @@
 using System;
 using System.Collections.Concurrent;
 
-namespace SqlHealthAssessment.Data.Caching
+namespace SQLTriage.Data.Caching
 {
     /// <summary>
     /// Tracks per-dashboard filter state to detect when a full cache invalidation

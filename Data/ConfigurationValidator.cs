@@ -7,7 +7,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     public class ConfigurationValidator
     {

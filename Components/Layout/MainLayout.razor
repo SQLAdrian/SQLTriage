@@ -1,25 +1,25 @@
 <!--/* In the name of God, the Merciful, the Compassionate */-->
 @using Microsoft.AspNetCore.Components.Routing
 @using Microsoft.AspNetCore.Components.Web
-@using SqlHealthAssessment.Components.Shared
-@using SqlHealthAssessment.Data
+@using SQLTriage.Components.Shared
+@using SQLTriage.Data
 @using Radzen.Blazor
-@inject SqlHealthAssessment.Data.Services.KeyboardShortcutService ShortcutSvc
-@inject SqlHealthAssessment.Data.UserSettingsService UserSettings
-@inject SqlHealthAssessment.Data.ServerConnectionManager ConnectionManager
-@inject SqlHealthAssessment.Data.AutoUpdateService AutoUpdate
-@inject SqlHealthAssessment.Data.Services.NotificationChannelService ChannelService
+@inject SQLTriage.Data.Services.KeyboardShortcutService ShortcutSvc
+@inject SQLTriage.Data.UserSettingsService UserSettings
+@inject SQLTriage.Data.ServerConnectionManager ConnectionManager
+@inject SQLTriage.Data.AutoUpdateService AutoUpdate
+@inject SQLTriage.Data.Services.NotificationChannelService ChannelService
 @implements IDisposable
 
 <!-- Skip link for screen readers -->
 <a href="#main-content" class="skip-link">Skip to main content</a>
 
 <div class="print-header" aria-hidden="true">
-    <span class="print-header-brand"><i class="fa-solid fa-heart-pulse"></i> SQL Health Assessment</span>
+    <span class="print-header-brand"><i class="fa-solid fa-heart-pulse"></i> SQLTriage</span>
     <span class="print-header-date" id="print-header-date"></span>
 </div>
 <div class="print-footer" aria-hidden="true">
-    <span class="print-footer-label">SQL Health Assessment — Internal Use Only</span>
+    <span class="print-footer-label">SQLTriage — Internal Use Only</span>
     <span class="print-footer-page">Page <span class="print-page-num"></span></span>
 </div>
 
@@ -35,7 +35,7 @@
     </ErrorBoundary>
 }
 
-<div class="app-container" tabindex="0" role="application" aria-label="SQL Health Assessment Application" @onkeydown="HandleKeyDown">
+<div class="app-container" tabindex="0" role="application" aria-label="SQLTriage Application" @onkeydown="HandleKeyDown">
     <ToastContainer />
     <ShortcutsDialog IsVisible="@showShortcuts" OnClose="@(() => showShortcuts = false)" />
     <OnboardingWizard IsVisible="@_showOnboarding" OnComplete="OnOnboardingComplete" />

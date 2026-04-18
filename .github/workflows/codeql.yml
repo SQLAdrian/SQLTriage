@@ -39,9 +39,9 @@ jobs:
           build-mode: manual
           queries: security-extended
 
-      - name: Build
-        shell: bash
-        run: dotnet build SqlHealthAssessment.sln -c Debug
+       - name: Build
+         shell: bash
+         run: dotnet build SQLTriage.sln -c Debug
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4

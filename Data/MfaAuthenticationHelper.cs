@@ -3,7 +3,7 @@
 using System;
 using System.Threading;
 
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     /// <summary>
     /// Helpers for Microsoft Entra MFA (Azure AD Interactive) authentication.

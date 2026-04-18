@@ -1,8 +1,8 @@
 <!--/* In the name of God, the Merciful, the Compassionate */-->
 @page "/fullaudit"
 
-@using SqlHealthAssessment.Data
-@using SqlHealthAssessment.Data.Models
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
 @using System.IO
 @using System.Text
 @using Microsoft.Extensions.Logging
@@ -13,26 +13,26 @@
 @inject FullAuditStateService AuditState
 @inject IJSRuntime JSRuntime
 @inject ILogger<FullAudit> Logger
-@inject SqlHealthAssessment.Data.ToastService Toast
-@inject SqlHealthAssessment.Data.Services.ReportPageConfigService ReportPageCfg
+@inject SQLTriage.Data.ToastService Toast
+@inject SQLTriage.Data.Services.ReportPageConfigService ReportPageCfg
 @inject UserSettingsService UserSettings
 @implements IDisposable
-<PageTitle>Full Audit - SQLHealthAssessment</PageTitle>
+<PageTitle>Full Audit - SQLTriage</PageTitle>
 
-<SqlHealthAssessment.Components.Shared.SectionEditorModal IsVisible="_faEditingSection != null"
+<SQLTriage.Components.Shared.SectionEditorModal IsVisible="_faEditingSection != null"
     Section="_faEditingSection"
     NativeKeys="_faAvailableNativeKeys"
     AvailableFields="_faFields"
     OnSave="FaHandleSectionSaved"
     OnCancel="() => _faEditingSection = null" />
 
-<SqlHealthAssessment.Components.Shared.AddSectionModal IsVisible="_faShowAddSection"
+<SQLTriage.Components.Shared.AddSectionModal IsVisible="_faShowAddSection"
     NativeKeys="_faAvailableNativeKeys"
     OnAdd="FaHandleSectionAdded"
     OnCancel="() => _faShowAddSection = false" />
 
 <div class="full-audit-container">
-    <SqlHealthAssessment.Components.Shared.EditPageToolbar EditMode="_faEditMode"
+    <SQLTriage.Components.Shared.EditPageToolbar EditMode="_faEditMode"
         PageTitle="Full Audit"
         HasUnsavedChanges="false"
         OnAddSection="() => _faShowAddSection = true"
@@ -57,7 +57,7 @@
     else
     {
         <!-- Server Connection Section -->
-        <SqlHealthAssessment.Components.Shared.ReportSectionWrapper Section="@FaGetSection("server-selection")" EditMode="_faEditMode"
+        <SQLTriage.Components.Shared.ReportSectionWrapper Section="@FaGetSection("server-selection")" EditMode="_faEditMode"
             IsFirst="@FaIsFirst("server-selection")" IsLast="@FaIsLast("server-selection")"
             OnMoveUp="s => FaMoveSection(s, -1)" OnMoveDown="s => FaMoveSection(s, 1)"
             OnEdit="s => _faEditingSection = s" OnDelete="s => FaDeleteSection(s)"
@@ -142,12 +142,12 @@
                 </div>
             </div>
         }
-        </SqlHealthAssessment.Components.Shared.ReportSectionWrapper>
+        </SQLTriage.Components.Shared.ReportSectionWrapper>
 
         <!-- Scripts + Progress Section -->
         @if (SelectedConnection != null && SelectedServer != null)
         {
-            <SqlHealthAssessment.Components.Shared.ReportSectionWrapper Section="@FaGetSection("progress")" EditMode="_faEditMode"
+            <SQLTriage.Components.Shared.ReportSectionWrapper Section="@FaGetSection("progress")" EditMode="_faEditMode"
                 IsFirst="@FaIsFirst("progress")" IsLast="@FaIsLast("progress")"
                 OnMoveUp="s => FaMoveSection(s, -1)" OnMoveDown="s => FaMoveSection(s, 1)"
                 OnEdit="s => _faEditingSection = s" OnDelete="s => FaDeleteSection(s)"
@@ -311,12 +311,12 @@
                     }
                 </div>
             </div>
-            </SqlHealthAssessment.Components.Shared.ReportSectionWrapper>
+            </SQLTriage.Components.Shared.ReportSectionWrapper>
 
             <!-- Summary / Results Section -->
             @if (_executionResults.Count > 0)
             {
-                <SqlHealthAssessment.Components.Shared.ReportSectionWrapper Section="@FaGetSection("results")" EditMode="_faEditMode"
+                <SQLTriage.Components.Shared.ReportSectionWrapper Section="@FaGetSection("results")" EditMode="_faEditMode"
                     IsFirst="@FaIsFirst("results")" IsLast="@FaIsLast("results")"
                     OnMoveUp="s => FaMoveSection(s, -1)" OnMoveDown="s => FaMoveSection(s, 1)"
                     OnEdit="s => _faEditingSection = s" OnDelete="s => FaDeleteSection(s)"
@@ -363,7 +363,7 @@
                         </tbody>
                     </table>
                 </div>
-                </SqlHealthAssessment.Components.Shared.ReportSectionWrapper>
+                </SQLTriage.Components.Shared.ReportSectionWrapper>
             }
         }
         else if (SelectedConnection != null)

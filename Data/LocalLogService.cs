@@ -2,7 +2,7 @@
 
 using Microsoft.Extensions.Logging;
 
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     /// <summary>
     /// Thin wrapper over ILogger so Blazor components can inject a named logger

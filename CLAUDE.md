@@ -1,7 +1,7 @@
 <!-- In the name of God, the Merciful, the Compassionate -->
 <!-- Bismillah ar-Rahman ar-Raheem -->
 
-# SQL Health Assessment
+# SQLTriage
 
 Blazor Hybrid WPF (.NET 8), single-exe Windows desktop. Falls back to Blazor Server if WebView2 missing.
 
@@ -31,7 +31,7 @@ Blazor Hybrid WPF (.NET 8), single-exe Windows desktop. Falls back to Blazor Ser
 
 ## Build
 ```
-dotnet build SqlHealthAssessment.sln
+dotnet build SQLTriage.sln
 dotnet publish -c Release -r win-x64
 ./increment-build.ps1   # bumps Config/version.json
 ```

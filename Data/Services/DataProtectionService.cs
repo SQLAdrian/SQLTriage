@@ -7,7 +7,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
-namespace SqlHealthAssessment.Data.Services
+namespace SQLTriage.Data.Services
 {
     /// <summary>
     /// Enterprise-grade in-memory data protection for sensitive dashboard data.

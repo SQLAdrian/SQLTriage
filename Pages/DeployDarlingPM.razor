@@ -3,7 +3,7 @@
 
 @using System.IO
 @using System.Diagnostics
-@using SqlHealthAssessment.Data.Services
+@using SQLTriage.Data.Services
 @inject ServerConnectionManager ConnectionManager
 @inject AdminAuthService AdminAuth
 @inject NavigationManager NavigationManager
@@ -409,7 +409,7 @@
 
         try
         {
-            Log($"Performance Monitor Installer — SQL Health Assessment");
+            Log($"Performance Monitor Installer — SQLTriage");
             Log($"Server: {_serverInfo?.ServerName}");
             Log("");
 
@@ -472,7 +472,7 @@
 
                     _reportPath = PMInstallationService.GenerateSummaryReport(
                         _serverInfo.ServerName, _serverInfo.SqlServerVersion,
-                        _serverInfo.SqlServerEdition, "SQL Health Assessment", result);
+                        _serverInfo.SqlServerEdition, "SQLTriage", result);
 
                     Log($"Report saved: {_reportPath}");
                 }

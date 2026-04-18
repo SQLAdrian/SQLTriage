@@ -1,20 +1,20 @@
 <!--/* In the name of God, the Merciful, the Compassionate */-->
 @page "/quickcheck"
 
-@using SqlHealthAssessment.Data
-@using SqlHealthAssessment.Data.Models
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
 @using System.IO
 @inject CheckRepositoryService CheckRepo
 @inject CheckExecutionService CheckExecutor
 @inject ServerConnectionManager ConnectionManager
 @inject UserSettingsService UserSettings
 @inject QuickCheckStateService State
-@inject SqlHealthAssessment.Data.Services.PrintService PrintSvc
-@inject SqlHealthAssessment.Data.Services.ReportPageConfigService ReportPageCfg
-@inject SqlHealthAssessment.Data.ToastService Toast
-@inject SqlHealthAssessment.Data.Services.KeyboardShortcutService ShortcutSvc
+@inject SQLTriage.Data.Services.PrintService PrintSvc
+@inject SQLTriage.Data.Services.ReportPageConfigService ReportPageCfg
+@inject SQLTriage.Data.ToastService Toast
+@inject SQLTriage.Data.Services.KeyboardShortcutService ShortcutSvc
 @inject IJSRuntime JSRuntime
-@inject SqlHealthAssessment.Data.Services.AppUserState UserState
+@inject SQLTriage.Data.Services.AppUserState UserState
 @implements IDisposable
 
 <PdfExportModal @ref="_pdfModal"

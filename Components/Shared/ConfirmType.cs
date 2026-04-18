@@ -1,6 +1,6 @@
 /* In the name of God, the Merciful, the Compassionate */
 
-namespace SqlHealthAssessment.Components.Shared
+namespace SQLTriage.Components.Shared
 {
     public enum ConfirmType
     {

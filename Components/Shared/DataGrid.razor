@@ -237,7 +237,7 @@
     [Parameter] public Func<string, CancellationToken, Task<(bool success, string message)>>? OnActionExecute { get; set; }
 
     /// <summary>Column-level color gradient rules. Applies color to cell text based on numeric value within the column's data range.</summary>
-    [Parameter] public List<SqlHealthAssessment.Data.Models.DataGridColumnColorRule>? ColumnColorRules { get; set; }
+    [Parameter] public List<SQLTriage.Data.Models.DataGridColumnColorRule>? ColumnColorRules { get; set; }
 
     /// <summary>Column name containing job names. When set with OnRunJob, renders a play button per row.</summary>
     [Parameter] public string? RunJobColumn { get; set; }

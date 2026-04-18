@@ -6,11 +6,11 @@ using System.Data;
 using System.Data.Common;
 using System.Text;
 using System.Threading.Tasks;
-using SqlHealthAssessment.Data.Models;
+using SQLTriage.Data.Models;
 using Microsoft.Data.SqlClient;
 using Microsoft.Data.Sqlite;
 
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     /// <summary>
     /// Service for creating and managing liveQueries tables based on SQL Server query results.
@@ -22,7 +22,7 @@ namespace SqlHealthAssessment.Data
 
         public liveQueriesTableService()
         {
-            var dbPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "SqlHealthAssessment.db");
+            var dbPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "SQLTriage.db");
             _SqliteConnectionString = $"Data Source={dbPath}";
         }
 
@@ -105,7 +105,7 @@ namespace SqlHealthAssessment.Data
         }
 
         /// <summary>
-        /// Executes a query against the local SqlHealthAssessment.db liveQueries database and
+        /// Executes a query against the local SQLTriage.db liveQueries database and
         /// returns up to <paramref name="maxRows"/> rows as a DataTable.
         /// </summary>
         public async Task<(bool Success, string Message, DataTable? Results)> ExecuteliveQueriesQueryAsync(

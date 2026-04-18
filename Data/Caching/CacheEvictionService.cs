@@ -5,7 +5,7 @@ using System.Threading;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
-namespace SqlHealthAssessment.Data.Caching
+namespace SQLTriage.Data.Caching
 {
     /// <summary>
     /// Runs periodic cache eviction on a timer (default: every 5 minutes).

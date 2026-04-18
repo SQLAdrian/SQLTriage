@@ -35,7 +35,7 @@ Instead, please report them via:
 
 ## Security Best Practices
 
-When using SQL Health Assessment:
+When using SQLTriage:
 
 - **Credentials**: Use Windows Authentication when possible
 - **Least Privilege**: Grant only required permissions (VIEW SERVER STATE, VIEW DATABASE STATE)

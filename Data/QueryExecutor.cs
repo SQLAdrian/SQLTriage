@@ -7,11 +7,11 @@ using System.Data;
 using System.Text.RegularExpressions;
 using Microsoft.Data.SqlClient;
 using System.Threading.Tasks;
-using SqlHealthAssessment.Data.Models;
+using SQLTriage.Data.Models;
 using Microsoft.Extensions.Configuration;
 using Polly;
 
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     /// <summary>
     /// Executes parameterized queries from the QueryStore against the configured database.

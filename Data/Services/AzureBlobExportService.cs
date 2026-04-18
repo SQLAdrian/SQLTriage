@@ -14,7 +14,7 @@ using Azure.Storage.Blobs.Models;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
-namespace SqlHealthAssessment.Data.Services
+namespace SQLTriage.Data.Services
 {
     /// <summary>
     /// Exports query results and assessment data as CSV files to Azure Blob Storage.
@@ -93,7 +93,7 @@ namespace SqlHealthAssessment.Data.Services
             _connectionString = DecryptIfNeeded(_configuration["AzureBlobExport:ConnectionString"]);
             _sasToken = DecryptIfNeeded(_configuration["AzureBlobExport:SasToken"]);
             _storageAccountName = NormalizeAccountName(_configuration["AzureBlobExport:StorageAccountName"]);
-            var rawContainer = _configuration["AzureBlobExport:ContainerName"] ?? "sqlhealthassessment";
+            var rawContainer = _configuration["AzureBlobExport:ContainerName"] ?? "SQLTriage";
             var configPrefix = _configuration["AzureBlobExport:BlobPrefix"] ?? "";
             rawContainer = rawContainer.Trim('/');
             var slashIdx = rawContainer.IndexOf('/');
@@ -134,7 +134,7 @@ namespace SqlHealthAssessment.Data.Services
             if (connectionString != null) _connectionString = connectionString;
             if (sasToken != null) _sasToken = sasToken;
             if (storageAccountName != null) _storageAccountName = NormalizeAccountName(storageAccountName);
-            containerName = string.IsNullOrWhiteSpace(containerName) ? "sqlhealthassessment" : containerName.Trim('/');
+            containerName = string.IsNullOrWhiteSpace(containerName) ? "SQLTriage" : containerName.Trim('/');
             // If the user entered "container/path", split into container + prefix
             var slashIndex = containerName.IndexOf('/');
             if (slashIndex > 0)
@@ -180,7 +180,7 @@ namespace SqlHealthAssessment.Data.Services
                             ["ConnectionString"] = !string.IsNullOrEmpty(_connectionString) ? CredentialProtector.Encrypt(_connectionString) : "",
                             ["SasToken"] = !string.IsNullOrEmpty(_sasToken) ? CredentialProtector.Encrypt(_sasToken) : "",
                             ["StorageAccountName"] = _storageAccountName ?? "",
-                            ["ContainerName"] = _containerName ?? "sqlhealthassessment",
+                            ["ContainerName"] = _containerName ?? "SQLTriage",
                             ["BlobPrefix"] = _blobPrefix ?? "",
                             ["CompressUploads"] = _compressUploads.ToString().ToLower(),
                             ["UploadMethod"] = _uploadMethod,

@@ -1,11 +1,11 @@
 <!--/* In the name of God, the Merciful, the Compassionate */-->
 @page "/servers"
 @inject ServerConnectionManager ConnectionManager
-@inject SqlHealthAssessment.Data.Services.AppUserState UserState
+@inject SQLTriage.Data.Services.AppUserState UserState
 @using Microsoft.Data.SqlClient
-@using SqlHealthAssessment.Data
-@using SqlHealthAssessment.Data.Models
-@using SqlHealthAssessment.Data.Services
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
 
 @if (!RbacService.HasPermission(UserState.Role, "manage_servers"))
 {

@@ -11,11 +11,11 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using SqlHealthAssessment.Data.Models;
-using SqlHealthAssessment.Data.Services;
+using SQLTriage.Data.Models;
+using SQLTriage.Data.Services;
 using Microsoft.Data.Sqlite;
 
-namespace SqlHealthAssessment.Data.Caching
+namespace SQLTriage.Data.Caching
 {
     /// <summary>
     /// Manages the local liveQueries cache database for dashboard query results.
@@ -64,7 +64,7 @@ namespace SqlHealthAssessment.Data.Caching
         {
             _dataProtection = dataProtection;
             _userSettings = userSettings;
-            var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "SqlHealthAssessment-cache.db");
+            var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "SQLTriage-cache.db");
             _connectionString = $"Data Source={dbPath};Mode=ReadWriteCreate;Cache=Shared";
             InitializeSchema();
         }

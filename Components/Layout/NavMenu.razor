@@ -1,7 +1,7 @@
 <!--/* In the name of God, the Merciful, the Compassionate */-->
 @using Microsoft.AspNetCore.Components.Routing
-@using SqlHealthAssessment.Data
-@using SqlHealthAssessment.Data.Models
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
 @inject AutoUpdateService UpdateService
 @inject DatabaseAvailabilityService DbAvailability
 @inject DashboardConfigService DashboardConfig
@@ -9,8 +9,8 @@
 @inject UserSettingsService UserSettings
 @inject AuditLogService AuditLog
 @inject IJSRuntime JS
-@inject SqlHealthAssessment.Data.Services.ConnectionHealthService ConnectionHealth
-@inject SqlHealthAssessment.Data.Services.AppUserState UserState
+@inject SQLTriage.Data.Services.ConnectionHealthService ConnectionHealth
+@inject SQLTriage.Data.Services.AppUserState UserState
 @inject GlobalInstanceSelector InstanceSelector
 @implements IAsyncDisposable
 
@@ -18,7 +18,7 @@
 <div class="nav-menu @(_collapsed ? "collapsed" : "")">
     <div style="padding:8px 12px 12px; border-bottom:1px solid var(--border); margin-bottom:8px; display:flex; align-items:center; gap:8px;">
         <span class="nav-brand-icon"><i class="fa-solid fa-heart-pulse"></i></span>
-        <span class="nav-brand-text nav-link-text">SQL Health Assessment</span>
+        <span class="nav-brand-text nav-link-text">SQLTriage</span>
         <button class="nav-collapse-btn" title="@(_collapsed ? "Expand sidebar" : "Collapse sidebar")"
                 @onclick="ToggleCollapse">
             <i class="fa-solid @(_collapsed ? "fa-angles-right" : "fa-angles-left")"></i>
@@ -235,15 +235,15 @@
                 {
                     var dot = kvp.Value.Status switch
                     {
-                        SqlHealthAssessment.Data.Services.ConnectionHealthService.ServerStatus.Online  => "#22c55e",
-                        SqlHealthAssessment.Data.Services.ConnectionHealthService.ServerStatus.Offline => "#e2583e",
+                        SQLTriage.Data.Services.ConnectionHealthService.ServerStatus.Online  => "#22c55e",
+                        SQLTriage.Data.Services.ConnectionHealthService.ServerStatus.Offline => "#e2583e",
                         _ => "#888"
                     };
-                    var tip = kvp.Value.Status == SqlHealthAssessment.Data.Services.ConnectionHealthService.ServerStatus.Offline && kvp.Value.Error != null
+                    var tip = kvp.Value.Status == SQLTriage.Data.Services.ConnectionHealthService.ServerStatus.Offline && kvp.Value.Error != null
                         ? kvp.Value.Error
                         : kvp.Value.Status.ToString();
                     <div style="display:flex; align-items:center; gap:5px; padding:1px 0;" title="@tip">
-                        <span style="width:7px; height:7px; border-radius:50%; background:@dot; flex-shrink:0; @(kvp.Value.Status == SqlHealthAssessment.Data.Services.ConnectionHealthService.ServerStatus.Offline ? "box-shadow:0 0 4px #e2583e66;" : "")"></span>
+                        <span style="width:7px; height:7px; border-radius:50%; background:@dot; flex-shrink:0; @(kvp.Value.Status == SQLTriage.Data.Services.ConnectionHealthService.ServerStatus.Offline ? "box-shadow:0 0 4px #e2583e66;" : "")"></span>
                         <span style="font-size:10px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">@kvp.Key</span>
                     </div>
                 }
@@ -288,21 +288,21 @@
             {
                 <div class="nav-report-popover" @onclick:stopPropagation>
                     <div class="nav-report-popover-title">Report or Connect</div>
-                    <a class="nav-report-item" href="https://github.com/SQLAdrian/SqlHealthAssessment/issues/new" target="_blank" @onclick="() => _showReportMenu = false">
+                    <a class="nav-report-item" href="https://github.com/SQLAdrian/SQLTriage/issues/new" target="_blank" @onclick="() => _showReportMenu = false">
                         <i class="fa-brands fa-github"></i>
                         <span>
                             <strong>Report a Bug</strong>
                             <small>Open a GitHub issue</small>
                         </span>
                     </a>
-                    <a class="nav-report-item" href="https://github.com/SQLAdrian/SqlHealthAssessment/discussions/new?category=ideas" target="_blank" @onclick="() => _showReportMenu = false">
+                    <a class="nav-report-item" href="https://github.com/SQLAdrian/SQLTriage/discussions/new?category=ideas" target="_blank" @onclick="() => _showReportMenu = false">
                         <i class="fa-regular fa-lightbulb"></i>
                         <span>
                             <strong>Feature Request</strong>
                             <small>GitHub Discussions</small>
                         </span>
                     </a>
-                    <a class="nav-report-item" href="mailto:adrian@sqldba.org?subject=LiveMonitor Feedback" target="_blank" @onclick="() => _showReportMenu = false">
+                    <a class="nav-report-item" href="mailto:adrian@sqldba.org?subject=SQLTriage Feedback" target="_blank" @onclick="() => _showReportMenu = false">
                         <i class="fa-solid fa-envelope"></i>
                         <span>
                             <strong>Email Adrian</strong>

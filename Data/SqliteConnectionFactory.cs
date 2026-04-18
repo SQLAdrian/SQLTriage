@@ -4,7 +4,7 @@ using System.Data;
 using Microsoft.Data.Sqlite;
 using System.Threading.Tasks;
 
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     /// <summary>
     /// Connection factory for liveQueries databases.

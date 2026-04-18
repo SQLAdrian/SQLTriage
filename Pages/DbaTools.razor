@@ -1,12 +1,12 @@
 <!--/* In the name of God, the Merciful, the Compassionate */-->
 @page "/dbatools"
-@inject SqlHealthAssessment.Data.Services.PowerShellService PS
-@inject SqlHealthAssessment.Data.ServerConnectionManager ConnectionManager
+@inject SQLTriage.Data.Services.PowerShellService PS
+@inject SQLTriage.Data.ServerConnectionManager ConnectionManager
 @inject IJSRuntime JS
-@inject SqlHealthAssessment.Data.Services.AppUserState UserState
+@inject SQLTriage.Data.Services.AppUserState UserState
 @using System.Data
 @using System.Linq
-@using SqlHealthAssessment.Data.Services
+@using SQLTriage.Data.Services
 @implements IDisposable
 
 @if (!RbacService.HasPermission(UserState.Role, "run_scripts"))

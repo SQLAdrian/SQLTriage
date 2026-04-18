@@ -1,6 +1,6 @@
 /* In the name of God, the Merciful, the Compassionate */
 
-namespace SqlHealthAssessment.Data.Models
+namespace SQLTriage.Data.Models
 {
     /// <summary>
     /// Represents a live SQL Server session from sys.dm_exec_sessions / sys.dm_exec_requests.

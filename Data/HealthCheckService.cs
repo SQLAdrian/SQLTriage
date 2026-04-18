@@ -5,10 +5,10 @@ using System.Collections.Concurrent;
 using System.Data;
 using System.Threading.Tasks;
 using System.Collections.Generic;
-using SqlHealthAssessment.Data.Models;
+using SQLTriage.Data.Models;
 using Microsoft.Data.SqlClient;
 
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     /// <summary>
     /// Service for checking server health status.

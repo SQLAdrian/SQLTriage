@@ -3,11 +3,11 @@
 using System.Collections.Concurrent;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
-using SqlHealthAssessment.Data;
-using SqlHealthAssessment.Data.Caching;
-using SqlHealthAssessment.Data.Models;
+using SQLTriage.Data;
+using SQLTriage.Data.Caching;
+using SQLTriage.Data.Models;
 
-namespace SqlHealthAssessment.Data.Services
+namespace SQLTriage.Data.Services
 {
     /// <summary>
     /// Timer-based engine that periodically evaluates alert definitions against all configured servers.

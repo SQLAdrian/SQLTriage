@@ -7,9 +7,9 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using SqlHealthAssessment.Data.Models;
+using SQLTriage.Data.Models;
 
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     /// <summary>
     /// Loads and manages SQL checks from sql-checks.json file.
@@ -182,7 +182,7 @@ namespace SqlHealthAssessment.Data
 
         /// <summary>
         /// Import checks from an external JSON file (e.g., SQLMonitoring export).
-        /// Supports both camelCase (SqlHealthAssessment) and PascalCase (SQLMonitoring) property names.
+        /// Supports both camelCase (SQLTriage) and PascalCase (SQLMonitoring) property names.
         /// New checks are added, existing checks (by ID) are updated.
         /// Returns (added, updated, skipped) counts.
         /// </summary>

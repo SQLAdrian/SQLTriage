@@ -5,7 +5,7 @@ using System.IO;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     /// <summary>
     /// Shared JSON config file load/save to eliminate boilerplate across services.

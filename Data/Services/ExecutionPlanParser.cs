@@ -4,7 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Xml.Linq;
 
-namespace SqlHealthAssessment.Data.Services;
+namespace SQLTriage.Data.Services;
 
 // ── Data contracts ────────────────────────────────────────────────────────────
 

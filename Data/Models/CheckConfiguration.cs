@@ -2,7 +2,7 @@
 
 using System.Collections.Generic;
 
-namespace SqlHealthAssessment.Data.Models
+namespace SQLTriage.Data.Models
 {
     /// <summary>
     /// Represents a SQLWATCH check configuration that can be edited in bulk.

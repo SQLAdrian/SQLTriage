@@ -80,7 +80,7 @@
    - Verify clean `dotnet build` with zero warnings
 2. **Brand completion**
    - Rename solution/project to `SQLTriage`
-   - Update all hardcoded "SqlHealthAssessment"/"LiveMonitor" strings in UI
+   - Update all hardcoded "SqlHealthAssessment"/"SQLTriage" strings in UI
    - Update `Config/version.json` to `1.0.0`
 3. **Basmalah enforcement**
    - Add pre-commit hook `.git/hooks/pre-commit` to check for basmalah header on staged `.cs`/`.razor` files
@@ -215,7 +215,7 @@ Data/Sql/
 |------|--------|------------|
 | Legacy architecture constraints | Medium | Follow Must-have tasks; refactor only what's needed |
 | Build warnings persist | High | Week 0 dedicated cleanup; treat as blocker |
-| Brand rename incomplete | Medium | Pre-commit hook to grep for "SqlHealthAssessment"/"LiveMonitor" |
+| Brand rename incomplete | Medium | Pre-commit hook to grep for "SqlHealthAssessment"/"SQLTriage" |
 | Baseline overlay complexity | Low | Existing code works; reuse, don't rewrite |
 | Scope creep | High | Pre-mortem triggers; freeze after Week 2 |
 

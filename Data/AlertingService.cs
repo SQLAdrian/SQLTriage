@@ -3,11 +3,11 @@
 using System.Collections.Concurrent;
 using System.IO;
 using System.Text.Json;
-using SqlHealthAssessment.Data.Models;
-using SqlHealthAssessment.Data.Services;
+using SQLTriage.Data.Models;
+using SQLTriage.Data.Services;
 using Microsoft.Extensions.Logging;
 
-namespace SqlHealthAssessment.Data
+namespace SQLTriage.Data
 {
     public class AlertingService
     {

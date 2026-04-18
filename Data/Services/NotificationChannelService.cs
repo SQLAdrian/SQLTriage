@@ -9,9 +9,9 @@ using MailKit.Net.Smtp;
 using MailKit.Security;
 using MimeKit;
 using Microsoft.Extensions.Logging;
-using SqlHealthAssessment.Data.Models;
+using SQLTriage.Data.Models;
 
-namespace SqlHealthAssessment.Data.Services
+namespace SQLTriage.Data.Services
 {
     /// <summary>
     /// Dispatches alert notifications via configured outbound channels (SMTP email, Teams webhook).
@@ -362,7 +362,7 @@ namespace SqlHealthAssessment.Data.Services
         <div style=""margin-top: 16px; padding: 10px; background: #0d1117; border-radius: 4px; font-size: 13px;"">
             {WebUtility.HtmlEncode(notification.Message)}
         </div>
-        <p style=""margin-top: 16px; font-size: 11px; color: #666;"">Sent by SQL Health Assessment — {Environment.MachineName}</p>
+        <p style=""margin-top: 16px; font-size: 11px; color: #666;"">Sent by SQLTriage — {Environment.MachineName}</p>
     </div>
 </div>";
         }
@@ -387,7 +387,7 @@ namespace SqlHealthAssessment.Data.Services
                     CurrentValue = 0,
                     ThresholdValue = 0,
                     Severity = "info",
-                    Message = "This is a test notification from SQL Health Assessment. If you received this email, SMTP is configured correctly.",
+                    Message = "This is a test notification from SQLTriage. If you received this email, SMTP is configured correctly.",
                     InstanceName = Environment.MachineName
                 };
 
@@ -523,7 +523,7 @@ namespace SqlHealthAssessment.Data.Services
                     CurrentValue = 0,
                     ThresholdValue = 0,
                     Severity = "info",
-                    Message = "This is a test notification from SQL Health Assessment. If you see this message, Teams webhook is configured correctly.",
+                    Message = "This is a test notification from SQLTriage. If you see this message, Teams webhook is configured correctly.",
                     InstanceName = Environment.MachineName
                 };
 
@@ -569,7 +569,7 @@ namespace SqlHealthAssessment.Data.Services
 
                 var payload = new Dictionary<string, object>
                 {
-                    ["username"] = string.IsNullOrEmpty(_config.Slack.Username) ? "SQL Health Assessment" : _config.Slack.Username,
+                    ["username"] = string.IsNullOrEmpty(_config.Slack.Username) ? "SQLTriage" : _config.Slack.Username,
                     ["icon_emoji"] = ":database:",
                     ["attachments"] = new[]
                     {
@@ -585,7 +585,7 @@ namespace SqlHealthAssessment.Data.Services
                                 new { title = "Threshold", value = notification.ThresholdValue.ToString("N2"), @short = true },
                                 new { title = "Machine", value = Environment.MachineName, @short = true }
                             },
-                            ["footer"] = $"SQL Health Assessment • {notification.TriggeredAt:yyyy-MM-dd HH:mm:ss} UTC",
+                            ["footer"] = $"SQLTriage • {notification.TriggeredAt:yyyy-MM-dd HH:mm:ss} UTC",
                             ["ts"] = new DateTimeOffset(notification.TriggeredAt, TimeSpan.Zero).ToUnixTimeSeconds()
                         }
                     }
@@ -625,7 +625,7 @@ namespace SqlHealthAssessment.Data.Services
                     AlertName = "Slack Webhook Test",
                     Metric = "test",
                     Severity = "info",
-                    Message = "This is a test notification from SQL Health Assessment. If you see this message, Slack is configured correctly.",
+                    Message = "This is a test notification from SQLTriage. If you see this message, Slack is configured correctly.",
                     InstanceName = Environment.MachineName
                 };
                 await SendSlackAsync(test);
@@ -712,7 +712,7 @@ namespace SqlHealthAssessment.Data.Services
                     AlertName = "Webhook Test",
                     Metric = "test",
                     Severity = "info",
-                    Message = "Test notification from SQL Health Assessment.",
+                    Message = "Test notification from SQLTriage.",
                     InstanceName = Environment.MachineName
                 };
                 await SendWebhookAsync(test);
@@ -800,7 +800,7 @@ namespace SqlHealthAssessment.Data.Services
                     AlertName = "PagerDuty Integration Test",
                     Metric = "test",
                     Severity = "info",
-                    Message = "Test notification from SQL Health Assessment. No action required.",
+                    Message = "Test notification from SQLTriage. No action required.",
                     InstanceName = Environment.MachineName
                 };
                 await SendPagerDutyAsync(test);
@@ -1054,7 +1054,7 @@ namespace SqlHealthAssessment.Data.Services
                     AlertName = "WhatsApp Test",
                     Metric = "test",
                     Severity = "info",
-                    Message = "This is a test notification from SQL Health Assessment. If you received this message, WhatsApp is configured correctly.",
+                    Message = "This is a test notification from SQLTriage. If you received this message, WhatsApp is configured correctly.",
                     InstanceName = Environment.MachineName
                 };
                 await SendWhatsAppAsync(test);
