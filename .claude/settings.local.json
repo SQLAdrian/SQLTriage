@@ -1,3 +1,49 @@
 {
   "permissions": {
     "allow": [
+      "Bash(dotnet build:*)",
+      "WebFetch(domain:apexcharts.github.io)",
+      "WebFetch(domain:github.com)",
+      "Bash(sqlcmd:*)",
+      "Bash(taskkill:*)",
+      "Bash(cmd.exe /c \"taskkill /F /IM LiveMonitor.exe\")",
+      "Bash(cmd /c \"taskkill /F /IM LiveMonitor.exe\")",
+      "Bash(powershell.exe -Command \"Stop-Process -Name LiveMonitor -Force\")",
+      "Bash(powershell -Command:*)",
+      "Bash(dotnet clean:*)",
+      "Bash(dir:*)",
+      "Bash(dotnet restore:*)",
+      "Bash(findstr:*)",
+      "Bash(Select-String -Pattern \"error CS|Build succeeded|Error\\(s\\)|Warning\\(s\\)\")",
+      "Bash(python:*)",
+      "Bash(cd:*)",
+      "Bash(npm run webpack:*)",
+      "Bash(NODE_OPTIONS=--openssl-legacy-provider npm run webpack:*)",
+      "Bash(node -e:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(ls C:/GitHub/LiveMonitor/research_output/LLM1/*.yaml)",
+      "Bash(ls -la /c/GitHub/LiveMonitor/Pages/*.razor)"
+    ]
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          { "type": "command", "command": "python .claude/hooks/compress-prompt.py" },
+          { "type": "command", "command": "python .claude/hooks/log-compression-metrics.py" },
+          { "type": "command", "command": "python .claude/hooks/route-dsl.py" }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|Bash|Grep|Glob|NotebookEdit",
+        "hooks": [
+          { "type": "command", "command": "python .claude/hooks/validate-no-shorthand.py" }
+        ]
+      }
+    ]
+  }
+}
