@@ -1,0 +1,102 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet build:*)",
+      "WebFetch(domain:apexcharts.github.io)",
+      "WebFetch(domain:github.com)",
+      "Bash(sqlcmd:*)",
+      "Bash(taskkill:*)",
+      "Bash(cmd.exe /c \"taskkill /F /IM LiveMonitor.exe\")",
+      "Bash(//c/Windows/System32/taskkill.exe /F /IM LiveMonitor.exe)",
+      "Bash(powershell.exe -Command \"Stop-Process -Name LiveMonitor -Force\")",
+      "Bash(powershell.exe -Command \"Stop-Process -Id 37332 -Force\")",
+      "Bash(dir \"C:\\\\Users\\\\afsul\\\\OneDrive - sqldba.org\\\\GitHub\\\\sqlwatch-main\\\\LiveMonitor\\\\LiveMonitor\")",
+      "Bash(powershell -Command:*)",
+      "Bash(dotnet clean:*)",
+      "Bash(dir:*)",
+      "Bash(dotnet restore:*)",
+      "Bash(findstr:*)",
+      "Bash(Select-String -Pattern \"error CS|Build succeeded|Error\\\\(s\\\\)|Warning\\\\(s\\\\)\")",
+      "Bash(python:*)",
+      "Bash(cd:*)",
+      "Bash(npm run webpack:*)",
+      "Bash(NODE_OPTIONS=--openssl-legacy-provider npm run webpack:*)",
+      "Bash(node -e:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(processing\" because the <DataSet> in BlitzReport.rdl had no <Query>:*)",
+      "Bash(processing\" because <DataSet> in BlitzReport.rdl had no <Query>:*)",
+      "Bash(powershell -NoProfile -Command:*)",
+      "Bash(wc -l:*)",
+      "Bash(node --version)",
+      "Bash(npm --version)",
+      "Bash(rustc --version)",
+      "Bash(cargo --version)",
+      "Bash(dotnet --version)",
+      "Bash(source \"$HOME/.cargo/env\")",
+      "Bash(export PATH=\"$PATH:/c/Users/afsul/.cargo/bin\")",
+      "Bash(npm create tauri-app@latest . -- --template react --manager npm --yes)",
+      "Bash(dotnet new webapi -n \"SpTriageApi\" --framework net8.0 -o api)",
+      "Bash(ls \"c:\\\\GitHub\\\\LiveMonitor\\\\PerformanceMonitor_db\"\" 2>/dev/null || echo \"NOT FOUND \")",
+      "Bash(where python3)",
+      "Bash(where python)",
+      "Bash(unzip -l \"fontawesome-free-7.2.0-web.zip\")",
+      "Bash(unzip -p \"fontawesome-free-7.2.0-web.zip\" \"fontawesome-free-7.2.0-web/css/all.min.css\")",
+      "Bash(unzip -o \"fontawesome-free-7.2.0-web.zip\" \"fontawesome-free-7.2.0-web/css/all.min.css\" \"fontawesome-free-7.2.0-web/webfonts/fa-solid-900.woff2\" \"fontawesome-free-7.2.0-web/webfonts/fa-regular-400.woff2\" \"fontawesome-free-7.2.0-web/webfonts/fa-brands-400.woff2\" -d /tmp/fa_extract/)",
+      "Bash(cp /tmp/fa_extract/fontawesome-free-7.2.0-web/css/all.min.css /c/GitHub/LiveMonitor/wwwroot/fontawesome/css/all.min.css)",
+      "Bash(cp /tmp/fa_extract/fontawesome-free-7.2.0-web/webfonts/*.woff2 /c/GitHub/LiveMonitor/wwwroot/fontawesome/webfonts/)",
+      "Bash(grep -c '\"\"Enabled\"\"' Config/sql-checks.json)",
+      "Bash(grep -c '\"\"Enabled\"\".*true' Config/sql-checks.json)",
+      "Bash(python3:*)",
+      "Bash(sort -t: -k2 -n)",
+      "Read(//c/GitHub/LiveMonitor/**)",
+      "Bash(powershell -NoProfile -NonInteractive -Command \"Get-ChildItem ''C:\\\\GitHub\\\\vscode-mssql\\\\extensions\\\\mssql\\\\src\\\\reactviews\\\\pages\\\\ExecutionPlan'' -Name\")",
+      "Bash(powershell -NoProfile -NonInteractive -Command \"Get-ChildItem ''C:\\\\GitHub\\\\vscode-mssql\\\\extensions\\\\mssql\\\\src\\\\reactviews\\\\pages\\\\ExecutionPlan\\\\icons'' -Name | Select-Object -First 20\")",
+      "Bash(powershell -NoProfile -NonInteractive -Command \"\\(Get-Item ''C:\\\\GitHub\\\\LiveMonitor\\\\wwwroot\\\\scripts\\\\qp.js''\\).Length; \\(Get-Item ''C:\\\\GitHub\\\\vscode-mssql\\\\extensions\\\\mssql\\\\src\\\\reactviews\\\\pages\\\\ExecutionPlan\\\\executionPlanView.ts''\\).Length\")",
+      "Bash(powershell -NoProfile -NonInteractive -Command \"Get-ChildItem ''C:\\\\GitHub\\\\vscode-mssql'' -Recurse -Name -Filter ''html-query-plan'' -ErrorAction SilentlyContinue | Select-Object -First 5\")",
+      "Bash(powershell -NoProfile -NonInteractive -Command \"Get-ChildItem ''C:\\\\GitHub\\\\vscode-mssql\\\\extensions\\\\mssql\\\\src'' -Name\")",
+      "Bash(powershell -NoProfile -NonInteractive -Command \"Get-ChildItem ''C:\\\\GitHub\\\\vscode-mssql\\\\extensions\\\\mssql\\\\src\\\\reactviews'' -Directory -Name\")",
+      "Bash(powershell -NoProfile -NonInteractive -Command \"Get-ChildItem ''C:\\\\GitHub\\\\vscode-mssql\\\\extensions\\\\mssql\\\\src\\\\reactviews\\\\media'' -Name | Select-Object -First 20\")",
+      "Bash(powershell -NoProfile -NonInteractive -Command \"Test-Path ''C:\\\\GitHub\\\\vscode-mssql\\\\node_modules\\\\html-query-plan''; Test-Path ''C:\\\\GitHub\\\\vscode-mssql\\\\node_modules\\\\html-query-plan''\")",
+      "Bash(powershell -NoProfile -NonInteractive -Command \"& git --git-dir=''c:/GitHub/LiveMonitor/Ignore/.git'' --work-tree=''c:/GitHub/LiveMonitor'' status\")",
+      "Bash(powershell -NoProfile -NonInteractive -Command \"& git --git-dir=''c:/GitHub/LiveMonitor/Ignore/.git'' --work-tree=''c:/GitHub/LiveMonitor'' diff --stat\")",
+      "Bash(powershell -NoProfile -NonInteractive -Command \"& git --git-dir=''c:/GitHub/LiveMonitor/Ignore/.git'' --work-tree=''c:/GitHub/LiveMonitor'' add Components/Shared/ConnectionDialog.razor Config/version.json Data/Models/ServerConnection.cs scripts/SQLDBA.ORG.sp_triage.sql wwwroot/css/app.css wwwroot/scripts/queryPlan.js\")",
+      "Bash(powershell -NoProfile -NonInteractive -Command \"& git --git-dir=''c:/GitHub/LiveMonitor/Ignore/.git'' --work-tree=''c:/GitHub/LiveMonitor'' commit -m ''Fix AG listener connections, query plan layout, and node highlighting:*)",
+      "Bash(powershell.exe -Command \":*)",
+      "Bash(ls C:/GitHub/LiveMonitor/research_output/LLM1/*.yaml)",
+      "Bash(ls -la /c/GitHub/LiveMonitor/Pages/*.razor)"
+    ]
+  },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/compress-prompt.py"
+          },
+          {
+            "type": "command",
+            "command": "python .claude/hooks/route-dsl.py"
+          },
+          {
+            "type": "command",
+            "command": "python .claude/hooks/log-compression-metrics.py"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|Bash|Grep|Glob|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/validate-no-shorthand.py"
+          }
+        ]
+      }
+    ]
+  }
+}
