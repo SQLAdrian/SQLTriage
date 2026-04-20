@@ -60,7 +60,7 @@ jobs:
 
       # ── 6. Code-sign exe (skipped if secret not configured) ──────────────
       - name: Sign executable
-        if: secrets.CODESIGN_CERT_BASE64 != ''
+        if: ${{ secrets.CODESIGN_CERT_BASE64 != '' }}
         shell: pwsh
         env:
           CERT_BASE64:  ${{ secrets.CODESIGN_CERT_BASE64 }}
@@ -136,7 +136,7 @@ jobs:
 
       # ── 10. Sign installer ───────────────────────────────────────────────
       - name: Sign installer
-        if: secrets.CODESIGN_CERT_BASE64 != ''
+        if: ${{ secrets.CODESIGN_CERT_BASE64 != '' }}
         shell: pwsh
         env:
           CERT_BASE64:   ${{ secrets.CODESIGN_CERT_BASE64 }}
