@@ -358,5 +358,22 @@ For each coding task above:
 ### Positioning Shift
 - Stop "lightweight alternative" — position as "Portable, no-agent desktop monitoring weapon for DBAs and consultants — single exe, service mode, real interactive plans."
 
+### Critical Strategic Gaps (From Feedback)
+1. **Automated Maintenance Execution** (HIGH): Add MaintenanceJobService with template library for backups, index rebuilds, DBCC, integrity checks. Prioritization: HIGH. Effort: 2-3 weeks.
+2. **Historical Performance Repository** (HIGH): Extend SQLite for aggregated metrics, time-series rollups (hourly/daily summaries). Prioritization: HIGH. Effort: 1-2 weeks.
+3. **Compliance Framework** (MEDIUM-HIGH): Map VA checks to CIS/PCI/NIST; add compliance score dashboard; PDF reports. Prioritization: MEDIUM-HIGH. Effort: 3-4 weeks.
+4. **Threshold-Based Alerting** (MEDIUM): Add threshold config to UserSettings; replace IQR with configured limits. Prioritization: MEDIUM. Effort: 1 week.
+5. **Multi-Tenant / MSP Features** (LOW-MEDIUM): Add environment abstraction, template deployment, multi-server rollup. Prioritization: LOW-MEDIUM. Effort: 4-6 weeks.
+6. **Advanced Blocking Analysis** (MEDIUM): Store blocking events; timeline view; top blockers report. Prioritization: MEDIUM. Effort: 2 weeks.
+7. **Health Score & Risk Rating** (MEDIUM): Compute weighted health index; trend arrow; executive summary. Prioritization: MEDIUM. Effort: 1 week.
+8. **Scheduled & Automated Reporting** (MEDIUM): Add report scheduler; SMTP; subscriptions. Prioritization: MEDIUM. Effort: 1-2 weeks.
+9. **Configuration Drift Detection** (MEDIUM-LOW): Store sp_configure snapshots; diff view; alerts. Prioritization: MEDIUM-LOW. Effort: 2 weeks.
+10. **Performance Benchmarks & Baselines** (LOW-MEDIUM): Learn typical values; z-score anomalies. Prioritization: LOW-MEDIUM. Effort: 2-3 weeks.
+
+### Implementation Roadmap
+- **Phase 1 (2-3 months)**: Maintenance automation, historical metrics, threshold alerts, reporting, health score.
+- **Phase 2 (3-4 months)**: Compliance, drift detection, advanced blocking, service mode.
+- **Phase 3 (4-6 months)**: Multi-tenant, benchmarks, predictions.
+
 Files affected: README.md, WORKFILE_remaining.md (this file), new Pages/, templates/, .csproj, .sln.
 Commit pattern: `git commit -m "feat: description\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"`
