@@ -11,6 +11,188 @@
 @inject ToastService Toast
 @implements IDisposable
 
+@code {
+    private List<MaintenanceJobStatus> _maintenanceJobs = new();
+    private List<ServerConnection> _servers = new();
+    private bool _loadingMaintenance;
+    private bool _showDeployDialog;
+    private string _deployServer = "";
+    private string _deployBackupPath = "";
+    private string _deployLogPath = "";
+    private int _deployCleanupTime = 24;
+    private int _deployCheckDbTime = 60;
+
+    private class MaintenanceJobStatus
+    {
+        public string ServerName { get; set; } = "";
+        public string JobName { get; set; } = "";
+        public bool IsInstalled { get; set; }
+        public bool IsRunning { get; set; }
+        public DateTime? LastRun { get; set; }
+        public string Status { get; set; } = "";
+    }
+
+    private async Task LoadMaintenance()
+    {
+        _loadingMaintenance = true;
+        try
+        {
+            // Load servers
+            _servers = ConnectionManager.GetServers().Where(s => s.Enabled).ToList();
+
+            // Check Ola maintenance jobs on each server
+            _maintenanceJobs.Clear();
+            foreach (var server in _servers)
+            {
+                var jobs = await CheckOlaJobsAsync(server);
+                _maintenanceJobs.AddRange(jobs);
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("Maintenance", $"Failed to load: {ex.Message}");
+        }
+        finally
+        {
+            _loadingMaintenance = false;
+        }
+    }
+
+    private async Task<List<MaintenanceJobStatus>> CheckOlaJobsAsync(ServerConnection server)
+    {
+        var jobs = new List<MaintenanceJobStatus>();
+        try
+        {
+            // Query SQL Agent jobs for Ola maintenance
+            var query = @"
+                SELECT j.name, j.enabled, h.run_date, h.run_time, h.run_status
+                FROM msdb.dbo.sysjobs j
+                LEFT JOIN msdb.dbo.sysjobhistory h ON j.job_id = h.job_id
+                    AND h.instance_id = (SELECT MAX(instance_id) FROM msdb.dbo.sysjobhistory WHERE job_id = j.job_id)
+                WHERE j.name LIKE 'DatabaseBackup%' OR j.name LIKE 'IndexOptimize%' OR j.name LIKE 'DatabaseIntegrityCheck%'
+                ORDER BY j.name";
+
+            var results = await ConnectionManager.ExecuteQueryAsync(server.ServerNames, query);
+
+            foreach (var row in results)
+            {
+                var status = new MaintenanceJobStatus
+                {
+                    ServerName = server.Name,
+                    JobName = row["name"].ToString() ?? "",
+                    IsInstalled = true,
+                    IsRunning = false, // Would need to check running jobs
+                    Status = row["enabled"].ToString() == "1" ? "Enabled" : "Disabled"
+                };
+
+                // Parse last run
+                if (row["run_date"] != DBNull.Value)
+                {
+                    var runDate = row["run_date"].ToString();
+                    var runTime = row["run_time"].ToString();
+                    if (!string.IsNullOrEmpty(runDate) && !string.IsNullOrEmpty(runTime))
+                    {
+                        // Parse SQL Agent date/time format
+                        status.LastRun = ParseSqlAgentDateTime(runDate, runTime);
+                    }
+                }
+
+                jobs.Add(status);
+            }
+
+            // If no jobs found, add placeholders
+            if (!jobs.Any())
+            {
+                jobs.Add(new MaintenanceJobStatus { ServerName = server.Name, JobName = "DatabaseBackup - USER_DATABASES", IsInstalled = false, Status = "Not Installed" });
+                jobs.Add(new MaintenanceJobStatus { ServerName = server.Name, JobName = "IndexOptimize - USER_DATABASES", IsInstalled = false, Status = "Not Installed" });
+                jobs.Add(new MaintenanceJobStatus { ServerName = server.Name, JobName = "DatabaseIntegrityCheck - USER_DATABASES", IsInstalled = false, Status = "Not Installed" });
+            }
+        }
+        catch (Exception ex)
+        {
+            jobs.Add(new MaintenanceJobStatus { ServerName = server.ServerNames, JobName = "Error", Status = $"Check failed: {ex.Message}" });
+        }
+
+        return jobs;
+    }
+
+    private async Task DeployOlaMaintenanceAsync(string serverName, string backupPath, string logPath, int cleanupTime, int checkDbTime)
+    {
+        try
+        {
+            // Read the deployment script
+            var scriptPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "BPScripts", "01. MaintenanceSolution.sql");
+            if (!File.Exists(scriptPath))
+            {
+                Toast.ShowError("Maintenance", "Deployment script not found");
+                return;
+            }
+
+            var script = File.ReadAllText(scriptPath);
+
+            // Replace parameters
+            script = script.Replace("@BackupDirectory", backupPath)
+                          .Replace("@LogDirectory", logPath)
+                          .Replace("@CleanupTime", cleanupTime.ToString())
+                          .Replace("@CheckDbTime", checkDbTime.ToString());
+
+            // Execute on server
+            await ConnectionManager.ExecuteNonQueryAsync(serverName, script);
+
+            Toast.ShowSuccess("Maintenance", "Ola Hallengren solution deployed successfully");
+            await LoadMaintenance(); // Refresh
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("Maintenance", $"Deployment failed: {ex.Message}");
+        }
+    }
+
+    private DateTime? ParseSqlAgentDateTime(string dateStr, string timeStr)
+    {
+        try
+        {
+            var date = DateTime.ParseExact(dateStr, "yyyyMMdd", null);
+            var time = TimeSpan.FromSeconds(int.Parse(timeStr));
+            return date.Add(time);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private void ShowDeployDialog()
+    {
+        _showDeployDialog = true;
+        StateHasChanged();
+    }
+
+    private void HideDeployDialog()
+    {
+        _showDeployDialog = false;
+        StateHasChanged();
+    }
+
+    private async Task DeployMaintenance()
+    {
+        if (string.IsNullOrEmpty(_deployServer))
+        {
+            Toast.ShowError("Maintenance", "Please select a server");
+            return;
+        }
+
+        await DeployOlaMaintenanceAsync(_deployServer, _deployBackupPath, _deployLogPath, _deployCleanupTime, _deployCheckDbTime);
+        HideDeployDialog();
+    }
+
+    private void MonitorJob(MaintenanceJobStatus job)
+    {
+        // TODO: Open monitoring view for this job
+        Toast.ShowInfo("Maintenance", $"Monitoring {job.JobName} on {job.ServerName}");
+    }
+}
+
 <div class="settings-page" style="max-width: 1400px;">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
         <h2 style="margin: 0;">Scheduled Tasks</h2>
@@ -35,6 +217,9 @@
         </button>
         <button class="sched-tab @(_activeTab == "history" ? "active" : "")" @onclick='() => { LoadHistory(); _activeTab = "history"; }'>
             Execution History
+        </button>
+        <button class="sched-tab @(_activeTab == "maintenance" ? "active" : "")" @onclick='() => { LoadMaintenance(); _activeTab = "maintenance"; }'>
+            Maintenance
         </button>
     </div>
 
@@ -249,6 +434,112 @@
                 </table>
             }
         </div>
+    }
+
+    <!-- Maintenance Tab -->
+    @if (_activeTab == "maintenance")
+    {
+        @if (_loadingMaintenance)
+        {
+            <div style="text-align: center; padding: 40px;">
+                <span class="spinner"></span> Loading maintenance status...
+            </div>
+        }
+        else
+        {
+            <div style="margin-bottom: 12px;">
+                <button class="settings-btn" @onclick="ShowDeployDialog">Deploy Ola Maintenance Solution</button>
+            </div>
+
+            <div class="settings-group">
+                <h3>Ola Hallengren Maintenance Jobs Status</h3>
+                @if (_maintenanceJobs.Count == 0)
+                {
+                    <p style="color: var(--text-muted); padding: 20px; text-align: center;">No servers configured or maintenance check failed.</p>
+                }
+                else
+                {
+                    <table class="results-table" style="width: 100%;">
+                        <thead>
+                            <tr>
+                                <th>Server</th>
+                                <th>Job Name</th>
+                                <th>Installed</th>
+                                <th>Status</th>
+                                <th>Last Run</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var job in _maintenanceJobs)
+                            {
+                                <tr>
+                                    <td style="color: var(--text-primary);">@job.ServerName</td>
+                                    <td>@job.JobName</td>
+                                    <td>
+                                        @if (job.IsInstalled)
+                                        {
+                                            <span class="status-badge status-success">Yes</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="status-badge status-error">No</span>
+                                        }
+                                    </td>
+                                    <td><span class="status-badge status-@(job.Status.ToLower().Contains("error") ? "error" : "info")">@job.Status</span></td>
+                                    <td style="font-size: 12px;">@(job.LastRun?.ToLocalTime().ToString("g") ?? "Never")</td>
+                                    <td>
+                                        <button class="settings-btn" style="font-size: 10px; padding: 2px 8px;" @onclick="() => MonitorJob(job)" title="Monitor">Monitor</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+
+            <!-- Deploy Dialog -->
+            @if (_showDeployDialog)
+            {
+                <div class="modal-overlay" @onclick="HideDeployDialog">
+                    <div class="modal-content" @onclick:stopPropagation>
+                        <h3>Deploy Ola Hallengren Maintenance Solution</h3>
+                        <form @onsubmit="DeployMaintenance">
+                            <div class="form-group">
+                                <label>Server</label>
+                                <select @bind="_deployServer">
+                                    <option value="">Select Server</option>
+                                    @foreach (var server in _servers)
+                                    {
+                                        <option value="@server.ServerNames">@server.ServerNames</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Backup Directory</label>
+                                <input type="text" @bind="_deployBackupPath" placeholder="N:\Backup" />
+                            </div>
+                            <div class="form-group">
+                                <label>Log Directory</label>
+                                <input type="text" @bind="_deployLogPath" placeholder="N:\Log" />
+                            </div>
+                            <div class="form-group">
+                                <label>Cleanup Time (hours)</label>
+                                <input type="number" @bind="_deployCleanupTime" />
+                            </div>
+                            <div class="form-group">
+                                <label>CheckDB Time (minutes)</label>
+                                <input type="number" @bind="_deployCheckDbTime" />
+                            </div>
+                            <div style="display: flex; gap: 8px; margin-top: 16px;">
+                                <button type="submit" class="settings-btn">Deploy</button>
+                                <button type="button" class="settings-btn" @onclick="HideDeployDialog">Cancel</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            }
+        }
     }
 </div>
 
