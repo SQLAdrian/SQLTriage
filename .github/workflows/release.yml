@@ -60,12 +60,16 @@ jobs:
 
       # ── 6. Code-sign exe (skipped if secret not configured) ──────────────
       - name: Sign executable
-        if: ${{ secrets.CODESIGN_CERT_BASE64 != '' }}
         shell: pwsh
         env:
           CERT_BASE64:  ${{ secrets.CODESIGN_CERT_BASE64 }}
           CERT_PASSWORD: ${{ secrets.CODESIGN_CERT_PASSWORD }}
         run: |
+          # Skip if no certificate secret provided
+          if ([string]::IsNullOrWhiteSpace($env:CERT_BASE64)) {
+            Write-Host "No code signing certificate — skipping exe signing."
+            exit 0
+          }
           $certBytes = [Convert]::FromBase64String($env:CERT_BASE64)
           $certPath  = "codesign.pfx"
           [IO.File]::WriteAllBytes($certPath, $certBytes)
@@ -77,7 +81,7 @@ jobs:
             Sort-Object FullName -Descending |
             Select-Object -First 1 -ExpandProperty FullName
 
-          if (-not $signtool) { Write-Error "signtool.exe not found"; exit 1 }
+          if (-not $signtool) { Write-Warning "signtool.exe not found — skipping signing"; exit 0 }
 
           & $signtool sign `
             /fd sha256 `
@@ -134,14 +138,18 @@ jobs:
           $setup = Get-ChildItem installer\Output -Filter "*.exe" | Select-Object -First 1
           Copy-Item $setup.FullName "${{ env.INSTALLER_NAME }}"
 
-      # ── 10. Sign installer ───────────────────────────────────────────────
+       # ── 10. Sign installer ───────────────────────────────────────────────
       - name: Sign installer
-        if: ${{ secrets.CODESIGN_CERT_BASE64 != '' }}
         shell: pwsh
         env:
           CERT_BASE64:   ${{ secrets.CODESIGN_CERT_BASE64 }}
           CERT_PASSWORD: ${{ secrets.CODESIGN_CERT_PASSWORD }}
         run: |
+          # Skip if no certificate secret provided
+          if ([string]::IsNullOrWhiteSpace($env:CERT_BASE64)) {
+            Write-Host "No code signing certificate — skipping installer signing."
+            exit 0
+          }
           $certBytes = [Convert]::FromBase64String($env:CERT_BASE64)
           $certPath  = "codesign.pfx"
           [IO.File]::WriteAllBytes($certPath, $certBytes)
@@ -151,6 +159,8 @@ jobs:
             Where-Object { $_.FullName -like "*x64*" } |
             Sort-Object FullName -Descending |
             Select-Object -First 1 -ExpandProperty FullName
+
+          if (-not $signtool) { Write-Warning "signtool.exe not found — skipping signing"; exit 0 }
 
           & $signtool sign `
             /fd sha256 `
