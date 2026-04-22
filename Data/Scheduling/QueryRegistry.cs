@@ -20,8 +20,9 @@ namespace SQLTriage.Data.Scheduling
     {
         private readonly ILogger<QueryRegistry> _logger;
         private readonly string _stateFilePath;
-        private readonly Timer _persistenceTimer;
-        private readonly Timer _healthCheckTimer;
+        private readonly CancellationTokenSource _cts = new();
+        private readonly Task _persistenceTask;
+        private readonly Task _healthCheckTask;
         private readonly object _lock = new();
         private bool _disposed;
 
@@ -36,8 +37,8 @@ namespace SQLTriage.Data.Scheduling
 
         // Global tuning multiplier (aggressive: 4.0, idle: 0.25)
         private double _globalMultiplier = 1.0;
-        private int _persistenceIntervalMinutes = 2;
-        private int _healthCheckIntervalSeconds = 30;
+        private readonly TimeSpan _persistenceInterval;
+        private readonly TimeSpan _healthCheckInterval;
 
         public QueryRegistry(ILogger<QueryRegistry> logger, IConfiguration configuration)
         {
@@ -46,10 +47,10 @@ namespace SQLTriage.Data.Scheduling
             _stateFilePath = Path.Combine(AppContext.BaseDirectory, configPath);
 
             var persistMins = configuration.GetValue<int>("Scheduler:StatePersistenceMinutes", 2);
-            _persistenceIntervalMinutes = persistMins > 0 ? persistMins : 2;
+            _persistenceInterval = TimeSpan.FromMinutes(persistMins > 0 ? persistMins : 2);
 
             var healthCheckSec = configuration.GetValue<int>("Scheduler:HealthCheckIntervalSec", 30);
-            _healthCheckIntervalSeconds = healthCheckSec > 0 ? healthCheckSec : 30;
+            _healthCheckInterval = TimeSpan.FromSeconds(healthCheckSec > 0 ? healthCheckSec : 30);
 
             // Ensure Config directory exists
             Directory.CreateDirectory(Path.GetDirectoryName(_stateFilePath)!);
@@ -57,13 +58,11 @@ namespace SQLTriage.Data.Scheduling
             // Load any existing state
             LoadStateAsync().ConfigureAwait(false).GetAwaiter().GetResult();
 
-            // Start periodic persistence
-            var persistMs = (int)TimeSpan.FromMinutes(_persistenceIntervalMinutes).TotalMilliseconds;
-            _persistenceTimer = new Timer(SaveStateAsync, null, persistMs, persistMs);
+            // Start periodic persistence loop
+            _persistenceTask = Task.Run(PersistenceLoopAsync);
 
-            // Start health checks
-            var healthMs = (int)TimeSpan.FromSeconds(_healthCheckIntervalSeconds).TotalMilliseconds;
-            _healthCheckTimer = new Timer(PerformHealthCheckAsync, null, healthMs, healthMs);
+            // Start health check loop
+            _healthCheckTask = Task.Run(HealthCheckLoopAsync);
         }
 
         /// <summary>
@@ -245,31 +244,62 @@ namespace SQLTriage.Data.Scheduling
             return _groups.GetOrAdd(groupId, _ => new BatchGroupState(groupId));
         }
 
-        private async void SaveStateAsync(object? state)
+        private async Task PersistenceLoopAsync()
         {
-            try
+            while (!_cts.Token.IsCancellationRequested)
             {
-                var snapshot = CreateSnapshot();
-                var json = JsonSerializer.Serialize(snapshot, new JsonSerializerOptions { WriteIndented = true });
-                await File.WriteAllTextAsync(_stateFilePath, json);
-                _logger.LogDebug("[QueryRegistry] State saved to {Path}", _stateFilePath);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "[QueryRegistry] Failed to save state");
+                try
+                {
+                    await Task.Delay(_persistenceInterval, _cts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+
+                try
+                {
+                    var snapshot = CreateSnapshot();
+                    var json = JsonSerializer.Serialize(snapshot, new JsonSerializerOptions { WriteIndented = true });
+                    await File.WriteAllTextAsync(_stateFilePath, json, _cts.Token);
+                    _logger.LogDebug("[QueryRegistry] State saved to {Path}", _stateFilePath);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "[QueryRegistry] Failed to save state");
+                }
             }
         }
 
-        private async void PerformHealthCheckAsync(object? state)
+        private async Task HealthCheckLoopAsync()
         {
-            try
+            while (!_cts.Token.IsCancellationRequested)
             {
-                RebalanceOutliers();
-                await Task.CompletedTask.ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "[QueryRegistry] Health check failed");
+                try
+                {
+                    await Task.Delay(_healthCheckInterval, _cts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+
+                try
+                {
+                    RebalanceOutliers();
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "[QueryRegistry] Health check failed");
+                }
             }
         }
 
@@ -358,8 +388,10 @@ namespace SQLTriage.Data.Scheduling
         {
             if (!_disposed)
             {
-                _persistenceTimer?.Dispose();
-                _healthCheckTimer?.Dispose();
+                _cts.Cancel();
+                try { _persistenceTask.Wait(TimeSpan.FromSeconds(5)); } catch { /* best effort */ }
+                try { _healthCheckTask.Wait(TimeSpan.FromSeconds(5)); } catch { /* best effort */ }
+                _cts.Dispose();
                 _disposed = true;
             }
         }

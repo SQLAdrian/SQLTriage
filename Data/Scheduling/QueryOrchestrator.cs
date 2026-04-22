@@ -56,6 +56,9 @@ namespace SQLTriage.Data.Scheduling
         private int _totalFailed;
         private int _inFlightCount;
 
+        // Track in-flight fire-and-forget tasks so StopAsync can await them
+        private readonly ConcurrentDictionary<Task, byte> _inFlightTasks = new();
+
         // ── Types ──────────────────────────────────────────────────────
         private sealed class QueuedRequest
         {
@@ -214,6 +217,14 @@ namespace SQLTriage.Data.Scheduling
             _logger.LogInformation("QueryOrchestrator dispatcher started");
         }
 
+        private async Task TrackWorkAsync(QueuedRequest request)
+        {
+            var t = Task.Run(async () => await ExecuteWorkAsync(request), _cts.Token);
+            _inFlightTasks.TryAdd(t, 0);
+            try { await t; }
+            finally { _inFlightTasks.TryRemove(t, out _); }
+        }
+
         public async Task StopAsync(CancellationToken cancellationToken = default)
         {
             if (!_started) return;
@@ -227,6 +238,14 @@ namespace SQLTriage.Data.Scheduling
             {
                 try { await _dispatcherTask.WaitAsync(TimeSpan.FromSeconds(30), cancellationToken); }
                 catch (TimeoutException) { _logger.LogWarning("Dispatcher loop did not stop within 30s"); }
+            }
+
+            // Wait for in-flight work to complete (up to 10s)
+            var inFlight = _inFlightTasks.Keys.ToArray();
+            if (inFlight.Length > 0)
+            {
+                try { await Task.WhenAll(inFlight).WaitAsync(TimeSpan.FromSeconds(10), cancellationToken); }
+                catch (TimeoutException) { _logger.LogWarning("{Count} in-flight queries did not complete within 10s", inFlight.Length); }
             }
 
             _logger.LogInformation("QueryOrchestrator stopped");
@@ -247,7 +266,7 @@ namespace SQLTriage.Data.Scheduling
                         continue;
                     }
 
-                    _ = Task.Run(async () => await ExecuteWorkAsync(request), _cts.Token);
+                    _ = TrackWorkAsync(request);
                 }
                 catch (OperationCanceledException) when (_cts.Token.IsCancellationRequested)
                 {

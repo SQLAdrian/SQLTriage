@@ -9,6 +9,7 @@ namespace SQLTriage.Tests;
 public class QueryOrchestratorTests : IDisposable
 {
     private readonly QueryOrchestrator _orchestrator;
+    private readonly QueryRegistry _registry;
 
     public QueryOrchestratorTests()
     {
@@ -22,15 +23,20 @@ public class QueryOrchestratorTests : IDisposable
             })
             .Build();
 
-        var registry = new QueryRegistry(NullLogger<QueryRegistry>.Instance, config);
-        _orchestrator = new QueryOrchestrator(NullLogger<QueryOrchestrator>.Instance, config, registry);
+        _registry = new QueryRegistry(NullLogger<QueryRegistry>.Instance, config);
+        _orchestrator = new QueryOrchestrator(NullLogger<QueryOrchestrator>.Instance, config, _registry);
         _orchestrator.Start();
     }
 
     public void Dispose()
     {
-        _orchestrator.StopAsync().ConfigureAwait(false).GetAwaiter().GetResult();
-        _orchestrator.Dispose();
+        // Run shutdown off the xUnit sync context to avoid deadlocks
+        Task.Run(async () =>
+        {
+            await _orchestrator.StopAsync();
+            _orchestrator.Dispose();
+            _registry.Dispose();
+        }).Wait(TimeSpan.FromSeconds(10));
     }
 
     [Fact]
