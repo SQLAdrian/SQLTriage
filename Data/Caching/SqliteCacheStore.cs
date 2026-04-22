@@ -10,6 +10,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using SQLTriage.Data.Models;
 using SQLTriage.Data.Services;
@@ -52,6 +53,13 @@ namespace SQLTriage.Data.Caching
         private readonly SemaphoreSlim _globalWriteLock = new(1, 1);
         private bool _disposed;
 
+        // ── Batch writer ───────────────────────────────────────────────
+        // Single background task batches SQLite writes into one transaction
+        // to eliminate the single-writer bottleneck (D24).
+        private readonly Channel<BatchOperation> _batchChannel;
+        private readonly CancellationTokenSource _batchCts = new();
+        private readonly Task _batchWriterTask;
+
         private SemaphoreSlim GetLockFor(string queryId, string instanceKey) =>
             _writeLocks.GetOrAdd($"{queryId}:{instanceKey}", _ => new SemaphoreSlim(1, 1));
 
@@ -67,6 +75,14 @@ namespace SQLTriage.Data.Caching
             var dbPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "SQLTriage-cache.db");
             _connectionString = $"Data Source={dbPath};Mode=ReadWriteCreate;";
             InitializeSchema();
+
+            _batchChannel = Channel.CreateBounded<BatchOperation>(new BoundedChannelOptions(1000)
+            {
+                FullMode = BoundedChannelFullMode.Wait,
+                SingleReader = true,
+                SingleWriter = false
+            });
+            _batchWriterTask = Task.Run(BatchWriterLoopAsync);
         }
 
         /// <summary>
@@ -263,6 +279,96 @@ namespace SQLTriage.Data.Caching
             }
         }
 
+        // ── Batch Writer (D24) ─────────────────────────────────────────
+
+        private sealed class BatchOperation
+        {
+            public required Func<SqliteConnection, SqliteTransaction, Task> Action { get; init; }
+            public required TaskCompletionSource Completion { get; init; }
+        }
+
+        private async Task BatchWriterLoopAsync()
+        {
+            while (!_batchCts.Token.IsCancellationRequested)
+            {
+                var batch = new List<BatchOperation>(50);
+                try
+                {
+                    // Read first operation (blocking)
+                    var first = await _batchChannel.Reader.ReadAsync(_batchCts.Token);
+                    batch.Add(first);
+
+                    // Batch up to 49 more operations within 100ms
+                    var deadline = Task.Delay(100, _batchCts.Token);
+                    while (batch.Count < 50 && !deadline.IsCompleted)
+                    {
+                        if (_batchChannel.Reader.TryRead(out var op))
+                        {
+                            batch.Add(op);
+                        }
+                        else
+                        {
+                            var waitTask = _batchChannel.Reader.WaitToReadAsync(_batchCts.Token).AsTask();
+                            var completed = await Task.WhenAny(deadline, waitTask);
+                            if (completed == deadline) break;
+                            // Try read again now that WaitToRead signaled
+                            if (_batchChannel.Reader.TryRead(out op))
+                                batch.Add(op);
+                        }
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+
+                if (batch.Count == 0) continue;
+
+                // Execute batch in single SQLite transaction
+                try
+                {
+                    using var conn = CreateConnection();
+                    await conn.OpenAsync();
+                    using var tx = conn.BeginTransaction();
+
+                    foreach (var op in batch)
+                    {
+                        try
+                        {
+                            await op.Action(conn, tx);
+                            op.Completion.TrySetResult();
+                        }
+                        catch (Exception ex)
+                        {
+                            op.Completion.TrySetException(ex);
+                        }
+                    }
+
+                    tx.Commit();
+                }
+                catch (Exception ex)
+                {
+                    // If the whole transaction fails, mark all pending ops as failed
+                    foreach (var op in batch.Where(o => !o.Completion.Task.IsCompleted))
+                        op.Completion.TrySetException(ex);
+                }
+            }
+
+            // Drain remaining ops on shutdown
+            while (_batchChannel.Reader.TryRead(out var remaining))
+            {
+                remaining.Completion.TrySetCanceled();
+            }
+        }
+
+        private async Task EnqueueWriteAsync(Func<SqliteConnection, SqliteTransaction, Task> action)
+        {
+            var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var op = new BatchOperation { Action = action, Completion = tcs };
+            await _batchChannel.Writer.WriteAsync(op);
+            await tcs.Task;
+        }
+
         // ──────────────────────── Write Operations ──────────────────────
 
         /// <summary>
@@ -275,63 +381,59 @@ namespace SQLTriage.Data.Caching
             List<TimeSeriesPoint> rows, DateTime fetchedAt)
         {
             if (rows.Count == 0) return;
-
-            var lk = GetLockFor(queryId, instanceKey);
-            await lk.WaitAsync();
-            try
+            await EnqueueWriteAsync(async (conn, transaction) =>
             {
-                using var conn = CreateConnection();
-                await conn.OpenAsync();
-                using var transaction = conn.BeginTransaction();
-
-                using var cmd = conn.CreateCommand();
-                cmd.Transaction = transaction;
-                cmd.CommandText = @"
-                    INSERT OR REPLACE INTO cache_timeseries
-                        (query_id, instance_key, time_value, series, value, fetched_at)
-                    VALUES (@qid, @ikey, @tv, @s, @v, @fa)";
-
-                var pQid = cmd.Parameters.Add("@qid", SqliteType.Text);
-                var pIkey = cmd.Parameters.Add("@ikey", SqliteType.Text);
-                var pTv = cmd.Parameters.Add("@tv", SqliteType.Text);
-                var pS = cmd.Parameters.Add("@s", SqliteType.Text);
-                var pV = cmd.Parameters.Add("@v", SqliteType.Real);
-                var pFa = cmd.Parameters.Add("@fa", SqliteType.Text);
-
-                var fetchedStr = fetchedAt.ToString("o");
-
-                foreach (var row in rows)
+                var lk = GetLockFor(queryId, instanceKey);
+                await lk.WaitAsync();
+                try
                 {
-                    pQid.Value = queryId;
-                    pIkey.Value = instanceKey;
-                    pTv.Value = row.Time.ToString("o");
-                    pS.Value = row.Series;
-                    pV.Value = row.Value;
-                    pFa.Value = fetchedStr;
-                    cmd.ExecuteNonQuery();
-                }
+                    using var cmd = conn.CreateCommand();
+                    cmd.Transaction = transaction;
+                    cmd.CommandText = @"
+                        INSERT OR REPLACE INTO cache_timeseries
+                            (query_id, instance_key, time_value, series, value, fetched_at)
+                        VALUES (@qid, @ikey, @tv, @s, @v, @fa)";
 
-                // Enforce row limit: keep only newest 50000 rows (supports ~2 weeks at 1-min intervals)
-                using var trimCmd = conn.CreateCommand();
-                trimCmd.Transaction = transaction;
-                trimCmd.CommandText = @"
-                    DELETE FROM cache_timeseries
-                    WHERE query_id = @qid AND instance_key = @ikey
-                    AND rowid NOT IN (
-                        SELECT rowid FROM cache_timeseries
+                    var pQid = cmd.Parameters.Add("@qid", SqliteType.Text);
+                    var pIkey = cmd.Parameters.Add("@ikey", SqliteType.Text);
+                    var pTv = cmd.Parameters.Add("@tv", SqliteType.Text);
+                    var pS = cmd.Parameters.Add("@s", SqliteType.Text);
+                    var pV = cmd.Parameters.Add("@v", SqliteType.Real);
+                    var pFa = cmd.Parameters.Add("@fa", SqliteType.Text);
+
+                    var fetchedStr = fetchedAt.ToString("o");
+
+                    foreach (var row in rows)
+                    {
+                        pQid.Value = queryId;
+                        pIkey.Value = instanceKey;
+                        pTv.Value = row.Time.ToString("o");
+                        pS.Value = row.Series;
+                        pV.Value = row.Value;
+                        pFa.Value = fetchedStr;
+                        await cmd.ExecuteNonQueryAsync();
+                    }
+
+                    // Enforce row limit: keep only newest 50000 rows
+                    using var trimCmd = conn.CreateCommand();
+                    trimCmd.Transaction = transaction;
+                    trimCmd.CommandText = @"
+                        DELETE FROM cache_timeseries
                         WHERE query_id = @qid AND instance_key = @ikey
-                        ORDER BY time_value DESC LIMIT 50000
-                    )";
-                trimCmd.Parameters.AddWithValue("@qid", queryId);
-                trimCmd.Parameters.AddWithValue("@ikey", instanceKey);
-                trimCmd.ExecuteNonQuery();
-
-                transaction.Commit();
-            }
-            finally
-            {
-                lk.Release();
-            }
+                        AND rowid NOT IN (
+                            SELECT rowid FROM cache_timeseries
+                            WHERE query_id = @qid AND instance_key = @ikey
+                            ORDER BY time_value DESC LIMIT 50000
+                        )";
+                    trimCmd.Parameters.AddWithValue("@qid", queryId);
+                    trimCmd.Parameters.AddWithValue("@ikey", instanceKey);
+                    await trimCmd.ExecuteNonQueryAsync();
+                }
+                finally
+                {
+                    lk.Release();
+                }
+            });
         }
 
         /// <summary>
@@ -340,31 +442,32 @@ namespace SQLTriage.Data.Caching
         public async Task UpsertStatValueAsync(string queryId, string instanceKey,
             StatValue value, DateTime fetchedAt)
         {
-            var lk = GetLockFor(queryId, instanceKey);
-            await lk.WaitAsync();
-            try
+            await EnqueueWriteAsync(async (conn, transaction) =>
             {
-                using var conn = CreateConnection();
-                await conn.OpenAsync();
-
-                using var cmd = conn.CreateCommand();
-                cmd.CommandText = @"
-                    INSERT OR REPLACE INTO cache_stat
-                        (query_id, instance_key, label, value, unit, color, fetched_at)
-                    VALUES (@qid, @ikey, @label, @val, @unit, @color, @fa)";
-                cmd.Parameters.AddWithValue("@qid", queryId);
-                cmd.Parameters.AddWithValue("@ikey", instanceKey);
-                cmd.Parameters.AddWithValue("@label", value.Label);
-                cmd.Parameters.AddWithValue("@val", value.Value);
-                cmd.Parameters.AddWithValue("@unit", value.Unit);
-                cmd.Parameters.AddWithValue("@color", value.Color);
-                cmd.Parameters.AddWithValue("@fa", fetchedAt.ToString("o"));
-                await cmd.ExecuteNonQueryAsync();
-            }
-            finally
-            {
-                lk.Release();
-            }
+                var lk = GetLockFor(queryId, instanceKey);
+                await lk.WaitAsync();
+                try
+                {
+                    using var cmd = conn.CreateCommand();
+                    cmd.Transaction = transaction;
+                    cmd.CommandText = @"
+                        INSERT OR REPLACE INTO cache_stat
+                            (query_id, instance_key, label, value, unit, color, fetched_at)
+                        VALUES (@qid, @ikey, @label, @val, @unit, @color, @fa)";
+                    cmd.Parameters.AddWithValue("@qid", queryId);
+                    cmd.Parameters.AddWithValue("@ikey", instanceKey);
+                    cmd.Parameters.AddWithValue("@label", value.Label);
+                    cmd.Parameters.AddWithValue("@val", value.Value);
+                    cmd.Parameters.AddWithValue("@unit", value.Unit);
+                    cmd.Parameters.AddWithValue("@color", value.Color);
+                    cmd.Parameters.AddWithValue("@fa", fetchedAt.ToString("o"));
+                    await cmd.ExecuteNonQueryAsync();
+                }
+                finally
+                {
+                    lk.Release();
+                }
+            });
         }
 
         /// <summary>
@@ -373,60 +476,57 @@ namespace SQLTriage.Data.Caching
         public async Task UpsertBarGaugeAsync(string queryId, string instanceKey,
             List<StatValue> rows, DateTime fetchedAt)
         {
-            var lk = GetLockFor(queryId, instanceKey);
-            await lk.WaitAsync();
-            try
+            await EnqueueWriteAsync(async (conn, transaction) =>
             {
-                using var conn = CreateConnection();
-                await conn.OpenAsync();
-                using var transaction = conn.BeginTransaction();
-
-                // Clear previous gauge data for this query
-                using (var delCmd = conn.CreateCommand())
+                var lk = GetLockFor(queryId, instanceKey);
+                await lk.WaitAsync();
+                try
                 {
-                    delCmd.Transaction = transaction;
-                    delCmd.CommandText = "DELETE FROM cache_bargauge WHERE query_id = @qid AND instance_key = @ikey";
-                    delCmd.Parameters.AddWithValue("@qid", queryId);
-                    delCmd.Parameters.AddWithValue("@ikey", instanceKey);
-                    delCmd.ExecuteNonQuery();
+                    // Clear previous gauge data for this query
+                    using (var delCmd = conn.CreateCommand())
+                    {
+                        delCmd.Transaction = transaction;
+                        delCmd.CommandText = "DELETE FROM cache_bargauge WHERE query_id = @qid AND instance_key = @ikey";
+                        delCmd.Parameters.AddWithValue("@qid", queryId);
+                        delCmd.Parameters.AddWithValue("@ikey", instanceKey);
+                        await delCmd.ExecuteNonQueryAsync();
+                    }
+
+                    using var cmd = conn.CreateCommand();
+                    cmd.Transaction = transaction;
+                    cmd.CommandText = @"
+                        INSERT INTO cache_bargauge
+                            (query_id, instance_key, label, value, unit, instance, color, fetched_at)
+                        VALUES (@qid, @ikey, @label, @val, @unit, @inst, @color, @fa)";
+
+                    var pQid = cmd.Parameters.Add("@qid", SqliteType.Text);
+                    var pIkey = cmd.Parameters.Add("@ikey", SqliteType.Text);
+                    var pLabel = cmd.Parameters.Add("@label", SqliteType.Text);
+                    var pVal = cmd.Parameters.Add("@val", SqliteType.Real);
+                    var pUnit = cmd.Parameters.Add("@unit", SqliteType.Text);
+                    var pInst = cmd.Parameters.Add("@inst", SqliteType.Text);
+                    var pColor = cmd.Parameters.Add("@color", SqliteType.Text);
+                    var pFa = cmd.Parameters.Add("@fa", SqliteType.Text);
+
+                    var fetchedStr = fetchedAt.ToString("o");
+                    foreach (var row in rows)
+                    {
+                        pQid.Value = queryId;
+                        pIkey.Value = instanceKey;
+                        pLabel.Value = row.Label;
+                        pVal.Value = row.Value;
+                        pUnit.Value = row.Unit;
+                        pInst.Value = row.Instance;
+                        pColor.Value = row.Color;
+                        pFa.Value = fetchedStr;
+                        await cmd.ExecuteNonQueryAsync();
+                    }
                 }
-
-                using var cmd = conn.CreateCommand();
-                cmd.Transaction = transaction;
-                cmd.CommandText = @"
-                    INSERT INTO cache_bargauge
-                        (query_id, instance_key, label, value, unit, instance, color, fetched_at)
-                    VALUES (@qid, @ikey, @label, @val, @unit, @inst, @color, @fa)";
-
-                var pQid = cmd.Parameters.Add("@qid", SqliteType.Text);
-                var pIkey = cmd.Parameters.Add("@ikey", SqliteType.Text);
-                var pLabel = cmd.Parameters.Add("@label", SqliteType.Text);
-                var pVal = cmd.Parameters.Add("@val", SqliteType.Real);
-                var pUnit = cmd.Parameters.Add("@unit", SqliteType.Text);
-                var pInst = cmd.Parameters.Add("@inst", SqliteType.Text);
-                var pColor = cmd.Parameters.Add("@color", SqliteType.Text);
-                var pFa = cmd.Parameters.Add("@fa", SqliteType.Text);
-
-                var fetchedStr = fetchedAt.ToString("o");
-                foreach (var row in rows)
+                finally
                 {
-                    pQid.Value = queryId;
-                    pIkey.Value = instanceKey;
-                    pLabel.Value = row.Label;
-                    pVal.Value = row.Value;
-                    pUnit.Value = row.Unit;
-                    pInst.Value = row.Instance;
-                    pColor.Value = row.Color;
-                    pFa.Value = fetchedStr;
-                    cmd.ExecuteNonQuery();
+                    lk.Release();
                 }
-
-                transaction.Commit();
-            }
-            finally
-            {
-                lk.Release();
-            }
+            });
         }
 
         /// <summary>
@@ -438,28 +538,29 @@ namespace SQLTriage.Data.Caching
             var json = SerializeDataTable(table);
             var stored = ProtectValue(json);   // Encrypt at rest
 
-            var lk = GetLockFor(queryId, instanceKey);
-            await lk.WaitAsync();
-            try
+            await EnqueueWriteAsync(async (conn, transaction) =>
             {
-                using var conn = CreateConnection();
-                await conn.OpenAsync();
-
-                using var cmd = conn.CreateCommand();
-                cmd.CommandText = @"
-                    INSERT OR REPLACE INTO cache_datatable
-                        (query_id, instance_key, json_data, fetched_at)
-                    VALUES (@qid, @ikey, @json, @fa)";
-                cmd.Parameters.AddWithValue("@qid", queryId);
-                cmd.Parameters.AddWithValue("@ikey", instanceKey);
-                cmd.Parameters.AddWithValue("@json", stored);
-                cmd.Parameters.AddWithValue("@fa", fetchedAt.ToString("o"));
-                await cmd.ExecuteNonQueryAsync();
-            }
-            finally
-            {
-                lk.Release();
-            }
+                var lk = GetLockFor(queryId, instanceKey);
+                await lk.WaitAsync();
+                try
+                {
+                    using var cmd = conn.CreateCommand();
+                    cmd.Transaction = transaction;
+                    cmd.CommandText = @"
+                        INSERT OR REPLACE INTO cache_datatable
+                            (query_id, instance_key, json_data, fetched_at)
+                        VALUES (@qid, @ikey, @json, @fa)";
+                    cmd.Parameters.AddWithValue("@qid", queryId);
+                    cmd.Parameters.AddWithValue("@ikey", instanceKey);
+                    cmd.Parameters.AddWithValue("@json", stored);
+                    cmd.Parameters.AddWithValue("@fa", fetchedAt.ToString("o"));
+                    await cmd.ExecuteNonQueryAsync();
+                }
+                finally
+                {
+                    lk.Release();
+                }
+            });
         }
 
         /// <summary>
@@ -468,53 +569,50 @@ namespace SQLTriage.Data.Caching
         public async Task UpsertCheckStatusAsync(string queryId, string instanceKey,
             List<CheckStatus> rows, DateTime fetchedAt)
         {
-            var lk = GetLockFor(queryId, instanceKey);
-            await lk.WaitAsync();
-            try
+            await EnqueueWriteAsync(async (conn, transaction) =>
             {
-                using var conn = CreateConnection();
-                await conn.OpenAsync();
-                using var transaction = conn.BeginTransaction();
-
-                using (var delCmd = conn.CreateCommand())
+                var lk = GetLockFor(queryId, instanceKey);
+                await lk.WaitAsync();
+                try
                 {
-                    delCmd.Transaction = transaction;
-                    delCmd.CommandText = "DELETE FROM cache_checkstatus WHERE query_id = @qid AND instance_key = @ikey";
-                    delCmd.Parameters.AddWithValue("@qid", queryId);
-                    delCmd.Parameters.AddWithValue("@ikey", instanceKey);
-                    delCmd.ExecuteNonQuery();
+                    using (var delCmd = conn.CreateCommand())
+                    {
+                        delCmd.Transaction = transaction;
+                        delCmd.CommandText = "DELETE FROM cache_checkstatus WHERE query_id = @qid AND instance_key = @ikey";
+                        delCmd.Parameters.AddWithValue("@qid", queryId);
+                        delCmd.Parameters.AddWithValue("@ikey", instanceKey);
+                        await delCmd.ExecuteNonQueryAsync();
+                    }
+
+                    using var cmd = conn.CreateCommand();
+                    cmd.Transaction = transaction;
+                    cmd.CommandText = @"
+                        INSERT INTO cache_checkstatus
+                            (query_id, instance_key, status, count, fetched_at)
+                        VALUES (@qid, @ikey, @status, @count, @fa)";
+
+                    var pQid = cmd.Parameters.Add("@qid", SqliteType.Text);
+                    var pIkey = cmd.Parameters.Add("@ikey", SqliteType.Text);
+                    var pStatus = cmd.Parameters.Add("@status", SqliteType.Text);
+                    var pCount = cmd.Parameters.Add("@count", SqliteType.Integer);
+                    var pFa = cmd.Parameters.Add("@fa", SqliteType.Text);
+
+                    var fetchedStr = fetchedAt.ToString("o");
+                    foreach (var row in rows)
+                    {
+                        pQid.Value = queryId;
+                        pIkey.Value = instanceKey;
+                        pStatus.Value = row.Status;
+                        pCount.Value = row.Count;
+                        pFa.Value = fetchedStr;
+                        await cmd.ExecuteNonQueryAsync();
+                    }
                 }
-
-                using var cmd = conn.CreateCommand();
-                cmd.Transaction = transaction;
-                cmd.CommandText = @"
-                    INSERT INTO cache_checkstatus
-                        (query_id, instance_key, status, count, fetched_at)
-                    VALUES (@qid, @ikey, @status, @count, @fa)";
-
-                var pQid = cmd.Parameters.Add("@qid", SqliteType.Text);
-                var pIkey = cmd.Parameters.Add("@ikey", SqliteType.Text);
-                var pStatus = cmd.Parameters.Add("@status", SqliteType.Text);
-                var pCount = cmd.Parameters.Add("@count", SqliteType.Integer);
-                var pFa = cmd.Parameters.Add("@fa", SqliteType.Text);
-
-                var fetchedStr = fetchedAt.ToString("o");
-                foreach (var row in rows)
+                finally
                 {
-                    pQid.Value = queryId;
-                    pIkey.Value = instanceKey;
-                    pStatus.Value = row.Status;
-                    pCount.Value = row.Count;
-                    pFa.Value = fetchedStr;
-                    cmd.ExecuteNonQuery();
+                    lk.Release();
                 }
-
-                transaction.Commit();
-            }
-            finally
-            {
-                lk.Release();
-            }
+            });
         }
 
         /// <summary>
@@ -522,26 +620,27 @@ namespace SQLTriage.Data.Caching
         /// </summary>
         public async Task SetLastFetchTimeAsync(string queryId, string instanceKey, DateTime time)
         {
-            var lk = GetLockFor(queryId, instanceKey);
-            await lk.WaitAsync();
-            try
+            await EnqueueWriteAsync(async (conn, transaction) =>
             {
-                using var conn = CreateConnection();
-                await conn.OpenAsync();
-
-                using var cmd = conn.CreateCommand();
-                cmd.CommandText = @"
-                    INSERT OR REPLACE INTO cache_metadata (query_id, instance_key, last_fetch)
-                    VALUES (@qid, @ikey, @lf)";
-                cmd.Parameters.AddWithValue("@qid", queryId);
-                cmd.Parameters.AddWithValue("@ikey", instanceKey);
-                cmd.Parameters.AddWithValue("@lf", time.ToString("o"));
-                await cmd.ExecuteNonQueryAsync();
-            }
-            finally
-            {
-                lk.Release();
-            }
+                var lk = GetLockFor(queryId, instanceKey);
+                await lk.WaitAsync();
+                try
+                {
+                    using var cmd = conn.CreateCommand();
+                    cmd.Transaction = transaction;
+                    cmd.CommandText = @"
+                        INSERT OR REPLACE INTO cache_metadata (query_id, instance_key, last_fetch)
+                        VALUES (@qid, @ikey, @lf)";
+                    cmd.Parameters.AddWithValue("@qid", queryId);
+                    cmd.Parameters.AddWithValue("@ikey", instanceKey);
+                    cmd.Parameters.AddWithValue("@lf", time.ToString("o"));
+                    await cmd.ExecuteNonQueryAsync();
+                }
+                finally
+                {
+                    lk.Release();
+                }
+            });
         }
 
         // ──────────────────────── Read Operations ───────────────────────
@@ -1093,6 +1192,11 @@ namespace SQLTriage.Data.Caching
         {
             if (!_disposed)
             {
+                _batchCts.Cancel();
+                _batchChannel.Writer.Complete();
+                try { _batchWriterTask.Wait(TimeSpan.FromSeconds(5)); }
+                catch { /* best effort */ }
+                _batchCts.Dispose();
                 _globalWriteLock.Dispose();
                 foreach (var sem in _writeLocks.Values) sem.Dispose();
                 _writeLocks.Clear();
