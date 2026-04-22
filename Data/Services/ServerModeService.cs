@@ -300,6 +300,7 @@ namespace SQLTriage.Data.Services
             TryAdd<DashboardConfigService>(services, wpf);
             TryAdd<QueryExecutor>(services, wpf);
             TryAdd<ResilienceService>(services, wpf);
+            TryAdd<QueryRegistry>(services, wpf);
             TryAdd<IQueryOrchestrator, QueryOrchestrator>(services, wpf);
             TryAdd<IMemoryCache, MemoryCache>(services, wpf);
             TryAdd<ICacheHotTier, CacheHotTier>(services, wpf);

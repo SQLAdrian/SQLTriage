@@ -23,6 +23,7 @@ namespace SQLTriage.Data.Scheduling
     {
         private readonly ILogger<QueryOrchestrator> _logger;
         private readonly IConfiguration _configuration;
+        private readonly QueryRegistry _registry;
 
         // ── Configuration ──────────────────────────────────────────────
         private int _globalConcurrency;
@@ -73,10 +74,11 @@ namespace SQLTriage.Data.Scheduling
             public DateTime Timestamp { get; init; }
         }
 
-        public QueryOrchestrator(ILogger<QueryOrchestrator> logger, IConfiguration configuration)
+        public QueryOrchestrator(ILogger<QueryOrchestrator> logger, IConfiguration configuration, QueryRegistry registry)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+            _registry = registry ?? throw new ArgumentNullException(nameof(registry));
 
             _globalConcurrency = configuration.GetValue<int>("Orchestrator:GlobalConcurrency", 50);
             _perServerConcurrency = configuration.GetValue<int>("Orchestrator:PerServerConcurrency", 50);
@@ -427,6 +429,10 @@ namespace SQLTriage.Data.Scheduling
                 Success = result.Success,
                 Timestamp = DateTime.UtcNow
             });
+
+            // Feed latency into QueryRegistry for affinity grouping and historical tracking
+            try { _registry.RecordExecution(queued.Request.QueryId, result.Duration.TotalMilliseconds, queued.Request.SqlText); }
+            catch (Exception ex) { _logger.LogDebug(ex, "Failed to record execution in QueryRegistry"); }
 
             TrimLatencyWindow(DateTime.UtcNow);
         }
