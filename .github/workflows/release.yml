@@ -53,7 +53,7 @@ jobs:
 
       # ── 6. Test ──────────────────────────────────────────────────────────
       - name: Test
-        run: dotnet test Tests/SQLTriage.Tests/SQLTriage.Tests.csproj -c Release --no-build --verbosity normal
+        run: dotnet test SQLTriage.sln -c Release --no-build --verbosity normal
 
       # ── 7. Build & Publish (self-contained, win-x64) ─────────────────────
       - name: Publish
