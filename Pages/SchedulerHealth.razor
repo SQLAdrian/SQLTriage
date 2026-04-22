@@ -1,0 +1,197 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/scheduler-health"
+@using SQLTriage.Data.Scheduling
+@using SQLTriage.Data.Services
+@inject SchedulerRegistryService SchedulerRegistry
+@inject QueryRegistry QueryRegistry
+@inject NavigationManager Navigation
+
+<div class="page-container">
+    <h1 class="page-title">Scheduler Health</h1>
+
+    <div class="card">
+        <h2>Service Registry</h2>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th>Interval</th>
+                    <th>Details</th>
+                    <th>Last Updated</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var svc in SchedulerRegistry.GetAllServices())
+                {
+                    <tr>
+                        <td>@svc.Name</td>
+                        <td>@svc.Type</td>
+                        <td>
+                            <span class="status-badge @(svc.Status == "running" ? "status-ok" : "status-error")">
+                                @svc.Status
+                            </span>
+                        </td>
+                        <td>@(svc.IntervalSeconds.HasValue ? $"{svc.IntervalSeconds}s" : "-")</td>
+                        <td>
+                            @if (svc.Type == "query_scheduler")
+                            {
+                                <span>Queries: @svc.QueryCount</span>
+                                <br />
+                                <span>Groups: @svc.ActiveGroups</span>
+                                <br />
+                                <span>Multiplier: @svc.GlobalMultiplier?.ToString("F2")</span>
+                                <br />
+                                <span>Concurrency: @svc.ConcurrencyLimit</span>
+                            }
+                            else if (svc.TaskCount.HasValue)
+                            {
+                                <span>Tasks: @svc.TaskCount</span>
+                            }
+                        </td>
+                        <td>@svc.LastUpdated.ToString("HH:mm:ss")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card">
+        <h2>Query Groups</h2>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Group ID</th>
+                    <th>Queries</th>
+                    <th>Avg Roundtrip (ms)</th>
+                    <th>In-Flight</th>
+                    <th>Next Release</th>
+                    <th>Healthy</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var group in QueryRegistry.GetAllGroups())
+                {
+                    <tr>
+                        <td>@group.GroupId</td>
+                        <td>@group.Queries.Count</td>
+                        <td>@group.AvgRoundtripMs.ToString("F0")</td>
+                        <td>@group.InFlightCount</td>
+                        <td>@group.NextReleaseTime.ToString("HH:mm:ss")</td>
+                        <td>
+                            <span class="status-badge @(group.IsHealthy ? "status-ok" : "status-warn")">
+                                @(group.IsHealthy ? "OK" : "High")
+                            </span>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card">
+        <h2>Registered Queries</h2>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Query ID</th>
+                    <th>Group</th>
+                    <th>Roundtrip (ms)</th>
+                    <th>Samples</th>
+                    <th>Last Executed</th>
+                    <th>Server</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var q in QueryRegistry.GetAllQueries().OrderByDescending(q => q.LastExecuted).Take(100))
+                {
+                    <tr>
+                        <td>@q.QueryId</td>
+                        <td>@q.BatchGroupId</td>
+                        <td>@q.RoundtripMs.ToString("F0")</td>
+                        <td>@q.SampleCount</td>
+                        <td>@q.LastExecuted.ToString("yyyy-MM-dd HH:mm")</td>
+                        <td>@(q.ServerName ?? "-")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<style>
+    .page-container {
+        padding: 20px;
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+
+    .page-title {
+        font-size: 24px;
+        font-weight: 600;
+        margin-bottom: 24px;
+        color: var(--text-primary);
+    }
+
+    .card {
+        background: var(--bg-panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 24px;
+    }
+
+    .card h2 {
+        font-size: 18px;
+        font-weight: 600;
+        margin: 0 0 16px 0;
+        color: var(--text-primary);
+    }
+
+    .data-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+    }
+
+    .data-table th,
+    .data-table td {
+        text-align: left;
+        padding: 10px 8px;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .data-table th {
+        font-weight: 600;
+        color: var(--text-secondary);
+        background: var(--bg-secondary);
+    }
+
+    .data-table tr:hover {
+        background: var(--bg-hover);
+    }
+
+    .status-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: 600;
+    }
+
+    .status-ok {
+        background: var(--dark-green);
+        color: #d1fae5;
+    }
+
+    .status-warn {
+        background: #92400e;
+        color: #fef3c7;
+    }
+
+    .status-error {
+        background: #991b1b;
+        color: #fee2e2;
+    }
+</style>

@@ -45,7 +45,14 @@ namespace SQLTriage.Data.Services
             _logger = logger;
 
             _timer = new System.Timers.Timer(30_000);
-            _timer.Elapsed += async (_, _) => await CheckAllAsync();
+            _timer.Elapsed += (_, _) =>
+            {
+                _ = Task.Run(async () =>
+                {
+                    try { await CheckAllAsync(); }
+                    catch (Exception ex) { _logger.LogError(ex, "Health check cycle failed"); }
+                });
+            };
             _timer.AutoReset = true;
         }
 

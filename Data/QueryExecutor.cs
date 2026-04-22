@@ -26,16 +26,14 @@ namespace SQLTriage.Data
         private readonly DashboardConfigService _configService;
         private readonly AuditLogService? _auditLog;
         private readonly ServerConnectionManager _connectionManager;
-        private readonly SqlConnectionPoolService? _connectionPool;
         private readonly ResilienceService _resilience;
 
-        public QueryExecutor(IDbConnectionFactory connectionFactory, DashboardConfigService configService, IConfiguration configuration, ServerConnectionManager connectionManager, ResilienceService resilience, SqlConnectionPoolService? connectionPool = null, AuditLogService? auditLog = null)
+        public QueryExecutor(IDbConnectionFactory connectionFactory, DashboardConfigService configService, IConfiguration configuration, ServerConnectionManager connectionManager, ResilienceService resilience, AuditLogService? auditLog = null)
         {
             _connectionFactory = connectionFactory ?? throw new ArgumentNullException(nameof(connectionFactory));
             _configService = configService ?? throw new ArgumentNullException(nameof(configService));
             _connectionManager = connectionManager ?? throw new ArgumentNullException(nameof(connectionManager));
             _resilience = resilience ?? throw new ArgumentNullException(nameof(resilience));
-            _connectionPool = connectionPool;
             _auditLog = auditLog;
 
             _commandTimeout = configuration.GetValue<int>("QueryTimeoutSeconds", 60);

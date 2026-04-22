@@ -157,7 +157,6 @@ namespace SQLTriage
             services.AddSingleton<ConfigurationValidator>();
             services.AddSingleton<AutoUpdateService>();
             services.AddSingleton<DatabaseAvailabilityService>();
-            services.AddSingleton<SqlConnectionPoolService>();
             services.AddSingleton<StartupService>();
             services.AddSingleton<Data.Services.PrintService>();
             services.AddSingleton<Data.Services.IPrintService>(sp => sp.GetRequiredService<Data.Services.PrintService>());
@@ -391,8 +390,10 @@ namespace SQLTriage
                 var serverMode = Services?.GetService<Data.Services.ServerModeService>();
                 if (serverMode?.IsRunning == true)
                 {
-                    try { serverMode.StopAsync().GetAwaiter().GetResult(); }
-                    catch (Exception ex) { Log.Warning(ex, "Error stopping server mode on exit"); }
+                    _ = serverMode.StopAsync().ContinueWith(t =>
+                    {
+                        if (t.IsFaulted) Log.Warning(t.Exception, "Error stopping server mode on exit");
+                    }, TaskScheduler.Default);
                 }
 
                 // Stop timer-based services

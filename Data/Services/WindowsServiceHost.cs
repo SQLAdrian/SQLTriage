@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging;
 using Radzen;
 using Serilog;
 using SQLTriage.Data.Caching;
+using SQLTriage.Data.Scheduling;
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -144,7 +145,6 @@ namespace SQLTriage.Data.Services
 
                 var app = builder.Build();
 
-                app.UseDeveloperExceptionPage();
                 app.UseStaticFiles();
                 app.UseRouting();
                 app.UseAntiforgery();
@@ -230,8 +230,8 @@ namespace SQLTriage.Data.Services
             services.AddSingleton<ConfigurationValidator>();
             services.AddSingleton<AutoUpdateService>();
             services.AddSingleton<DatabaseAvailabilityService>();
-            services.AddSingleton<SqlConnectionPoolService>();
             services.AddSingleton<PrintService>();
+            services.AddSingleton<Data.Services.IPrintService>(sp => sp.GetRequiredService<Data.Services.PrintService>());
             services.AddSingleton<SqlAssessmentService>();
 
             services.AddSingleton<ReportPageConfigService>();
@@ -247,6 +247,32 @@ namespace SQLTriage.Data.Services
             services.AddSingleton<ProductionReadinessGate>();
             services.AddSingleton<LocalLogService>();
             services.AddSingleton<PowerShellService>();
+
+            // DI parity: services registered in App.xaml.cs but missing here
+            services.AddSingleton<IServerConnectionManager>(sp => sp.GetRequiredService<ServerConnectionManager>());
+            services.AddSingleton<UserSettingsService>();
+            services.AddSingleton<Data.Services.IUserSettingsService>(sp => sp.GetRequiredService<UserSettingsService>());
+            services.AddSingleton<QueryRegistry>();
+            services.AddSingleton<QueryScheduler>();
+            services.AddSingleton<SchedulerRegistryService>();
+            services.AddSingleton<Data.Services.AlertDefinitionService>();
+            services.AddSingleton<Data.Services.AlertTemplateService>();
+            services.AddSingleton<Data.Services.AlertHistoryService>();
+            services.AddSingleton<Data.Services.AlertBaselineService>();
+            services.AddSingleton<Data.Services.AlertEvaluationService>();
+            services.AddSingleton<Data.Services.ScheduledTaskDefinitionService>();
+            services.AddSingleton<Data.Services.ScheduledTaskHistoryService>();
+            services.AddSingleton<Data.Services.ScheduledTaskEngine>();
+            services.AddSingleton<SQLTriage.Data.Services.ExecutiveHealthService>();
+            services.AddSingleton<IChartThemeService, ChartThemeService>();
+            services.AddSingleton<CacheMetricsService>();
+            services.AddSingleton<Data.Services.ConnectionHealthService>();
+            services.AddSingleton<Data.Services.BenchmarkService>();
+            services.AddSingleton<Data.Services.ForecastService>();
+            services.AddSingleton<Data.Services.RbacService>();
+            services.AddSingleton<RateLimiter>();
+            services.AddScoped<Data.Services.AppUserState>();
+            services.AddSingleton<StartupService>();
 
             // Caching layer
             services.AddSingleton<liveQueriesCacheStore>();

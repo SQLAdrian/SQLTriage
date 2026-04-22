@@ -297,7 +297,6 @@ namespace SQLTriage.Data.Services
             TryAdd<DatabaseAvailabilityService>(services, wpf);
             TryAdd<DashboardConfigService>(services, wpf);
             TryAdd<QueryExecutor>(services, wpf);
-            TryAdd<SqlConnectionPoolService>(services, wpf);
             TryAdd<ResilienceService>(services, wpf);
             TryAdd<QueryThrottleService>(services, wpf);
             TryAdd<CheckRepositoryService>(services, wpf);

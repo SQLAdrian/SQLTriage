@@ -100,7 +100,14 @@ namespace SQLTriage.Data.Services
 
             // Base timer ticks every 30 seconds; individual alert frequencies are checked inside
             _timer = new System.Timers.Timer(30_000);
-            _timer.Elapsed += async (_, _) => await EvaluateAllAsync();
+            _timer.Elapsed += (_, _) =>
+            {
+                _ = Task.Run(async () =>
+                {
+                    try { await EvaluateAllAsync(); }
+                    catch (Exception ex) { _logger.LogError(ex, "Alert evaluation cycle failed"); }
+                });
+            };
         }
 
         public void Start()

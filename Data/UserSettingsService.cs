@@ -104,6 +104,14 @@ namespace SQLTriage.Data
             public int MaxHeavyConcurrent { get; set; } = 5;
             /// <summary>Maximum concurrent light queries (StatCard, BarGauge, CheckStatus, DataGrid). Default 10. Range 2-50.</summary>
             public int MaxLightConcurrent { get; set; } = 10;
+            /// <summary>Maximum concurrent queries per individual server. Default 3. Range 1-10.</summary>
+            public int MaxConcurrentPerServer { get; set; } = 3;
+            /// <summary>When true, temporarily raises concurrency limits during burst periods.</summary>
+            public bool EnableBurstMode { get; set; } = false;
+            /// <summary>Multiplier applied to concurrency limits during burst mode. Default 2.0. Range 1.0-5.0.</summary>
+            public double BurstConcurrencyMultiplier { get; set; } = 2.0;
+            /// <summary>Duration of burst mode in seconds. Default 60. Range 10-300.</summary>
+            public int BurstDurationSec { get; set; } = 60;
 
             // ── Cache ──
             /// <summary>Maximum data points returned per chart series from the SQLite cache. Lower = less memory, faster render.</summary>
@@ -444,6 +452,18 @@ namespace SQLTriage.Data
 
         public int GetMaxLightConcurrent() { lock (_lock) return _settings.MaxLightConcurrent; }
         public void SetMaxLightConcurrent(int limit) { lock (_lock) _settings.MaxLightConcurrent = Math.Clamp(limit, 2, 50); SaveSettings(); }
+
+        public int GetMaxConcurrentPerServer() { lock (_lock) return _settings.MaxConcurrentPerServer; }
+        public void SetMaxConcurrentPerServer(int limit) { lock (_lock) _settings.MaxConcurrentPerServer = Math.Clamp(limit, 1, 10); SaveSettings(); }
+
+        public bool GetEnableBurstMode() { lock (_lock) return _settings.EnableBurstMode; }
+        public void SetEnableBurstMode(bool enabled) { lock (_lock) _settings.EnableBurstMode = enabled; SaveSettings(); }
+
+        public double GetBurstConcurrencyMultiplier() { lock (_lock) return _settings.BurstConcurrencyMultiplier; }
+        public void SetBurstConcurrencyMultiplier(double mult) { lock (_lock) _settings.BurstConcurrencyMultiplier = Math.Clamp(mult, 1.0, 5.0); SaveSettings(); }
+
+        public int GetBurstDurationSec() { lock (_lock) return _settings.BurstDurationSec; }
+        public void SetBurstDurationSec(int sec) { lock (_lock) _settings.BurstDurationSec = Math.Clamp(sec, 10, 300); SaveSettings(); }
 
         public string? GetUpdateProxyUrl() { lock (_lock) return _settings.UpdateProxyUrl; }
         public void SetUpdateProxyUrl(string? url) { lock (_lock) _settings.UpdateProxyUrl = string.IsNullOrWhiteSpace(url) ? null : url.Trim(); SaveSettings(); }

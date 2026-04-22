@@ -22,6 +22,7 @@ namespace SQLTriage.Data.Services
 
         // Current session identifier (process start time)
         private readonly string _sessionId;
+        private readonly Task _initTask;
 
         public CacheMetricsService(liveQueriesCacheStore cache, ILogger<CacheMetricsService> logger)
         {
@@ -29,8 +30,20 @@ namespace SQLTriage.Data.Services
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _sessionId = DateTime.Now.ToString("yyyyMMdd_HHmmss");
 
-            // Ensure metrics table exists
-            EnsureTableExists().Wait();
+            // Fire-and-forget initialization — first write will await it
+            _initTask = InitializeAsync();
+        }
+
+        private async Task InitializeAsync()
+        {
+            try
+            {
+                await EnsureTableExists();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "CacheMetricsService initialization failed");
+            }
         }
 
         private async Task EnsureTableExists()
@@ -62,6 +75,7 @@ namespace SQLTriage.Data.Services
         public async Task RecordSnapshotAsync(string dashboardId, int total, int fresh, int cached)
         {
             if (_disposed) return;
+            await _initTask;
 
             var key = $"current_{dashboardId}";
             var session = _sessionMetrics.GetOrAdd(key, _ => new SessionMetrics());

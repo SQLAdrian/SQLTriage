@@ -84,6 +84,24 @@ namespace SQLTriage.Data.Services
         void SaveRoadmapSchedule(bool enabled, string type, string time, int dayOfWeek, int dayOfMonth, bool splitByDomain);
         void UpdateRoadmapScheduleLastRun(DateTime utcNow);
 
+        int GetMaxHeavyConcurrent();
+        void SetMaxHeavyConcurrent(int limit);
+
+        int GetMaxLightConcurrent();
+        void SetMaxLightConcurrent(int limit);
+
+        int GetMaxConcurrentPerServer();
+        void SetMaxConcurrentPerServer(int limit);
+
+        bool GetEnableBurstMode();
+        void SetEnableBurstMode(bool enabled);
+
+        double GetBurstConcurrencyMultiplier();
+        void SetBurstConcurrencyMultiplier(double mult);
+
+        int GetBurstDurationSec();
+        void SetBurstDurationSec(int sec);
+
         event Action<int>? OnZoomChanged;
         event Action<bool>? OnDebugLoggingChanged;
         event Action<bool>? OnNoPantsModeChanged;

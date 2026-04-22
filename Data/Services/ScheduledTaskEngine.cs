@@ -52,7 +52,14 @@ namespace SQLTriage.Data.Services
 
             // Tick every 60 seconds, check which tasks are due
             _timer = new System.Timers.Timer(60_000);
-            _timer.Elapsed += async (_, _) => await ExecuteAllDueAsync();
+            _timer.Elapsed += (_, _) =>
+            {
+                _ = Task.Run(async () =>
+                {
+                    try { await ExecuteAllDueAsync(); }
+                    catch (Exception ex) { _logger.LogError(ex, "Scheduled task cycle failed"); }
+                });
+            };
         }
 
         public void Start()
@@ -216,7 +223,7 @@ namespace SQLTriage.Data.Services
 
                 using var reader = await cmd.ExecuteReaderAsync();
                 var dt = new DataTable();
-                dt.Load(reader);
+                await Task.Run(() => dt.Load(reader));
 
                 sw.Stop();
                 exec.RowCount = dt.Rows.Count;
