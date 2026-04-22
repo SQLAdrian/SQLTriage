@@ -25,8 +25,8 @@ namespace SQLTriage.Data.Scheduling
         private readonly IConfiguration _configuration;
 
         // ── Configuration ──────────────────────────────────────────────
-        private readonly int _globalConcurrency;
-        private readonly int _perServerConcurrency;
+        private int _globalConcurrency;
+        private int _perServerConcurrency;
         private readonly int _channelCapacity;
         private readonly TimeSpan _defaultTimeout;
 
@@ -37,8 +37,8 @@ namespace SQLTriage.Data.Scheduling
         private static readonly int PriorityCount = Enum.GetValues<QueryPriority>().Length;
 
         // ── Concurrency control ────────────────────────────────────────
-        private readonly SemaphoreSlim _globalSemaphore;
-        private readonly SemaphoreSlim[] _serverSemaphores; // striped locks
+        private SemaphoreSlim _globalSemaphore;
+        private SemaphoreSlim[] _serverSemaphores; // striped locks
         private const int ServerStripeCount = 64;
 
         // ── Dispatcher lifecycle ───────────────────────────────────────
@@ -369,8 +369,9 @@ namespace SQLTriage.Data.Scheduling
 
         private SemaphoreSlim[] AcquireServerSemaphores(IReadOnlyList<string> serverNames)
         {
+            var semaphores = _serverSemaphores; // local snapshot for thread safety during updates
             if (serverNames.Count == 0)
-                return new[] { _serverSemaphores[0] }; // default stripe
+                return new[] { semaphores[0] }; // default stripe
 
             var seen = new HashSet<int>();
             var list = new List<SemaphoreSlim>();
@@ -378,7 +379,7 @@ namespace SQLTriage.Data.Scheduling
             {
                 var idx = GetServerStripeIndex(name);
                 if (seen.Add(idx))
-                    list.Add(_serverSemaphores[idx]);
+                    list.Add(semaphores[idx]);
             }
             return list.ToArray();
         }
@@ -435,6 +436,31 @@ namespace SQLTriage.Data.Scheduling
             var cutoff = now.Add(-_metricsWindow);
             while (_latencyWindow.TryPeek(out var sample) && sample.Timestamp < cutoff)
                 _latencyWindow.TryDequeue(out _);
+        }
+
+        public void UpdateLimits(int globalConcurrency, int perServerConcurrency)
+        {
+            if (globalConcurrency <= 0) throw new ArgumentOutOfRangeException(nameof(globalConcurrency));
+            if (perServerConcurrency <= 0) throw new ArgumentOutOfRangeException(nameof(perServerConcurrency));
+
+            var newGlobal = new SemaphoreSlim(globalConcurrency, globalConcurrency);
+            var newServer = new SemaphoreSlim[ServerStripeCount];
+            for (int i = 0; i < ServerStripeCount; i++)
+                newServer[i] = new SemaphoreSlim(perServerConcurrency, perServerConcurrency);
+
+            var oldGlobal = Interlocked.Exchange(ref _globalSemaphore, newGlobal);
+            var oldServer = Interlocked.Exchange(ref _serverSemaphores, newServer);
+
+            _globalConcurrency = globalConcurrency;
+            _perServerConcurrency = perServerConcurrency;
+
+            oldGlobal?.Dispose();
+            if (oldServer != null)
+            {
+                foreach (var sem in oldServer) sem?.Dispose();
+            }
+
+            _logger.LogInformation("QueryOrchestrator limits updated: global={Global}, perServer={PerServer}", globalConcurrency, perServerConcurrency);
         }
 
         public void Dispose()

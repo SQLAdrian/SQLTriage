@@ -118,6 +118,12 @@ namespace SQLTriage.Data.Scheduling
         Task<OrchestratorMetrics> GetMetricsAsync(CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// Updates global and per-server concurrency limits at runtime.
+        /// Existing in-flight queries are not affected; new acquisitions use the updated limits.
+        /// </summary>
+        void UpdateLimits(int globalConcurrency, int perServerConcurrency);
+
+        /// <summary>
         /// Starts the background dispatcher loop. Idempotent.
         /// </summary>
         void Start();

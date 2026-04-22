@@ -26,7 +26,7 @@
 @inject SQLTriage.Data.ServerConnectionManager ConnectionManager
 @inject SQLTriage.Data.Services.CacheMetricsService CacheMetrics
 @inject SQLTriage.Data.Services.CacheMetricsService CacheMetrics
-@inject SQLTriage.Data.QueryThrottleService QueryThrottle
+@inject SQLTriage.Data.Scheduling.IQueryOrchestrator QueryOrchestrator
 
 @if (!RbacService.HasPermission(UserState.Role, "settings"))
 {
@@ -1375,10 +1375,10 @@
             UserSettings.SetMaxHeavyConcurrent(_maxHeavy);
             UserSettings.SetMaxLightConcurrent(_maxLight);
 
-            // Update QueryThrottleService limits at runtime
+            // Update QueryOrchestrator limits at runtime
             try
             {
-                QueryThrottle?.UpdateLimits(_maxHeavy, _maxLight);
+                QueryOrchestrator?.UpdateLimits(globalConcurrency: _maxHeavy + _maxLight, perServerConcurrency: Math.Max(1, _maxHeavy));
                 _concurrencyMessage = $"Concurrency limits saved: Heavy={_maxHeavy}, Light={_maxLight}. Applied immediately.";
             }
             catch (Exception ex)
@@ -1393,7 +1393,7 @@
         StateHasChanged();
     }
 
-     private void ResetConcurrencyDefaults()
+         private void ResetConcurrencyDefaults()
      {
          _maxHeavy = 5;
          _maxLight = 10;
@@ -1401,7 +1401,7 @@
          UserSettings.SetMaxLightConcurrent(10);
          try
          {
-             QueryThrottle?.UpdateLimits(5, 10);
+             QueryOrchestrator?.UpdateLimits(globalConcurrency: 15, perServerConcurrency: 5);
          }
          catch { /* ignore */ }
          _concurrencyMessage = "Concurrency reset to defaults (Heavy=5, Light=10).";

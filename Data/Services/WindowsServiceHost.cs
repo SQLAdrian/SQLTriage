@@ -207,7 +207,6 @@ namespace SQLTriage.Data.Services
 
             services.AddSingleton<ResilienceService>();
             services.AddSingleton<DashboardConfigService>();
-            services.AddSingleton<QueryThrottleService>();
             services.AddSingleton<QueryExecutor>();
             services.AddScoped<DashboardDataService>();
             services.AddSingleton<AutoRefreshService>();
