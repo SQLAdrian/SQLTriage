@@ -6,6 +6,16 @@
 # Confidential check mapping table — never commit
 Config/!🛠AllCheckTable🛠!.csv
 
+# Local-only runtime measurements — machine-specific
+Config/panel-metrics.json
+
+# Local backup files (timestamped) — never commit
+*.backup-*
+
+# Scratch / draft CSS and notes
+unique-styles.txt
+wwwroot/css/appreworked.css
+
 # User-specific files
 *.rsuser
 *.suo

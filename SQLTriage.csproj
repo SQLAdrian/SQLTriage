@@ -76,11 +76,6 @@
     <None Remove="research_logs\**" />
   </ItemGroup>
 
-  <!-- PerformanceStudio: SQL execution plan analyzer by Erik Darling (git submodule) -->
-  <ItemGroup>
-    <ProjectReference Include="lib\PerformanceStudio\src\PlanViewer.Core\PlanViewer.Core.csproj" />
-  </ItemGroup>
-
   <!-- Release Build Optimizations -->
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <PublishReadyToRun>true</PublishReadyToRun>
@@ -317,12 +312,6 @@
     <Exec Command="powershell -ExecutionPolicy Bypass -File increment-build.ps1" />
   </Target>
 
-  <!-- Update PerformanceStudio submodule to latest on Release builds -->
-  <Target Name="UpdatePerformanceStudio" BeforeTargets="BeforeBuild" Condition="'$(Configuration)' == 'Release'">
-    <Exec Command="git submodule update --remote lib/PerformanceStudio" ContinueOnError="true" />
-    <Message Importance="high" Text="PerformanceStudio submodule updated to latest" />
-  </Target>
-
   <!-- Stamp exe file version from Config\version.json on every build -->
   <Target Name="StampVersionFromJson" AfterTargets="IncrementBuildNumber">
     <PropertyGroup>
@@ -387,7 +376,8 @@
     </PropertyGroup>
 
     <!-- Generate installer\version.iss with current version/build so iscc doesn't need to parse JSON -->
-    <Exec Command="powershell -ExecutionPolicy Bypass -Command &quot;$v=Get-Content 'Config\version.json' -Raw|ConvertFrom-Json; Set-Content 'installer\version.iss' &quot;&quot;#define AppVersion `&quot;$($v.version)`&quot;`r`n#define BuildNumber `&quot;$($v.buildNumber)`&quot;&quot;&quot;&quot;" Condition="'$(IsccExe)' != ''" ContinueOnError="true" />
+    <!-- Use a separate ps1 file rather than inline -Command so we don't fight MSBuild $-property expansion. -->
+    <Exec Command="powershell -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\installer\write-version-iss.ps1&quot;" Condition="'$(IsccExe)' != ''" ContinueOnError="true" />
 
     <!-- Inno Setup installer -->
     <Message Importance="high" Text="Building Inno Setup installer..." Condition="'$(IsccExe)' != ''" />

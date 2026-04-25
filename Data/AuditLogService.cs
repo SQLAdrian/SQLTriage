@@ -131,14 +131,23 @@ namespace SQLTriage.Data
                 var latest = GetCurrentLogFile();
                 if (!File.Exists(latest)) return;
 
-                string? previousSig = string.Empty;
+                // Seed with the first entry's PreviousHash so cross-file rotations
+                // don't register as chain breaks. Chain integrity within a single
+                // file is what we actually verify.
+                string? previousSig = null;
                 foreach (var line in File.ReadLines(latest))
                 {
                     if (string.IsNullOrWhiteSpace(line)) continue;
                     var entry = JsonSerializer.Deserialize<AuditLogEntry>(line, SerializerOptions);
                     if (entry == null) continue;
 
-                    var recomputed = ComputeSignature(entry, previousSig ?? string.Empty);
+                    if (previousSig == null)
+                    {
+                        // First entry of file — its declared PreviousHash is our starting point.
+                        previousSig = entry.PreviousHash ?? string.Empty;
+                    }
+
+                    var recomputed = ComputeSignature(entry, previousSig);
                     if (!string.Equals(recomputed, entry.Signature, StringComparison.Ordinal))
                     {
                         ChainBroken = true;

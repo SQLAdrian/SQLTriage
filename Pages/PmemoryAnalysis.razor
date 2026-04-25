@@ -1,6 +1,10 @@
 <!--/* In the name of God, the Merciful, the Compassionate */-->
 @page "/pmemory-analysis"
+@inject NavigationManager Nav
 
-<div class="dashboard-page">
-    <DynamicDashboard DashboardId="pmemory_analysis" />
-</div>
+@code {
+    protected override void OnInitialized()
+    {
+        Nav.NavigateTo("/memory", replace: true);
+    }
+}

@@ -83,6 +83,10 @@ namespace SQLTriage.Data
             /// <summary>Whether the user has accepted the no-pants disclaimer at least once.</summary>
             public bool NoPantsDisclaimerAccepted { get; set; } = false;
 
+            // ── Accessibility ──
+            /// <summary>When true, status indicators use a colorblind-safe palette (blue/yellow/orange) instead of red/green.</summary>
+            public bool ColorBlindMode { get; set; } = false;
+
             // ── Live Sessions Monitoring ──
             /// <summary>Auto-refresh enabled for Live Sessions page.</summary>
             public bool SessionsAutoRefresh { get; set; } = true;
@@ -101,7 +105,7 @@ namespace SQLTriage.Data
 
             // ── Performance Inspector ──
             /// <summary>When true, enables performance tracing for dashboard loads.</summary>
-            public bool EnablePerfInspector { get; set; } = false;
+            public bool EnablePerfInspector { get; set; } = true;
 
             // ── Query Concurrency ──
             /// <summary>Maximum concurrent heavy queries (TimeSeries panels). Default 5. Range 1-20.</summary>
@@ -373,6 +377,16 @@ namespace SQLTriage.Data
 
         /// <summary>Fired when no-pants mode is toggled so dashboard components can show/hide dangerous controls.</summary>
         public event Action<bool>? OnNoPantsModeChanged;
+
+        // ── Color-Blind Mode ──
+        public bool GetColorBlindMode() { lock (_lock) return _settings.ColorBlindMode; }
+        public void SetColorBlindMode(bool enabled)
+        {
+            lock (_lock) _settings.ColorBlindMode = enabled;
+            SaveSettings();
+            OnColorBlindModeChanged?.Invoke(enabled);
+        }
+        public event Action<bool>? OnColorBlindModeChanged;
 
         // ── Alert Baseline ──
         public bool GetAlertBaselineEnabled() { lock (_lock) return _settings.AlertBaselineEnabled; }

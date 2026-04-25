@@ -1,0 +1,46 @@
+/* Traffic-light dot for nav-link expected load time.
+   Tier colors come from CSS vars so a `.colorblind-mode` class on <body>
+   can swap to a colorblind-safe palette without touching every site. */
+:root {
+    --perf-fast:   #22c55e;  /* green   <500ms  */
+    --perf-med:    #f59e0b;  /* orange  500-1000ms */
+    --perf-slow:   #ef4444;  /* red     >1000ms */
+}
+
+body.colorblind-mode {
+    --perf-fast:   #2563eb;  /* blue   — universally distinguishable */
+    --perf-med:    #f59e0b;  /* amber  — yellow-orange, kept */
+    --perf-slow:   #d97706;  /* dark orange — replaces red */
+}
+
+.nav-perf-dot {
+    margin-left: auto;
+    flex-shrink: 0;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--text-muted);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+    transition: background 120ms, transform 120ms;
+}
+
+.nav-perf-dot.fast { background: var(--perf-fast); }
+.nav-perf-dot.med  { background: var(--perf-med); }
+.nav-perf-dot.slow { background: var(--perf-slow); }
+
+.nav-link:hover .nav-perf-dot {
+    transform: scale(1.15);
+}
+
+/* Color-Blind toggle icon (mirrors no-pants/experimental styling) */
+.colorblind-icon {
+    color: var(--text-muted);
+    transition: color 0.3s, filter 0.3s;
+}
+.colorblind-icon.colorblind-active {
+    color: #2563eb;
+    filter: drop-shadow(0 0 4px rgba(37, 99, 235, 0.5));
+}
+.no-pants-track.colorblind-track-on {
+    background: #2563eb !important;
+}

@@ -56,7 +56,6 @@
 
             <div class="nav-map-group">
                 <div class="nav-map-label">Tools</div>
-                <a href="/plan-analysis" class="nav-map-item"><i class="fa-solid fa-sitemap"></i><span>Plan Analysis</span><span class="nav-map-hint">Query execution plans</span></a>
                 <a href="/bestpractice" class="nav-map-item"><i class="fa-solid fa-star"></i><span>Best Practice</span><span class="nav-map-hint">SQL Server best practices</span></a>
                 <a href="/dbatools" class="nav-map-item"><i class="fa-solid fa-wrench"></i><span>DBA Tools</span><span class="nav-map-hint">Diagnostic scripts</span></a>
                 <a href="/capacity" class="nav-map-item"><i class="fa-solid fa-chart-line"></i><span>Capacity Planning</span><span class="nav-map-hint">Disk &amp; CPU forecasts</span></a>
@@ -292,7 +291,7 @@
     </div>
 </div>
 
-<style>
+<!-- <style>
     .nav-map-section { margin-bottom: 35px; }
 
     .nav-map-grid {
@@ -366,7 +365,7 @@
     @@media (max-width: 768px) {
         .nav-map-grid { grid-template-columns: 1fr; }
     }
-</style>
+</style> -->
 
 @code {
     private void GoToSQLTriage() => Navigation.NavigateTo("/dashboard/SQLTriage");
@@ -391,7 +390,7 @@
     private void GoToAbout() => Navigation.NavigateTo("/about");
 }
 
-<style>
+<!-- <style>
     .guide-container {
         max-width: 80%;
         margin: 0 auto;
@@ -483,4 +482,4 @@
             grid-template-columns: 1fr;
         }
     }
-</style>
+</style> -->

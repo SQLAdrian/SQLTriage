@@ -12,11 +12,13 @@
 @inject DashboardDataService DataService
 @inject QueryExecutor QueryExecutor
 @inject CachingQueryExecutor CachingExecutor
+@inject SQLTriage.Data.Services.CacheMetricsService CacheMetrics
 @inject AutoRefreshService RefreshService
 @inject UserSettingsService UserSettings
 @inject ServerConnectionManager ConnectionManager
 @inject GlobalInstanceSelector InstanceSelector
 @inject IQueryOrchestrator QueryOrchestrator
+@inject DatabaseAvailabilityService DbAvailability
 @inject IDbConnectionFactory _connectionFactory
 @inject ILogger<DynamicDashboard> Logger
 @inject LocalLogService LocalLogger
@@ -160,6 +162,26 @@
             @Dashboard.Description
         </div>
     }
+    @if (Dashboard.Tabs != null && Dashboard.Tabs.Count > 0)
+    {
+        <div class="dashboard-tabs" role="tablist">
+            @foreach (var tab in Dashboard.Tabs)
+            {
+                var isActive = tab.Id == _selectedTabId;
+                <button class="dashboard-tab @(isActive ? "dashboard-tab--active" : "")"
+                        role="tab"
+                        aria-selected="@(isActive.ToString().ToLower())"
+                        @onclick="() => SwitchTabAsync(tab.Id)">
+                    @if (!string.IsNullOrEmpty(tab.Icon))
+                    {
+                        <i class="@tab.Icon"></i>
+                    }
+                    <span>@tab.Title</span>
+                    <span class="dashboard-tab-count">@tab.Panels.Count</span>
+                </button>
+            }
+        </div>
+    }
 }
 
 <DashboardToolbar @bind-TimeRangeMinutes="TimeRangeMinutes"
@@ -257,12 +279,25 @@
         </div>
     }
 
+    @if (RequiredDbMissing)
+    {
+        <div class="sqlwatch-required-banner">
+            <span class="sqlwatch-required-icon">⚠️</span>
+            <div>
+                <strong>@RequiredDbBannerText</strong>
+                <div class="sqlwatch-required-detail">
+                    Connect a server that has this database, or skip this dashboard.
+                </div>
+            </div>
+        </div>
+    }
+
     @* Initial blank-slate spinner only — subsequent refreshes keep content visible *@
-    @if (IsLoading && !_hasLoadedOnce && (CurrentServerHasSqlWatch || !RequiresSqlWatch))
+    @if (IsLoading && !_hasLoadedOnce && (CurrentServerHasSqlWatch || !RequiresSqlWatch) && !RequiredDbMissing)
     {
         <div class="chart-empty">Loading data...</div>
     }
-    else if (Dashboard != null && (CurrentServerHasSqlWatch || !RequiresSqlWatch))
+    else if (Dashboard != null && (CurrentServerHasSqlWatch || !RequiresSqlWatch) && !RequiredDbMissing)
     {
         @if (_dashEditMode)
         {
@@ -548,13 +583,57 @@
     // Tracks which connection IDs have a confirmed SQLWATCH installation (non-empty discovery).
     private readonly HashSet<string> _connectionsWithSqlWatch = new();
 
-    // Dashboards that require SQLWATCH historical tables (the first 3 in dashboard-config.json).
+    // Dashboards that require SQLWATCH historical tables.
+    // NOTE: "waitevents" merged into "livewaits" (tab) — livewaits itself uses master, not SQLWATCH.
     private static readonly HashSet<string> SqlWatchRequiredDashboards =
-        new(StringComparer.OrdinalIgnoreCase) { "instance", "longqueries", "waitevents" };
+        new(StringComparer.OrdinalIgnoreCase) { "instance", "longqueries" };
 
     private bool RequiresSqlWatch => SqlWatchRequiredDashboards.Contains(DashboardId);
     private bool CurrentServerHasSqlWatch =>
         _connectionsWithSqlWatch.Contains(ConnectionManager.CurrentServer?.Id ?? "");
+
+    // Generic database-precondition state — populated by CheckRequiredDatabaseAsync.
+    // null = not yet checked; true/false = result of last check.
+    private bool? _requiredDbAvailable;
+    private string? _requiredDbCheckedFor; // server id we last checked against, to invalidate on server change
+    private bool RequiresExtraDb => !string.IsNullOrEmpty(Dashboard?.RequiresDatabase);
+    private bool RequiredDbMissing => RequiresExtraDb && _requiredDbAvailable == false;
+    private string RequiredDbBannerText
+    {
+        get
+        {
+            var db = Dashboard?.RequiresDatabase ?? "";
+            var role = Dashboard?.RequiresDatabaseRole;
+            return string.IsNullOrEmpty(role)
+                ? $"This dashboard requires the '{db}' database, which was not found on this server."
+                : $"This server is not a {role} (requires the '{db}' database).";
+        }
+    }
+
+    /// <summary>
+    /// Runs a precondition check for the dashboard's RequiresDatabase, if any.
+    /// Caches the result per (server-id, db-name) so repeated dashboard loads
+    /// don't re-query. Result populates _requiredDbAvailable.
+    /// </summary>
+    private async Task CheckRequiredDatabaseAsync()
+    {
+        if (!RequiresExtraDb || Dashboard == null) { _requiredDbAvailable = null; return; }
+        var serverId = ConnectionManager.CurrentServer?.Id ?? "";
+        if (_requiredDbCheckedFor == serverId && _requiredDbAvailable.HasValue) return;
+
+        try
+        {
+            var serverName = ConnectionManager.CurrentServer?.ServerNames ?? "";
+            _requiredDbAvailable = await DbAvailability.DatabaseExistsOnServerAsync(serverName, Dashboard.RequiresDatabase!);
+            _requiredDbCheckedFor = serverId;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "[DynamicDashboard:{DashboardId}] RequiresDatabase precondition check failed (treating as missing)", DashboardId);
+            _requiredDbAvailable = false;
+            _requiredDbCheckedFor = serverId;
+        }
+    }
 
     private void MaximizePanel(PanelDefinition panel)
     {
@@ -594,10 +673,13 @@
 
     private void RefreshPanelCaches()
     {
+        // Resolve active panel set — tab-aware (falls back to Panels when no tabs).
+        var activePanels = Dashboard?.GetActivePanels(_selectedTabId) ?? new List<PanelDefinition>();
+
         // Filter panels by data source
-        var sourceFilteredPanels = DISABLE_PANEL_FILTERS 
-            ? Dashboard?.Panels?.ToList() ?? new List<PanelDefinition>()
-            : Dashboard?.Panels?.Where(p => 
+        var sourceFilteredPanels = DISABLE_PANEL_FILTERS
+            ? activePanels
+            : activePanels.Where(p =>
             {
                 var panelSource = p.GetEffectiveSource(Dashboard?.Source ?? "master");
                 var dashboardSource = Dashboard?.Source ?? "master";
@@ -611,7 +693,7 @@
                        string.IsNullOrEmpty(panelSource) ||
                        string.IsNullOrEmpty(querySource) ||
                        (dashboardSource == "pm" && (DataSource == "pm" || DataSource == "sqlwatch"));
-            }).ToList() ?? new List<PanelDefinition>();
+            }).ToList();
 
         _enabledPanelsCache = sourceFilteredPanels.Where(p => p.Enabled).ToList();
         _statPanelsCache = _enabledPanelsCache.Where(p => p.Layout.Column == 0 && (p.PanelType == "StatCard" || p.PanelType == "DeltaStatCard" || p.PanelType == "CheckStatus")).OrderBy(p => p.Layout.Order).ToList();
@@ -621,6 +703,20 @@
     }
 
     private string _currentDashboardId = "";
+    private string? _selectedTabId;
+
+    /// <summary>
+    /// Switch the active tab. Only panels in the newly-active tab are loaded —
+    /// panels in the previous tab are left with their last-known data.
+    /// </summary>
+    private async Task SwitchTabAsync(string tabId)
+    {
+        if (_selectedTabId == tabId) return;
+        _selectedTabId = tabId;
+        RefreshPanelCaches();
+        StateHasChanged();
+        await StartLoad();
+    }
     private List<string> _queryStoreDatabases = new();
 
     protected override async Task OnInitializedAsync()
@@ -670,6 +766,8 @@
         }
 
         Logger.LogInformation("[DynamicDashboard:{DashboardId}] Dashboard configuration loaded successfully", DashboardId);
+        // Default to the first tab when the dashboard is tabbed
+        _selectedTabId = Dashboard.Tabs?.FirstOrDefault()?.Id;
         RefreshPanelCaches();
 
         var connections = ConnectionManager.GetConnections();
@@ -945,7 +1043,7 @@
         var filter = BuildFilter();
         if (filter == null) return;
 
-        var panels = _enabledPanelsCache ?? Dashboard.Panels;
+        var panels = _enabledPanelsCache ?? Dashboard.GetActivePanels(_selectedTabId);
         if (panels == null || !panels.Any()) return;
 
         var tsResults   = new ConcurrentDictionary<string, List<TimeSeriesPoint>>();
@@ -1033,6 +1131,16 @@
             return;
         }
 
+        // Generic database precondition (e.g. replication needs 'distribution').
+        await CheckRequiredDatabaseAsync();
+        if (RequiredDbMissing)
+        {
+            Logger.LogWarning("[DynamicDashboard:{DashboardId}] Skipping data load - required DB '{Db}' not present on current server",
+                DashboardId, Dashboard?.RequiresDatabase);
+            IsLoading = false;
+            return;
+        }
+
         IsLoading = true;
         ErrorMessage = null;
         _panelErrors.Clear();
@@ -1051,6 +1159,9 @@
             DashboardId, string.Join(", ", filter?.Instances ?? Array.Empty<string>()), filter?.TimeFrom, filter?.TimeTo);
         System.Diagnostics.Debug.WriteLine($"[DynamicDashboard:{DashboardId}] [LoadData] Filter: Instances=[{string.Join(", ", filter?.Instances ?? Array.Empty<string>())}], TimeFrom={filter?.TimeFrom:yyyy-MM-dd HH:mm:ss}, TimeTo={filter?.TimeTo:yyyy-MM-dd HH:mm:ss}");
         
+        // Reset cache metrics counters so this load's hits/misses can be captured for the Settings → Cache Performance card
+        CachingExecutor.ResetMetrics();
+
         try
         {
             await CachingExecutor.PrepareRefreshCycle(DashboardId, TimeRangeMinutes, SelectedInstance, TimezoneOffsetHours);
@@ -1071,7 +1182,7 @@
         var gridResults = new ConcurrentDictionary<string, DataTable>();
         var checkResults = new ConcurrentDictionary<string, List<CheckStatus>>();
 
-        var panelsToLoad = _enabledPanelsCache ?? Dashboard.Panels;
+        var panelsToLoad = _enabledPanelsCache ?? Dashboard.GetActivePanels(_selectedTabId);
         var panelCount = panelsToLoad?.Count() ?? 0;
         _loadedPanelCount = 0;
         _totalPanelCount = panelCount;
@@ -1163,6 +1274,18 @@
             LocalLogger.LogWarning($"[DynamicDashboard:{DashboardId}] Panel errors: {string.Join("; ", _panelErrors.Select(kvp => $"{kvp.Key}: {kvp.Value}"))}");
         }
         
+        // Persist this load's cache metrics for Settings → Cache Performance.
+        // Fire-and-forget — telemetry shouldn't block the dashboard.
+        try
+        {
+            _ = CacheMetrics.RecordSnapshotAsync(DashboardId,
+                CachingExecutor.TotalQueries, CachingExecutor.FreshHits, CachingExecutor.CacheHits);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "[DynamicDashboard:{DashboardId}] CacheMetrics snapshot failed (non-fatal)", DashboardId);
+        }
+
         _hasLoadedOnce = true;
         IsLoading = false;
         await SafeStateHasChanged();
@@ -1188,11 +1311,11 @@
             DashboardId = DashboardId,
             PanelId = panel.Id,
             QueryId = panel.Id,
+            PanelType = panel.PanelType ?? "",
             ServerName = filter.Instances?.FirstOrDefault() ?? "",
-            EnqueuedAt = DateTime.Now
+            StartedAt = DateTime.Now
         };
-        trace.DequeuedAt = DateTime.Now;
-        trace.SqlStarted = DateTime.Now;
+        int traceRowCount = 0;
 
         try
         {
@@ -1284,25 +1407,36 @@
                     break;
             }
 
+            trace.FetchCompleted = DateTime.Now;
+            trace.CacheHitTier = CachingExecutor.GetLastTier(panel.Id, CachingQueryExecutor.BuildInstanceKey(filter));
+
+            // Best-effort row count across the result dictionaries.
+            if (tsResults.TryGetValue(panel.Id, out var tsOut)) traceRowCount = tsOut?.Count ?? 0;
+            else if (gridResults.TryGetValue(panel.Id, out var gridOut)) traceRowCount = gridOut?.Rows.Count ?? 0;
+            else if (bgResults.TryGetValue(panel.Id, out var bgOut)) traceRowCount = bgOut?.Count ?? 0;
+            else if (checkResults.TryGetValue(panel.Id, out var checkOut)) traceRowCount = checkOut?.Count ?? 0;
+            else if (statResults.ContainsKey(panel.Id)) traceRowCount = 1;
+
             trace.DataReadyAt = DateTime.Now;
-            trace.CacheHitTier = "Unknown";
-            trace.RowCount = 0;
-            trace.BytesReturned = 0;
-            PerfService.AddTrace(trace);
+            trace.RowCount = traceRowCount;
 
             // Panel finished loading — no longer showing cached data for this panel
             _cachedPanelIds.TryRemove(panel.Id, out _);
 
             var elapsed = DateTime.Now - panelDebugStart;
-            Logger.LogDebug("[DynamicDashboard:{DashboardId}] [Panel:{PanelId}] Completed successfully in {ElapsedMs}ms", 
+            Logger.LogDebug("[DynamicDashboard:{DashboardId}] [Panel:{PanelId}] Completed successfully in {ElapsedMs}ms",
                 DashboardId, panel.Id, elapsed.TotalMilliseconds);
         }
         catch (OperationCanceledException)
         {
+            trace.Success = false;
+            trace.ErrorMessage = "Cancelled";
             Logger.LogDebug("[DynamicDashboard:{DashboardId}] [Panel:{PanelId}] Operation cancelled (navigation)", DashboardId, panel.Id);
         }
         catch (Exception ex) when (IsCancellationException(ex, cancellationToken))
         {
+            trace.Success = false;
+            trace.ErrorMessage = "Cancelled";
             // SqlException "Operation cancelled by user" — navigation away cancelled the query, not an error
             Logger.LogDebug("[DynamicDashboard:{DashboardId}] [Panel:{PanelId}] Query cancelled by navigation", DashboardId, panel.Id);
         }
@@ -1310,11 +1444,20 @@
         {
             var errorMsg = $"Panel '{panel.Id}' error: {ex.Message}";
             _panelErrors[panel.Id] = errorMsg;
+            trace.Success = false;
+            trace.ErrorMessage = ex.Message;
 
             Logger.LogError(ex, "[DynamicDashboard:{DashboardId}] [Panel:{PanelId}] Panel loading failed: {ErrorMessage}",
                 DashboardId, panel.Id, ex.Message);
             LocalLogger.LogError($"[DynamicDashboard:{DashboardId}] [Panel:{panel.Id}] ERROR - {ex.Message}", ex);
             System.Diagnostics.Debug.WriteLine($"[DynamicDashboard:{DashboardId}] [Panel:{panel.Id}] ERROR - {ex.Message}\n{ex.StackTrace}");
+        }
+        finally
+        {
+            // Ensure all stamps are populated even on cancel / error so durations compute cleanly.
+            if (trace.FetchCompleted == default) trace.FetchCompleted = DateTime.Now;
+            if (trace.DataReadyAt == default) trace.DataReadyAt = trace.FetchCompleted;
+            PerfService.AddTrace(trace);
         }
     }
 
@@ -1633,6 +1776,9 @@
 
     private async Task OnServerConnectionChanged()
     {
+        // Invalidate the per-server precondition cache — the new server may or may not have the required DB.
+        _requiredDbAvailable = null;
+        _requiredDbCheckedFor = null;
         await StartLoad();
     }
 

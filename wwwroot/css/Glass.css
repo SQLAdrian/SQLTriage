@@ -1,0 +1,226 @@
+/* Glassmorphism — frosted card variant + ambient background.
+ *
+ * Used selectively on hero pages (Servers, About, Settings). Don't blanket-apply:
+ * a fully glass app gets visually noisy fast. Reserve for "feature surfaces".
+ *
+ * Uses CSS backdrop-filter (Chromium 76+; WebView2 supports it).
+ * Falls back gracefully to a solid card on browsers without support.
+ */
+
+/* ── Ambient background image — pinned to <html> so it stays fixed
+ *    regardless of which container actually scrolls. <body> is forced
+ *    transparent so the html background shows through. */
+html.has-ambient-bg {
+    background-color: var(--bg-primary);
+    background-image: var(--ambient-bg, none);
+    background-size: cover;
+    background-position: center center;
+    background-repeat: no-repeat;
+}
+
+/* Fallback solid bg on html when the JS hasn't applied an image yet, so
+ * we never flash white during the brief moment before the image loads. */
+html { background-color: var(--bg-primary); }
+
+body.has-ambient-bg {
+    background-color: transparent;
+}
+
+/* Dim layer so cards stay readable over any photo.
+ * z-index: -1 puts it BEHIND the app shell — content draws on top of body's
+ * pseudo-element by default only if z-index is negative. Body itself needs
+ * a non-default position context for the negative z-index to work. */
+body.has-ambient-bg {
+    position: relative;
+    z-index: 0;
+}
+
+body.has-ambient-bg::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    /* Lighter, neutral overlay — no longer a heavy dark gradient.
+     * Keeps the photo visible but knocks back saturation/brightness so
+     * it reads as ambience, not foreground. */
+    background:
+        linear-gradient(180deg, rgba(0, 0, 0, 0.75), rgba(0, 0, 0,0.85));
+    backdrop-filter: saturate(0.7) brightness(0.85);
+    -webkit-backdrop-filter: saturate(0.7) brightness(0.85);
+    pointer-events: none;
+    z-index: -1;
+}
+
+/* Belt-and-braces: app shell wrappers explicitly sit above the dim layer */
+body.has-ambient-bg .app-container,
+body.has-ambient-bg .app-layout,
+body.has-ambient-bg .app-content,
+body.has-ambient-bg .nav-menu {
+    position: relative;
+    z-index: 1;
+}
+
+/* ── Glass card utility ──────────────────────────────────────────── */
+.card-glass {
+    background: rgba(45, 45, 48, 0.62);
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 12px;
+    box-shadow:
+        0 8px 24px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    transition: border-color 160ms, transform 160ms, box-shadow 160ms;
+}
+
+.card-glass:hover {
+    border-color: rgba(0, 122, 204, 0.35);
+    box-shadow:
+        0 12px 32px rgba(0, 0, 0, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+/* ── Hero number — for "headline" StatCards ──────────────────────── */
+.hero-number {
+    font-size: 56px;
+    font-weight: 200;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    display: inline-block;
+    margin-right: 12px;
+}
+
+.hero-number-unit {
+    font-size: 24px;
+    font-weight: 400;
+    color: var(--text-secondary);
+    letter-spacing: 0;
+}
+
+/* ── Servers page hero strip ──────────────────────────────────────── */
+.servers-hero {
+    display: flex;
+    align-items: baseline;
+    gap: 36px;
+    padding: 16px 22px;
+    margin-bottom: 16px;
+    background: rgba(45, 45, 48, 0.6);
+    backdrop-filter: blur(12px) saturate(140%);
+    -webkit-backdrop-filter: blur(12px) saturate(140%);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.servers-hero-stat {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.servers-hero-stat--sub .hero-number {
+    margin-right: 0;
+}
+
+/* ── Environment badge (Production / Development / Staging) ──────── */
+.env-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: #fff;
+    text-transform: capitalize;
+}
+
+.env-badge.env-production  { background: #b91c1c; }
+.env-badge.env-staging     { background: #b45309; }
+.env-badge.env-development { background: #15803d; }
+.env-badge.env-test        { background: #1d4ed8; }
+.env-badge.env-other       { background: var(--bg-hover); color: var(--text-secondary); }
+
+body.colorblind-mode .env-badge.env-production  { background: #d97706; }
+body.colorblind-mode .env-badge.env-development { background: #2563eb; }
+
+/* ── Tag pill (small, neutral, multiple per row) ──────────────────── */
+.tag-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    text-transform: uppercase;
+}
+
+/* ── Page accent — subtle bottom-right sparkle/decoration ────────── */
+.page-accent {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    width: 28px;
+    height: 28px;
+    pointer-events: none;
+    opacity: 0.35;
+    z-index: 0;
+    color: var(--accent);
+}
+
+/* ── Fallback for no-backdrop-filter ─────────────────────────────── */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .card-glass {
+        background: var(--bg-panel);
+    }
+}
+
+/* ── Auto-apply subtle glass to common card containers when ambient bg is on,
+ *    so pages don't have a mix of opaque + transparent blocks. */
+body.has-ambient-bg .settings-group,
+body.has-ambient-bg .about-section,
+body.has-ambient-bg .guide-section,
+body.has-ambient-bg .panel-container,
+body.has-ambient-bg .nav-map-group,
+body.has-ambient-bg .credit-card,
+body.has-ambient-bg .feature-card {
+    background: rgba(45, 45, 48, 0.72);
+    backdrop-filter: blur(10px) saturate(130%);
+    -webkit-backdrop-filter: blur(10px) saturate(130%);
+    border-color: rgba(255, 255, 255, 0.06);
+}
+
+/* ── Server card header — force flex layout so status badge and action
+ *    icons can't collide. Glass card border-radius can mask overflow,
+ *    so we lock down sizing here regardless of cascade weirdness. */
+.server-card .server-header {
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    gap: 12px;
+    margin-bottom: 14px;
+    width: 100%;
+    flex-wrap: nowrap;
+}
+
+.server-card .server-status { flex: 0 1 auto; min-width: 0; }
+.server-card .server-actions { flex: 0 0 auto; gap: 6px; }
+.server-card .server-actions .btn-icon {
+    background: transparent;
+    border: 0;
+    color: var(--text-secondary);
+    padding: 4px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 120ms, color 120ms;
+}
+.server-card .server-actions .btn-icon:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}

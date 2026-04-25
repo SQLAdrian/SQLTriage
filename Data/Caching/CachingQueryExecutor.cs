@@ -44,6 +44,9 @@ namespace SQLTriage.Data.Caching
         private readonly ConcurrentDictionary<string, Task<DataTable>> _inFlightDataTable = new();
         private readonly ConcurrentDictionary<string, Task> _inFlightTyped = new();
 
+        // Last cache tier per (queryId:instanceKey) — read by DynamicDashboard to stamp PanelTrace.
+        private readonly ConcurrentDictionary<string, string> _lastTier = new();
+
         /// <summary>
         /// True when the most recent SQL Server query failed and we are serving stale cached data.
         /// </summary>
@@ -75,6 +78,17 @@ namespace SQLTriage.Data.Caching
             Interlocked.Exchange(ref _freshHits, 0);
             Interlocked.Exchange(ref _cacheHits, 0);
         }
+
+        /// <summary>
+        /// Returns the cache tier used for the most recent execution of this query+instance.
+        /// Values: "Fresh" | "Hot" | "SQLite" | "None" | "Unknown"
+        /// Call immediately after ExecuteQueryAsync returns to stamp PanelTrace.CacheHitTier.
+        /// </summary>
+        public string GetLastTier(string queryId, string instanceKey)
+            => _lastTier.TryGetValue($"{queryId}:{instanceKey}", out var t) ? t : "Unknown";
+
+        private void SetTier(string queryId, string instanceKey, string tier)
+            => _lastTier[$"{queryId}:{instanceKey}"] = tier;
 
         /// <summary>
         /// Returns a snapshot of current metrics for logging/display.
@@ -196,6 +210,7 @@ namespace SQLTriage.Data.Caching
                 var result = await _inner.ExecuteQueryAsync(queryId, filter, additionalParams, cancellationToken);
                 _stateTracker.RecordSuccess();
                 Interlocked.Increment(ref _freshHits);
+                SetTier(queryId, instanceKey, "Fresh");
 
                 // Cache the result for offline fallback
                 await _cache.UpsertDataTableAsync(queryId, instanceKey, result, DateTime.UtcNow);
@@ -218,6 +233,7 @@ namespace SQLTriage.Data.Caching
                 if (hot != null)
                 {
                     Interlocked.Increment(ref _cacheHits);
+                    SetTier(queryId, instanceKey, "Hot");
                     return hot;
                 }
 
@@ -225,10 +241,12 @@ namespace SQLTriage.Data.Caching
                 if (cached != null)
                 {
                     Interlocked.Increment(ref _cacheHits);
+                    SetTier(queryId, instanceKey, "SQLite");
                     await _hot.SetDataTableAsync(queryId, instanceKey, cached);
                     return cached;
                 }
 
+                SetTier(queryId, instanceKey, "None");
                 throw QueryExecutor.ScrubException(ex);
             }
         }
@@ -320,6 +338,7 @@ namespace SQLTriage.Data.Caching
                 var deltaRows = await _inner.ExecuteQueryAsync(queryId, deltaFilter, mapper, null, cancellationToken);
                 _stateTracker.RecordSuccess();
                 Interlocked.Increment(ref _freshHits);
+                SetTier(queryId, instanceKey, "Fresh");
 
                 // Convert to TimeSeriesPoint for cache storage
                 if (deltaRows.Count > 0 && deltaRows is List<TimeSeriesPoint> tsPoints)
@@ -349,6 +368,7 @@ namespace SQLTriage.Data.Caching
             if (hotRows != null && hotRows.Count > 0 && typeof(T) == typeof(TimeSeriesPoint))
             {
                 Interlocked.Increment(ref _cacheHits);
+                SetTier(queryId, instanceKey, "Hot");
                 return (List<T>)(object)hotRows;
             }
 
@@ -356,12 +376,12 @@ namespace SQLTriage.Data.Caching
             if (cachedRows.Count > 0 && typeof(T) == typeof(TimeSeriesPoint))
             {
                 Interlocked.Increment(ref _cacheHits);
+                SetTier(queryId, instanceKey, "SQLite");
                 await _hot.SetTimeSeriesAsync(queryId, instanceKey, cachedRows);
                 return (List<T>)(object)cachedRows;
             }
 
-            // Cache is empty and SQL Server is down — return empty list
-            // (No hit counted; query executed but failed and no data available)
+            SetTier(queryId, instanceKey, "None");
             return new List<T>();
         }
 
@@ -380,6 +400,7 @@ namespace SQLTriage.Data.Caching
                 var rows = await _inner.ExecuteQueryAsync(queryId, filter, mapper, null, cancellationToken);
                 _stateTracker.RecordSuccess();
                 Interlocked.Increment(ref _freshHits);
+                SetTier(queryId, instanceKey, "Fresh");
 
                 // Cache the results
                 if (rows is List<TimeSeriesPoint> tsPoints && tsPoints.Count > 0)
@@ -405,6 +426,7 @@ namespace SQLTriage.Data.Caching
                 if (hot != null && hot.Count > 0 && typeof(T) == typeof(TimeSeriesPoint))
                 {
                     Interlocked.Increment(ref _cacheHits);
+                    SetTier(queryId, instanceKey, "Hot");
                     return (List<T>)(object)hot;
                 }
 
@@ -412,10 +434,12 @@ namespace SQLTriage.Data.Caching
                 if (cached.Count > 0 && typeof(T) == typeof(TimeSeriesPoint))
                 {
                     Interlocked.Increment(ref _cacheHits);
+                    SetTier(queryId, instanceKey, "SQLite");
                     await _hot.SetTimeSeriesAsync(queryId, instanceKey, cached);
                     return (List<T>)(object)cached;
                 }
 
+                SetTier(queryId, instanceKey, "None");
                 throw QueryExecutor.ScrubException(ex); // Scrub credentials before propagating
             }
         }
@@ -435,6 +459,7 @@ namespace SQLTriage.Data.Caching
                 var rows = await _inner.ExecuteQueryAsync(queryId, filter, mapper, null, cancellationToken);
                 _stateTracker.RecordSuccess();
                 Interlocked.Increment(ref _freshHits);
+                SetTier(queryId, instanceKey, "Fresh");
 
                 // Cache for offline fallback
                 if (rows is List<StatValue> statRows)
@@ -460,6 +485,7 @@ namespace SQLTriage.Data.Caching
                 if (hot != null)
                 {
                     Interlocked.Increment(ref _cacheHits);
+                    SetTier(queryId, instanceKey, "Hot");
                     return (List<T>)(object)hot;
                 }
 
@@ -467,10 +493,12 @@ namespace SQLTriage.Data.Caching
                 if (cached != null)
                 {
                     Interlocked.Increment(ref _cacheHits);
+                    SetTier(queryId, instanceKey, "SQLite");
                     await _hot.SetBarGaugeAsync(queryId, instanceKey, cached);
                     return (List<T>)(object)cached;
                 }
 
+                SetTier(queryId, instanceKey, "None");
                 throw;
             }
         }
@@ -490,6 +518,7 @@ namespace SQLTriage.Data.Caching
                 var rows = await _inner.ExecuteQueryAsync(queryId, filter, mapper, null, cancellationToken);
                 _stateTracker.RecordSuccess();
                 Interlocked.Increment(ref _freshHits);
+                SetTier(queryId, instanceKey, "Fresh");
 
                 // Cache for offline fallback
                 if (rows is List<CheckStatus> checkRows)
@@ -515,6 +544,7 @@ namespace SQLTriage.Data.Caching
                 if (hot != null && hot.Count > 0 && typeof(T) == typeof(CheckStatus))
                 {
                     Interlocked.Increment(ref _cacheHits);
+                    SetTier(queryId, instanceKey, "Hot");
                     return (List<T>)(object)hot;
                 }
 
@@ -522,10 +552,12 @@ namespace SQLTriage.Data.Caching
                 if (cached.Count > 0 && typeof(T) == typeof(CheckStatus))
                 {
                     Interlocked.Increment(ref _cacheHits);
+                    SetTier(queryId, instanceKey, "SQLite");
                     await _hot.SetCheckStatusAsync(queryId, instanceKey, cached);
                     return (List<T>)(object)cached;
                 }
 
+                SetTier(queryId, instanceKey, "None");
                 throw QueryExecutor.ScrubException(ex);
             }
         }
@@ -544,6 +576,8 @@ namespace SQLTriage.Data.Caching
         {
             Interlocked.Increment(ref _totalQueries);
             Interlocked.Increment(ref _freshHits);
+            var instanceKey = BuildInstanceKey(filter);
+            SetTier(queryId, instanceKey, "Fresh");
             return await _inner.ExecuteQueryAsync(queryId, filter, mapper, additionalParams, cancellationToken);
         }
 

@@ -177,11 +177,11 @@
     {
         if (firstRender)
         {
-            _dotNetRef = DotNetObjectReference.Create(this);
+            _dotNetRef ??= DotNetObjectReference.Create(this);
             try
             {
-                await JS.InvokeVoidAsync("environmentView.setHostCallback",
-                    DotNetObjectReference.Create(this));
+                // Reuse the stored reference; a second Create() would leak (never disposed).
+                await JS.InvokeVoidAsync("environmentView.setHostCallback", _dotNetRef);
             }
             catch { /* JS not ready on first navigation — harmless */ }
         }

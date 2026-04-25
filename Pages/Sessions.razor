@@ -219,6 +219,22 @@
     ConnectionId="@ConnectionManager.CurrentServer?.Id"
     DatabaseName="@ConnectionManager.CurrentServer?.Database" />
 
+@if (_showInstanceModal)
+{
+    <div class="instance-modal-overlay" @onclick="() => _showInstanceModal = false">
+        <div class="instance-modal-content" @onclick:stopPropagation>
+            <h3 style="margin-top: 0; color: var(--text-primary);">Select Instance</h3>
+            @foreach (var instance in Instances)
+            {
+                <button class="settings-btn" style="width: 100%; margin: 5px 0; text-align: left;" @onclick="() => SelectInstance(instance)">
+                    @instance
+                </button>
+            }
+            <button class="settings-btn" style="width: 100%; margin-top: 10px;" @onclick="() => _showInstanceModal = false">Cancel</button>
+        </div>
+    </div>
+}
+
 @code {
     // ENHANCEMENT: Added search, memory, row count, settings persistence, kill, CSV export, improved timer
 
@@ -237,6 +253,7 @@
     private bool ShowOnlyBlocked = false;
     private bool HideLowIO = false;
     private bool ShowLegend = false;
+    private bool _showInstanceModal = false;
 
     // Search text
     private string SearchText = "";
@@ -323,7 +340,7 @@
         Instances = availableInstances.ToArray();
         SelectedInstance = InstanceSelector.SelectedInstance ?? (availableInstances.Any() ? availableInstances[0] : "");
 
-        await LoadSessions();
+        await LoadSessions(true);
         StartTimer();
     }
 
@@ -344,8 +361,7 @@
             {
                 try
                 {
-                    await LoadSessions();
-                    await InvokeAsync(StateHasChanged);
+                    await LoadSessions(false);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -399,7 +415,7 @@
         catch { /* non-critical */ }
     }
 
-     private async Task LoadSessions()
+     private async Task LoadSessions(bool forceRender)
      {
          // ENHANCEMENT: Concurrency guard - skip if already loading
          if (!_loadLock.Wait(0))
@@ -491,14 +507,14 @@
      {
          HideSleeping = !HideSleeping;
          SaveSettingsAsync();
-         await LoadSessions();
+         await LoadSessions(true);
      }
 
      private async Task ToggleShowOnlyBlocked()
      {
          ShowOnlyBlocked = !ShowOnlyBlocked;
          SaveSettingsAsync();
-         await LoadSessions();
+         await LoadSessions(true);
      }
 
      private async Task ToggleAutoRefresh()
@@ -559,7 +575,7 @@
          {
              MaxDisplayCount = Math.Clamp(count, 25, 2000);
              SaveSettingsAsync();
-             await LoadSessions();
+                    await LoadSessions(false);
          }
      }
 
@@ -567,12 +583,12 @@
      {
          SearchText = e.Value?.ToString() ?? "";
          SaveSettingsAsync();
-         await LoadSessions();
+         await LoadSessions(true);
      }
 
     private async Task ManualRefresh()
     {
-        await LoadSessions();
+        await LoadSessions(true);
     }
 
     private void ShowCharts()
@@ -602,7 +618,7 @@
         SelectedInstance = instanceName;
         await InvokeAsync(async () =>
         {
-            await LoadSessions();
+            await LoadSessions(true);
             StateHasChanged();
         });
     }
@@ -612,7 +628,7 @@
         var instance = e.Value?.ToString() ?? "";
         SelectedInstance = instance;
         InstanceSelector.SetSelectedInstance(instance);
-        await LoadSessions();
+        await LoadSessions(true);
     }
 
     // ENHANCEMENT: Export CSV
@@ -695,7 +711,7 @@
         {
             await SessionService.KillSessionAsync(spid);
             Toast.ShowSuccess($"Session {spid} killed.");
-            await LoadSessions();
+            await LoadSessions(true);
             if (SelectedSession?.SPID == spid)
                 SelectedSession = null;
         }
@@ -703,6 +719,32 @@
         {
             Toast.ShowError($"Failed to kill session: {ex.Message}");
         }
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.CtrlKey && !e.AltKey && !e.ShiftKey)
+        {
+            if (e.Key == "r" || e.Key == "R")
+            {
+                await ManualRefresh();
+            }
+            else if (e.Key == "k" || e.Key == "K")
+            {
+                if (SelectedSession != null)
+                {
+                    await KillSelectedSession(SelectedSession.SPID);
+                }
+            }
+        }
+    }
+
+    private async Task SelectInstance(string instance)
+    {
+        SelectedInstance = instance;
+        InstanceSelector.SetSelectedInstance(instance);
+        _showInstanceModal = false;
+        await LoadSessions(true);
     }
 
     public void Dispose()

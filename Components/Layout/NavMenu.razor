@@ -12,6 +12,7 @@
 @inject SQLTriage.Data.Services.ConnectionHealthService ConnectionHealth
 @inject SQLTriage.Data.Services.AppUserState UserState
 @inject GlobalInstanceSelector InstanceSelector
+@inject SQLTriage.Data.Services.PanelMetricsService PanelMetrics
 @implements IAsyncDisposable
 
 
@@ -56,12 +57,6 @@
         <div class="nav-section s-tools">
             @if (_experimentalMode)
             {
-                <NavLink href="/plan-analysis" class="nav-link">
-                    <span class="nav-icon"><i class="fa-solid fa-diagram-project"></i></span><span class="nav-link-text"> Plan Analyzer</span>
-                </NavLink>
-            }
-            @if (_experimentalMode)
-            {
                 <NavLink href="/bestpractice" class="nav-link">
                     <span class="nav-icon"><i class="fa-solid fa-list-check"></i></span><span class="nav-link-text"> BP Scripts</span>
                 </NavLink>
@@ -93,11 +88,18 @@
         <div class="nav-section-label s-live">Live</div>
         <div class="nav-section s-live">
             @foreach (var dashboard in DashboardConfig.Config.Dashboards
-                .Where(d => d.Enabled && d.NavCategory == "Dashboards" && d.DefaultDatabase == "master")
+                .Where(d => d.Enabled && d.NavCategory == "Dashboards" && d.DefaultDatabase == "master"
+                            && (!d.ExperimentalOnly || _experimentalMode))
                 .OrderBy(d => d.NavOrder))
             {
+                var loadInfo = GetDashboardLoadInfo(dashboard);
                 <NavLink href="@($"/dashboard/{dashboard.Id}")" class="nav-link">
-                    @NavIcon(dashboard.NavIcon) <span class="nav-link-text">@dashboard.NavTitle</span>
+                    @NavIcon(dashboard.NavIcon)
+                    <span class="nav-link-text">@dashboard.NavTitle</span>
+                    @if (loadInfo.HasValue)
+                    {
+                        <span class="nav-perf-dot @loadInfo.Value.Tier" title="@loadInfo.Value.Tooltip"></span>
+                    }
                 </NavLink>
             }
         </div>
@@ -111,8 +113,14 @@
                     .Where(d => d.Enabled && d.DefaultDatabase == "SQLWATCH")
                     .OrderBy(d => d.NavOrder))
                 {
+                    var loadInfo = GetDashboardLoadInfo(dashboard);
                     <NavLink href="@($"/dashboard/{dashboard.Id}")" class="nav-link">
-                        @NavIcon(dashboard.NavIcon) <span class="nav-link-text">@dashboard.NavTitle</span>
+                        @NavIcon(dashboard.NavIcon)
+                        <span class="nav-link-text">@dashboard.NavTitle</span>
+                        @if (loadInfo.HasValue)
+                        {
+                            <span class="nav-perf-dot @loadInfo.Value.Tier" title="@loadInfo.Value.Tooltip"></span>
+                        }
                     </NavLink>
                 }
             }
@@ -131,8 +139,14 @@
                     .Where(d => d.Enabled && d.DefaultDatabase == "PerformanceMonitor")
                     .OrderBy(d => d.NavOrder))
                 {
+                    var loadInfo = GetDashboardLoadInfo(dashboard);
                     <NavLink href="@($"/dashboard/{dashboard.Id}")" class="nav-link">
-                        @NavIcon(dashboard.NavIcon) <span class="nav-link-text">@dashboard.NavTitle</span>
+                        @NavIcon(dashboard.NavIcon)
+                        <span class="nav-link-text">@dashboard.NavTitle</span>
+                        @if (loadInfo.HasValue)
+                        {
+                            <span class="nav-perf-dot @loadInfo.Value.Tier" title="@loadInfo.Value.Tooltip"></span>
+                        }
                     </NavLink>
                 }
             }
@@ -159,6 +173,12 @@
             <NavLink href="/settings" class="nav-link" title="Ctrl+6">
                 <span class="nav-icon"><i class="fa-solid fa-gear"></i></span><span class="nav-link-text"> Settings</span>
             </NavLink>
+            @if (UserSettings.GetEnablePerfInspector())
+            {
+                <NavLink href="/perf-inspector" class="nav-link">
+                    <span class="nav-icon"><i class="fa-solid fa-chart-line"></i></span><span class="nav-link-text"> Perf Inspector</span>
+                </NavLink>
+            }
             @if (_noPantsMode)
             {
                 <NavLink href="/dashboard-editor" class="nav-link" title="Ctrl+7">
@@ -242,6 +262,18 @@
                 }
             </div>
         }
+        <div class="nav-toggle-row">
+            <span class="colorblind-icon @(_colorBlindMode ? "colorblind-active" : "")" aria-hidden="true">
+                <i class="fa-solid fa-eye" style="font-size:13px;"></i>
+            </span>
+            <span class="nav-toggle-label nav-link-text">Color-Blind</span>
+            <div class="nav-toggle-spacer nav-link-text"></div>
+            <div class="no-pants-toggle nav-link-text" @onclick="ToggleColorBlindMode" title="Color-Blind Mode: swap red/green to a colorblind-safe palette">
+                <div class="no-pants-track @(_colorBlindMode ? "colorblind-track-on" : "")">
+                    <div class="no-pants-thumb @(_colorBlindMode ? "no-pants-thumb-on" : "")"></div>
+                </div>
+            </div>
+        </div>
         @if (RbacService.HasPermission(UserState.Role, "run_scripts"))
         {
         <div class="nav-toggle-row">
@@ -454,16 +486,46 @@
         UserSettings.SetExperimentalMode(_experimentalMode);
     }
 
+    // ── Color-Blind Mode ──────────────────────────────────────────────────
+    private bool _colorBlindMode = false;
+
+    private async Task ToggleColorBlindMode()
+    {
+        _colorBlindMode = !_colorBlindMode;
+        UserSettings.SetColorBlindMode(_colorBlindMode);
+        await ApplyColorBlindBodyClass();
+    }
+
+    /// <summary>Adds/removes `colorblind-mode` on document.body so CSS variables swap palette.</summary>
+    private async Task ApplyColorBlindBodyClass()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("document.body.classList.toggle", "colorblind-mode", _colorBlindMode);
+        }
+        catch { /* JS not ready on first navigation — harmless */ }
+    }
+
     protected override async Task OnInitializedAsync()
     {
         _noPantsMode         = UserSettings.GetNoPantsMode();
         _experimentalMode    = UserSettings.GetExperimentalMode();
         _showMaturityRoadmap = UserSettings.GetShowMaturityRoadmap();
+        _colorBlindMode      = UserSettings.GetColorBlindMode();
         ConnectionManager.OnConnectionChanged          += OnServerChanged;
         ConnectionHealth.OnStatusChanged               += OnHealthChanged;
         UserSettings.OnShowMaturityRoadmapChanged      += OnMaturityRoadmapChanged;
         InstanceSelector.OnInstanceChanged             += OnInstanceChanged;
         await RefreshDbFlags();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Sync the persisted Color-Blind preference to the body class on first render
+        if (firstRender && _colorBlindMode)
+        {
+            await ApplyColorBlindBodyClass();
+        }
     }
 
     private void OnMaturityRoadmapChanged(bool enabled)
@@ -519,6 +581,40 @@
         }
         builder.CloseElement();
     };
+
+    /// <summary>
+    /// Returns a formatted "~Xs" / "~Xms" label for a dashboard's expected load time,
+    /// or null if we have no data. Aggregates across all panels of a dashboard
+    /// (real load is parallel, so we use max p95 — the slowest panel gates the load).
+    /// Falls back to panel.ExpectedLoadMs when no measurements exist yet.
+    /// </summary>
+    /// <summary>Returns (tier, tooltip) for a dashboard's expected load time, or null when no data.</summary>
+    private (string Tier, string Tooltip)? GetDashboardLoadInfo(DashboardDefinition dash)
+    {
+        var panels = dash.Tabs != null && dash.Tabs.Count > 0
+            ? dash.Tabs[0].Panels
+            : dash.Panels;
+        if (panels == null || panels.Count == 0) return null;
+
+        double maxMs = 0;
+        foreach (var panel in panels)
+        {
+            var m = PanelMetrics.GetMetric(panel.Id);
+            if (m != null && m.P95Ms > 0)
+            {
+                if (m.P95Ms > maxMs) maxMs = m.P95Ms;
+            }
+            else if (panel.ExpectedLoadMs is double exp && exp > 0)
+            {
+                if (exp > maxMs) maxMs = exp;
+            }
+        }
+        if (maxMs <= 0) return null;
+
+        var label = maxMs < 1000 ? $"~{maxMs:F0}ms" : $"~{maxMs / 1000.0:F1}s";
+        var tier = maxMs < 500 ? "fast" : (maxMs < 1000 ? "med" : "slow");
+        return (tier, $"Expected load (p95): {label}");
+    }
 
     async ValueTask IAsyncDisposable.DisposeAsync()
     {

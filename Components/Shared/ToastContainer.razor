@@ -7,16 +7,6 @@
 @implements IDisposable
 
 <div class="toast-container">
-    @* Flood mute banner — pinned above the stack *@
-    @if (_showMuteBanner)
-    {
-        <div class="toast-mute-banner">
-            <i class="fa-solid fa-bell-slash"></i>
-            <span>@_activeToastCount alerts — toasts muted for 5 min</span>
-            <button class="toast-mute-unmute" @onclick="Unmute" title="Unmute now">Unmute</button>
-        </div>
-    }
-
     @* Toast stack — renders bottom-up via flex-direction:column-reverse *@
     @foreach (var toast in _toasts)
     {
@@ -35,14 +25,23 @@
     }
 </div>
 
-@* No-Pants warning — separate fixed element bottom-left *@
+@* Discreet bottom-left status badges, same style family — clickable to unmute *@
+@if (_showMuteBanner)
+{
+    <button class="status-badge status-badge--mute"
+            @onclick="Unmute"
+            title="@($"Toasts muted: {_activeToastCount} alerts in last 5s — click to unmute")">
+        <i class="fa-solid fa-bell-slash"></i>
+        <span class="status-badge-count">@_activeToastCount</span>
+    </button>
+}
+
 @if (_showNoPantsWarning)
 {
-    <div class="toast-nopants-warning">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="13" height="13" fill="currentColor">
+    <div class="status-badge status-badge--nopants" title="No-Pants Mode is active — dangerous server controls visible">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
             <path d="M4 4h16v2l-2 14h-4l-1-8h-2l-1 8H6L4 6V4zm2 2v.5l1.8 12.5h2.4l1-8h1.6l1 8h2.4L18 6.5V6H6z"/>
         </svg>
-        No-Pants Mode is active
     </div>
 }
 

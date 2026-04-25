@@ -1,0 +1,32 @@
+/* Accessibility — color-blind mode palette overrides.
+ *
+ * When `body.colorblind-mode` is set (toggled via NavMenu), the canonical
+ * red/green/orange/yellow variables are remapped to a palette that's
+ * universally distinguishable by people with deuteranopia/protanopia.
+ *
+ * Palette source: Wong (2011) "Points of view: Color blindness".
+ * Tested combinations:
+ *   blue + orange     — strongest pair across all dichromacies
+ *   blue + amber      — good contrast
+ *   amber + magenta   — fallback for severe cases
+ *
+ * Hue values map roughly to original meaning:
+ *   --green    → blue           (success/healthy/on)
+ *   --red      → orange-red     (danger/critical/off)
+ *   --orange   → amber          (warning, kept similar)
+ *   --yellow   → light blue     (info, kept distinguishable from amber)
+ *   --purple   → magenta        (kept — already distinguishable)
+ */
+
+body.colorblind-mode {
+    --green:       #2563eb;   /* was #4ec9b0 (teal-green) — now blue */
+    --dark-green:  #1e3a8a;   /* was dark green */
+    --red:         #d97706;   /* was #f44747 (red) — now dark orange */
+    --orange:      #f59e0b;   /* was #ce9178 — kept warm, more amber */
+    --yellow:      #93c5fd;   /* was #dcdcaa (yellow) — now light blue (distinguishes from amber) */
+    --purple:      #ec4899;   /* slight shift to magenta */
+}
+
+/* Status indicator dots used in nav and elsewhere — colorblind-safe palette
+ * already defined inline in NavMenu.css. This file handles every other
+ * red/green/orange usage by cascading at the variable layer. */

@@ -1,0 +1,67 @@
+/* Bottom-right discreet status badges (mute, no-pants, etc.) */
+/* Right-aligned column; each badge is a small icon-only chip with hover tooltip. */
+/* All badges share the same right-edge anchor and consistent size so they stack
+   cleanly when more than one is visible. Spacing between badges is fixed (8px). */
+
+.status-badge {
+    position: fixed;
+    right: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 10px;
+    box-sizing: border-box;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 1;
+    cursor: default;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    z-index: 9998;
+    transition: background 120ms, border-color 120ms, color 120ms;
+}
+
+.status-badge i,
+.status-badge svg {
+    font-size: 12px;
+    flex-shrink: 0;
+    display: block;
+}
+
+.status-badge-count {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* Stack order from bottom up — bottom slot first, then 36px gap (28 height + 8 gap). */
+.status-badge--nopants { bottom: 16px; }
+.status-badge--mute    { bottom: 52px; }
+/* Reserve a third slot for future badges: bottom: 88px */
+
+/* Mute badge — clickable to unmute */
+.status-badge--mute {
+    cursor: pointer;
+    border-color: var(--orange);
+    color: var(--orange);
+    background: rgba(255, 140, 0, 0.08);
+}
+
+.status-badge--mute:hover {
+    background: rgba(255, 140, 0, 0.18);
+    color: var(--text-primary);
+}
+
+.status-badge--mute .status-badge-count {
+    color: var(--orange);
+}
+
+/* No-Pants badge — informational only */
+.status-badge--nopants {
+    border-color: rgba(225, 29, 72, 0.4);
+    color: #f87171;
+    background: rgba(225, 29, 72, 0.08);
+}

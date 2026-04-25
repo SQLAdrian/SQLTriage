@@ -18,7 +18,29 @@ else
 
 <div class="servers-page">
     <h2>Server Management</h2>
-    
+
+    @{
+        var totalServers   = Connections.Count;
+        var connectedCount = Connections.Count(c => c.IsConnected);
+    }
+    <div class="servers-hero">
+        <div class="servers-hero-stat">
+            <span class="hero-number">@totalServers</span>
+            <span class="hero-number-unit">@(totalServers == 1 ? "Server" : "Servers")</span>
+        </div>
+        <div class="servers-hero-stat servers-hero-stat--sub">
+            <span class="hero-number" style="font-size:32px;color:var(--green);">@connectedCount</span>
+            <span class="hero-number-unit">Connected</span>
+        </div>
+        @if (totalServers - connectedCount > 0)
+        {
+            <div class="servers-hero-stat servers-hero-stat--sub">
+                <span class="hero-number" style="font-size:32px;color:var(--red);">@(totalServers - connectedCount)</span>
+                <span class="hero-number-unit">Offline</span>
+            </div>
+        }
+    </div>
+
     <div class="servers-toolbar">
         <button class="btn btn-primary" @onclick="ShowAddDialog"><i class="fa-solid fa-plus"></i> Add Server</button>
         <button class="btn btn-secondary" @onclick="RefreshAllConnections"><i class="fa-solid fa-rotate"></i> Refresh All</button>
@@ -63,7 +85,7 @@ else
     <div class="servers-grid">
         @foreach (var conn in FilteredConnections)
         {
-            <div class="server-card @(conn.IsConnected ? "connected" : "disconnected")">
+            <div class="server-card card-glass @(conn.IsConnected ? "connected" : "disconnected")">
                 <div class="server-header">
                     <div class="server-status">
                         @if (conn.SuccessfulServers != null && conn.SuccessfulServers.Count > 0)
@@ -131,7 +153,7 @@ else
                             <span class="detail-value tag-list">
                                 @foreach (var tag in conn.Tags)
                                 {
-                                    <span class="tag-badge">@tag</span>
+                                    <span class="tag-badge tag-pill">@tag</span>
                                 }
                             </span>
                         </div>

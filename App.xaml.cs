@@ -221,6 +221,7 @@ namespace SQLTriage
             services.AddSingleton<CacheMetricsService>();
             services.AddSingleton<CacheMetricsService>();
             services.AddSingleton<PerformanceInspectorService>();
+            services.AddSingleton<PanelMetricsService>();
 
             Services = services.BuildServiceProvider();
             sw.Stop();
@@ -262,9 +263,21 @@ namespace SQLTriage
             Log.Information("[STARTUP] Starting background services...");
             Services.GetService<LogCleanupService>()?.Start();
 
-            // Start memory monitoring
-            Services.GetService<MemoryMonitorService>();
-            Log.Information("[STARTUP] MemoryMonitorService started");
+            // Start memory monitoring + wire to cache hot-tier compaction.
+            // When working set exceeds 80% of available memory, compact 25% of the cache.
+            var memMon = Services.GetService<MemoryMonitorService>();
+            var hotTier = Services.GetService<Data.Caching.ICacheHotTier>();
+            if (memMon != null && hotTier != null)
+            {
+                memMon.MemoryPressureChanged += (_, args) =>
+                {
+                    if (args.IsUnderPressure)
+                    {
+                        hotTier.Compact(0.25);
+                    }
+                };
+            }
+            Log.Information("[STARTUP] MemoryMonitorService started (compact-on-pressure wired)");
 
             // Start cache eviction timer (runs every 5 minutes)
             Services.GetService<CacheEvictionService>()?.Start();
@@ -275,7 +288,7 @@ namespace SQLTriage
             Log.Information("[STARTUP] liveQueriesMaintenanceService started");
 
             // Start alert baseline service (aggressive seeding for first 5 min, then hourly recompute)
-            Log.Information("[STARTUP] AlertBaselineService starting async...");
+Log.Information("[STARTUP] AlertBaselineService starting async...");
             _ = Task.Run(async () =>
             {
                 try
@@ -293,7 +306,6 @@ namespace SQLTriage
             // Start unified query orchestrator
             Services.GetService<IQueryOrchestrator>()?.Start();
             Log.Information("[STARTUP] QueryOrchestrator started");
-
             // Start alert evaluation engine
             Services.GetService<Data.Services.AlertEvaluationService>()?.Start();
             Log.Information("[STARTUP] AlertEvaluationService started");
@@ -305,6 +317,10 @@ namespace SQLTriage
             // Start connection health monitor (30s ping per enabled server)
             Services.GetService<Data.Services.ConnectionHealthService>()?.Start();
             Log.Information("[STARTUP] ConnectionHealthService started");
+
+            // Apply persisted perf inspector toggle so it's active before any dashboard loads
+            var perfInspector = Services.GetService<PerformanceInspectorService>();
+            perfInspector?.SetEnabled(Services.GetService<UserSettingsService>()?.GetEnablePerfInspector() ?? true);
 
             // Log application start for audit trail
             var auditLog = Services.GetService<AuditLogService>();

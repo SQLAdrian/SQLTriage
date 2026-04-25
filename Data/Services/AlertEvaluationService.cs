@@ -545,8 +545,18 @@ namespace SQLTriage.Data.Services
                     var severity = isCritical ? "Critical" : "Warning";
                     var thresholdUsed = isCritical ? alert.Thresholds.Critical!.Value : alert.Thresholds.Warning!.Value;
 
-                    // Record this hit for escalation window tracking
-                    lock (hits) { hits.Enqueue(DateTime.UtcNow); }
+                    // Record this hit for escalation window tracking. Trim to the longest
+                    // escalation window we care about so the queue can't grow forever
+                    // while an alert stays firing. Default 60min cap is plenty.
+                    var trimWindow = alert.EscalationWindowMinutes > 0
+                        ? alert.EscalationWindowMinutes
+                        : 60;
+                    var trimCutoff = DateTime.UtcNow.AddMinutes(-trimWindow);
+                    lock (hits)
+                    {
+                        hits.Enqueue(DateTime.UtcNow);
+                        while (hits.Count > 0 && hits.Peek() < trimCutoff) hits.Dequeue();
+                    }
 
                     if (_activeStates.TryGetValue(stateKey, out var existing))
                     {

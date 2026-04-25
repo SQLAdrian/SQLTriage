@@ -1,5 +1,7 @@
 /* In the name of God, the Merciful, the Compassionate */
 
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Serialization;
 
 namespace SQLTriage.Data.Models
@@ -45,6 +47,27 @@ namespace SQLTriage.Data.Models
         [JsonPropertyName("enabled")]
         public bool Enabled { get; set; } = true;
 
+        /// <summary>When true, this dashboard only appears when Experimental mode is on.</summary>
+        [JsonPropertyName("experimentalOnly")]
+        public bool ExperimentalOnly { get; set; } = false;
+
+        /// <summary>
+        /// Optional name of a database whose existence is required for this dashboard
+        /// to function. When the connected server lacks this database, DynamicDashboard
+        /// shows a "this dashboard requires database X" banner instead of running queries.
+        /// Examples: "distribution" (replication), "msdb" (Agent jobs).
+        /// </summary>
+        [JsonPropertyName("requiresDatabase")]
+        public string? RequiresDatabase { get; set; }
+
+        /// <summary>
+        /// Optional human role for the required database, used in the banner text.
+        /// e.g. RequiresDatabase="distribution" + RequiresDatabaseRole="replication distributor"
+        /// produces: "This server is not a replication distributor (requires the distribution database)."
+        /// </summary>
+        [JsonPropertyName("requiresDatabaseRole")]
+        public string? RequiresDatabaseRole { get; set; }
+
         /// <summary>Data source: "sqlwatch" (default), "pm" (PerformanceMonitor), or "both"</summary>
         [JsonPropertyName("source")]
         public string Source { get; set; } = "sqlwatch";
@@ -59,11 +82,48 @@ namespace SQLTriage.Data.Models
         [JsonPropertyName("panels")]
         public List<PanelDefinition> Panels { get; set; } = new();
 
+        /// <summary>
+        /// Optional tabs. When populated, the dashboard renders with a tab strip
+        /// and <see cref="Panels"/> is ignored at render time (see <see cref="GetActivePanels"/>).
+        /// Backward compatible: null/empty means single-page dashboard.
+        /// </summary>
+        [JsonPropertyName("tabs")]
+        public List<DashboardTab>? Tabs { get; set; }
+
+        /// <summary>
+        /// Returns the panel set active for the given tab id, or Panels if Tabs is empty.
+        /// Falls back to the first tab when tabId is null/unknown.
+        /// </summary>
+        public List<PanelDefinition> GetActivePanels(string? tabId = null)
+        {
+            if (Tabs == null || Tabs.Count == 0) return Panels;
+            var tab = Tabs.FirstOrDefault(t => t.Id == tabId) ?? Tabs[0];
+            return tab.Panels ?? new List<PanelDefinition>();
+        }
+
         /// <summary>Returns true if this dashboard should be visible for the given source.</summary>
         public bool IsVisibleForSource(string source)
         {
             return Source == "both" || Source == source || string.IsNullOrEmpty(Source);
         }
+    }
+
+    /// <summary>
+    /// A tab within a dashboard. Panels in inactive tabs are not loaded — major perf win.
+    /// </summary>
+    public class DashboardTab
+    {
+        [JsonPropertyName("id")]
+        public string Id { get; set; } = "";
+
+        [JsonPropertyName("title")]
+        public string Title { get; set; } = "";
+
+        [JsonPropertyName("icon")]
+        public string? Icon { get; set; }
+
+        [JsonPropertyName("panels")]
+        public List<PanelDefinition> Panels { get; set; } = new();
     }
 
     public class PanelDefinition
@@ -77,6 +137,22 @@ namespace SQLTriage.Data.Models
         /// <summary>Description shown below chart titles, or as tooltip on stat cards</summary>
         [JsonPropertyName("description")]
         public string Description { get; set; } = "";
+
+        /// <summary>Manual load-time estimate in ms — used for nav badges before first live measurement.</summary>
+        [JsonPropertyName("expectedLoadMs")]
+        public double? ExpectedLoadMs { get; set; }
+
+        /// <summary>Panel complexity hint: "low" | "medium" | "high". Informs cost expectation.</summary>
+        [JsonPropertyName("complexity")]
+        public string? Complexity { get; set; }
+
+        /// <summary>Data freshness hint: "realtime" | "recent" | "historical" | "static".</summary>
+        [JsonPropertyName("dataFreshness")]
+        public string? DataFreshness { get; set; }
+
+        /// <summary>sql-check Ids this panel surfaces (e.g. ["TRIAGE_002","TRIAGE_012"]).</summary>
+        [JsonPropertyName("relatedChecks")]
+        public string[]? RelatedChecks { get; set; }
 
         [JsonPropertyName("enabled")]
         public bool Enabled { get; set; } = true;

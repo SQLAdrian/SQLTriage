@@ -294,18 +294,23 @@ namespace SQLTriage.Data
             var cache = new Dictionary<string, QueryPair>(StringComparer.OrdinalIgnoreCase);
             var typeCache = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-            // Index all panels across all dashboards
+            void IndexPanel(PanelDefinition panel)
+            {
+                if (string.IsNullOrEmpty(panel.Id)) return;
+                cache[panel.Id] = panel.Query!;
+                typeCache[panel.Id] = panel.PanelType!;
+                WarnIfUnsafe(panel.Id, panel.Query?.SqlServer);
+            }
+
+            // Index all panels across all dashboards — includes tab panels for merged dashboards.
             foreach (var dashboard in config.Dashboards)
             {
                 foreach (var panel in dashboard.Panels)
-                {
-                    if (!string.IsNullOrEmpty(panel.Id))
-                     {
-                         cache[panel.Id] = panel.Query!;
-                         typeCache[panel.Id] = panel.PanelType!;
-                         WarnIfUnsafe(panel.Id, panel.Query?.SqlServer);
-                     }
-                }
+                    IndexPanel(panel);
+                if (dashboard.Tabs != null)
+                    foreach (var tab in dashboard.Tabs)
+                        foreach (var panel in tab.Panels)
+                            IndexPanel(panel);
             }
 
              // Index all support queries (support queries override panels if there's a collision)

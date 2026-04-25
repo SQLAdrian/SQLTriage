@@ -1,0 +1,160 @@
+/* Guide page — Component Guide / Navigation Map / Per-component cards */
+
+.guide-container {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 16px 24px 48px;
+    color: var(--text-primary);
+}
+
+.guide-container h1 {
+    font-size: 22px;
+    font-weight: 600;
+    margin: 8px 0 4px;
+    color: var(--text-primary);
+}
+
+.guide-container > p {
+    color: var(--text-secondary);
+    font-size: 13px;
+    margin-bottom: 20px;
+}
+
+.guide-section {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px 20px;
+    margin-bottom: 20px;
+}
+
+.guide-section h2 {
+    margin: 0 0 12px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.guide-section h2 i {
+    color: var(--accent);
+}
+
+/* ── Navigation Map ─────────────────────────────────────────────── */
+
+.nav-map-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+}
+
+.nav-map-group {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.nav-map-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+}
+
+.nav-map-item {
+    display: grid;
+    grid-template-columns: 18px 1fr;
+    column-gap: 10px;
+    align-items: baseline;
+    padding: 6px 8px;
+    border-radius: 4px;
+    color: var(--text-primary);
+    text-decoration: none;
+    font-size: 13px;
+    transition: background 120ms;
+}
+
+.nav-map-item > i {
+    grid-row: 1 / span 2;
+    color: var(--accent);
+    font-size: 13px;
+    align-self: center;
+}
+
+.nav-map-item > span:nth-of-type(1) {
+    font-weight: 500;
+    color: var(--text-primary);
+    line-height: 1.3;
+}
+
+.nav-map-item .nav-map-hint {
+    grid-column: 2;
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.3;
+    margin-top: 2px;
+}
+
+.nav-map-item:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.nav-map-item:hover .nav-map-hint {
+    color: var(--text-secondary);
+}
+
+/* ── Component cards (lower half: Live Monitor / Instance Overview / etc.) ── */
+
+.guide-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 16px;
+}
+
+.guide-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.guide-card h3 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.guide-card h3 i {
+    color: var(--accent);
+}
+
+.guide-card p {
+    margin: 0;
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    flex: 1;
+}
+
+.guide-card .btn {
+    align-self: flex-start;
+    margin-top: 4px;
+}

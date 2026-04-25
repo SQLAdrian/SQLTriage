@@ -33,6 +33,9 @@ namespace SQLTriage.Data.Caching
 
         void Invalidate(string queryId, string instanceKey);
         void InvalidateAll();
+
+        /// <summary>Drop a fraction of cached entries (e.g. 0.25 = 25%) — used under memory pressure.</summary>
+        void Compact(double fraction);
     }
 
     /// <summary>
@@ -155,6 +158,16 @@ namespace SQLTriage.Data.Caching
             {
                 mc.Clear();
                 _logger.LogInformation("CacheHotTier cleared");
+            }
+        }
+
+        public void Compact(double fraction)
+        {
+            if (fraction <= 0 || fraction > 1) return;
+            if (_cache is MemoryCache mc)
+            {
+                mc.Compact(fraction);
+                _logger.LogInformation("CacheHotTier compacted by {Fraction:P0}", fraction);
             }
         }
     }

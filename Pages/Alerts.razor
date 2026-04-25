@@ -23,7 +23,7 @@
 
 <div class="settings-page" style="max-width: 1400px;">
 
-<style>
+<!-- <style>
     .table-input-select,
     .table-input-number {
         background: var(--bg-tertiary);
@@ -45,7 +45,7 @@
     .table-input-number:focus {
         outline: none;
         border-color: var(--accent);
-        box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.15);
+        box-shadow: 0 0 0 2px rgba(0,122,204,0.15);
     }
 
     .table-input-select {
@@ -67,7 +67,7 @@
     .results-table td select {
         margin: 0;
     }
-</style>
+</style> --> -->
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
         <h2 style="margin: 0;">Alerts</h2>
         <div style="display: flex; gap: 8px; align-items: center;">
@@ -157,7 +157,7 @@
                     <tbody>
                         @foreach (var alert in PagedAlerts)
                         {
-                            <tr style="border-left: 3px solid @GetSeverityColor(alert.Severity);" class="@(alert.Severity == "Critical" ? "pulse" : "")">
+                            <tr class="alert-row alert-row-@alert.Severity.ToLower() @(alert.Severity == "Critical" ? "pulse" : "")">
                                 <td>
                                     <span class="severity-badge severity-@(alert.Severity.ToLower())"
                                           style="font-size: 10px; padding: 2px 6px;">
@@ -909,7 +909,7 @@
     }
 </div>
 
-<style>
+<!-- <style>
     .alert-tab {
         background: transparent;
         border: none;
@@ -974,7 +974,7 @@
         max-height: 80vh;
         overflow-y: auto;
     }
-</style>
+</style> -->
 
 @code {
     private string _activeTab = "active";
@@ -1576,6 +1576,18 @@
             "Inactive" => new MarkupString("<i class='fas fa-pause' style='color:orange; font-size:12px;'></i>"),
             "Acknowledged" => new MarkupString("<i class='fas fa-check' style='color:blue; font-size:12px;'></i>"),
             _ => new MarkupString(status)
+        };
+    }
+
+    private string GetBackgroundColor(string severity)
+    {
+        return severity switch
+        {
+            "Critical" => "rgba(220, 38, 38, 0.1)",
+            "High" => "rgba(245, 158, 11, 0.1)",
+            "Medium" => "rgba(59, 130, 246, 0.1)",
+            "Low" => "rgba(34, 197, 94, 0.1)",
+            _ => "transparent"
         };
     }
 

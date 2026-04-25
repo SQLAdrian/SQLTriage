@@ -1,0 +1,110 @@
+/* Settings page — single-column vertical layout */
+
+.settings-page {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 24px 24px 64px;
+}
+
+.settings-page > h2 {
+    margin: 0 0 20px;
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* Section card — already partially defined in app.css; refine here */
+.settings-group {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px 20px;
+    margin-bottom: 16px;
+}
+
+.settings-group h3 {
+    margin: 0 0 14px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+}
+
+.settings-group h4 {
+    margin: 16px 0 8px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+}
+
+.settings-group h4:first-child {
+    margin-top: 0;
+}
+
+/* Field row — label + input/control aligned horizontally with consistent spacing */
+.settings-field {
+    margin-bottom: 14px;
+}
+
+.settings-field:last-child {
+    margin-bottom: 0;
+}
+
+.settings-field > label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+}
+
+.settings-field input[type="text"],
+.settings-field input[type="number"],
+.settings-field input[type="password"],
+.settings-field select,
+.settings-field textarea {
+    width: 100%;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 13px;
+    box-sizing: border-box;
+}
+
+.settings-field input:focus,
+.settings-field select:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+/* Buttons */
+.settings-btn {
+    background: var(--accent);
+    color: #fff;
+    border: 0;
+    padding: 7px 14px;
+    border-radius: 4px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 120ms;
+}
+
+.settings-btn:hover:not(:disabled) {
+    background: rgba(0, 122, 204, 0.85);
+}
+
+.settings-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Divider */
+.settings-divider {
+    margin: 16px 0;
+    border-top: 1px solid var(--border);
+}

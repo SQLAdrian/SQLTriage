@@ -1,9 +1,10 @@
 <!--/* In the name of God, the Merciful, the Compassionate */-->
 @page "/waitevents"
+@inject NavigationManager Nav
 
-
-<div class="dashboard-page">
-    <DynamicDashboard DashboardId="waitevents" />
-</div>
-
-
+@code {
+    protected override void OnInitialized()
+    {
+        Nav.NavigateTo("/dashboard/livewaits", replace: true);
+    }
+}

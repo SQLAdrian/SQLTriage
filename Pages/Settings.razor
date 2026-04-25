@@ -25,7 +25,6 @@
 @inject SQLTriage.Data.Services.RbacService RbacService
 @inject SQLTriage.Data.ServerConnectionManager ConnectionManager
 @inject SQLTriage.Data.Services.CacheMetricsService CacheMetrics
-@inject SQLTriage.Data.Services.CacheMetricsService CacheMetrics
 @inject SQLTriage.Data.Scheduling.IQueryOrchestrator QueryOrchestrator
 
 @if (!RbacService.HasPermission(UserState.Role, "settings"))
@@ -36,10 +35,10 @@
     return;
 }
 
-<div class="settings-page" style="max-width: 1000px;">
-    <h2 style="margin-bottom: 20px;">Settings</h2>
+<div class="settings-page">
+    <h2>Settings</h2>
 
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start;">
+    <div style="display: flex; flex-direction: column; gap: 16px;">
 
 
 <!-- Should use this connection
@@ -201,42 +200,6 @@
             }
         </div>
 
-        <div class="settings-field">
-            <label>Max Concurrent Heavy Queries (TimeSeries panels)</label>
-            <div style="display:flex;align-items:center;gap:12px;">
-                <input type="range" min="1" max="20" step="1"
-                       value="@_maxHeavy"
-                       @oninput="OnHeavyConcurrencyChanged"
-                       style="width:180px;" />
-                <span style="font-size:13px;min-width:60px;">@_maxHeavy</span>
-            </div>
-            <p style="font-size:11px;color:var(--text-secondary);margin-top:4px;">
-                Controls how many TimeSeries panels load in parallel. Lower = less SQL load, slower dashboard. Adjust based on server capacity.
-            </p>
-        </div>
-
-        <div class="settings-field">
-            <label>Max Concurrent Light Queries (StatCard, BarGauge, Grid)</label>
-            <div style="display:flex;align-items:center;gap:12px;">
-                <input type="range" min="2" max="50" step="1"
-                       value="@_maxLight"
-                       @oninput="OnLightConcurrencyChanged"
-                       style="width:180px;" />
-                <span style="font-size:13px;min-width:60px;">@_maxLight</span>
-            </div>
-            <p style="font-size:11px;color:var(--text-secondary);margin-top:4px;">
-                Controls parallel lightweight queries. Higher = faster dashboard but more connections. Typical range 5-20.
-            </p>
-        </div>
-
-        <div style="display: flex; gap: 8px; margin-top: 10px;">
-            <button class="settings-btn" @onclick="SaveConcurrencySettings">Save Concurrency Settings</button>
-            <button class="settings-btn" style="background: var(--bg-hover);" @onclick="ResetConcurrencyDefaults">Reset to Defaults</button>
-        </div>
-        @if (!string.IsNullOrEmpty(_concurrencyMessage))
-        {
-            <p style="margin-top: 8px; color: var(--green); font-size: 12px;">@_concurrencyMessage</p>
-        }
     </div>
 
     <div class="settings-group">
@@ -262,94 +225,7 @@
     </div>
 
     <div class="settings-group">
-        <h3>Performance</h3>
-
-        <div class="settings-field">
-            <label>Memory Usage</label>
-            <div style="display: flex; align-items: center; gap: 12px;">
-                <div style="flex: 1; background: var(--bg-secondary); border-radius: 4px; height: 24px; overflow: hidden;">
-                    <div style="background: @(MemoryMonitor.IsUnderPressure ? "var(--red)" : "var(--green)"); height: 100%; width: @((MemoryMonitor.MemoryUsagePercent * 100).ToString("F1"))%; transition: width 0.3s, background 0.3s;"></div>
-                </div>
-                <span style="min-width: 120px; font-size: 13px;">@((MemoryMonitor.CurrentMemoryUsage / 1024.0 / 1024.0).ToString("N0")) MB (@((MemoryMonitor.MemoryUsagePercent * 100).ToString("F1"))%)</span>
-            </div>
-            @if (MemoryMonitor.IsUnderPressure)
-            {
-                <small style="display: block; margin-top: 4px; color: var(--red); font-size: 11px;">
-                    ⚠️ High memory usage detected. Cache will be automatically cleared.
-                </small>
-            }
-        </div>
-
-        <div class="settings-field">
-            <label>Query Concurrency Limits</label>
-            <div style="display:flex;gap:24px;flex-wrap:wrap;">
-                <div style="flex:1;min-width:200px;">
-                    <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-secondary);">Heavy (TimeSeries) — max parallel</label>
-                    <div style="display:flex;align-items:center;gap:8px;">
-                        <input type="range" min="1" max="20" step="1" value="@_maxHeavy" @oninput="OnHeavyConcurrencyChanged" style="width:140px;" />
-                        <span style="font-size:13px;min-width:30px;">@_maxHeavy</span>
-                    </div>
-                </div>
-                <div style="flex:1;min-width:200px;">
-                    <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-secondary);">Light (Stat/Grid) — max parallel</label>
-                    <div style="display:flex;align-items:center;gap:8px;">
-                        <input type="range" min="2" max="50" step="1" value="@_maxLight" @oninput="OnLightConcurrencyChanged" style="width:140px;" />
-                        <span style="font-size:13px;min-width:30px;">@_maxLight</span>
-                    </div>
-                </div>
-            </div>
-            <p style="font-size:11px;color:var(--text-secondary);margin-top:4px;">
-                Adjust based on server capacity. Higher = faster dashboards but more connections. Changes apply immediately.
-            </p>
-            <div style="display:flex;gap:8px;margin-top:6px;">
-                <button class="settings-btn" @onclick="SaveConcurrencySettings" style="font-size:11px;padding:4px 10px;">Save</button>
-                <button class="settings-btn" style="background:var(--bg-hover);font-size:11px;padding:4px 10px;" @onclick="ResetConcurrencyDefaults">Reset Defaults</button>
-            </div>
-            @if (!string.IsNullOrEmpty(_concurrencyMessage))
-            {
-                <p style="margin:4px 0 0;font-size:11px;color:var(--green);">@_concurrencyMessage</p>
-            }
-        </div>
-
-        <div class="settings-divider" style="margin: 16px 0; border-top: 1px solid var(--border);"></div>
-
-        <div class="settings-field">
-            <label>Cache Performance</label>
-            <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">
-                Shows how often dashboard data is served from the local cache vs. fresh SQL queries.
-            </p>
-
-            @if (_cacheMetricsLoading)
-            {
-                <p style="font-size:12px;color:var(--text-muted);">Loading metrics...</p>
-            }
-            else
-            {
-                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px;">
-                    <div class="metric-card" style="background:var(--bg-secondary);border-radius:6px;padding:12px;border:1px solid var(--border);">
-                        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px;">Current Session</div>
-                        <div style="font-size:16px;font-weight:600;color:var(--accent);">@_sessionMetrics.TotalQueries.ToString("N0") queries</div>
-                        <div style="font-size:13px;color:var(--text-primary);">@_sessionMetrics.GetCachePercentage().ToString("F1")% from cache</div>
-                        <div style="font-size:11px;color:var(--text-secondary);">@_sessionMetrics.GetFreshPercentage().ToString("F1")% fresh</div>
-                    </div>
-                    <div class="metric-card" style="background:var(--bg-secondary);border-radius:6px;padding:12px;border:1px solid var(--border);">
-                        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px;">Last 24 Hours</div>
-                        <div style="font-size:16px;font-weight:600;color:var(--accent);">@_hourlyCachePercentage.ToString("F1")% cache avg</div>
-                        <div style="font-size:13px;color:var(--text-primary);">@_hourlyTotalQueries.ToString("N0") total queries</div>
-                        <div style="font-size:11px;color:var(--text-secondary);">Based on @_hourlyDataPoints data points</div>
-                    </div>
-                    <div class="metric-card" style="background:var(--bg-secondary);border-radius:6px;padding:12px;border:1px solid var(--border);">
-                        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px;">Last 7 Days</div>
-                        <div style="font-size:16px;font-weight:600;color:var(--accent);">@_dailyCachePercentage.ToString("F1")% cache avg</div>
-                        <div style="font-size:13px;color:var(--text-primary);">@_dailyTotalQueries.ToString("N0") total queries</div>
-                        <div style="font-size:11px;color:var(--text-secondary);">@_dailyDataPoints days with activity</div>
-                    </div>
-                </div>
-                <button class="settings-btn" @onclick="RefreshCacheMetrics" disabled="@_cacheMetricsLoading" style="font-size:12px;padding:6px 12px;">
-                    <i class="fa-solid fa-rotate"></i> Refresh Metrics
-                </button>
-            }
-        </div>
+        <h3>Updates</h3>
         <div class="settings-field">
             <label>Proxy URL <span style="font-weight:normal;color:var(--text-secondary);font-size:11px;">(optional — leave blank to use system proxy)</span></label>
             <div style="display:flex;gap:8px;align-items:center;">
@@ -1050,14 +926,13 @@
 
     @if (_enablePerfInspector)
     {
-        <!-- Performance Tuning -->
+        <!-- Orchestrator tuning — only knobs that actually take effect (on app restart) -->
         <div class="settings-group">
-            <h3>Performance Tuning</h3>
+            <h3>Orchestrator Tuning <span style="font-size:11px;color:var(--orange);margin-left:6px;">(restart required)</span></h3>
             <p style="color:var(--text-muted);font-size:12px;margin-bottom:16px;">
-                Adjust these knobs based on perf-inspector findings. Changes take effect immediately.
+                Backend query orchestrator concurrency. Changes here are written to <code>appsettings.json</code>
+                and apply on next app start. Use <a href="/perf-inspector" target="_blank">/perf-inspector</a> to find bottlenecks first.
             </p>
-
-            <h4>Orchestrator</h4>
             <div class="settings-row">
                 <label class="settings-label">Global Concurrency</label>
                 <input type="number" @bind="_globalConcurrency" @bind:after="SaveTuningSettings" min="1" max="50" />
@@ -1073,34 +948,6 @@
             <div class="settings-row">
                 <label class="settings-label">Default Timeout (sec)</label>
                 <input type="number" @bind="_defaultTimeoutSeconds" @bind:after="SaveTuningSettings" min="5" max="300" />
-            </div>
-
-            <h4>Dashboard</h4>
-            <div class="settings-row">
-                <label class="settings-label">Max Panels In Flight</label>
-                <input type="number" @bind="_maxPanelsInFlight" @bind:after="SaveTuningSettings" min="1" max="50" />
-            </div>
-            <div class="settings-row">
-                <label class="settings-label">Render Coalesce (ms)</label>
-                <input type="number" @bind="_renderCoalesceMs" @bind:after="SaveTuningSettings" min="0" max="1000" />
-            </div>
-            <div class="settings-row">
-                <label class="settings-label">Preload from Cache</label>
-                <input type="checkbox" @bind="_preloadFromCacheOnInit" @bind:after="SaveTuningSettings" />
-            </div>
-
-            <h4>Cache</h4>
-            <div class="settings-row">
-                <label class="settings-label">Batch Write Size</label>
-                <input type="number" @bind="_batchWriteSize" @bind:after="SaveTuningSettings" min="1" max="100" />
-            </div>
-            <div class="settings-row">
-                <label class="settings-label">Batch Flush (ms)</label>
-                <input type="number" @bind="_batchFlushMs" @bind:after="SaveTuningSettings" min="10" max="5000" />
-            </div>
-            <div class="settings-row">
-                <label class="settings-label">Hot Tier Sliding (sec)</label>
-                <input type="number" @bind="_hotTierSlidingSeconds" @bind:after="SaveTuningSettings" min="30" max="3600" />
             </div>
         </div>
     }

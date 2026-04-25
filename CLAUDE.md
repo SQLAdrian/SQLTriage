@@ -130,6 +130,7 @@ Flag if current model seems mismatched — one line only, no interruption:
 - Use `<` in Razor `@code` switch (Razor reads it as HTML; use `if/else`)
 - Write or edit SQL (user owns SQL; focus on C#/Blazor)
 - Commit after every change (commit only when explicitly asked)
+- Embed `<style>` blocks in `.razor` pages — put CSS in `wwwroot\css\<PageName>.css` and add `@import '<PageName>.css';` at the top of `wwwroot\css\app.css` (after the basmalah header)
 
 ## Working from worklists / handoff docs
 1. **Claimed ≠ implemented.** Every ✅ in a worklist is a claim. Before building on it, grep/read the named file and confirm the code matches. If claim and code disagree, trust the code and flip status back to pending.

@@ -1,0 +1,67 @@
+/* Quick Check page — defensive table layout fixes
+ *
+ * Symptom: status badges (Pass/Fail pills) escaping their <td> cells and
+ * floating along the right edge of the viewport. Lock down table semantics
+ * so nothing in the cascade can promote cells to block-level or float them.
+ */
+
+.results-grid {
+    overflow-x: auto;          /* allow horizontal scroll, not overflow */
+    overflow-y: visible;
+    max-width: 100%;
+}
+
+.results-table {
+    display: table !important;
+    width: 100%;
+    table-layout: auto;
+    border-collapse: collapse;
+}
+
+.results-table thead {
+    display: table-header-group !important;
+}
+
+.results-table tbody {
+    display: table-row-group !important;
+}
+
+.results-table tr {
+    display: table-row !important;
+    float: none !important;
+    position: static !important;
+}
+
+.results-table td,
+.results-table th {
+    display: table-cell !important;
+    float: none !important;
+    position: static !important;
+    vertical-align: middle;
+}
+
+/* Status column — narrow, centered pill */
+.results-table td.status-cell,
+.results-table th:first-child {
+    width: 90px;
+    min-width: 90px;
+    white-space: nowrap;
+    text-align: left;
+}
+
+.results-table td.status-cell .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 9px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+/* Make sure clickable rows don't try to float anything */
+.results-table tbody tr {
+    cursor: pointer;
+}

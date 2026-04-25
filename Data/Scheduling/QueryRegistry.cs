@@ -55,8 +55,12 @@ namespace SQLTriage.Data.Scheduling
             // Ensure Config directory exists
             Directory.CreateDirectory(Path.GetDirectoryName(_stateFilePath)!);
 
-            // Load any existing state
-            LoadStateAsync().ConfigureAwait(false).GetAwaiter().GetResult();
+            // Load any existing state (async in background, don't block constructor)
+            _ = Task.Run(async () =>
+            {
+                try { await LoadStateAsync().ConfigureAwait(false); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Failed to load initial scheduler state"); }
+            });
 
             // Start periodic persistence loop
             _persistenceTask = Task.Run(PersistenceLoopAsync);

@@ -3464,21 +3464,21 @@
       ]
     },
     {
-      "id": "livetaitstats",
-      "title": "LiveWait Stats",
+      "id": "livewaits",
+      "title": "Live Wait Stats",
       "description": "",
-      "navTitle": "LiveWait Stats",
+      "navTitle": "Live Wait Stats",
       "navIcon": "fa-solid fa-clock-rotate-left",
       "navCategory": "Dashboards",
       "navOrder": 5,
-      "route": "/livetaitstats",
+      "route": "/livewaits",
       "enabled": true,
       "source": "live",
       "defaultDatabase": "master",
       "showAllOption": false,
       "panels": [
         {
-          "id": "livestats.cpu_pct",
+          "id": "livewaits.cpu_pct",
           "title": "CPU Waits",
           "description": "CPU-related waits (scheduler yield, parallelism, threadpool). High values indicate CPU saturation.",
           "enabled": true,
@@ -3525,7 +3525,7 @@
           "dataGridColumnColors": null
         },
         {
-          "id": "livestats.io_pct",
+          "id": "livewaits.io_pct",
           "title": "I/O Waits",
           "description": "I/O waits (page reads, log writes). High values indicate disk bottleneck.",
           "enabled": true,
@@ -3572,7 +3572,7 @@
           "dataGridColumnColors": null
         },
         {
-          "id": "livestats.memory_pct",
+          "id": "livewaits.memory_pct",
           "title": "Memory Waits",
           "description": "Memory grant and buffer pool waits. High values indicate memory contention.",
           "enabled": true,
@@ -3619,7 +3619,7 @@
           "dataGridColumnColors": null
         },
         {
-          "id": "livestats.other_pct",
+          "id": "livewaits.other_pct",
           "title": "Other Waits",
           "description": "All waits not categorised as CPU, I/O, Memory, or Locking.",
           "enabled": true,
@@ -3653,7 +3653,7 @@
           "dataGridColumnColors": null
         },
         {
-          "id": "livestats.cumulative_wait",
+          "id": "livewaits.cumulative_wait",
           "title": "Cumulative Wait",
           "description": "Total accumulated wait time in millions of ms since last SQL Server restart. Benign idle waits excluded.",
           "enabled": true,
@@ -3687,7 +3687,7 @@
           "dataGridColumnColors": null
         },
         {
-          "id": "livestats.signal_pct",
+          "id": "livewaits.signal_pct",
           "title": "Signal Wait %",
           "description": "Signal wait as % of total wait. Values above 25% indicate CPU pressure â€” queries spending time in the run queue.",
           "enabled": true,
@@ -3734,7 +3734,7 @@
           "dataGridColumnColors": null
         },
         {
-          "id": "livestats.unique_types",
+          "id": "livewaits.unique_types",
           "title": "Unique Wait Types",
           "description": "Distinct non-idle wait types recorded since last restart.",
           "enabled": true,
@@ -3768,7 +3768,7 @@
           "dataGridColumnColors": null
         },
         {
-          "id": "livestats.active_waits",
+          "id": "livewaits.active_waits",
           "title": "Active Waits",
           "description": "Requests currently waiting in sys.dm_exec_requests. Background and sleeping sessions excluded.",
           "enabled": true,
@@ -3802,7 +3802,7 @@
           "dataGridColumnColors": null
         },
         {
-          "id": "livestats.top_waits",
+          "id": "livewaits.top_waits",
           "title": "Top Wait Types by Total Wait Time",
           "description": "Top 15 wait types by accumulated wait time since restart. Benign idle waits filtered.",
           "enabled": true,
@@ -3836,7 +3836,7 @@
           "dataGridColumnColors": null
         },
         {
-          "id": "livestats.category_dist",
+          "id": "livewaits.category_dist",
           "title": "Wait Category Distribution",
           "description": "Proportion of cumulative wait time by category. CPU, I/O, Memory, Locking, Other.",
           "enabled": true,
@@ -3870,7 +3870,7 @@
           "dataGridColumnColors": null
         },
         {
-          "id": "livestats.avg_wait",
+          "id": "livewaits.avg_wait",
           "title": "Average Wait Time per Task (ms)",
           "description": "Top 15 wait types by average wait per task. High values indicate individual tasks experience significant delays.",
           "enabled": true,
@@ -3904,7 +3904,7 @@
           "dataGridColumnColors": null
         },
         {
-          "id": "livestats.signal_resource",
+          "id": "livewaits.signal_resource",
           "title": "Signal vs Resource Wait - Top 12",
           "description": "Signal wait (CPU queue time) vs resource wait for top wait types. High signal % = CPU pressure.",
           "enabled": true,
@@ -3938,7 +3938,7 @@
           "dataGridColumnColors": null
         },
         {
-          "id": "livestats.active_sessions",
+          "id": "livewaits.active_sessions",
           "title": "Active Wait Sessions",
           "description": "Currently waiting SQL requests - wait type, duration, database and SQL text from sys.dm_exec_requests.",
           "enabled": true,
@@ -3972,7 +3972,7 @@
           "dataGridColumnColors": null
         },
         {
-          "id": "livestats.top10_avg_wait",
+          "id": "livewaits.top10_avg_wait",
           "title": "Top 10 Wait Types by Avg Wait (ms)",
           "description": "Top 10 wait types ranked by average wait time per task since last SQL Server restart. High avg wait on LCK_M_* = blocking; PAGEIOLATCH_* = I/O; RESOURCE_SEMAPHORE = memory pressure.",
           "enabled": true,
@@ -4013,7 +4013,7 @@
           ]
         },
         {
-          "id": "livestats.top10_total_wait",
+          "id": "livewaits.top10_total_wait",
           "title": "Top 10 Wait Types by Total Wait (ms)",
           "description": "Top 10 wait types by cumulative wait time since last SQL Server restart. Shows what SQL Server has spent the most time waiting on overall.",
           "enabled": true,

@@ -21,10 +21,9 @@ jobs:
 
     steps:
       # ── 1. Checkout ──────────────────────────────────────────────────────
-      - name: Checkout (with submodules)
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          submodules: recursive
           fetch-depth: 0   # full history for changelog generation
 
       # ── 2. .NET setup ────────────────────────────────────────────────────
@@ -56,9 +55,12 @@ jobs:
         run: dotnet test SQLTriage.sln -c Release --no-build --verbosity normal
 
       # ── 7. Build & Publish (self-contained, win-x64) ─────────────────────
+      # Publish the WPF app project (NOT the solution) so PublishSingleFile
+      # only emits one exe and the rename step can't accidentally pick up the
+      # test runner exe.
       - name: Publish
         run: |
-          dotnet publish SQLTriage.sln `
+          dotnet publish SQLTriage.csproj `
             -c Release `
             -r win-x64 `
             --self-contained true `
@@ -103,15 +105,20 @@ jobs:
           Remove-Item $certPath -Force
           Write-Host "Executable signed successfully."
 
-      # ── 9. Rename exe to SQLTriage.exe ─────────────────────────────────
-      - name: Rename exe
+      # ── 9. Verify exe exists ─────────────────────────────────────────────
+      # Project's <AssemblyName> is SQLTriage so the published exe is already
+      # SQLTriage.exe. Verify rather than rename so a publish that emits the
+      # wrong file name fails loudly instead of grabbing createdump.exe etc.
+      - name: Verify exe
         shell: pwsh
         run: |
-          $src = Get-ChildItem "${{ env.PUBLISH_DIR }}" -Filter "*.exe" | Select-Object -First 1
-          if ($src.Name -ne "${{ env.EXE_NAME }}") {
-            Rename-Item $src.FullName "${{ env.EXE_NAME }}"
+          $exePath = Join-Path "${{ env.PUBLISH_DIR }}" "${{ env.EXE_NAME }}"
+          if (-not (Test-Path $exePath)) {
+            Write-Error "Expected exe not found at $exePath"
+            Get-ChildItem "${{ env.PUBLISH_DIR }}" -Filter "*.exe" | ForEach-Object { Write-Host "Found: $($_.Name)" }
+            exit 1
           }
-          Write-Host "Exe: ${{ env.PUBLISH_DIR }}\${{ env.EXE_NAME }}"
+          Write-Host "Exe verified: $exePath ($((Get-Item $exePath).Length) bytes)"
 
       # ── 10. ZIP the raw exe ───────────────────────────────────────────────
       - name: Create ZIP
