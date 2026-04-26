@@ -65,3 +65,15 @@
     color: #f87171;
     background: rgba(225, 29, 72, 0.08);
 }
+
+/* Hide all corner badges when generating PDFs (CoreWebView2.PrintToPdfAsync
+ * honours @media print). Without this, the No-Pants chip + mute chip render
+ * on every page of the exported PDF since they use position:fixed. */
+@media print {
+    .status-badge,
+    .health-badge,
+    .ratelimit-badge,
+    .server-mode-toggle {
+        display: none !important;
+    }
+}

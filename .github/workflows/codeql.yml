@@ -22,10 +22,8 @@ jobs:
       contents: read
 
     steps:
-      - name: Checkout repository (with submodules)
+      - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v4
@@ -39,9 +37,15 @@ jobs:
           build-mode: manual
           queries: security-extended
 
-       - name: Build
-         shell: bash
-         run: dotnet build SQLTriage.sln -c Debug
+      # csproj hardcodes <RuntimeIdentifier>win-x64</RuntimeIdentifier>, so
+      # restore must include the win-x64 runtime pack — otherwise NETSDK1112.
+      - name: Restore
+        shell: bash
+        run: dotnet restore SQLTriage.sln -r win-x64
+
+      - name: Build
+        shell: bash
+        run: dotnet build SQLTriage.sln -c Debug --no-restore
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
