@@ -1,0 +1,120 @@
+/* In the name of God, the Merciful, the Compassionate */
+/* ──────────────────────────────────────────────────────
+   Diagnostics Roadmap — Print / PDF styles
+   Toasts are suppressed during print via .printing-active
+   (added to body around the WebView2 PrintToPdfAsync call).
+   ────────────────────────────────────────────────────── */
+
+/* Slightly smaller font during print to fit more content per page */
+body.printing-active #roadmap-print-region {
+    font-size: 11px;
+}
+body.printing-active #roadmap-print-region .print-cat-card {
+    font-size: 10px;
+    padding: 6px 8px !important;
+}
+body.printing-active #roadmap-print-region .print-level-header {
+    font-size: 12px;
+    padding: 6px 10px !important;
+}
+/* Tighten level card margins, grid gaps, and detail padding */
+body.printing-active #roadmap-print-region .print-level-card {
+    margin-bottom: 6px !important;
+}
+body.printing-active #roadmap-print-region .level-detail {
+    padding: 6px 10px !important;
+}
+body.printing-active #roadmap-print-region .print-cat-grid {
+    gap: 6px !important;
+}
+/* Tighten the failed/passed divider and progress bar spacing */
+body.printing-active #roadmap-print-region .print-passed-section {
+    margin-top: 2px !important;
+    padding-top: 2px !important;
+    max-height: none !important;
+    overflow-y: visible !important;
+}
+/* Remove overflow clipping on failed checks list during print */
+body.printing-active #roadmap-print-region .print-cat-card > div[style*="max-height:80px"] {
+    max-height: none !important;
+    overflow-y: visible !important;
+}
+
+/* Suppress the global MainLayout print-header/footer — roadmap has its own
+ * DOM footer injected via PrintSinglePdfAsync (#pdf-footer-bar). The global
+ * .print-header and .print-footer would otherwise stack on every page. */
+body.printing-active .print-header,
+body.printing-active .print-footer,
+body.printing-active .roadmap-toolbar {
+    display: none !important;
+}
+
+/* Remove the body/layout padding that the global @media print rule
+ * reserves for the (now-hidden) header/footer. Without these resets the
+ * page content starts ~32pt below the page edge for no reason. */
+body.printing-active,
+body.printing-active .app-layout,
+body.printing-active .app-container,
+body.printing-active .app-content,
+body.printing-active .settings-page {
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+}
+
+/* Hide toast container while printing */
+body.printing-active .rz-notification,
+body.printing-active [class*="toast"],
+body.printing-active [class*="Toast"],
+body.printing-active .mud-snackbar-container,
+body.printing-active .notification-container {
+    display: none !important;
+}
+
+/* Hide the print-only executive summary on screen so it only appears in
+ * the generated PDF (PrintPrepareDomAsync flips display:block). */
+@media screen {
+    #roadmap-print-region .print-executive-summary { display: none; }
+}
+
+/* ── Page-break control for the level cards ────────────────────────
+ * Each level (Foundation / Hardened / Performant / Observable / Governed)
+ * starts on a new page. We deliberately allow page breaks BETWEEN the
+ * category cards inside a level (12+ cards never fit on one page), but
+ * never SPLIT an individual category card. The inline-style hooks added
+ * by PrintPrepareDomAsync provide the per-element nudge; these CSS rules
+ * back them up so removing the inline-style on restore doesn't strip
+ * intent for screen-only @media print previews.
+ * ──────────────────────────────────────────────────────────────── */
+@media print {
+    body.printing-active .print-cat-card,
+    body.printing-active .risk-row,
+    body.printing-active .compliance-card,
+    body.printing-active .print-cat-grid > * {
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+
+    /* Cover page should fill exactly one printed page. The DOM rule on the
+     * .pdf-cover-page element uses 97vh + box-sizing:border-box — this rule
+     * adds the page-break-after for engines that respect the @media print
+     * variant separately. */
+    body.printing-active .pdf-cover-page {
+        page-break-after: always;
+        break-after: page;
+    }
+
+    /* Compliance Mapping panel — keep the 3-column grid (ISO / SOC2 / NIST)
+     * side-by-side in the PDF, like the on-screen view. Without an explicit
+     * `minmax(0, 1fr)` chromium can let the column's min-content (longest
+     * card description) bully the grid into stacking single-column on a
+     * landscape A4 page. The min:0 prevents that pathological collapse. */
+    body.printing-active .compliance-panel-detail {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) !important;
+        gap: 12px !important;
+    }
+    body.printing-active .compliance-panel-detail > div {
+        min-width: 0 !important;
+    }
+}

@@ -15,77 +15,7 @@
 @inject UserSettingsService UserSettings
 @inject SQLTriage.Data.Services.KeyboardShortcutService ShortcutSvc
 
-@* ══════════════════════════════════════════════════════
-   Print / PDF styles — enterprise report look
-   Toasts are suppressed during print via .printing-active
-   ══════════════════════════════════════════════════════ *@
-<!-- <style>
-    /* Slightly smaller font during print to fit more content per page */
-    body.printing-active #roadmap-print-region {
-        font-size: 11px;
-    }
-    body.printing-active #roadmap-print-region .print-cat-card {
-        font-size: 10px;
-        padding: 6px 8px !important;
-    }
-    body.printing-active #roadmap-print-region .print-level-header {
-        font-size: 12px;
-        padding: 6px 10px !important;
-    }
-    /* Tighten level card margins, grid gaps, and detail padding */
-    body.printing-active #roadmap-print-region .print-level-card {
-        margin-bottom: 6px !important;
-    }
-    body.printing-active #roadmap-print-region .level-detail {
-        padding: 6px 10px !important;
-    }
-    body.printing-active #roadmap-print-region .print-cat-grid {
-        gap: 6px !important;
-    }
-    /* Tighten the failed/passed divider and progress bar spacing */
-    body.printing-active #roadmap-print-region .print-passed-section {
-        margin-top: 2px !important;
-        padding-top: 2px !important;
-        max-height: none !important;
-        overflow-y: visible !important;
-    }
-    /* Remove overflow clipping on failed checks list during print */
-    body.printing-active #roadmap-print-region .print-cat-card > div[style*="max-height:80px"] {
-        max-height: none !important;
-        overflow-y: visible !important;
-    }
-
-    /* Suppress the global MainLayout print-header/footer — roadmap has its own DOM footer */
-    body.printing-active .print-header,
-    body.printing-active .print-footer,
-    body.printing-active .roadmap-toolbar {
-        display: none !important;
-    }
-    /* Remove the body/layout padding that media-print reserves for the global header/footer */
-    body.printing-active,
-    body.printing-active .app-layout,
-    body.printing-active .app-container,
-    body.printing-active .app-content,
-    body.printing-active .settings-page {
-        padding-top: 0 !important;
-        padding-bottom: 0 !important;
-        margin-top: 0 !important;
-        margin-bottom: 0 !important;
-    }
-
-    /* Hide toast container while printing */
-    body.printing-active .rz-notification,
-    body.printing-active [class*="toast"],
-    body.printing-active [class*="Toast"],
-    body.printing-active .mud-snackbar-container,
-    body.printing-active .notification-container {
-        display: none !important;
-    }
-
-    @@media screen {
-        #roadmap-print-region .print-executive-summary { display: none; }
-    }
-</style> -->
+@* Print/PDF styles for this page live in wwwroot/css/DiagnosticsRoadmap.css *@
 
 <div class="settings-page" style="max-width: 1400px;">
 
@@ -296,7 +226,7 @@
         <div id="roadmap-print-region">
 
             @* ── PDF Cover Page (print-only) ── *@
-            <div class="pdf-cover-page" style="display:none; page-break-after:always; min-height:90vh; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:60px 40px;">
+            <div class="pdf-cover-page" style="display:none; page-break-after:always; break-after:page; height:97vh; box-sizing:border-box; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:60px 40px;">
                 <div style="margin-bottom:32px;">
                     <i class="fa-solid fa-heart-pulse" style="font-size:64px; color:#e2583e;"></i>
                 </div>
@@ -1640,7 +1570,16 @@
             "document.querySelectorAll('.nav-menu,.dashboard-toolbar,.roadmap-toolbar,.settings-page > div:first-child,[class*=\"server-mode\"],[id*=\"server-mode\"]').forEach(e => { e.dataset.printHidden='1'; e.style.display='none'; });" +
             "document.getElementById('roadmap-print-region')?.querySelectorAll('.level-section').forEach((el,i) => {" +
             "  if(i>0) el.style.pageBreakBefore='always';" +
+            // Don't try to keep the whole level on one page (it's 8-12 cards, impossible).
+            // Tell chromium to break BETWEEN cards, never inside one. The category cards
+            // themselves get the page-break-inside:avoid below.
+            "  el.style.pageBreakInside='auto';" +
+            "});" +
+            // Keep individual category cards intact when chromium has to paginate within
+            // a level. Same for risk register rows + compliance framework cards.
+            "document.querySelectorAll('.print-cat-card,.risk-row,.compliance-card,.print-cat-grid > *').forEach(el => {" +
             "  el.style.pageBreakInside='avoid';" +
+            "  el.style.breakInside='avoid';" +
             "});" +
             "document.getElementById('roadmap-print-region')?.querySelectorAll('.level-detail,.risk-panel-detail,.compliance-panel-detail').forEach(el => { el.style.display='block'; el.dataset.printForceShown='1'; });" +
             "document.querySelector('.risk-panel-wrapper')?.style.setProperty('page-break-before','always');" +
@@ -1696,6 +1635,7 @@
             "document.querySelectorAll('.print-executive-summary').forEach(e => e.style.display='none');" +
             "document.querySelectorAll('[data-print-hidden]').forEach(e => { e.style.removeProperty('display'); delete e.dataset.printHidden; });" +
             "document.getElementById('roadmap-print-region')?.querySelectorAll('.level-section').forEach(el => { el.style.removeProperty('page-break-before'); el.style.removeProperty('page-break-inside'); });" +
+            "document.querySelectorAll('.print-cat-card,.risk-row,.compliance-card,.print-cat-grid > *').forEach(el => { el.style.removeProperty('page-break-inside'); el.style.removeProperty('break-inside'); });" +
             "document.getElementById('roadmap-print-region')?.querySelectorAll('[data-print-force-shown]').forEach(el => { el.style.removeProperty('display'); delete el.dataset.printForceShown; });" +
             "document.querySelector('.risk-panel-wrapper')?.style.removeProperty('page-break-before');" +
             "document.querySelector('.compliance-panel-wrapper')?.style.removeProperty('page-break-before');" +
