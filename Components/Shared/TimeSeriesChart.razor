@@ -50,6 +50,17 @@
     /// <summary>Baseline data from 7 days ago, timestamps already shifted to align with current range.</summary>
     [Parameter] public List<TimeSeriesPoint>? BaselineData { get; set; }
 
+    /// <summary>
+    /// Optional 25th-percentile value from IQR-based baseline statistics.
+    /// When set together with BaselineP75, renders a dashed horizontal "typical range"
+    /// band on the chart so users can see at-a-glance whether the current value
+    /// is within historical norms.
+    /// </summary>
+    [Parameter] public double? BaselineP25 { get; set; }
+
+    /// <summary>75th-percentile companion to <see cref="BaselineP25"/>.</summary>
+    [Parameter] public double? BaselineP75 { get; set; }
+
     // Cached values for performance
     private List<string>? _distinctSeries;
     private Dictionary<string, List<TimeSeriesPoint>>? _seriesDataCache;
@@ -97,7 +108,12 @@
     // Memoized chart options
     private ApexChartOptions<TimeSeriesPoint> GetChartOptions()
     {
-        return _cachedOptions ??= new ApexChartOptions<TimeSeriesPoint>
+        return _cachedOptions ??= BuildChartOptions();
+    }
+
+    private ApexChartOptions<TimeSeriesPoint> BuildChartOptions()
+    {
+        var opts = new ApexChartOptions<TimeSeriesPoint>
         {
             Chart = new Chart
             {
@@ -159,6 +175,45 @@
             },
             Colors = new List<string> { "#4caf50", "#2196f3", "#ff9800", "#f44336", "#9c27b0", "#00bcd4", "#ffeb3b", "#e91e63" }
         };
+
+        // Add a "typical range" overlay using the IQR-based baseline P25/P75
+        // when the caller supplies them. Rendered as two dashed yAxis
+        // annotation lines bracketing the historical interquartile range so
+        // a user can spot at-a-glance when current values fall outside the
+        // normal band. Uses ApexCharts' built-in YAxisAnnotations rather
+        // than a synthetic series — annotations don't show in the legend
+        // and don't affect autoscale calculations against null gaps.
+        if (BaselineP25.HasValue && BaselineP75.HasValue)
+        {
+            opts.Annotations = new Annotations
+            {
+                Yaxis = new List<AnnotationsYAxis>
+                {
+                    new AnnotationsYAxis
+                    {
+                        Y = BaselineP25.Value,
+                        Y2 = BaselineP75.Value,
+                        FillColor = "#3b82f6",
+                        Opacity = 0.08d,
+                        BorderColor = "#3b82f6",
+                        Label = new Label
+                        {
+                            Text = $"Typical {BaselineP25.Value:0.##}–{BaselineP75.Value:0.##}",
+                            Position = LabelPosition.Left,
+                            OffsetX = 8,
+                            Style = new Style
+                            {
+                                Color = "#93c5fd",
+                                Background = "transparent",
+                                FontSize = "10px"
+                            }
+                        }
+                    }
+                }
+            };
+        }
+
+        return opts;
     }
 
     // Rebuild caches whenever data or timezone offset changes

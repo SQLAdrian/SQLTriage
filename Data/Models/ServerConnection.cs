@@ -115,7 +115,20 @@ namespace SQLTriage.Data.Models
                 .ToList();
 
         /// <summary>
-        /// Validates and sanitizes a server name to prevent injection attacks
+        /// Validates a server name. Uses a *whitelist* of legal SQL Server
+        /// host/instance characters — alphanumeric, dot (FQDN separator),
+        /// backslash (instance separator), dash, underscore, and colon
+        /// (port separator). Anything else is dropped.
+        ///
+        /// Previously this used a blacklist of strings like "sp_", "xp_",
+        /// "@@", "--" etc. and called `.Replace(...)` for each. That
+        /// corrupted legitimate names — `SP-SQL01` became `-SQL01`,
+        /// `db.master.contoso.com` became `db..contoso.com`, and any host
+        /// with `--` in it was silently mutilated. The blacklist was also
+        /// the wrong defence for SQL injection: server names flow into
+        /// connection strings, not query text, so the right protection is
+        /// the SqlConnectionStringBuilder, which we use elsewhere — not
+        /// string-mangling at parse time.
         /// </summary>
         private static string ValidateServerName(string serverName)
         {
@@ -126,16 +139,20 @@ namespace SQLTriage.Data.Models
             if (serverName.Length > 100)
                 serverName = serverName.Substring(0, 100);
 
-            // Remove potentially dangerous characters and patterns
-            var dangerousPatterns = new[] { ";", "'", "\"", "--", "/*", "*/", "xp_", "sp_", "@@", "../", "..\\" };
-            var sanitized = serverName;
-
-            foreach (var pattern in dangerousPatterns)
+            // Whitelist: keep only characters that legitimately appear in a
+            // SQL Server host or named-instance specifier. Drop everything
+            // else silently — this protects against newlines, control chars,
+            // and paste-from-Word artefacts without mangling valid names.
+            var sb = new System.Text.StringBuilder(serverName.Length);
+            foreach (var c in serverName)
             {
-                sanitized = sanitized.Replace(pattern, string.Empty);
+                if (char.IsLetterOrDigit(c) ||
+                    c == '.' || c == '\\' || c == '-' || c == '_' || c == ':')
+                {
+                    sb.Append(c);
+                }
             }
-
-            return sanitized.Trim();
+            return sb.ToString().Trim();
         }
 
         public string GetConnectionString(string serverName) => GetConnectionString(serverName, HasSqlWatch ? "SQLWATCH" : "master");

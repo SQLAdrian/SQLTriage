@@ -221,12 +221,20 @@
         </div>
     </nav>
     <div style="margin-top:auto; border-top:1px solid var(--border);">
-        @* ── Server health strip ── *@
+        @* ── Executive Health Badge — aggregate 0-100 across all connected servers ── *@
         @{
             var healthAll    = ConnectionHealth.AllStatuses;
             var healthOnline  = ConnectionHealth.OnlineCount;
             var healthOffline = ConnectionHealth.OfflineCount;
         }
+        @if (healthAll.Count > 0)
+        {
+            <div class="nav-link-text" style="padding:8px 12px 4px; display:flex; gap:6px; flex-wrap:wrap;">
+                <SQLTriage.Components.Shared.HealthBadge />
+                <SQLTriage.Components.Shared.RateLimitBadge />
+            </div>
+        }
+        @* ── Per-server health strip ── *@
         @if (healthAll.Count > 0)
         {
             <div class="nav-health-strip" style="padding:6px 12px 4px; border-bottom:1px solid var(--border);">

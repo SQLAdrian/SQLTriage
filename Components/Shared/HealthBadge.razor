@@ -1,0 +1,98 @@
+@*
+   In the name of God, the Merciful, the Compassionate
+   Aggregate executive health badge — single 0-100 score across all servers.
+   Uses ExecutiveHealthService; refreshes every 30s on its own timer so the
+   badge stays current without coupling to the page that hosts it.
+*@
+@using SQLTriage.Data.Services
+@inject ExecutiveHealthService Health
+@inject ServerConnectionManager ConnectionManager
+@implements IDisposable
+
+@if (_score.HasValue)
+{
+    <div class="health-badge sev-@(_severity.ToString().ToLower())"
+         title="@_tooltip">
+        <span class="health-badge-score">@_score</span>
+        <span class="health-badge-trend">
+            @switch (_trend)
+            {
+                case HealthTrend.Improving:
+                    <i class="fa-solid fa-arrow-trend-up" style="color:#22c55e;"></i>
+                    break;
+                case HealthTrend.Degrading:
+                    <i class="fa-solid fa-arrow-trend-down" style="color:#e2583e;"></i>
+                    break;
+                default:
+                    <i class="fa-solid fa-equals" style="color:var(--text-muted);"></i>
+                    break;
+            }
+        </span>
+        <span class="health-badge-label">Health</span>
+    </div>
+}
+
+@code {
+    private int? _score;
+    private HealthSeverity _severity = HealthSeverity.Unknown;
+    private HealthTrend _trend = HealthTrend.Stable;
+    private string _tooltip = "";
+    private System.Threading.Timer? _timer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshAsync();
+        // 30s polling matches ConnectionHealthService's cadence so the two
+        // sources stay aligned. Run on a Timer rather than PeriodicTimer
+        // because this is a UI component, not a background service.
+        _timer = new System.Threading.Timer(async _ =>
+        {
+            await InvokeAsync(async () =>
+            {
+                await RefreshAsync();
+                StateHasChanged();
+            });
+        }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+    }
+
+    private async Task RefreshAsync()
+    {
+        try
+        {
+            var all = await Health.GetAllHealthScoresAsync();
+            if (all.Count == 0)
+            {
+                _score = null;
+                _tooltip = "No connected servers";
+                return;
+            }
+
+            // Aggregate: average score weighted by server count.
+            // Severity = worst severity across the fleet (one critical drags
+            // the badge to red so the DBA sees it).
+            _score = (int)Math.Round(all.Values.Average(v => v.Score));
+            _severity = all.Values.Max(v => v.Severity);
+            // Worst-case trend wins, but only if any server is degrading
+            _trend = all.Values.Any(v => v.Trend == HealthTrend.Degrading) ? HealthTrend.Degrading
+                   : all.Values.Any(v => v.Trend == HealthTrend.Improving) ? HealthTrend.Improving
+                   : HealthTrend.Stable;
+
+            var critical = all.Where(kvp => kvp.Value.Severity == HealthSeverity.Critical).Select(kvp => kvp.Key).ToList();
+            var warning  = all.Where(kvp => kvp.Value.Severity == HealthSeverity.Warning).Select(kvp => kvp.Key).ToList();
+            var lines = new List<string> { $"Avg score: {_score}/100 across {all.Count} server(s)" };
+            if (critical.Count > 0) lines.Add($"Critical: {string.Join(", ", critical)}");
+            if (warning.Count > 0)  lines.Add($"Warning: {string.Join(", ", warning)}");
+            _tooltip = string.Join("\n", lines);
+        }
+        catch
+        {
+            _score = null;
+            _tooltip = "Health data unavailable";
+        }
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+    }
+}

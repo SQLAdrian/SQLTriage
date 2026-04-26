@@ -168,6 +168,8 @@ namespace SQLTriage
             services.AddSingleton<Data.Services.ScheduledTaskHistoryService>();
             services.AddSingleton<Data.Services.ScheduledTaskEngine>();
             services.AddSingleton<HealthCheckService>();
+            services.AddSingleton<Data.Services.ExecutiveHealthService>();
+            services.AddSingleton<RateLimiter>();
             services.AddSingleton<CheckExecutionService>();
             services.AddSingleton<liveQueriesTableService>();
             services.AddSingleton<SessionManager>();

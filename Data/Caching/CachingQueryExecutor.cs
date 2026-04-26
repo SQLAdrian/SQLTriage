@@ -268,14 +268,39 @@ namespace SQLTriage.Data.Caching
             var panelType = GetPanelType(queryId);
             var instanceKey = BuildInstanceKey(filter);
 
-            return panelType switch
-            {
-                "TimeSeries" => await DeltaFetchTimeSeriesAsync(queryId, filter, instanceKey, mapper, cancellationToken),
-                "BarGauge" => await FetchWithFallbackBarGaugeAsync(queryId, filter, instanceKey, mapper, cancellationToken),
-                "CheckStatus" => await FetchWithFallbackCheckStatusAsync(queryId, filter, instanceKey, mapper, cancellationToken),
-                _ => await FetchDirectAsync(queryId, filter, mapper, additionalParams, cancellationToken)
-            };
+            // Single-flight (extends B7 to typed queries) — multiple dashboard
+            // tabs requesting the same TimeSeries / BarGauge / CheckStatus
+            // panel concurrently used to all fire SQL in parallel on a cold
+            // cache. We collapse them onto one in-flight task here.
+            //
+            // Type-erasure: _inFlightTyped is `ConcurrentDictionary<string,
+            // Task>` because we can't key by both a string and an open
+            // generic type. The shared task carries the result as object
+            // (cast to/from List<T>); the cast is safe because the flight
+            // key includes typeof(T).Name, so two callers with different T
+            // for the same queryId+instance never share a slot.
+            var flightKey = $"typed:{typeof(T).Name}:{queryId}:{instanceKey}:{BuildParamKey(additionalParams)}";
+
+            var flight = (Task<List<T>>)_inFlightTyped.GetOrAdd(flightKey,
+                _ => DispatchTypedAsync(queryId, filter, panelType, instanceKey, mapper, additionalParams, cancellationToken));
+            try { return await flight; }
+            finally { _inFlightTyped.TryRemove(flightKey, out _); }
         }
+
+        private Task<List<T>> DispatchTypedAsync<T>(
+            string queryId,
+            DashboardFilter filter,
+            string panelType,
+            string instanceKey,
+            Func<IDataReader, T> mapper,
+            Dictionary<string, object>? additionalParams,
+            CancellationToken cancellationToken) => panelType switch
+            {
+                "TimeSeries" => DeltaFetchTimeSeriesAsync(queryId, filter, instanceKey, mapper, cancellationToken),
+                "BarGauge" => FetchWithFallbackBarGaugeAsync(queryId, filter, instanceKey, mapper, cancellationToken),
+                "CheckStatus" => FetchWithFallbackCheckStatusAsync(queryId, filter, instanceKey, mapper, cancellationToken),
+                _ => FetchDirectAsync(queryId, filter, mapper, additionalParams, cancellationToken)
+            };
 
         /// <summary>
         /// Cached version of <see cref="QueryExecutor.ExecuteScalarAsync{T}"/>.

@@ -337,6 +337,13 @@ namespace SQLTriage.Data
         {
             lock (_lock) _settings.AnonymiseServerNames = enabled;
             SaveSettings();
+
+            // When the user disables anonymisation, drop the existing alias
+            // map so previously-anonymised log entries don't keep their old
+            // aliases on subsequent runs. Symmetric reset on enable too —
+            // forces a fresh allocation of aliases rather than reusing
+            // stale ones from a prior session.
+            LogAnon.Reset();
         }
 
         // ── Query Plan Icons ──

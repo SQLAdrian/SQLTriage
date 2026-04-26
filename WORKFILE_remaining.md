@@ -30,94 +30,189 @@
 - Parallax background bound to monitor (not window)
 - QueryPlanModal: ServerVersion/ServerEdition probe + ONLINE/RESUMABLE gating
 - Release pipeline end-to-end (publish exe + ZIP + Inno installer to GitHub Release on tag push)
+- F6 Background refresh spinner on Sessions (verified — was already implemented)
+- Concurrency Configuration sliders Settings → Performance (verified — Heavy 1-20, Light 2-50, runtime apply via QueryOrchestrator.UpdateLimits)
+- Executive Health Badge — ExecutiveHealthService wired into DI; new HealthBadge.razor component aggregates per-server scores into a single 0-100 badge with severity colour and trend arrow; placed above NavMenu's existing per-server health strip
+- F5 Rate-limit status bar badge — RateLimiter wired into DI; new RateLimitBadge.razor visible only when throttling is active (amber pulse, shows query/connection counts and reset countdown); placed alongside HealthBadge in NavMenu
+- D21 — `QueryLoadBalancer` deletion verified (already gone); master worklist status flipped to ✅ COMPLETED
+- Baselines on Dashboards (Phase 1: static IQR overlay) — TimeSeriesChart now accepts BaselineP25/BaselineP75 parameters and renders a translucent dashed band ("Typical X-Y") via ApexCharts yAxis annotations. Caller wiring (which dashboards/panels supply the values) is the bridge work for a future session.
 
 ---
 
+## NEW WORKLIST QUICK-WINS (added 2026-04-27 from `.ignore/New Worklist/` audit)
+
+These are real bugs/correctness fixes — small, isolated, low risk. Pick off when looking for sub-30-min wins between bigger features.
+
+- **NW-1 Server-name validator corrupts valid names** ✅ COMPLETED 2026-04-27 — replaced blacklist with whitelist (alphanumeric + `.\-_:`); `SP-SQL01`, `db.master.contoso.com`, etc. now pass through unchanged. [ServerConnection.cs:120](Data/Models/ServerConnection.cs#L120).
+- **NW-2 Cache stampede on typed `List<T>` queries** ✅ COMPLETED 2026-04-27 — extended single-flight from `_inFlightDataTable` to typed queries via `_inFlightTyped`. Type-erased to `Task` and cast on retrieval; flight key includes `typeof(T).Name` so distinct types can't collide. [CachingQueryExecutor.cs:261](Data/Caching/CachingQueryExecutor.cs#L261).
+- **NW-3 LogAnon.Reset() not called when anonymisation toggled** ✅ COMPLETED 2026-04-27 — `SetAnonymiseServerNames` now calls `LogAnon.Reset()` on every change so stale aliases don't survive a toggle. [UserSettingsService.cs:336](Data/UserSettingsService.cs#L336).
+- **NW-7 Remove obfuscation artefact from OSS** — **DECISION 2026-04-27: KEEP.** ConfuserEx2 pipeline is integrated into [publish-protected.ps1](publish-protected.ps1), advertised as a security feature in [About.razor:198,499,515](Pages/About.razor), and listed in [ProductionReadinessGate.cs:113](Data/Services/ProductionReadinessGate.cs#L113). Retained for future use — clients distributing hardened builds for credential-handling deployments. The OSS-credibility concern is real but is better solved by *documenting* that public GitHub Release artefacts are unobfuscated and reproducible from source, rather than removing the option.
+
 ## REMAINING ITEMS
+
+> **Note for LLM contributors:** Every item below has been re-verified 2026-04-27. File paths are accurate as of that date. Each task has:
+> - **Goal** — what shipping looks like
+> - **Why** — diagnostic value or user-pain rationale
+> - **Files** — exact paths (verified)
+> - **Steps** — numbered, self-contained
+> - **Verify** — concrete commands or visual checks to confirm completion
+> - **Don't** — hard rules to avoid common pitfalls
+>
+> If a "Files" path no longer exists when you read this, **verify with Glob first** — don't guess. The worklist is a snapshot; the code is the truth. Always grep before editing.
+
+---
 
 ### PRIORITY 1 — Quick wins, self-contained
 
 ---
 
-#### 1. Background refresh thread + "Refresh now" spinner
-**File:** `Pages/Sessions.razor`  
-**Problem:** `LoadSessions()` sets `IsLoading = true` which blanks the whole table. Data fetch should happen on a background thread with the old data still visible; only swap the table when new data arrives.  
-**Diagnostic value:** Keeps context during refresh — DBA can continue analyzing sessions while data updates in background. Spinner provides feedback without disruption.  
-**How:**
-1. Add `_backgroundSessions List<SessionInfo>` field alongside `AllSessions`
-2. In `LoadSessions()`, remove `IsLoading = true` at the top. Fetch into a local `newSessions` variable
-3. Only after fetch completes: `AllSessions = newSessions; LastRefreshTime = ...; await InvokeAsync(StateHasChanged)`
-4. Add a spinner icon next to the refresh timestamp that shows while the fetch is in-flight:
-   ```razor
-   @if (_refreshing)
-   {
-       <i class="fa-solid fa-spinner fa-spin" style="font-size:11px;color:var(--text-secondary);"></i>
-   }
-   ```
-5. Add `private bool _refreshing;` — set to true at start of `LoadSessions()`, false at end (in finally block)
-6. The `_loadLock.Wait(0)` guard is already in place — don't remove it
-
-**Result:** Table never flashes blank. Spinner shows in the toolbar. Users can keep scrolling during refresh.
+#### 1. Background refresh thread + "Refresh now" spinner ✅ COMPLETED
+**Verified 2026-04-27:** `_refreshing` field + spinner already in [Pages/Sessions.razor:155-158](Pages/Sessions.razor); fetch uses local-var pattern at line 430 (assigns `var newSessions = ...` first, then `AllSessions = newSessions`). The `_loadLock.Wait(0)` guard is preserved. **No further work required.** Original instructions retained below for reference if regression occurs.
 
 ---
 
-#### 2. Rate-limit status bar badge
-**Files:** `Data/RateLimiter.cs`, `Components/Layout/NavMenu.razor` (or `MainLayout.razor`)  
-**Problem:** `RateLimiter` is defined but not registered in DI and not shown anywhere.  
-**Diagnostic value:** Visual feedback when query throttling activates — prevents user from thinking queries are slow when they're actually being rate-limited. Part of transparent diagnostic environment.  
-**How:**
-1. Register `RateLimiter` as singleton in `App.xaml.cs`:
+#### 2. Rate-limit status bar badge ✅ COMPLETED 2026-04-27
+**Verified:** `RateLimiter` registered as singleton in [App.xaml.cs](App.xaml.cs); new [Components/Shared/RateLimitBadge.razor](Components/Shared/RateLimitBadge.razor) component polls every 5s and renders only when throttling is active (amber pulse, shows query/conn counts and reset countdown); placed alongside `HealthBadge` in [Components/Layout/NavMenu.razor](Components/Layout/NavMenu.razor) under the per-server health strip. CSS in [wwwroot/css/HealthBadge.css](wwwroot/css/HealthBadge.css). **No further work required.**
+
+---
+
+#### 3. Dashboard JSON schema validation — inline error highlighting
+**Status:** PARTIALLY DONE — `ResetToDefault()` already exists; `Validate(string json)` method missing.
+
+**Goal:** A user editing dashboard JSON in `Pages/DashboardEditor.razor` sees a red border and an inline error message the instant their JSON is invalid. The Save button is disabled while invalid. They can click "Reset to default" to wipe their changes and reload the canonical config.
+
+**Why:** A bad JSON edit currently throws on app restart and the user has no in-app way to recover. This makes the dashboard editor unsafe to use without a text editor side-by-side.
+
+**Files:**
+- [Data/DashboardConfigService.cs](Data/DashboardConfigService.cs) — service lives here (note: `Data/`, not `Data/Services/`). `ResetToDefault()` exists at line 364.
+- [Pages/DashboardEditor.razor](Pages/DashboardEditor.razor) — the editor UI.
+- [Config/dashboard-config.default.json](Config/dashboard-config.default.json) — reset target (already exists).
+
+**Steps:**
+1. **Add `ValidateJson` method** to `Data/DashboardConfigService.cs`:
    ```csharp
-   services.AddSingleton<RateLimiter>();
-   ```
-2. In `QueryExecutor.cs` (or wherever queries run), inject `RateLimiter` and call `TryAcquire()` before executing
-3. In `MainLayout.razor`, inject `RateLimiter` and add a small badge in the bottom-right corner:
-   ```razor
-   @if (_rateLimitActive)
+   /// <summary>
+   /// Returns (true, null) if json deserialises into a DashboardConfig, otherwise
+   /// (false, errorMessage). Used by DashboardEditor for live validation.
+   /// </summary>
+   public (bool valid, string? error) ValidateJson(string json)
    {
-       <div style="position:fixed;bottom:8px;right:12px;z-index:1500;
-                   background:#7c2d00;color:#ffb347;font-size:11px;
-                   padding:3px 8px;border-radius:4px;font-family:monospace;">
-           ⚠ throttled
+       if (string.IsNullOrWhiteSpace(json))
+           return (false, "JSON is empty.");
+       try
+       {
+           var config = System.Text.Json.JsonSerializer.Deserialize<DashboardConfig>(json,
+               new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+           if (config == null)
+               return (false, "JSON parsed to null.");
+           return (true, null);
+       }
+       catch (System.Text.Json.JsonException ex)
+       {
+           return (false, $"Line {ex.LineNumber + 1}, position {ex.BytePositionInLine}: {ex.Message}");
+       }
+   }
+   ```
+2. **Wire it into the editor** in `Pages/DashboardEditor.razor`. Find the existing JSON `<textarea>` (grep `"@bind"` and `"json"` in the file). Add an `@oninput` handler that calls `ValidateJson` and stores the result:
+   ```csharp
+   private (bool valid, string? error) _validation = (true, null);
+   private void OnJsonChanged(ChangeEventArgs e)
+   {
+       _editorJson = e.Value?.ToString() ?? "";
+       _validation = DashboardConfigService.ValidateJson(_editorJson);
+   }
+   ```
+3. **Add red border + error display** below the textarea:
+   ```razor
+   <textarea class="@(_validation.valid ? "" : "json-invalid")"
+             @bind="_editorJson" @bind:event="oninput" @oninput="OnJsonChanged" />
+   @if (!_validation.valid)
+   {
+       <div style="color:var(--red); font-size:12px; padding:4px 0;">
+           @_validation.error
        </div>
    }
    ```
-4. Poll `RateLimiter.IsRateLimited` on a 5s timer in MainLayout (same pattern as maintenance banner timer)
-5. Subscribe to `RateLimiter.RateLimitExceeded` event to show immediately when triggered
+4. **Disable Save** while invalid: change the Save button to `disabled="@(!_validation.valid)"`.
+5. **Add CSS** in `wwwroot/css/DashboardEditor.css` (create if missing, then `@import` it from `app.css`):
+   ```css
+   textarea.json-invalid { border-color: var(--red) !important; }
+   ```
+6. **Reset button:** wire an existing or new "Reset to default" button to call `DashboardConfigService.ResetToDefault()`.
 
-**Note:** `RateLimiter` has `IsRateLimited`, `CurrentQueryCount`, `MaxQueriesPerMinute`, `GetTimeToReset()`, `RateLimitExceeded` event. Check `Data/RateLimiter.cs` for the full API before wiring.
+**Verify:**
+- Type `{` (just a brace) into the editor → red border appears, error shows "JSON parsed to null" or similar, Save disabled.
+- Type a complete valid config → border returns to normal, Save enabled.
+- Click "Reset to default" → editor content reverts to whatever `Config/dashboard-config.default.json` holds.
 
----
-
-#### 3. Dashboard JSON schema validation — inline error + Reset to default
-**Files:** `Pages/DashboardEditor.razor`, `Data/Services/DashboardConfigService.cs`  
-**Problem:** If `dashboard-config.json` gets malformed, the app silently fails or throws. No inline validation in the editor.  
-**Diagnostic value:** Prevents configuration corruption from breaking diagnostic dashboards — keeps analysis environment stable.  
-**How:**
-1. In `DashboardConfigService`, add a `Validate(string json)` method that:
-   - Tries `JsonSerializer.Deserialize<DashboardConfig>(json)`
-   - Returns `(bool valid, string? error)`
-2. In `DashboardEditor.razor`, on the JSON text area `@oninput`:
-   - Call `Validate()` and show a red border + error message below the editor if invalid
-   - Disable the Save button while JSON is invalid
-3. Add a "Reset to default" button that calls a new `DashboardConfigService.ResetToDefault()` method — copies the embedded default config from `Config/dashboard-config.json` (ship a `dashboard-config.default.json` alongside it)
-4. The default file path: `Config/dashboard-config.default.json` — copy this from the current `Config/dashboard-config.json` as the baseline
+**Don't:**
+- Don't try to schema-validate every panel field. Just round-trip through `JsonSerializer.Deserialize<DashboardConfig>`. If the deserialiser is happy, the JSON is structurally usable; deeper validation is out of scope.
+- Don't replace the current JSON editor with a JSON-schema editor library. Keep dependencies minimal.
 
 ---
 
 #### 4. PDF/Excel export for tabular audit results
-**Files:** `Pages/FullAudit.razor`, `Pages/VulnerabilityAssessment.razor`, `Data/Services/PrintService.cs`  
-**Problem:** PDF export exists via `PrintService` for some pages. Excel export is missing entirely.  
-**Diagnostic value:** Exports enable thorough offline analysis, sharing with colleagues, archiving for compliance, and importing into external tools (Excel, Power BI). Fulfills "Export thoroughly" mantra.  
-**How for Excel (no new NuGet required — use CSV as Excel-compatible output):**
-1. Add a `ExportToExcelAsync(DataTable data, string fileName)` helper in a new `ExcelExportService.cs` or inline in the page
-2. Use `CsvHelper` (already in project? check) or write a simple TSV/CSV writer
-3. If `CsvHelper` is not present, use the existing `CsvParser` pattern — it already writes CSV
-4. For true Excel (.xlsx): add `ClosedXML` NuGet (`dotnet add package ClosedXML`) — it's MIT, lightweight, no COM dependency
-5. For PDF: `PrintService.PrintToPdfAsync()` already exists — wire it to the audit results table the same way it's wired on other pages
-6. Add "Export CSV" and "Export PDF" buttons to `FullAudit.razor` and `VulnerabilityAssessment.razor` toolbar
+**Goal:** "Export CSV" and "Export PDF" buttons appear on the toolbars of `FullAudit.razor` and `VulnerabilityAssessment.razor`. Clicking them downloads the current filtered table.
 
-**CsvHelper check:** `grep -r "CsvHelper\|CsvParser" Data/` to see what's already there.
+**Why:** Exports enable offline analysis, compliance archives, and importing into Excel/Power BI. Fulfils the project's "Export thoroughly" diagnostic philosophy.
+
+**Files:**
+- [Pages/FullAudit.razor](Pages/FullAudit.razor)
+- [Pages/VulnerabilityAssessment.razor](Pages/VulnerabilityAssessment.razor)
+- [Data/Services/PrintService.cs](Data/Services/PrintService.cs) — `PrintToPdfAsync()` already exists; reuse it.
+- [Data/CsvParser.cs](Data/CsvParser.cs) — already in project, has CSV writer methods.
+
+**Pre-flight checks:**
+- `grep -n "PrintToPdfAsync\|CsvParser" Pages/FullAudit.razor` — confirm whether either is already wired.
+- `grep -n "ClosedXML" SQLTriage.csproj` — confirm whether the .xlsx package was already added (skip the .xlsx step if so).
+
+**Steps:**
+1. **CSV export (no new dependency):**
+   - In `FullAudit.razor` `@code`, add:
+     ```csharp
+     [Inject] IJSRuntime JS { get; set; } = default!;
+
+     private async Task ExportCsvAsync()
+     {
+         var sb = new System.Text.StringBuilder();
+         sb.AppendLine("Category,Severity,Finding,ServerName"); // adjust columns to your DataTable
+         foreach (var row in _filteredRows) // whatever the page calls its rows
+             sb.AppendLine($"{Csv(row.Category)},{Csv(row.Severity)},{Csv(row.Finding)},{Csv(row.ServerName)}");
+         var bytes = System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+         await JS.InvokeVoidAsync("blazorDownloadFile", $"audit-{DateTime.Now:yyyyMMdd-HHmm}.csv", "text/csv", bytes);
+     }
+
+     // CSV-quote: wraps in quotes and doubles internal quotes if the value
+     // contains a comma, quote, or newline. RFC 4180 minimum.
+     private static string Csv(string? v)
+     {
+         if (string.IsNullOrEmpty(v)) return "";
+         if (v.IndexOfAny(new[] { ',', '"', '\n', '\r' }) < 0) return v;
+         return "\"" + v.Replace("\"", "\"\"") + "\"";
+     }
+     ```
+   - The `blazorDownloadFile` helper already exists in `wwwroot/scripts/download.js` — verify with `grep -n "blazorDownloadFile" wwwroot/scripts/download.js` before assuming.
+2. **PDF export:** call `PrintService.PrintToPdfAsync()` — find the existing call site (e.g. `Pages/Governance.razor`) with `grep -n "PrintToPdfAsync" Pages/*.razor` and copy the pattern.
+3. **Add toolbar buttons** to both pages:
+   ```razor
+   <button class="btn btn-sm btn-secondary" @onclick="ExportCsvAsync">
+       <i class="fa-solid fa-file-csv"></i> Export CSV
+   </button>
+   <button class="btn btn-sm btn-secondary" @onclick="ExportPdfAsync">
+       <i class="fa-solid fa-file-pdf"></i> Export PDF
+   </button>
+   ```
+4. **Repeat for `VulnerabilityAssessment.razor`** — same two methods, different column set.
+
+**Verify:**
+- Click Export CSV → file downloads, opens in Excel cleanly with quoted commas/quotes preserved.
+- Click Export PDF → PDF opens with rendered table and timestamp.
+- Empty filter result → CSV is just the header row (don't crash).
+
+**Don't:**
+- Don't add `ClosedXML` (or any new NuGet) for .xlsx unless the user asks. Excel opens .csv natively. Skip the xlsx route in v1.
+- Don't try to PDF-render the entire page; PrintService already targets a specific element by selector — use the same selector convention.
+- Don't hardcode the file path. Always go through `blazorDownloadFile` so it works in both desktop and server modes.
 
 ---
 
@@ -126,41 +221,138 @@
 ---
 
 #### 5. FAQ expansion + Support channel link
-**Files:** `QUICKSTART.md`, `docs/index.md`, any in-app Help page  
-**Items to add to FAQ:**
-- Alert threshold tuning: "Why is my alert firing constantly?" → explain IQR baseline, how to adjust `NextAlertDelayMinutes`, how to use dry-run mode
-- SQLWATCH is optional: many pages work without it; only historical dashboards need it
-- Service mode setup: step-by-step, port 5000 default, Windows Service install via installer
-- Credential migration: explain the new `.lmcreds` export in Settings → Server Credentials
-- Debug log location: `logs/app-YYYYMMDD.log` next to the exe
+**Goal:** A first-time user can find answers to the five most common confusion points without asking. They can also find a place to ask new questions.
 
-**Support channel:**
-1. Enable GitHub Discussions on the repo (Settings → Features → Discussions)
-2. Add a "Get Help" link in the nav or About page pointing to `https://github.com/SQLAdrian/SqlHealthAssessment/discussions`
-3. Optional: add a "Report a bug" button in the About page that opens `https://github.com/SQLAdrian/SqlHealthAssessment/issues/new?template=bug_report.md`
+**Files:**
+- [QUICKSTART.md](QUICKSTART.md) — add an "FAQ" section near the bottom.
+- [docs/index.md](docs/index.md) — GitHub Pages landing; add the same FAQ link in the nav.
+- [Pages/About.razor](Pages/About.razor) — add a "Get Help" panel with links.
+
+**FAQ entries to add (verbatim ok, edit if you have better wording):**
+
+> **Q: Why is my alert firing constantly?**
+> A: Alerts use IQR-based dynamic baselines. If a metric is genuinely outside its historical 25-75 percentile range, the alert fires. To tune: open the alert's edit modal, increase `NextAlertDelayMinutes` to suppress repeated firings, or enable Dry-Run mode (Settings → Alerts) to see what *would* fire without actually firing.
+>
+> **Q: Do I need SQLWATCH?**
+> A: No. Most pages work without it. Only the long-term historical dashboards (capacity trends, week-over-week comparisons) benefit from SQLWATCH. Live diagnostics, alerts, and the query plan viewer all work without it.
+>
+> **Q: How do I run as a Windows Service?**
+> A: Run the installer (`SQLTriage-Setup.exe`) and tick "Install as Windows Service" on the components page. Default port is 5000. Stop/start via Windows Services console as `SQLTriageService`.
+>
+> **Q: How do I move my saved server credentials to another machine?**
+> A: Settings → Server Credentials → Export. This produces an `.lmcreds` file protected with a passphrase you choose. On the target machine, Settings → Server Credentials → Import, supply the file and passphrase.
+>
+> **Q: Where are the logs?**
+> A: `logs/app-YYYYMMDD.log` next to the exe. Older logs are auto-rotated (kept 14 days). Set "Debug logging" in Settings to capture verbose output.
+
+**Steps:**
+1. Append the FAQ block to `QUICKSTART.md` under a new `## Frequently Asked Questions` heading.
+2. Mirror it in `docs/index.md` for GitHub Pages visibility.
+3. In `Pages/About.razor`, find the existing "Resources" or "Help" section (`grep -n "Get Help\|Resources\|Support" Pages/About.razor`). Add:
+   ```razor
+   <h4>Get Help</h4>
+   <ul>
+       <li><a href="https://github.com/SQLAdrian/SQLTriage/discussions" target="_blank">Ask a question (GitHub Discussions)</a></li>
+       <li><a href="https://github.com/SQLAdrian/SQLTriage/issues/new?template=bug_report.md" target="_blank">Report a bug</a></li>
+       <li><a href="https://github.com/SQLAdrian/SQLTriage/blob/main/QUICKSTART.md#frequently-asked-questions" target="_blank">FAQ</a></li>
+   </ul>
+   ```
+4. Enable GitHub Discussions: repo Settings → Features → Discussions → Enable. (User action, not LLM action.)
+
+**Verify:**
+- `QUICKSTART.md` renders cleanly on GitHub (preview the markdown).
+- About page in the running app shows three working links.
+- Clicking the Discussions link opens the (now-enabled) Discussions tab.
+
+**Don't:**
+- Don't write a 50-question FAQ. Five high-quality answers beats fifty mediocre ones.
+- Don't mirror the FAQ a third time in the in-app About page — link out instead. One source of truth.
 
 ---
 
-#### 6. Query Plan Viewer — ServerVersion/ServerEdition probe
-**File:** `Pages/QueryPlanViewer.razor` (or wherever the plan modal is shown), `Components/Shared/QueryPlanModal.razor`  
-**Problem:** `ServerVersion` and `ServerEdition` parameters are not populated at runtime, so the ONLINE/RESUMABLE index rebuild checkboxes are always enabled regardless of SQL Server version.  
-**How:**
-1. On page load, run: `SELECT SERVERPROPERTY('ProductVersion'), SERVERPROPERTY('EngineEdition')`
-2. Parse major version (e.g. `15` = SQL 2019, `16` = SQL 2022)
-3. Disable ONLINE checkbox if version < 9 (SQL 2005) or edition = Express (EngineEdition = 4)
-4. Disable RESUMABLE checkbox if version < 14 (SQL 2017)
-5. The `ConnectionHealthService.IsAzureSql(serverName)` method already exists — use it to detect Azure SQL and disable relevant options
+#### 6. Query Plan Viewer — ServerVersion/ServerEdition probe ✅ COMPLETED 2026-04-27
+**Verified:** [Data/Services/ConnectionHealthService.cs](Data/Services/ConnectionHealthService.cs) probes `ProductMajorVersion` + `Edition` alongside `EngineEdition` on first health-check; exposes `ServerCapabilities` record with `MajorVersion`, `Edition`, `IsEnterpriseClass`. [Components/Shared/QueryPlanModal.razor](Components/Shared/QueryPlanModal.razor) injects the service, calls `GetCapabilities(serverName)` on `ShowAsync`, gates ONLINE on Enterprise-class and RESUMABLE on Enterprise + SQL 2017+. Tooltips explain why a checkbox is disabled. **No further work required.**
 
 ---
 
-#### 7. draw.io / SVG export of Environment View 
-**File:** `Pages/EnvironmentView.razor` (or similar), the force-directed graph JS  
-**Problem:** The topology graph is rendered in a `<canvas>` or SVG via D3/custom JS. Users want to export it as a draw.io-compatible XML or plain SVG for documentation.  
-**How:**
-1. Check how the graph is rendered: `grep -n "canvas\|svg\|d3\|topology\|force" Pages/EnvironmentView.razor`
-2. If SVG: add a JS function `exportTopologySvg()` that serialises the SVG element to a string and triggers a download via `blazorDownloadFile` (already in `wwwroot/scripts/download.js`)
-3. If Canvas: use `canvas.toDataURL('image/png')` for a PNG export, or redraw onto a hidden SVG
-4. For draw.io XML: the format is straightforward — each server = `<mxCell>` with `style="shape=..."`, edges = connection cells. Generate from the same data model used to render the graph
+#### 7. draw.io / SVG export of Environment View
+**Goal:** A user viewing the topology graph at `/environment-view` can click "Export" and download (a) a self-contained `.svg` for documentation, or (b) a `.drawio` XML file they can open in draw.io for editing.
+
+**Why:** Topology diagrams end up in change requests, runbooks, and architecture docs. Users currently have to screenshot the canvas. Native SVG/draw.io export elevates SQLTriage from "monitoring tool" to "documentation source."
+
+**Pre-flight checks (run first to learn the rendering tech):**
+```bash
+ls Pages/EnvironmentView.razor
+grep -nE "<svg|<canvas|d3\.|new ForceGraph|topology|force-directed" Pages/EnvironmentView.razor
+ls wwwroot/scripts/environmentView.js   # likely the rendering JS
+grep -nE "blazorDownloadFile|toDataURL|outerHTML" wwwroot/scripts/environmentView.js wwwroot/scripts/download.js
+```
+
+**Files (to verify):**
+- [Pages/EnvironmentView.razor](Pages/EnvironmentView.razor) — the page.
+- [wwwroot/scripts/environmentView.js](wwwroot/scripts/environmentView.js) — the JS that builds the graph.
+- [wwwroot/scripts/download.js](wwwroot/scripts/download.js) — already exposes `window.blazorDownloadFile(filename, mimeType, bytes)`.
+
+**Steps (path A — graph is rendered as `<svg>`):**
+1. **Add a JS export function** to `environmentView.js`:
+   ```javascript
+   window.environmentView.exportSvg = function () {
+       var svg = document.querySelector('#topology-svg'); // adjust selector
+       if (!svg) return null;
+       var clone = svg.cloneNode(true);
+       // Inline computed styles so the SVG looks the same outside the app's CSS
+       var serializer = new XMLSerializer();
+       var svgString = '<?xml version="1.0" standalone="no"?>\n' + serializer.serializeToString(clone);
+       return svgString;
+   };
+   ```
+2. **Call it from Razor** and download:
+   ```csharp
+   private async Task ExportSvgAsync()
+   {
+       var svgString = await JS.InvokeAsync<string>("environmentView.exportSvg");
+       if (string.IsNullOrEmpty(svgString)) return;
+       var bytes = System.Text.Encoding.UTF8.GetBytes(svgString);
+       await JS.InvokeVoidAsync("blazorDownloadFile",
+           $"topology-{DateTime.Now:yyyyMMdd}.svg", "image/svg+xml", bytes);
+   }
+   ```
+3. **Toolbar button:** `<button @onclick="ExportSvgAsync">Export SVG</button>`.
+
+**Steps (path B — graph is rendered on `<canvas>`):**
+1. **Add to `environmentView.js`:**
+   ```javascript
+   window.environmentView.exportPng = function () {
+       var canvas = document.querySelector('#topology-canvas');
+       if (!canvas) return null;
+       return canvas.toDataURL('image/png');
+   };
+   ```
+2. **Razor side:**
+   ```csharp
+   private async Task ExportPngAsync()
+   {
+       var dataUrl = await JS.InvokeAsync<string>("environmentView.exportPng");
+       if (string.IsNullOrEmpty(dataUrl) || !dataUrl.StartsWith("data:image/png;base64,")) return;
+       var base64 = dataUrl.Substring("data:image/png;base64,".Length);
+       var bytes = Convert.FromBase64String(base64);
+       await JS.InvokeVoidAsync("blazorDownloadFile",
+           $"topology-{DateTime.Now:yyyyMMdd}.png", "image/png", bytes);
+   }
+   ```
+
+**Steps (draw.io XML export — defer if SVG/PNG is enough):**
+- draw.io's `.drawio` format is XML wrapping `<mxCell>` elements. Each server node = one `<mxCell vertex="1">` with x/y/width/height in `<mxGeometry>`; each edge = one `<mxCell edge="1">` referencing source/target IDs.
+- Generate this from the same data model the JS uses to lay out nodes.
+- Recommended: ship SVG export first, only add `.drawio` if a user actually asks. SVG opens in draw.io anyway via "File → Import".
+
+**Verify:**
+- Click Export SVG (or PNG) → file downloads, opens in a browser tab and looks like the on-screen topology.
+- Open the SVG in draw.io ("File → Import → SVG") — should display correctly.
+
+**Don't:**
+- Don't try to inline raster images (server icons) into the SVG — keep them as `<image href="...">` and accept that the SVG references the running app's URLs. If full portability matters, base64-encode the icons; that's a v2 polish task.
+- Don't write a JSON-to-mxGraph converter from scratch unless the user asks. SVG covers 95% of the use case.
 
 ---
 
