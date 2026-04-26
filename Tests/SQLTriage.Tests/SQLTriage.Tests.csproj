@@ -25,4 +25,11 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <!-- Copy golden snapshot files alongside the test runner so tests can read them. -->
+  <ItemGroup>
+    <Content Include="GoldenFiles\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>
