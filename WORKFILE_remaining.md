@@ -39,6 +39,38 @@
 
 ---
 
+## DEFERRED — DRAFT/NON-PROD WATERMARK ON REPORTS
+
+**Goal:** Print PDFs generated against non-production servers carry a visible
+"DRAFT — non-production data" watermark across every page so they can't be
+mistaken for evidence-grade reports.
+
+**Why deferred (2026-04-27):** Requires per-server tagging of "production"
+vs "non-production" classification. The app has no such concept today —
+servers are added as a connection list with names + domains, no role tag.
+Building this means:
+
+1. Add `Environment` (string) field to `ServerConnection` — already exists
+   as `Environment` property at line 103. Re-purpose it with a known
+   vocabulary: "Production", "Staging", "Development", "Test".
+2. UI on Servers page: dropdown next to each server (default = blank/unset).
+3. Roadmap export: if any selected server has `Environment != "Production"`,
+   apply `body.printing-active.has-draft-watermark::before` CSS that draws
+   a diagonal "DRAFT" string over each page (use `position:fixed; transform:
+   rotate(-30deg); opacity:0.08; font-size:120pt`).
+4. Manifest.json should also carry the watermark flag so a programmatic
+   verifier knows the report wasn't blessed for production.
+
+**Effort:** S once server tagging is in place; tagging itself is S → M depending
+on whether you want validation rules (e.g. "warn if Production server is
+named 'DEV-…'").
+
+**Reason to defer:** premature without server tagging — would require manual
+checkbox at export time which is fragile (operator forgets, ticks wrong box).
+Better to add the data model first, then surface the watermark automatically.
+
+---
+
 ## NEW WORKLIST QUICK-WINS (added 2026-04-27 from `.ignore/New Worklist/` audit)
 
 These are real bugs/correctness fixes — small, isolated, low risk. Pick off when looking for sub-30-min wins between bigger features.

@@ -105,6 +105,25 @@ body.printing-active .notification-container {
         break-after: page;
     }
 
+    /* Page X of Y in the bottom-right of every page. Uses the chromium-only
+     * counter(page) / counter(pages) generated-content tokens that are valid
+     * inside @page or in any element styled inside @media print. We render
+     * into a fixed bottom-right slot with z-index above the DOM footer bar.
+     *
+     * Supported by WebView2's chromium engine (the same engine PrintToPdfAsync
+     * uses), so this works as expected in the produced PDF. */
+    body.printing-active::after {
+        content: "Page " counter(page) " of " counter(pages);
+        position: fixed;
+        bottom: 6pt;
+        right: 14pt;
+        font-family: 'Segoe UI', Arial, sans-serif;
+        font-size: 8pt;
+        color: #555;
+        z-index: 10000;
+        background: transparent;
+    }
+
     /* Compliance Mapping panel — keep the 3-column grid (ISO / SOC2 / NIST)
      * side-by-side in the PDF, like the on-screen view. Without an explicit
      * `minmax(0, 1fr)` chromium can let the column's min-content (longest
