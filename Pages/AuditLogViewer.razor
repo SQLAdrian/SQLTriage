@@ -1,0 +1,474 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/audit-log"
+<PageTitle>SQLTriage - Audit Log</PageTitle>
+@using SQLTriage.Data
+@inject AuditLogService AuditLog
+@inject SQLTriage.Data.Services.AppUserState UserState
+@inject SQLTriage.Data.Services.RbacService RbacService
+
+@if (!RbacService.HasPermission(UserState.Role, "settings"))
+{
+    <div class="audit-log-denied">
+        <AccessDenied RequiredRole="Admin" Message="Audit log viewing is restricted to Admin users." />
+    </div>
+}
+else
+{
+
+<div class="audit-log-page">
+    <h2>Audit Log</h2>
+    <p class="page-description">View security-relevant application events. Entries are stored with HMAC-SHA256 chain integrity.</p>
+
+    @if (AuditLog.ChainBroken)
+    {
+        <div class="status-message error" role="alert" aria-live="assertive" style="margin-bottom: 16px;">
+            <i class="fa-solid fa-triangle-exclamation"></i> Audit chain integrity check failed. First failing record: <code>@(AuditLog.ChainBreakFirstRecordId ?? "unknown")</code>. See <code>docs/compliance/incident-response-runbook.md</code> § Audit Chain Break for next steps.
+        </div>
+    }
+
+    <div class="audit-filters">
+        <div class="audit-filter-field">
+            <label>From</label>
+            <input type="datetime-local" @bind="_fromDate" class="audit-filter-input" />
+        </div>
+        <div class="audit-filter-field">
+            <label>To</label>
+            <input type="datetime-local" @bind="_toDate" class="audit-filter-input" />
+        </div>
+        <div class="audit-filter-field">
+            <label>Event Type</label>
+            <select @bind="_filterType" class="audit-filter-input">
+                <option value="">All Types</option>
+                @foreach (var type in Enum.GetValues<AuditEventType>())
+                {
+                    <option value="@type">@type</option>
+                }
+            </select>
+        </div>
+        <div class="audit-filter-field">
+            <label>Severity</label>
+            <select @bind="_filterSeverity" class="audit-filter-input">
+                <option value="">All Severities</option>
+                @foreach (var sev in Enum.GetValues<AuditSeverity>())
+                {
+                    <option value="@sev">@sev</option>
+                }
+            </select>
+        </div>
+        <div class="audit-filter-actions">
+            <button class="btn btn-primary audit-filter-btn" @onclick="LoadEntries">
+                <i class="fa-solid fa-magnifying-glass"></i> Search
+            </button>
+            <button class="btn btn-secondary audit-filter-btn-reset" @onclick="ResetFilters">Reset</button>
+        </div>
+    </div>
+
+    <div class="audit-action-bar" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+        <button class="btn btn-secondary" @onclick="RunVerifyChain" disabled="@_verifying">
+            <i class="fa-solid fa-link"></i> @(_verifying ? "Verifying…" : "Verify Chain")
+        </button>
+        <button class="btn btn-secondary" @onclick="ExportVerificationReport" disabled="@(_lastVerification == null)">
+            <i class="fa-solid fa-file-export"></i> Export Verification Report
+        </button>
+        <button class="btn btn-secondary" @onclick="ExportCsv">
+            <i class="fa-solid fa-file-csv"></i> Export CSV
+        </button>
+        <button class="btn btn-secondary" @onclick="ExportJson">
+            <i class="fa-solid fa-file-code"></i> Export JSON
+        </button>
+    </div>
+
+    @if (_verifyResult != null)
+    {
+        <div class="status-message @(_verifyResult.Contains("INTACT") ? "success" : "error")" role="status" aria-live="polite" style="margin-bottom:12px;">
+            <i class="fa-solid @(_verifyResult.Contains("INTACT") ? "fa-check-circle" : "fa-triangle-exclamation")"></i>
+            @_verifyResult
+        </div>
+    }
+    @if (_exportMessage != null)
+    {
+        <div class="status-message success" role="status" aria-live="polite" style="margin-bottom:12px;">
+            <i class="fa-solid fa-check-circle"></i> @_exportMessage
+        </div>
+    }
+
+    <div class="audit-status-bar">
+        <span class="audit-status-text">
+            @if (_allEntries.Count > 0)
+            {
+                <text>Showing @((_currentPage * PageSize) + 1)–@Math.Min((_currentPage + 1) * PageSize, _filteredEntries.Count) of @_filteredEntries.Count entries</text>
+            }
+            else
+            {
+                <text>No entries found</text>
+            }
+        </span>
+        <span class="audit-status-total">
+            @_allEntries.Count total loaded
+        </span>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="audit-loading">
+            <i class="fa-solid fa-spinner fa-spin"></i>
+            <p>Loading audit entries...</p>
+        </div>
+    }
+    else if (_pagedEntries.Count == 0)
+    {
+        <div class="audit-empty">
+            <i class="fa-solid fa-clipboard-list audit-empty-icon"></i>
+            <p>No audit log entries found for the selected filters.</p>
+        </div>
+    }
+    else
+    {
+        <div class="audit-table-wrapper">
+            <table class="audit-table">
+                <thead>
+                    <tr class="audit-table-header">
+                        <th class="audit-table-th">Timestamp</th>
+                        <th class="audit-table-th">Event Type</th>
+                        <th class="audit-table-th">Severity</th>
+                        <th class="audit-table-th">Message</th>
+                        <th class="audit-table-th">User</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var entry in _pagedEntries)
+                    {
+                        <tr class="audit-table-row" @onclick="() => ToggleDetails(entry)">
+                            <td class="audit-table-td audit-table-td-timestamp">
+                                @entry.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+                            </td>
+                            <td class="audit-table-td">
+                                <span class="audit-table-td-event-type">@entry.EventType</span>
+                            </td>
+                            <td class="audit-table-td">
+                                <span class="audit-severity @GetSeverityClass(entry.Severity)">@entry.Severity</span>
+                            </td>
+                            <td class="audit-table-td audit-table-td-message">@entry.Message</td>
+                            <td class="audit-table-td audit-table-td-user">@entry.User</td>
+                        </tr>
+                        @if (_expandedEntries.Contains(entry))
+                        {
+                            <tr class="audit-detail-row">
+                                <td colspan="5">
+                                    <div class="audit-detail-grid">
+                                        @foreach (var detail in entry.Details)
+                                        {
+                                            <div>
+                                                <span class="audit-detail-key">@detail.Key:</span>
+                                                <span class="audit-detail-value">@detail.Value</span>
+                                            </div>
+                                        }
+                                        <div>
+                                            <span class="audit-detail-key">Machine:</span>
+                                            <span class="audit-detail-value" style="font-family:inherit;">@entry.Machine</span>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        @if (TotalPages > 1)
+        {
+            <div class="audit-pagination">
+                <button class="btn btn-secondary audit-page-btn" @onclick="FirstPage" disabled="@(_currentPage == 0)">
+                    <i class="fa-solid fa-angles-left"></i>
+                </button>
+                <button class="btn btn-secondary audit-page-btn" @onclick="PrevPage" disabled="@(_currentPage == 0)">
+                    <i class="fa-solid fa-chevron-left"></i>
+                </button>
+                <span class="audit-page-info">
+                    @(_currentPage + 1) / @TotalPages
+                </span>
+                <button class="btn btn-secondary audit-page-btn" @onclick="NextPage" disabled="@(_currentPage >= TotalPages - 1)">
+                    <i class="fa-solid fa-chevron-right"></i>
+                </button>
+                <button class="btn btn-secondary audit-page-btn" @onclick="LastPage" disabled="@(_currentPage >= TotalPages - 1)">
+                    <i class="fa-solid fa-angles-right"></i>
+                </button>
+            </div>
+        }
+    }
+</div>
+
+}
+
+@code {
+    private const int PageSize = 50;
+
+    private List<AuditLogEntry> _allEntries = new();
+    private List<AuditLogEntry> _filteredEntries = new();
+    private List<AuditLogEntry> _pagedEntries = new();
+    private HashSet<AuditLogEntry> _expandedEntries = new();
+
+    private DateTime _fromDate = DateTime.Now.AddDays(-7);
+    private DateTime _toDate = DateTime.Now;
+    private string? _filterType;
+    private string? _filterSeverity;
+    private int _currentPage;
+    private bool _loading;
+    private bool _verifying;
+    private string? _verifyResult;
+    private string? _exportMessage;
+    private AuditLogService.ChainVerificationResult? _lastVerification;
+
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(_filteredEntries.Count / (double)PageSize));
+
+    protected override void OnInitialized()
+    {
+        LoadEntries();
+    }
+
+    private void LoadEntries()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            AuditEventType? eventType = null;
+            if (!string.IsNullOrEmpty(_filterType) && Enum.TryParse<AuditEventType>(_filterType, out var parsed))
+                eventType = parsed;
+
+            _allEntries = AuditLog.GetEntries(_fromDate, _toDate, eventType);
+            ApplySeverityFilter();
+            _currentPage = 0;
+            UpdatePagedEntries();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void ApplySeverityFilter()
+    {
+        if (string.IsNullOrEmpty(_filterSeverity) || !Enum.TryParse<AuditSeverity>(_filterSeverity, out var severity))
+        {
+            _filteredEntries = _allEntries.ToList();
+        }
+        else
+        {
+            _filteredEntries = _allEntries.Where(e => e.Severity == severity).ToList();
+        }
+    }
+
+    private void UpdatePagedEntries()
+    {
+        _pagedEntries = _filteredEntries
+            .Skip(_currentPage * PageSize)
+            .Take(PageSize)
+            .ToList();
+    }
+
+    private void ResetFilters()
+    {
+        _fromDate = DateTime.Now.AddDays(-7);
+        _toDate = DateTime.Now;
+        _filterType = null;
+        _filterSeverity = null;
+        LoadEntries();
+    }
+
+    private void ToggleDetails(AuditLogEntry entry)
+    {
+        if (!_expandedEntries.Remove(entry))
+            _expandedEntries.Add(entry);
+    }
+
+    private void NextPage()
+    {
+        if (_currentPage < TotalPages - 1)
+        {
+            _currentPage++;
+            UpdatePagedEntries();
+            _expandedEntries.Clear();
+        }
+    }
+
+    private void PrevPage()
+    {
+        if (_currentPage > 0)
+        {
+            _currentPage--;
+            UpdatePagedEntries();
+            _expandedEntries.Clear();
+        }
+    }
+
+    private void FirstPage()
+    {
+        _currentPage = 0;
+        UpdatePagedEntries();
+        _expandedEntries.Clear();
+    }
+
+    private void LastPage()
+    {
+        _currentPage = TotalPages - 1;
+        UpdatePagedEntries();
+        _expandedEntries.Clear();
+    }
+
+    private string GetSeverityClass(AuditSeverity severity) => severity switch
+    {
+        AuditSeverity.Info     => "audit-severity-info",
+        AuditSeverity.Warning  => "audit-severity-warning",
+        AuditSeverity.Error    => "audit-severity-error",
+        AuditSeverity.Critical => "audit-severity-critical",
+        _ => ""
+    };
+
+    // ── MAJOR 1a: On-demand chain verification ──────────────────────────
+
+    private void RunVerifyChain()
+    {
+        _verifying = true;
+        _verifyResult = null;
+        _exportMessage = null;
+        StateHasChanged();
+        try
+        {
+            var actor = System.Environment.UserName;
+            _lastVerification = AuditLog.VerifyChain(actor);
+            _verifyResult = $"Verified {_lastVerification.EntryCount} entries. " +
+                            $"Chain {(_lastVerification.Intact ? "INTACT" : "BROKEN")}. " +
+                            $"Verified at {_lastVerification.VerifiedAt:yyyy-MM-dd HH:mm:ss} UTC.";
+        }
+        finally
+        {
+            _verifying = false;
+        }
+    }
+
+    // ── MAJOR 1c: Exportable verification artifact ──────────────────────
+
+    private void ExportVerificationReport()
+    {
+        if (_lastVerification == null) return;
+        _exportMessage = null;
+
+        try
+        {
+            var actor = System.Environment.UserName;
+            var v = _lastVerification;
+
+            // Build report body (everything above the hash line)
+            var body = new System.Text.StringBuilder();
+            body.AppendLine("SQLTriage Audit Chain Verification Report");
+            body.AppendLine("=========================================");
+            body.AppendLine($"Generated:        {v.VerifiedAt:o}");
+            body.AppendLine($"Generated by:     {actor}");
+            body.AppendLine($"Entries verified: {v.EntryCount}");
+            body.AppendLine($"First entry:      {(v.FirstEntry.HasValue ? v.FirstEntry.Value.ToString("o") : "N/A")}");
+            body.AppendLine($"Last entry:       {(v.LastEntry.HasValue ? v.LastEntry.Value.ToString("o") : "N/A")}");
+            body.AppendLine($"Chain status:     {(v.Intact ? "INTACT" : "BROKEN")}");
+            body.AppendLine("HMAC algorithm:   SHA-256");
+            body.AppendLine("HMAC key wrapped: DPAPI (CurrentUser scope)");
+
+            // Compute SHA-256 of the report body to close the artifact loop
+            var bodyBytes = System.Text.Encoding.UTF8.GetBytes(body.ToString());
+            using var sha = System.Security.Cryptography.SHA256.Create();
+            var hash = sha.ComputeHash(bodyBytes);
+            var hashHex = Convert.ToHexString(hash).ToLowerInvariant();
+
+            body.AppendLine($"Report SHA-256:   {hashHex}");
+
+            var downloadsDir = System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile);
+            var exportDir = System.IO.Path.Combine(downloadsDir, "Downloads");
+            if (!System.IO.Directory.Exists(exportDir))
+                exportDir = AppDomain.CurrentDomain.BaseDirectory;
+
+            var fileName = $"AuditChainVerification_{v.VerifiedAt:yyyyMMdd_HHmmssZ}.txt";
+            var filePath = System.IO.Path.Combine(exportDir, fileName);
+            System.IO.File.WriteAllText(filePath, body.ToString(), System.Text.Encoding.UTF8);
+
+            AuditLog.LogChainVerificationExported(actor, filePath, v.EntryCount, v.Intact);
+            _exportMessage = $"Verification report saved: {filePath}";
+        }
+        catch (Exception ex)
+        {
+            _exportMessage = $"Export failed: {ex.Message}";
+        }
+    }
+
+    // ── MAJOR 4: CSV / JSON export ──────────────────────────────────────
+
+    private static string CsvEscape(string? value)
+    {
+        if (value == null) return string.Empty;
+        if (value.Contains(',') || value.Contains('"') || value.Contains('\n'))
+            return "\"" + value.Replace("\"", "\"\"") + "\"";
+        return value;
+    }
+
+    private void ExportCsv()
+    {
+        _exportMessage = null;
+        try
+        {
+            var actor = System.Environment.UserName;
+            var entries = _filteredEntries; // respects current view filters
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("timestamp_utc,severity,event_type,actor,details,signature_hex,prev_signature_hex");
+            foreach (var e in entries)
+            {
+                var detailsFlat = string.Join("; ", e.Details.Select(kv => $"{kv.Key}={kv.Value}"));
+                var sigHex = string.IsNullOrEmpty(e.Signature)
+                    ? string.Empty : Convert.ToHexString(Convert.FromBase64String(e.Signature)).ToLowerInvariant();
+                var prevHex = string.IsNullOrEmpty(e.PreviousHash)
+                    ? string.Empty : Convert.ToHexString(Convert.FromBase64String(e.PreviousHash)).ToLowerInvariant();
+                sb.AppendLine($"{e.Timestamp:o},{e.Severity},{e.EventType},{CsvEscape(e.User)},{CsvEscape(detailsFlat)},{sigHex},{prevHex}");
+            }
+
+            var fileName = WriteExport(sb.ToString(), "AuditLog", "csv");
+            AuditLog.LogAuditLogExported(actor, "CSV", entries.Count, _fromDate, _toDate);
+            _exportMessage = $"CSV exported ({entries.Count} entries): {fileName}";
+        }
+        catch (Exception ex)
+        {
+            _exportMessage = $"Export failed: {ex.Message}";
+        }
+    }
+
+    private void ExportJson()
+    {
+        _exportMessage = null;
+        try
+        {
+            var actor = System.Environment.UserName;
+            var entries = _filteredEntries;
+            var json = System.Text.Json.JsonSerializer.Serialize(entries,
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+
+            var fileName = WriteExport(json, "AuditLog", "json");
+            AuditLog.LogAuditLogExported(actor, "JSON", entries.Count, _fromDate, _toDate);
+            _exportMessage = $"JSON exported ({entries.Count} entries): {fileName}";
+        }
+        catch (Exception ex)
+        {
+            _exportMessage = $"Export failed: {ex.Message}";
+        }
+    }
+
+    private static string WriteExport(string content, string prefix, string ext)
+    {
+        var downloadsDir = System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile);
+        var exportDir = System.IO.Path.Combine(downloadsDir, "Downloads");
+        if (!System.IO.Directory.Exists(exportDir))
+            exportDir = AppDomain.CurrentDomain.BaseDirectory;
+
+        var fileName = $"{prefix}_{DateTime.UtcNow:yyyyMMdd_HHmmssZ}.{ext}";
+        var filePath = System.IO.Path.Combine(exportDir, fileName);
+        System.IO.File.WriteAllText(filePath, content, System.Text.Encoding.UTF8);
+        return filePath;
+    }
+}

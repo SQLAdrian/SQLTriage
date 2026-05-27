@@ -1,0 +1,1498 @@
+﻿<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/settings"
+<PageTitle>SQLTriage - Settings</PageTitle>
+@using Microsoft.Extensions.Configuration
+@using Microsoft.Extensions.DependencyInjection
+@using System.IO
+@using System.Text.Json
+@using Microsoft.Data.SqlClient
+@using Microsoft.JSInterop
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@inject IDbConnectionFactory ConnectionFactory
+@inject SqlServerConnectionFactory SqlServerConnectionFactory
+@inject IConfiguration Configuration
+@inject IJSRuntime JS
+@inject UserSettingsService UserSettings
+@inject DashboardConfigService DashboardConfig
+@inject MemoryMonitorService MemoryMonitor
+@inject ConfigurationValidator ConfigValidator
+@inject AutoUpdateService UpdateService
+@inject AzureBlobExportService BlobExport
+@inject SQLTriage.Data.ToastService Toast
+@inject SQLTriage.Data.Services.AppUserState UserState
+@inject SQLTriage.Data.Services.RbacService RbacService
+@inject SQLTriage.Data.ServerConnectionManager ConnectionManager
+@inject SQLTriage.Data.Services.CacheMetricsService CacheMetrics
+@inject SQLTriage.Data.Scheduling.IQueryOrchestrator QueryOrchestrator
+@inject AuditLogService AuditLog
+@inject SQLTriage.Data.Services.UptimeTrackerService UptimeTracker
+@inject SQLTriage.Data.Services.ConfigBaselineService ConfigBaselineSvc
+@inject SQLTriage.Data.Services.Licensing.LicenseService LicenseSvc
+@using SQLTriage.Components.Shared
+
+@if (!RbacService.IsAuthorized(UserState.Role, "settings"))
+{
+    <div style="padding: 32px;">
+        <AccessDenied RequiredRole="Admin" Message="Settings are restricted to Admin users." />
+    </div>
+    return;
+}
+
+<div class="settings-page">
+    <h2>Settings</h2>
+
+    <div class="settings-layout">
+        <nav class="settings-rail" aria-label="Settings sections">
+            <div class="settings-rail-group">
+                <div class="settings-rail-heading">License</div>
+                <a href="#set-license">Full Audit Activation</a>
+            </div>
+            <div class="settings-rail-group">
+                <div class="settings-rail-heading">General</div>
+                <a href="#set-reporting">Reporting</a>
+                <a href="#set-refresh">Refresh</a>
+                <a href="#set-configuration">Configuration</a>
+                <a href="#set-updates">Updates</a>
+                <a href="#set-modes">Modes</a>
+                <a href="#set-appearance">Appearance</a>
+            </div>
+            <div class="settings-rail-group">
+                <div class="settings-rail-heading">Performance</div>
+                <a href="#set-performance">Performance</a>
+                <a href="#set-cache">Cache Management</a>
+                <a href="#set-perf-diag">Performance Diagnostics</a>
+                <a href="#set-orchestrator">Orchestrator Tuning</a>
+                <a href="#set-alerts">Alert Baseline</a>
+                <a href="#set-thresholds">Threshold Highlighting</a>
+            </div>
+            <div class="settings-rail-group">
+                <div class="settings-rail-heading">Diagnostics</div>
+                <a href="#set-quick-check">Quick Check</a>
+                <a href="#set-diagnostics">Diagnostics</a>
+                <a href="#set-query-plan">Query Plan Viewer</a>
+                <a href="#set-default-dashboard">Default Dashboard</a>
+            </div>
+            <div class="settings-rail-group">
+                <div class="settings-rail-heading">Security &amp; Access</div>
+                <a href="#set-credentials">Server Credentials</a>
+                <a href="#set-access-control">Access Control</a>
+                <a href="#set-notifications">Notifications</a>
+            </div>
+            <div class="settings-rail-group">
+                <div class="settings-rail-heading">Integrations</div>
+                <a href="#set-azure-blob">Azure Blob Export</a>
+                <a href="#set-auto-export">Auto-Export Reports</a>
+                <a href="#set-preview">Preview Features</a>
+            </div>
+            <div class="settings-rail-group">
+                <div class="settings-rail-heading">Compliance</div>
+                <a href="#set-uptime">Uptime / Availability</a>
+                <a href="#set-continuity">Continuity Posture</a>
+                <a href="#set-config-baseline">Config Baseline</a>
+                <a href="#set-hmac-rotation">Audit Key Rotation</a>
+            </div>
+        </nav>
+
+        <div class="settings-content" style="display: flex; flex-direction: column; gap: 16px;">
+
+            @* ── License activation ── *@
+            <div class="settings-group" id="set-license">
+                <h3>Full Audit License</h3>
+                <ActivateFullAuditCard />
+            </div>
+
+<!-- Should use this connection
+    <div class="settings-group">
+        <h3>Data Source</h3>
+        <div class="settings-field">
+            <label>Data Source</label>
+            <select value="@SelectedDataSource" @onchange="OnDataSourceChanged">
+                <option value="SqlServer">SQL Server</option>
+                @* <option value="sqlite">sqlite</option> *@
+            </select>
+        </div>
+        @if (RestartRequired)
+        {
+            <p style="color: var(--yellow); font-size: 12px;">
+                Data source changed. Restart the application for the change to take effect.
+            </p>
+        }
+    </div>
+    -->
+
+<!-- server selection has been moved
+    <div class="settings-group">
+        <h3>Connection Strings</h3>
+        <div class="settings-field">
+            <label>SQL Server</label>
+            @if (_isEditingConnectionString)
+            {
+                <input type="text" @bind="SqlServerConnectionString" />
+            }
+            else
+            {
+                <input type="password" @bind="SqlServerConnectionString" style="width: 100%;" />
+            }
+            <small style="display: block; margin-top: 4px;">
+                <button class="btn-link" @onclick="ToggleConnectionStringVisibility" style="background: none; border: none; color: var(--blue); cursor: pointer; padding: 0; font-size: 12px;">
+                    @(_isEditingConnectionString ? "Hide (password visible)" : "Show/Edit Connection String")
+                </button>
+            </small>
+        </div>
+        <div class="settings-field" style="display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" id="trustCert" @bind="TrustServerCertificate" style="width: auto;" />
+            <label for="trustCert" style="margin: 0; font-weight: normal;">Trust Server Certificate (use for self-signed SSL certificates)</label>
+        </div>
+        <button class="settings-btn" style="margin-top: 10px;" @onclick="SaveConnectionString">Save Connection String</button>
+        @if (SaveResult != null)
+        {
+            <p style="margin-top: 8px; color: @(SaveSuccess ? "var(--green)" : "var(--red)");">@SaveResult</p>
+        }
+    </div>
+    -->
+
+    <div class="settings-group" id="set-reporting">
+        <h3>Reporting</h3>
+        <div class="settings-field" style="display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" id="showRemediationCost" checked="@_showRemediationCost"
+                   @onchange="ToggleShowRemediationCost" style="width: auto;" />
+            <label for="showRemediationCost" style="margin: 0; font-weight: normal;">
+                Show remediation cost estimate on CIO Dashboard
+            </label>
+        </div>
+        <small style="display: block; margin: -4px 0 12px 24px; color: var(--text-secondary); font-size: 11px;">
+            Hide if your audience doesn't want pricing visible (e.g. internal DBA team review).
+        </small>
+
+        @if (_showRemediationCost)
+        {
+            <div class="settings-field">
+                <label>Hourly rate (USD) <span style="font-weight:normal;color:var(--text-secondary);font-size:11px;">(raw labour line)</span></label>
+                <select value="@_remediationRate" @onchange="OnRemediationRateChanged" style="width: 320px;">
+                    <option value="195">Independent DBA, regional market - $195/hr</option>
+                    <option value="295">Independent DBA, US/UK/AU/NZ - $295/hr</option>
+                    <option value="395">Mid-tier consulting firm - $395/hr</option>
+                    <option value="495">Big-4 / specialist (Brent Ozar tier) - $495/hr</option>
+                    <option value="595">Regulated remediation (SOX/PCI/HIPAA) - $595/hr</option>
+                </select>
+            </div>
+
+            <div class="settings-field">
+                <label>Compliance tier <span style="font-weight:normal;color:var(--text-secondary);font-size:11px;">(project-cost multiplier)</span></label>
+                <select value="@_complianceTier" @onchange="OnComplianceTierChanged" style="width: 320px;">
+                    <option value="None">No compliance framework (1.0x)</option>
+                    <option value="SOC2">SOC 2 (1.7x)</option>
+                    <option value="ISO27001">ISO 27001 (1.7x)</option>
+                    <option value="PCI">PCI-DSS (2.4x)</option>
+                    <option value="SOX">SOX (2.4x)</option>
+                    <option value="HIPAA">HIPAA (2.6x)</option>
+                </select>
+                <small style="display: block; margin-top: 4px; color: var(--text-secondary); font-size: 11px;">
+                    Drives the project-cost range. Higher tiers carry more documentation, evidence, and change-management overhead.
+                </small>
+            </div>
+
+            <div class="settings-field">
+                <label>Your consultancy name <span style="font-weight:normal;color:var(--text-secondary);font-size:11px;">(optional)</span></label>
+                <input type="text" value="@_consultancyName" @oninput="OnConsultancyNameChanged"
+                       placeholder="e.g. SQLDBA.ORG" style="width: 320px;" />
+                <small style="display: block; margin-top: 4px; color: var(--text-secondary); font-size: 11px;">
+                    Shown in the conversion footer of the cost block. Leave blank to hide the footer entirely.
+                </small>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(_consultancyName))
+            {
+                <div class="settings-field">
+                    <label>Typical engagement duration <span style="font-weight:normal;color:var(--text-secondary);font-size:11px;">(optional)</span></label>
+                    <input type="text" value="@_engagementDuration" @oninput="OnEngagementDurationChanged"
+                           placeholder="e.g. 1-2 weeks, 3-5 days" style="width: 320px;" />
+                </div>
+            }
+
+            <div class="settings-field">
+                <label>Monthly OPEX per server (NZD) <span style="font-weight:normal;color:var(--text-secondary);font-size:11px;">(3-year TCO line)</span></label>
+                <input type="number" min="0" max="10000" step="50"
+                       value="@_monthlyOpexPerServerNZD" @oninput="OnMonthlyOpexChanged" style="width: 320px;" />
+                <small style="display: block; margin-top: 4px; color: var(--text-secondary); font-size: 11px;">
+                    Running costs + ops management + support per server. Default NZ$400. Drop toward NZ$150–250 for shared-infrastructure shops where DBA cost amortises.
+                </small>
+            </div>
+        }
+    </div>
+
+    <div class="settings-group" id="set-refresh">
+        <h3>Refresh</h3>
+        <div class="settings-field">
+            <label>Auto-Refresh Interval (seconds)</label>
+            <input type="text" value="@(Configuration["RefreshIntervalSeconds"] ?? "5")" readonly />
+        </div>
+        <div class="settings-field">
+            <label>Default Time Range (minutes)</label>
+            <input type="text" value="@(Configuration["DefaultTimeRangeMinutes"] ?? "60")" readonly />
+        </div>
+        <div class="settings-field">
+            <label>Query Timeout (seconds)</label>
+            <input type="text" value="@(Configuration["QueryTimeoutSeconds"] ?? "60")" readonly />
+            <small style="display: block; margin-top: 4px; color: var(--text-secondary); font-size: 11px;">
+                Maximum time to wait for query execution before timeout
+            </small>
+        </div>
+    </div>
+
+    <div class="settings-group" id="set-performance">
+        <h3>Performance</h3>
+
+        <div class="settings-field">
+            <label>Memory Usage</label>
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <div style="flex: 1; background: var(--bg-secondary); border-radius: 4px; height: 24px; overflow: hidden;">
+                    <div style="background: @(MemoryMonitor.IsUnderPressure ? "var(--red)" : "var(--green)"); height: 100%; width: @((MemoryMonitor.MemoryUsagePercent * 100).ToString("F1"))%; transition: width 0.3s, background 0.3s;"></div>
+                </div>
+                <span style="min-width: 120px; font-size: 13px;">@((MemoryMonitor.CurrentMemoryUsage / 1024.0 / 1024.0).ToString("N0")) MB (@((MemoryMonitor.MemoryUsagePercent * 100).ToString("F1"))%)</span>
+            </div>
+            @if (MemoryMonitor.IsUnderPressure)
+            {
+                <small style="display: block; margin-top: 4px; color: var(--red); font-size: 11px;">
+                    <i class="fa-solid fa-triangle-exclamation"></i> High memory usage detected. Cache will be automatically cleared.
+                </small>
+            }
+        </div>
+
+        <div class="settings-field">
+            <label>Query Concurrency Limits</label>
+            <div style="display:flex;gap:24px;flex-wrap:wrap;">
+                <div style="flex:1;min-width:200px;">
+                    <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-secondary);">Heavy (TimeSeries) — max parallel</label>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <input type="range" min="1" max="20" step="1" value="@_maxHeavy" @oninput="OnHeavyConcurrencyChanged" style="width:140px;" />
+                        <span style="font-size:13px;min-width:30px;">@_maxHeavy</span>
+                    </div>
+                </div>
+                <div style="flex:1;min-width:200px;">
+                    <label style="display:block;margin-bottom:6px;font-size:12px;color:var(--text-secondary);">Light (Stat/Grid) — max parallel</label>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <input type="range" min="2" max="50" step="1" value="@_maxLight" @oninput="OnLightConcurrencyChanged" style="width:140px;" />
+                        <span style="font-size:13px;min-width:30px;">@_maxLight</span>
+                    </div>
+                </div>
+            </div>
+            <p style="font-size:11px;color:var(--text-secondary);margin-top:4px;">
+                Adjust based on server capacity. Higher = faster dashboards but more connections. Changes apply immediately.
+            </p>
+            <div style="display:flex;gap:8px;margin-top:6px;">
+                <button class="settings-btn" @onclick="SaveConcurrencySettings" style="font-size:11px;padding:4px 10px;">Save</button>
+                <button class="settings-btn" style="background:var(--bg-hover);font-size:11px;padding:4px 10px;" @onclick="ResetConcurrencyDefaults">Reset Defaults</button>
+            </div>
+            @if (!string.IsNullOrEmpty(_concurrencyMessage))
+            {
+                <p style="margin:4px 0 0;font-size:11px;color:var(--green);">@_concurrencyMessage</p>
+            }
+        </div>
+
+        <div class="settings-divider" style="margin: 16px 0; border-top: 1px solid var(--border);"></div>
+
+        <div class="settings-field">
+            <label>Cache Performance</label>
+            <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">
+                Shows how often dashboard data is served from the local cache vs. fresh SQL queries.
+            </p>
+
+            @if (_cacheMetricsLoading)
+            {
+                <p style="font-size:12px;color:var(--text-muted);">Loading metrics...</p>
+            }
+            else
+            {
+                <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px;">
+                    <div class="metric-card" style="background:var(--bg-secondary);border-radius:6px;padding:12px;border:1px solid var(--border);">
+                        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px;">Current Session</div>
+                        <div style="font-size:16px;font-weight:600;color:var(--accent);">@_sessionMetrics.TotalQueries.ToString("N0") queries</div>
+                        <div style="font-size:13px;color:var(--text-primary);">@_sessionMetrics.GetCachePercentage().ToString("F1")% from cache</div>
+                        <div style="font-size:11px;color:var(--text-secondary);">@_sessionMetrics.GetFreshPercentage().ToString("F1")% fresh</div>
+                    </div>
+                    <div class="metric-card" style="background:var(--bg-secondary);border-radius:6px;padding:12px;border:1px solid var(--border);">
+                        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px;">Last 24 Hours</div>
+                        <div style="font-size:16px;font-weight:600;color:var(--accent);">@_hourlyCachePercentage.ToString("F1")% cache avg</div>
+                        <div style="font-size:13px;color:var(--text-primary);">@_hourlyTotalQueries.ToString("N0") total queries</div>
+                        <div style="font-size:11px;color:var(--text-secondary);">Based on @_hourlyDataPoints data points</div>
+                    </div>
+                    <div class="metric-card" style="background:var(--bg-secondary);border-radius:6px;padding:12px;border:1px solid var(--border);">
+                        <div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px;">Last 7 Days</div>
+                        <div style="font-size:16px;font-weight:600;color:var(--accent);">@_dailyCachePercentage.ToString("F1")% cache avg</div>
+                        <div style="font-size:13px;color:var(--text-primary);">@_dailyTotalQueries.ToString("N0") total queries</div>
+                        <div style="font-size:11px;color:var(--text-secondary);">@_dailyDataPoints days with activity</div>
+                    </div>
+                </div>
+                <button class="settings-btn" @onclick="RefreshCacheMetrics" disabled="@_cacheMetricsLoading" style="font-size:12px;padding:6px 12px;">
+                    <i class="fa-solid fa-rotate"></i> Refresh Metrics
+                </button>
+            }
+        </div>
+
+    </div>
+
+    <div class="settings-group" id="set-configuration">
+        <h3>Configuration</h3>
+        <div class="settings-field">
+            <label>Environment</label>
+            <input type="text" value="@(Configuration["Environment"] ?? "Production")" readonly />
+        </div>
+        <button class="settings-btn" @onclick="ValidateConfig">Validate Configuration</button>
+        @if (ConfigValidationResult != null)
+        {
+            <p style="margin-top: 8px; color: @(ConfigValidationSuccess ? "var(--green)" : "var(--red)");">@ConfigValidationResult</p>
+            @if (!ConfigValidationSuccess && ConfigErrors.Any())
+            {
+                <ul style="margin-top: 8px; color: var(--red); font-size: 12px;">
+                    @foreach (var error in ConfigErrors)
+                    {
+                        <li>@error</li>
+                    }
+                </ul>
+            }
+        }
+    </div>
+
+    <div class="settings-group" id="set-updates">
+        <h3>Updates</h3>
+        <div class="settings-field">
+            <label>Proxy URL <span style="font-weight:normal;color:var(--text-secondary);font-size:11px;">(optional — leave blank to use system proxy)</span></label>
+            <div style="display:flex;gap:8px;align-items:center;">
+                <input type="text" @bind="_updateProxyUrl" placeholder="http://proxy.corp.example.com:8080"
+                       style="flex:1;" />
+                <button class="settings-btn" @onclick="SaveUpdateProxy" style="white-space:nowrap;">Save</button>
+            </div>
+        </div>
+        <button class="settings-btn" @onclick="CheckForUpdates" disabled="@IsCheckingUpdates">@(IsCheckingUpdates ? "Checking..." : "Check for Updates")</button>
+        @if (UpdateCheckResult != null)
+        {
+            <p style="margin-top: 8px; color: @(UpdateAvailable ? "var(--orange)" : "var(--green)");">@UpdateCheckResult</p>
+            @if (!UpdateAvailable && UpdateService.LastCheckError != null)
+            {
+                <p style="margin-top:4px;font-size:12px;color:var(--red);background:var(--bg-secondary);padding:8px 10px;border-radius:4px;border-left:3px solid var(--red);">
+                    <strong>Detail:</strong> @UpdateService.LastCheckError
+                </p>
+            }
+            @if (UpdateAvailable && UpdateInfo != null)
+            {
+                <div style="margin-top: 12px; padding: 12px; background: var(--bg-secondary); border-radius: 4px;">
+                    <p style="font-weight: 600; margin-bottom: 8px;">Version @UpdateInfo.Version Available</p>
+                    <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">Released: @UpdateInfo.ReleasedAt.ToString("yyyy-MM-dd")</p>
+                    @if (!string.IsNullOrEmpty(UpdateInfo.ReleaseNotes))
+                    {
+                        <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">@UpdateInfo.ReleaseNotes</p>
+                    }
+                    <button class="settings-btn" @onclick="DownloadAndApplyUpdate" disabled="@_downloading">
+                        @if (_downloading)
+                        {
+                            <i class="fa-solid fa-spinner fa-spin" style="margin-right:4px;"></i>
+                            <span>Downloading... @_downloadProgress%</span>
+                        }
+                        else if (UpdateService.HasStagedUpdate)
+                        {
+                            <i class="fa-solid fa-check" style="margin-right:4px;"></i>
+                            <span>Staged — will apply on exit</span>
+                        }
+                        else
+                        {
+                            <i class="fa-solid fa-download" style="margin-right:4px;"></i>
+                            <span>Download &amp; Apply on Exit</span>
+                        }
+                    </button>
+                </div>
+            }
+        }
+    </div>
+
+    <div class="settings-group" id="set-quick-check">
+        <h3>Quick Check</h3>
+        <div class="settings-field" style="display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" id="showDiagnosticPane" checked="@ShowDiagnosticPane"
+                   @onchange="ToggleDiagnosticPane" style="width: auto;" />
+            <label for="showDiagnosticPane" style="margin: 0; font-weight: normal;">
+                Show Diagnostic Output Pane (real-time per-check execution log)
+            </label>
+        </div>
+    </div>
+
+    <div class="settings-group" id="set-modes">
+        <h3>Modes</h3>
+        <div class="settings-field" style="display: flex; align-items: center; gap: 10px;">
+            <button type="button" @onclick="OnNoPantsModeChanged"
+                    title="@(_noPantsMode ? "No-Pants Mode ON — click to disable" : "No-Pants Mode OFF — click to enable")"
+                    style="background:none;border:none;cursor:pointer;padding:2px 6px;border-radius:4px;font-size:18px;line-height:1;color:@(_noPantsMode ? "#ef4444" : "var(--text-muted)");transition:color 0.2s;">
+                <i class="fa-solid fa-person-pants-burst"></i>
+            </button>
+            <span style="font-size:13px;color:var(--text-secondary);">
+                <strong style="color:@(_noPantsMode ? "#ef4444" : "var(--text-muted)");">No-Pants Mode</strong>
+                @if (_noPantsMode)
+                {
+                    <span style="color:var(--red);"> — ON</span>
+                }
+            </span>
+        </div>
+        <div class="settings-field" style="display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" id="experimentalMode" checked="@_experimentalMode"
+                   @onchange="OnExperimentalModeChanged" style="width: auto;" />
+            <label for="experimentalMode" style="margin: 0; font-weight: normal;">
+                <strong style="color:var(--orange);">Experimental Mode</strong> — show preview features that are still in development
+            </label>
+        </div>
+    </div>
+
+    <div class="settings-group" id="set-diagnostics">
+        <h3>Diagnostics</h3>
+        <div class="settings-field" style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+            <button class="settings-btn" style="color:var(--red,#cc3333);"
+                    @onclick="ResetAllSettings"
+                    title="Resets all app preferences to factory defaults (connections are not affected)">
+                <i class="fa-solid fa-rotate-left"></i> Reset app settings to defaults
+            </button>
+        </div>
+        <div class="settings-field" style="display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" id="enableDebugLogging" checked="@_debugLogging"
+                   @onchange="ToggleDebugLogging" style="width: auto;" />
+            <label for="enableDebugLogging" style="margin: 0; font-weight: normal;">
+                Enable Debug Logging (verbose output to log file — no restart required)
+            </label>
+        </div>
+        <div class="settings-field" style="display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" id="anonymiseServerNames" checked="@_anonymiseServerNames"
+                   @onchange="ToggleAnonymiseServerNames" style="width: auto;" />
+            <label for="anonymiseServerNames" style="margin: 0; font-weight: normal;">
+                Anonymise server names in log file (replaces real names with SRV-001, SRV-002 … — useful when sharing logs)
+            </label>
+        </div>
+    </div>
+
+    <div class="settings-group" id="set-query-plan">
+        <h3>Query Plan Viewer</h3>
+        <div class="settings-field" style="display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" id="useV2PlanIcons" checked="@_useV2PlanIcons"
+                   @onchange="ToggleV2PlanIcons" style="width: auto;" />
+            <label for="useV2PlanIcons" style="margin: 0; font-weight: normal;">
+                Use high-resolution plan icons (individual PNGs — uncheck for coloured sprite icons)
+            </label>
+        </div>
+    </div>
+
+    <div class="settings-group" id="set-default-dashboard">
+        <h3>Default Dashboard</h3>
+        <div class="settings-field">
+            <label>Dashboard to Display First</label>
+            <select @bind="DefaultDashboardId">
+                <option value="">None (use first available)</option>
+                @foreach (var dashboard in DashboardConfig.Config.Dashboards.Where(d => d.Enabled))
+                {
+                    <option value="@dashboard.Id">@dashboard.Title</option>
+                }
+            </select>
+        </div>
+        <button class="settings-btn" style="margin-top: 10px;" @onclick="SaveDefaultDashboard">Save Default Dashboard</button>
+        @if (DashboardSaveResult != null)
+        {
+            <p style="margin-top: 8px; color: var(--green);">@DashboardSaveResult</p>
+        }
+    </div>
+
+    <!-- Appearance Section -->
+     <div class="settings-group" id="set-appearance">
+         <h3>Appearance</h3>
+         <div class="settings-field">
+             <label>UI Theme</label>
+             <select value="@_selectedTheme" @onchange="OnThemeChanged" style="width: 200px;">
+                 <option value="default">Default (balanced)</option>
+                 <option value="rolls-royce">Rolls Royce (soft, luxurious)</option>
+                 <option value="amg">AMG (sharp, aggressive)</option>
+             </select>
+             <small style="display: block; margin-top: 4px; color: var(--text-secondary);">
+                 Controls colours, rounding, shadows, and motion feel. Changes apply immediately.
+             </small>
+         </div>
+         <div class="settings-field">
+             <label>Zoom Level</label>
+             <select value="@_zoomLevel" @onchange="OnZoomLevelChanged" style="width: 200px;">
+                 <option value="75">75%</option>
+                 <option value="80">80%</option>
+                 <option value="90">90%</option>
+                 <option value="100">100%</option>
+                 <option value="110">110%</option>
+                 <option value="125">125%</option>
+                 <option value="150">150% (default)</option>
+                 <option value="175">175%</option>
+                 <option value="200">200%</option>
+             </select>
+             <small style="color: var(--text-secondary);">Controls the UI zoom level. Changes apply immediately.</small>
+         </div>
+     </div>
+
+
+    <div class="settings-group" id="set-cache">
+        <h3>Cache Management</h3>
+        <div class="settings-field">
+            <label>sqlite Dashboard Cache</label>
+            <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">
+                Clear all cached dashboard data from the local sqlite database. This will force fresh data to be loaded from SQL Server on next dashboard refresh.
+            </p>
+        </div>
+        <div class="settings-field">
+            <label>Cache File Size</label>
+            <input type="text" value="@CacheFileSize" readonly />
+        </div>
+        <div class="settings-field">
+            <label>Max Cache Size</label>
+            <input type="text" value="@(Configuration.GetValue<int>("MaxCacheSizeMB", 500)) MB" readonly />
+        </div>
+        <div class="settings-field">
+            <label>Cache Eviction Interval</label>
+            <input type="text" value="@(Configuration.GetValue<int>("CacheEvictionHours", 24)) hours" readonly />
+        </div>
+        <div class="settings-field">
+            <label>sqlite Maintenance Interval</label>
+            <input type="text" value="@(Configuration.GetValue<int>("sqliteMaintenanceIntervalHours", 4)) hours" readonly />
+        </div>
+        <div class="settings-field">
+            <label>sqlite Integrity Check Frequency</label>
+            <input type="text" value="Every @(Configuration.GetValue<int>("sqliteIntegrityCheckEveryNRuns", 6)) maintenance runs" readonly />
+        </div>
+        <div class="settings-field">
+            <label>Chart Data Point Cap</label>
+            <div style="display:flex;align-items:center;gap:12px;">
+                <input type="range" min="500" max="10000" step="500"
+                       value="@_chartDataPointCap"
+                       @oninput="OnChartCapChanged"
+                       style="width:180px;" />
+                <span style="font-size:13px;min-width:60px;">@_chartDataPointCap pts</span>
+            </div>
+            <p style="font-size:12px;color:var(--text-secondary);margin-top:4px;">
+                Max data points per chart series from SQLite cache. Lower = faster render and less memory. Takes effect on next dashboard load.
+            </p>
+        </div>
+        <div style="display: flex; gap: 8px; margin-top: 10px;">
+            <button class="settings-btn" @onclick="FlushCache" disabled="@IsFlushingCache">@(IsFlushingCache ? "Flushing..." : "Flush All Cache")</button>
+            <button class="settings-btn" @onclick="RunMaintenance" disabled="@IsRunningMaintenance">@(IsRunningMaintenance ? "Running..." : "Run Maintenance")</button>
+        </div>
+        @if (FlushCacheResult != null)
+        {
+            <p style="margin-top: 8px; color: @(FlushCacheSuccess ? "var(--green)" : "var(--red)");">@FlushCacheResult</p>
+        }
+        @if (MaintenanceResult != null)
+        {
+            <p style="margin-top: 8px; color: @(MaintenanceSuccess ? "var(--green)" : "var(--red)");">@MaintenanceResult</p>
+        }
+    </div>
+
+
+    <div class="settings-group" id="set-credentials">
+        <h3>Server Credentials</h3>
+        <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">
+            Export all server connections (including SQL auth passwords) to a portable <code>.lmcreds</code> file
+            protected by a passphrase. Use this to move credentials to another machine.
+            Windows auth connections are exported without a password.
+        </p>
+
+        <div style="display:flex;gap:24px;flex-wrap:wrap;">
+            <!-- Export -->
+            <div style="flex:1;min-width:240px;">
+                <strong style="font-size:13px;display:block;margin-bottom:8px;">Export</strong>
+                <div class="settings-field" style="margin-bottom:8px;">
+                    <label>Passphrase</label>
+                    <input type="password" @bind="_credsExportPassphrase" placeholder="Choose a passphrase…"
+                           style="width:100%;" autocomplete="new-password" />
+                </div>
+                <div class="settings-field" style="margin-bottom:8px;">
+                    <label>Confirm</label>
+                    <input type="password" @bind="_credsExportConfirm" placeholder="Repeat passphrase…"
+                           style="width:100%;" autocomplete="new-password" />
+                </div>
+                <button class="settings-btn" @onclick="ExportCredentials"
+                        disabled="@_credsExporting">
+                    @if (_credsExporting) { <text>Exporting…</text> } else { <i class="fa-solid fa-download"></i> <text>Export .lmcreds</text> }
+                </button>
+            </div>
+
+            <!-- Import -->
+            <div style="flex:1;min-width:240px;">
+                <strong style="font-size:13px;display:block;margin-bottom:8px;">Import</strong>
+                <div class="settings-field" style="margin-bottom:8px;">
+                    <label>.lmcreds file</label>
+                    <InputFile OnChange="OnCredsFileSelected" accept=".lmcreds,.json"
+                               style="font-size:12px;color:var(--text-secondary);" />
+                </div>
+                <div class="settings-field" style="margin-bottom:8px;">
+                    <label>Passphrase</label>
+                    <input type="password" @bind="_credsImportPassphrase" placeholder="Enter the export passphrase…"
+                           style="width:100%;" autocomplete="current-password" />
+                </div>
+                <p style="font-size:11px;color:var(--text-secondary);margin-bottom:8px;">
+                    Existing servers with matching IDs will be skipped. New servers are added.
+                </p>
+                <button class="settings-btn" @onclick="ImportCredentials"
+                        disabled="@(_credsImporting || _credsFileContent == null)">
+                    @if (_credsImporting) { <text>Importing…</text> } else { <i class="fa-solid fa-upload"></i> <text>Import .lmcreds</text> }
+                </button>
+            </div>
+        </div>
+
+        @if (_credsMessage != null)
+        {
+            <p style="margin-top:10px;font-size:13px;color:@(_credsSuccess ? "var(--green)" : "var(--red)");">@_credsMessage</p>
+        }
+    </div>
+
+    <!-- Azure Blob Export Section -->
+    <div class="settings-group" id="set-azure-blob">
+        <h3>Azure Blob Export</h3>
+
+        <div style="margin-bottom: 12px; padding: 10px 14px; background: var(--bg-hover); border-radius: 6px; border: 1px solid var(--border); display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 200px;">
+                <strong style="font-size: 13px;">Quick Setup</strong>
+                <p style="margin: 2px 0 0; font-size: 11px; color: var(--text-secondary);">
+                    Pre-fill with SQLDBA.ORG community storage settings.
+                </p>
+            </div>
+            <button class="settings-btn" style="background: var(--accent); white-space: nowrap;" @onclick="() => _showSqldbaConsent = true">
+                <i class="fa-solid fa-cloud-arrow-up" style="margin-right: 4px;"></i> Use SQLDBA.ORG Settings
+            </button>
+        </div>
+
+        <div class="settings-field">
+            <label>Authentication Method</label>
+            <select @bind="_azureAuthMode" style="width: 280px;">
+                <option value="connectionstring">Connection String</option>
+                <option value="sastoken">SAS Token</option>
+            </select>
+        </div>
+
+        @if (_azureAuthMode == "connectionstring")
+        {
+            <div class="settings-field">
+                <label>Connection String</label>
+                <input type="password" @bind="_azureConnStr" @bind:event="oninput"
+                       placeholder="@(_hasExistingAzureConnStr ? "(encrypted — leave blank to keep)" : "DefaultEndpointsProtocol=https;AccountName=...")" />
+            </div>
+        }
+        else
+        {
+            <div class="settings-field">
+                <label>Storage Account Name</label>
+                <input type="text" @bind="_azureAccountName" @bind:event="oninput"
+                       placeholder="mystorageaccount" />
+            </div>
+            <div class="settings-field">
+                <label>SAS Token</label>
+                <input type="password" @bind="_azureSasToken" @bind:event="oninput"
+                       placeholder="@(_hasExistingAzureSas ? "(encrypted — leave blank to keep)" : "sv=2023-01-03&ss=b&srt=sco&sp=rwdlac...")" />
+                <small style="color: var(--text-secondary);">Generate from Azure Portal > Storage Account > Shared access signature</small>
+            </div>
+        }
+
+        <div class="settings-field">
+            <label>Container Name</label>
+            <input type="text" @bind="_azureContainer" @bind:event="oninput"
+                   placeholder="SQLTriage" />
+        </div>
+        <div class="settings-field">
+            <label>Blob Prefix (optional)</label>
+            <input type="text" @bind="_azurePrefix" @bind:event="oninput"
+                   placeholder="e.g., exports/production" />
+        </div>
+
+        <div class="settings-field">
+            <label>Upload Method</label>
+            <select @bind="_azureUploadMethod" style="width: 280px;">
+                <option value="sdk">Azure SDK (built-in)</option>
+                <option value="azcopy">AzCopy.exe</option>
+            </select>
+            <small style="color: var(--text-secondary);">AzCopy can be faster for large files and supports resume</small>
+        </div>
+
+        @if (_azureUploadMethod == "azcopy")
+        {
+            <div class="settings-field">
+                <label>AzCopy Path (optional — auto-detected if on PATH)</label>
+                <input type="text" @bind="_azureAzCopyPath" @bind:event="oninput"
+                       placeholder="C:\tools\azcopy.exe" />
+            </div>
+        }
+
+        <div class="settings-field" style="display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" id="azureAutoUpload" @bind="_azureAutoUpload" style="width: auto;" />
+            <label for="azureAutoUpload" style="margin: 0; font-weight: normal;">
+                Upload export CSVs to Azure automatically
+            </label>
+        </div>
+        <small style="display: block; margin: -8px 0 8px 24px; color: var(--text-secondary); font-size: 11px;">
+            When enabled, Vulnerability Assessment and Full Audit CSVs are uploaded to Azure after each audit sequence completes.
+            Upload errors (e.g. firewall) are logged but never block the export.
+        </small>
+
+        <div class="settings-field" style="display: flex; align-items: center; gap: 8px;">
+            <input type="checkbox" id="azureCompress" @bind="_azureCompress" style="width: auto;" />
+            <label for="azureCompress" style="margin: 0; font-weight: normal;">
+                Compress uploads (gzip) — reduces transfer size
+            </label>
+        </div>
+
+        <div style="display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap;">
+            <button class="settings-btn" @onclick="SaveAzureConfig">Save Azure Config</button>
+            <button class="settings-btn" @onclick="TestAzureConnection" disabled="@_testingAzure">@(_testingAzure ? "Testing..." : "Test Connection")</button>
+            <button class="settings-btn" style="background: var(--bg-hover);" @onclick="ShowAzureDiagnostics">
+                <i class="fa-solid fa-stethoscope" style="margin-right: 4px;"></i> Diagnostics
+            </button>
+            <button class="settings-btn" style="background: var(--accent);" @onclick="ScanOutputForUpload" disabled="@_uploadingOutput">
+                <i class="fa-solid fa-cloud-arrow-up" style="margin-right: 4px;"></i> @(_uploadingOutput ? "Uploading..." : "Upload Output to Azure")
+            </button>
+        </div>
+        @if (!string.IsNullOrEmpty(_azureResult))
+        {
+            <p style="margin-top: 8px; color: @(_azureSuccess ? "var(--green)" : "var(--red)");">@_azureResult</p>
+        }
+    </div>
+
+    <!-- Auto-Export Settings -->
+    <div class="settings-group" id="set-auto-export">
+        <h3>Auto-Export Reports</h3>
+        <p style="color: var(--text-muted); font-size: 12px; margin-bottom: 12px;">
+            Automatically save reports to the <code>./output/</code> folder when checks complete.
+        </p>
+        <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+            <thead>
+                <tr style="border-bottom: 1px solid var(--border);">
+                    <th style="text-align: left; padding: 6px 8px;">Report</th>
+                    <th style="text-align: center; padding: 6px 8px; width: 70px;">CSV</th>
+                    <th style="text-align: center; padding: 6px 8px; width: 70px;">JSON</th>
+                    <th style="text-align: center; padding: 6px 8px; width: 70px;">PDF</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr style="border-bottom: 1px solid var(--border);">
+                    <td style="padding: 6px 8px;">Full Audit</td>
+                    <td style="text-align: center; padding: 6px 8px;">
+                        <input type="checkbox" @bind="_autoExportAuditCsv" @bind:after="SaveAutoExportSettings" />
+                    </td>
+                    <td style="text-align: center; padding: 6px 8px;">
+                        <input type="checkbox" @bind="_autoExportAuditJson" @bind:after="SaveAutoExportSettings" />
+                    </td>
+                    <td style="text-align: center; padding: 6px 8px;">
+                        <input type="checkbox" @bind="_autoExportAuditPdf" @bind:after="SaveAutoExportSettings" />
+                    </td>
+                </tr>
+                <tr style="border-bottom: 1px solid var(--border);">
+                    <td style="padding: 6px 8px;">Quick Check</td>
+                    <td style="text-align: center; padding: 6px 8px;">
+                        <input type="checkbox" @bind="_autoExportQuickCheckCsv" @bind:after="SaveAutoExportSettings" />
+                    </td>
+                    <td style="text-align: center; padding: 6px 8px; color: var(--text-muted);">—</td>
+                    <td style="text-align: center; padding: 6px 8px;">
+                        <input type="checkbox" @bind="_autoExportQuickCheckPdf" @bind:after="SaveAutoExportSettings" />
+                    </td>
+                </tr>
+                <tr>
+                    <td style="padding: 6px 8px;">Vulnerability Assessment</td>
+                    <td style="text-align: center; padding: 6px 8px;">
+                        <input type="checkbox" @bind="_autoExportVaCsv" @bind:after="SaveAutoExportSettings" />
+                    </td>
+                    <td style="text-align: center; padding: 6px 8px; color: var(--text-muted);">—</td>
+                    <td style="text-align: center; padding: 6px 8px;">
+                        <input type="checkbox" @bind="_autoExportVaPdf" @bind:after="SaveAutoExportSettings" />
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Alert Baseline -->
+    <div class="settings-group" id="set-alerts">
+        <h3>Alert Baseline</h3>
+        <div class="settings-row">
+            <label class="settings-label">
+                Enable dynamic baseline alerting
+                <span style="font-size:11px;color:var(--text-muted);margin-left:6px;">(on by default)</span>
+            </label>
+            <input type="checkbox" @bind="_alertBaselineEnabled" @bind:after="SaveBaselineSettings" />
+        </div>
+        <p style="color: var(--text-muted); font-size: 12px; margin-top: 4px;">
+            When enabled, the app collects metric samples for compatible alerts and computes
+            IQR-based dynamic thresholds (Median + IQR). Thresholds activate after ~10 samples
+            per alert/server pair (~5 minutes from first run). Alerts with binary outcomes
+            (missed backups, failed jobs) are never baselined.
+        </p>
+        <div class="settings-row" style="margin-top: 8px;">
+            <label class="settings-label">
+                Per-server baselines
+                <span style="font-size:11px;color:var(--text-muted);margin-left:6px;">(recommended)</span>
+            </label>
+            <input type="checkbox" @bind="_alertBaselinePerServer" @bind:after="SaveBaselineSettings"
+                   disabled="@(!_alertBaselineEnabled)" />
+        </div>
+        <p style="color: var(--text-muted); font-size: 12px; margin-top: 4px;">
+            When enabled, each server learns its own baseline independently.
+            When disabled, thresholds are computed across all servers combined.
+        </p>
+    </div>
+
+    <!-- Notifications -->
+    <div class="settings-group" id="set-notifications">
+        <h3>Notifications</h3>
+        <div class="settings-row">
+            <label class="settings-label">Show "What's New" on update</label>
+            <input type="checkbox" @bind="_showReleaseNotesOnUpdate" @bind:after="SaveNotificationSettings" />
+        </div>
+        <p style="color: var(--text-muted); font-size: 12px; margin-top: 4px;">
+            When enabled, a popup shows release notes each time the application is updated.
+        </p>
+    </div>
+
+    <!-- RBAC / Access Control -->
+    <div class="settings-group" id="set-access-control">
+        <h3>Access Control <span style="font-size:11px;color:var(--text-muted);margin-left:6px;">(Server Mode only)</span></h3>
+
+        <div class="settings-row">
+            <label class="settings-label">Enable RBAC</label>
+            <input type="checkbox" @bind="_rbacEnabled" @bind:after="SaveRbacConfig" />
+        </div>
+        <p style="color:var(--text-muted);font-size:12px;margin-top:2px;margin-bottom:10px;">
+            When enabled, users authenticate via OAuth and are assigned roles. Has no effect in WPF (desktop) mode.
+        </p>
+
+        @if (_rbacEnabled)
+        {
+            <div class="settings-row" style="margin-top:8px;">
+                <label class="settings-label">Require explicit user list</label>
+                <input type="checkbox" @bind="_rbacRequireExplicit" @bind:after="SaveRbacConfig" />
+            </div>
+            <p style="color:var(--text-muted);font-size:12px;margin-top:2px;margin-bottom:10px;">
+                When on, unknown users are denied. When off, they are auto-created with the default role.
+            </p>
+
+            <div class="settings-row">
+                <label class="settings-label">Default role for new users</label>
+                <select @bind="_rbacDefaultRole" @bind:after="SaveRbacConfig" class="settings-input" style="max-width:140px;">
+                    <option value="admin">Admin</option>
+                    <option value="operator">Operator</option>
+                    <option value="viewer">Viewer</option>
+                </select>
+            </div>
+
+            <h4 style="margin:16px 0 8px;font-size:13px;color:var(--text-primary);">OAuth Providers</h4>
+
+            <!-- Google -->
+            <div style="border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:10px;">
+                <div class="settings-row" style="margin-bottom:8px;">
+                    <label class="settings-label" style="font-weight:600;">
+                        <i class="fa-brands fa-google" style="margin-right:5px;"></i>Google
+                    </label>
+                    <input type="checkbox" @bind="_rbacGoogleEnabled" @bind:after="SaveRbacConfig" />
+                </div>
+                @if (_rbacGoogleEnabled)
+                {
+                    <div class="settings-row" style="margin-bottom:6px;">
+                        <label class="settings-label">Client ID</label>
+                        <input type="text" class="settings-input" @bind="_rbacGoogleClientId" placeholder="…apps.googleusercontent.com" />
+                    </div>
+                    <div class="settings-row" style="margin-bottom:6px;">
+                        <label class="settings-label">Client Secret</label>
+                        <input type="password" class="settings-input" @bind="_rbacGoogleClientSecret" placeholder="(unchanged)" />
+                    </div>
+                    <div class="settings-row" style="margin-bottom:0;">
+                        <label class="settings-label">Restrict domain <span style="font-size:11px;color:var(--text-muted);">(optional)</span></label>
+                        <input type="text" class="settings-input" @bind="_rbacGoogleDomain" placeholder="contoso.com" />
+                    </div>
+                    <button class="btn-secondary" style="margin-top:10px;font-size:12px;" @onclick="SaveOAuthConfig">Save Google config</button>
+                }
+            </div>
+
+            <!-- Microsoft -->
+            <div style="border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:16px;">
+                <div class="settings-row" style="margin-bottom:8px;">
+                    <label class="settings-label" style="font-weight:600;">
+                        <i class="fa-brands fa-microsoft" style="margin-right:5px;"></i>Microsoft
+                    </label>
+                    <input type="checkbox" @bind="_rbacMsEnabled" @bind:after="SaveRbacConfig" />
+                </div>
+                @if (_rbacMsEnabled)
+                {
+                    <div class="settings-row" style="margin-bottom:6px;">
+                        <label class="settings-label">Client ID</label>
+                        <input type="text" class="settings-input" @bind="_rbacMsClientId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+                    </div>
+                    <div class="settings-row" style="margin-bottom:6px;">
+                        <label class="settings-label">Client Secret</label>
+                        <input type="password" class="settings-input" @bind="_rbacMsClientSecret" placeholder="(unchanged)" />
+                    </div>
+                    <div class="settings-row" style="margin-bottom:0;">
+                        <label class="settings-label">Restrict domain <span style="font-size:11px;color:var(--text-muted);">(optional)</span></label>
+                        <input type="text" class="settings-input" @bind="_rbacMsDomain" placeholder="contoso.com" />
+                    </div>
+                    <button class="btn-secondary" style="margin-top:10px;font-size:12px;" @onclick="SaveOAuthConfig">Save Microsoft config</button>
+                }
+            </div>
+
+            <!-- User list -->
+            <h4 style="margin:0 0 8px;font-size:13px;color:var(--text-primary);">Users</h4>
+
+            @* SOC2 CC6.3 — access review banner *@
+            @if (_rbacUsersNeedingReview > 0)
+            {
+                <div style="display:flex;align-items:center;gap:10px;background:var(--bg-warning,rgba(255,180,0,0.12));border:1px solid var(--orange);border-radius:6px;padding:8px 12px;margin-bottom:10px;">
+                    <i class="fa-solid fa-triangle-exclamation" style="color:var(--orange);"></i>
+                    <span style="font-size:12px;color:var(--text-primary);flex:1;">
+                        <strong>@_rbacUsersNeedingReview user(s)</strong> have not been reviewed in @_accessReviewDays days.
+                    </span>
+                    <button class="btn-secondary" style="font-size:12px;white-space:nowrap;" @onclick="ExportAccessReviewReport">
+                        <i class="fa-solid fa-file-csv" style="margin-right:4px;"></i>Export access-review report
+                    </button>
+                </div>
+            }
+            else if (_rbacUsers.Count > 0)
+            {
+                <div style="display:flex;align-items:center;gap:10px;background:var(--bg-success,rgba(0,180,80,0.08));border:1px solid var(--green);border-radius:6px;padding:8px 12px;margin-bottom:10px;">
+                    <i class="fa-solid fa-circle-check" style="color:var(--green);"></i>
+                    <span style="font-size:12px;color:var(--text-primary);flex:1;">All users reviewed within @_accessReviewDays days.</span>
+                    <button class="btn-secondary" style="font-size:12px;white-space:nowrap;" @onclick="ExportAccessReviewReport">
+                        <i class="fa-solid fa-file-csv" style="margin-right:4px;"></i>Export access-review report
+                    </button>
+                </div>
+            }
+
+            @if (_rbacUsers.Count == 0)
+            {
+                <p style="color:var(--text-muted);font-size:12px;">No users yet. Users are added automatically on first login.</p>
+            }
+            else
+            {
+                <table style="width:100%;border-collapse:collapse;font-size:12px;">
+                    <thead>
+                        <tr style="border-bottom:1px solid var(--border);color:var(--text-muted);">
+                            <th style="text-align:left;padding:4px 8px 6px 0;">Email</th>
+                            <th style="text-align:left;padding:4px 8px 6px;">Display Name</th>
+                            <th style="text-align:left;padding:4px 8px 6px;">Provider</th>
+                            <th style="text-align:left;padding:4px 8px 6px;">Role</th>
+                            <th style="text-align:left;padding:4px 8px 6px;">Enabled</th>
+                            <th style="text-align:left;padding:4px 8px 6px;">Last Login</th>
+                            <th style="text-align:left;padding:4px 8px 6px;">Last Reviewed</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var u in _rbacUsers)
+                        {
+                            <tr style="border-bottom:1px solid var(--border-subtle,var(--border));">
+                                <td style="padding:5px 8px 5px 0;color:var(--text-primary);">@u.Email</td>
+                                <td style="padding:5px 8px;color:var(--text-secondary);">@u.DisplayName</td>
+                                <td style="padding:5px 8px;">
+                                    @if (u.Provider == "google")
+                                    {
+                                        <i class="fa-brands fa-google" title="Google"></i>
+                                    }
+                                    else if (u.Provider == "microsoft")
+                                    {
+                                        <i class="fa-brands fa-microsoft" title="Microsoft"></i>
+                                    }
+                                    else
+                                    {
+                                        <span style="color:var(--text-muted);">local</span>
+                                    }
+                                </td>
+                                <td style="padding:5px 8px;">
+                                    <select value="@u.Role" @onchange="e => ChangeUserRole(u, e.Value?.ToString() ?? u.Role)"
+                                            style="font-size:12px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;padding:2px 4px;">
+                                        <option value="admin">Admin</option>
+                                        <option value="operator">Operator</option>
+                                        <option value="viewer">Viewer</option>
+                                    </select>
+                                </td>
+                                <td style="padding:5px 8px;text-align:center;">
+                                    <input type="checkbox" checked="@u.Enabled"
+                                           @onchange="e => ToggleUserEnabled(u, (bool)(e.Value ?? true))" />
+                                </td>
+                                <td style="padding:5px 0 5px 8px;color:var(--text-muted);">
+                                    @(u.LastLogin.HasValue ? u.LastLogin.Value.ToString("yyyy-MM-dd HH:mm") : "—")
+                                </td>
+                                <td style="padding:5px 8px;color:var(--text-muted);"
+                                    title="@(u.LastReviewedBy != null ? $"Reviewed by {u.LastReviewedBy}" : "")">
+                                    @(u.LastReviewedAt.HasValue ? u.LastReviewedAt.Value.ToString("yyyy-MM-dd") : "Never")
+                                </td>
+                                <td style="padding:5px 0 5px 6px;white-space:nowrap;">
+                                    <button class="btn-icon" title="Mark access reviewed" aria-label="Mark access reviewed for @u.Email"
+                                            @onclick="() => MarkUserAccessReviewed(u)">
+                                        <i class="fa-solid fa-clipboard-check"></i>
+                                    </button>
+                                    <button class="btn-icon" title="Remove user" aria-label="Remove user @u.Email" style="color:var(--error,#e05252);"
+                                            @onclick="() => RemoveRbacUser(u.Id)">
+                                        <i class="fa-solid fa-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+
+            <!-- Add user manually -->
+            <div style="margin-top:12px;display:flex;gap:6px;align-items:center;">
+                <input type="text" class="settings-input" @bind="_newUserEmail" placeholder="user@example.com" style="flex:1;" />
+                <select @bind="_newUserRole" style="font-size:12px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;padding:4px 6px;">
+                    <option value="admin">Admin</option>
+                    <option value="operator">Operator</option>
+                    <option value="viewer">Viewer</option>
+                </select>
+                <button class="btn-secondary" style="font-size:12px;white-space:nowrap;" @onclick="AddRbacUser">
+                    <i class="fa-solid fa-plus" style="margin-right:4px;"></i>Add User
+                </button>
+            </div>
+            @if (!string.IsNullOrEmpty(_rbacMessage))
+            {
+                <p style="font-size:12px;margin-top:6px;color:@(_rbacSuccess ? "var(--success,#4caf50)" : "var(--error,#e05252)");">@_rbacMessage</p>
+            }
+        }
+    </div>
+
+    <!-- Preview Features -->
+    <div class="settings-group" id="set-preview">
+        <h3>Preview Features</h3>
+        <div class="settings-row">
+            <label class="settings-label">
+                Show Maturity Roadmap
+                <span style="font-size:11px;color:var(--text-muted);margin-left:6px;">(requires No-Pants + Experimental)</span>
+            </label>
+            <input type="checkbox" @bind="_showMaturityRoadmap" @bind:after="SavePreviewSettings"
+                   disabled="@(!_noPantsModeActive || !_experimentalModeActive)" />
+        </div>
+        @if (!_noPantsModeActive || !_experimentalModeActive)
+        {
+            <p style="color:var(--text-muted);font-size:12px;margin-top:4px;">
+                Enable both <strong>No-Pants Mode</strong> and <strong>Experimental Mode</strong> in the sidebar first.
+            </p>
+        }
+    </div>
+
+    <!-- Performance Diagnostics -->
+    <div class="settings-group" id="set-perf-diag">
+        <h3>Performance Diagnostics</h3>
+        <div class="settings-row">
+            <label class="settings-label">
+                Enable Performance Inspector
+                <span style="font-size:11px;color:var(--text-muted);margin-left:6px;">(adds timing overhead to dashboard loads)</span>
+            </label>
+            <input type="checkbox" @bind="_enablePerfInspector" @bind:after="SavePerformanceSettings" />
+        </div>
+        @if (_enablePerfInspector)
+        {
+            <p style="color:var(--text-muted);font-size:12px;margin-top:4px;">
+                Visit <a href="RouteConstants.PerfInspector" target="_blank">/perf-inspector</a> to view dashboard load traces and identify bottlenecks.
+            </p>
+        }
+    </div>
+
+    @if (_enablePerfInspector)
+    {
+        <!-- Orchestrator tuning — only knobs that actually take effect (on app restart) -->
+        <div class="settings-group" id="set-orchestrator">
+            <h3>Orchestrator Tuning <span style="font-size:11px;color:var(--orange);margin-left:6px;">(restart required)</span></h3>
+            <p style="color:var(--text-muted);font-size:12px;margin-bottom:16px;">
+                Backend query orchestrator concurrency. Changes here are written to <code>appsettings.json</code>
+                and apply on next app start. Use <a href="RouteConstants.PerfInspector" target="_blank">/perf-inspector</a> to find bottlenecks first.
+            </p>
+            <div class="settings-row">
+                <label class="settings-label">Global Concurrency</label>
+                <input type="number" @bind="_globalConcurrency" @bind:after="SaveTuningSettings" min="1" max="50" />
+            </div>
+            <div class="settings-row">
+                <label class="settings-label">Per-Server Concurrency</label>
+                <input type="number" @bind="_perServerConcurrency" @bind:after="SaveTuningSettings" min="1" max="10" />
+            </div>
+            <div class="settings-row">
+                <label class="settings-label">Channel Capacity</label>
+                <input type="number" @bind="_channelCapacity" @bind:after="SaveTuningSettings" min="100" max="10000" />
+            </div>
+            <div class="settings-row">
+                <label class="settings-label">Default Timeout (sec)</label>
+                <input type="number" @bind="_defaultTimeoutSeconds" @bind:after="SaveTuningSettings" min="5" max="300" />
+            </div>
+        </div>
+    }
+
+    @* ── L2: A1.2 — Uptime / Availability ── *@
+    <div class="settings-group" id="set-uptime">
+        <h3>Uptime / Availability <span style="font-size:11px;color:var(--text-muted);margin-left:6px;">(A1.2)</span></h3>
+        <p style="color:var(--text-muted);font-size:12px;margin-bottom:12px;">
+            Session heartbeats are persisted every 5 minutes to <code>Data/Caching/uptime.db</code>.
+            Use this panel to compute and export a 30-day availability percentage for SLA evidence.
+        </p>
+        <div class="settings-row">
+            <label class="settings-label">30-day uptime</label>
+            <span style="font-size:13px;color:var(--text-primary);">
+                @(_uptimePercent30d.HasValue ? $"{_uptimePercent30d.Value:F2}%" : "Click Compute")
+            </span>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+            <button class="settings-btn" @onclick="ComputeUptime30d">Compute 30-day uptime</button>
+            <button class="settings-btn" @onclick="ExportUptimeSnapshot"
+                    disabled="@(!_uptimePercent30d.HasValue)">
+                Export snapshot (CSV)
+            </button>
+        </div>
+        @if (_uptimeMessage != null)
+        {
+            <p style="margin-top:8px;font-size:12px;color:@(_uptimeSuccess ? "var(--green)" : "var(--red)");">@_uptimeMessage</p>
+        }
+    </div>
+
+    @* ── L3: CP-2 — Continuity Posture ── *@
+    <div class="settings-group" id="set-continuity">
+        <h3>Continuity Posture <span style="font-size:11px;color:var(--text-muted);margin-left:6px;">(CP-2)</span></h3>
+        <p style="color:var(--text-muted);font-size:12px;margin-bottom:12px;">
+            Evidence framework for RPO/RTO targets and DR testing. Values are read from
+            <code>appsettings.json → Continuity</code>. Set them per buyer contract.
+        </p>
+        <div class="settings-row">
+            <label class="settings-label">RPO (minutes)</label>
+            @{
+                var rpo = Configuration.GetValue<int>("Continuity:RecoveryPointObjectiveMinutes", 0);
+                var rto = Configuration.GetValue<int>("Continuity:RecoveryTimeObjectiveMinutes", 0);
+                var lastDr = Configuration["Continuity:LastDrTestDate"];
+            }
+            <span style="font-size:13px;color:@(rpo == 0 ? "var(--orange)" : "var(--text-primary)");">
+                @(rpo == 0 ? "Not set — TODO: Adrian" : rpo.ToString())
+            </span>
+        </div>
+        <div class="settings-row">
+            <label class="settings-label">RTO (minutes)</label>
+            <span style="font-size:13px;color:@(rto == 0 ? "var(--orange)" : "var(--text-primary)");">
+                @(rto == 0 ? "Not set — TODO: Adrian" : rto.ToString())
+            </span>
+        </div>
+        <div class="settings-row">
+            <label class="settings-label">Last DR test</label>
+            <span style="font-size:13px;color:var(--text-primary);">
+                @(string.IsNullOrWhiteSpace(lastDr) ? "Never recorded" : lastDr)
+            </span>
+        </div>
+        <button class="settings-btn" style="margin-top:8px;" @onclick="RecordDrTest">
+            Mark DR test complete (today)
+        </button>
+        @if (_drTestMessage != null)
+        {
+            <p style="margin-top:8px;font-size:12px;color:var(--green);">@_drTestMessage</p>
+        }
+    </div>
+
+    @* ── L4: CM-3 — Configuration Baseline ── *@
+    <div class="settings-group" id="set-config-baseline">
+        <h3>Configuration Baseline <span style="font-size:11px;color:var(--text-muted);margin-left:6px;">(CM-3)</span></h3>
+        <p style="color:var(--text-muted);font-size:12px;margin-bottom:12px;">
+            SHA-256 hashes of <code>appsettings.json</code> + <code>Config/*.json</code> are snapshotted at install
+            and compared on every startup. Drift is logged as a Warning audit event.
+        </p>
+        @if (ConfigBaselineSvc != null && ConfigBaselineSvc.DriftDetected)
+        {
+            <div style="background:rgba(255,140,0,0.1);border:1px solid var(--orange);border-radius:6px;padding:10px 12px;margin-bottom:12px;">
+                <strong style="color:var(--orange);">Configuration drift detected</strong>
+                <ul style="margin:6px 0 0 16px;font-size:12px;color:var(--text-secondary);">
+                    @foreach (var f in ConfigBaselineSvc.DriftedFiles)
+                    {
+                        <li>@f</li>
+                    }
+                </ul>
+            </div>
+        }
+        else if (ConfigBaselineSvc != null)
+        {
+            <p style="font-size:12px;color:var(--green);margin-bottom:12px;">No drift — configuration matches baseline.</p>
+        }
+        <button class="settings-btn" @onclick="() => _showRebaselineConfirm = true">
+            Re-baseline (accept current state)
+        </button>
+        @if (_rebaselineMessage != null)
+        {
+            <p style="margin-top:8px;font-size:12px;color:var(--green);">@_rebaselineMessage</p>
+        }
+    </div>
+
+    @* ── L6: AU-9 — Audit HMAC Key Rotation ── *@
+    <div class="settings-group" id="set-hmac-rotation">
+        <h3>Audit Key Rotation <span style="font-size:11px;color:var(--text-muted);margin-left:6px;">(AU-9 / SC-28)</span></h3>
+        <p style="color:var(--text-muted);font-size:12px;margin-bottom:12px;">
+            The HMAC-SHA256 key securing the audit chain is DPAPI-wrapped at rest.
+            Key age is checked on startup; rotation is recommended every
+            <strong>@(Configuration.GetValue<int>("Audit:HmacKeyMaxAgeDays", 365)) days</strong>.
+            Rotation appends a chain-anchor entry — the chain is not broken.
+        </p>
+        <button class="settings-btn" style="background:var(--red);color:#fff;"
+                @onclick="() => _showRotateConfirm = true">
+            Rotate HMAC key (audit chain)
+        </button>
+        @if (_rotateMessage != null)
+        {
+            <p style="margin-top:8px;font-size:12px;color:@(_rotateSuccess ? "var(--green)" : "var(--red)");">@_rotateMessage</p>
+        }
+    </div>
+
+    @* ── Threshold-Based Highlighting ── *@
+    <div class="settings-group" id="set-thresholds">
+        <h3>Threshold Highlighting <span style="font-size:11px;color:var(--text-muted);margin-left:6px;">(triage aid)</span></h3>
+        <p style="color:var(--text-muted);font-size:12px;margin-bottom:12px;">
+            Threshold highlighting is a triage aid during active diagnosis. Sessions exceeding any enabled threshold
+            are highlighted with an orange ring on the bubble view. No alerts, no emails — this is purely visual
+            triage on the page you are viewing.
+        </p>
+        <div class="settings-row">
+            <label class="settings-label">
+                Enable threshold highlighting
+                <span style="font-size:11px;color:var(--text-muted);margin-left:6px;">(off by default)</span>
+            </label>
+            <input type="checkbox" @bind="_thresholdsEnabled" @bind:after="SaveThresholdSettings" />
+        </div>
+
+        @if (_thresholdsEnabled)
+        {
+            <div style="margin-top:16px;display:flex;flex-direction:column;gap:12px;">
+                <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">
+                    Set a value to 0 to disable that individual threshold check.
+                </div>
+
+                <div class="settings-field">
+                    <label title="Highlights sessions whose cumulative CPU time (ms) meets or exceeds this value.">
+                        CPU time (ms) <span style="font-weight:normal;color:var(--text-secondary);font-size:11px;">— 0 = disabled</span>
+                    </label>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <input type="number" min="0" step="1000" value="@_thresholdCpuMs"
+                               @onchange="e => _thresholdCpuMs = int.TryParse(e.Value?.ToString(), out var v) ? Math.Max(0,v) : _thresholdCpuMs"
+                               style="width:120px;" />
+                        <span style="font-size:11px;color:var(--text-muted);">e.g. 80000 = 80 sec cumulative CPU</span>
+                    </div>
+                </div>
+
+                <div class="settings-field">
+                    <label title="Highlights sessions currently waiting for longer than this duration.">
+                        Wait time (ms) <span style="font-weight:normal;color:var(--text-secondary);font-size:11px;">— 0 = disabled</span>
+                    </label>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <input type="number" min="0" step="100" value="@_thresholdWaitTimeMs"
+                               @onchange="e => _thresholdWaitTimeMs = int.TryParse(e.Value?.ToString(), out var v) ? Math.Max(0,v) : _thresholdWaitTimeMs"
+                               style="width:120px;" />
+                        <span style="font-size:11px;color:var(--text-muted);">e.g. 1000 = waiting &gt;1 sec</span>
+                    </div>
+                </div>
+
+                <div class="settings-field">
+                    <label title="Highlights sessions consuming more memory than this threshold.">
+                        Memory usage (MB) <span style="font-weight:normal;color:var(--text-secondary);font-size:11px;">— 0 = disabled</span>
+                    </label>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <input type="number" min="0" step="64" value="@_thresholdMemoryMb"
+                               @onchange="e => _thresholdMemoryMb = int.TryParse(e.Value?.ToString(), out var v) ? Math.Max(0,v) : _thresholdMemoryMb"
+                               style="width:120px;" />
+                        <span style="font-size:11px;color:var(--text-muted);">e.g. 256 = sessions using &gt;256 MB</span>
+                    </div>
+                </div>
+
+                <div class="settings-field">
+                    <label title="Highlights sessions that have performed more logical reads than this threshold.">
+                        Logical reads (KB) <span style="font-weight:normal;color:var(--text-secondary);font-size:11px;">— 0 = disabled</span>
+                    </label>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <input type="number" min="0" step="1000" value="@_thresholdReadsKb"
+                               @onchange="e => _thresholdReadsKb = int.TryParse(e.Value?.ToString(), out var v) ? Math.Max(0,v) : _thresholdReadsKb"
+                               style="width:120px;" />
+                        <span style="font-size:11px;color:var(--text-muted);">e.g. 100000 = 100 MB of reads</span>
+                    </div>
+                </div>
+
+                <div class="settings-field">
+                    <label title="Highlights sessions that have performed more writes than this threshold.">
+                        Writes (KB) <span style="font-weight:normal;color:var(--text-secondary);font-size:11px;">— 0 = disabled</span>
+                    </label>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <input type="number" min="0" step="1000" value="@_thresholdWritesKb"
+                               @onchange="e => _thresholdWritesKb = int.TryParse(e.Value?.ToString(), out var v) ? Math.Max(0,v) : _thresholdWritesKb"
+                               style="width:120px;" />
+                        <span style="font-size:11px;color:var(--text-muted);">e.g. 10000 = 10 MB of writes</span>
+                    </div>
+                </div>
+
+                <div class="settings-field">
+                    <label title="Highlights sessions that have been running longer than this duration.">
+                        Total duration (ms) <span style="font-weight:normal;color:var(--text-secondary);font-size:11px;">— 0 = disabled</span>
+                    </label>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <input type="number" min="0" step="1000" value="@_thresholdDurationMs"
+                               @onchange="e => _thresholdDurationMs = int.TryParse(e.Value?.ToString(), out var v) ? Math.Max(0,v) : _thresholdDurationMs"
+                               style="width:120px;" />
+                        <span style="font-size:11px;color:var(--text-muted);">e.g. 5000 = sessions running &gt;5 sec</span>
+                    </div>
+                </div>
+
+                <div style="display:flex;gap:8px;margin-top:4px;">
+                    <button class="settings-btn" @onclick="SaveThresholdSettings" style="font-size:11px;padding:4px 10px;">Save</button>
+                    <button class="settings-btn" style="background:var(--bg-hover);font-size:11px;padding:4px 10px;" @onclick="ResetThresholdDefaults">Reset Defaults</button>
+                </div>
+                @if (!string.IsNullOrEmpty(_thresholdSaveMessage))
+                {
+                    <p style="margin:4px 0 0;font-size:11px;color:var(--green);">@_thresholdSaveMessage</p>
+                }
+            </div>
+        }
+    </div>
+
+    </div> @* /.settings-content *@
+</div> @* /.settings-layout *@
+
+@* ── SQLDBA.ORG Consent Modal ── *@
+@if (_showSqldbaConsent)
+{
+    <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000; display: flex; align-items: center; justify-content: center;"
+         @onclick="() => _showSqldbaConsent = false">
+        <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 24px; min-width: 480px; max-width: 600px;"
+             @onclick:stopPropagation="true">
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px;">
+                <i class="fa-solid fa-cloud-arrow-up" style="font-size: 20px; color: var(--accent);"></i>
+                <h3 style="margin: 0; font-size: 15px;">Use SQLDBA.ORG Community Storage</h3>
+            </div>
+
+            <p style="font-size: 13px; color: var(--text-primary); margin-bottom: 12px;">
+                This will configure Azure Blob Export to upload assessment data to the
+                <strong>SQLDBA.ORG</strong> community storage account.
+            </p>
+
+            <div style="background: var(--bg-primary); border: 1px solid var(--border); border-radius: 6px; padding: 12px; margin-bottom: 14px; font-size: 12px;">
+                <p style="margin: 0 0 8px; font-weight: 600; color: var(--text-primary);">
+                    <i class="fa-solid fa-circle-info" style="margin-right: 4px; color: var(--accent);"></i>
+                    Data shared with SQLDBA.ORG:
+                </p>
+                <ul style="margin: 0; padding-left: 18px; color: var(--text-secondary); line-height: 1.8;">
+                    <li>Diagnostic data related to your SQL Server instances</li>
+                    <li>Server names, database names, and schema details</li>
+                    <li>Operational details related to your SQL instance(s)</li>
+                    <li>Health assessment, vulnerability assessment, and audit results</li>
+                </ul>
+            </div>
+
+            <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 16px;">
+                <i class="fa-solid fa-shield-halved" style="margin-right: 4px;"></i>
+                Details about data processing and data security are available at
+                <a href="https://sqldba.org" target="_blank" style="color: var(--accent); text-decoration: underline;">sqldba.org</a>.
+            </p>
+
+            <div style="display: flex; justify-content: flex-end; gap: 8px;">
+                <button class="settings-btn" @onclick="() => _showSqldbaConsent = false">Cancel</button>
+                <button class="settings-btn" style="background: var(--accent);" @onclick="ApplySqldbaDefaults">
+                    <i class="fa-solid fa-check" style="margin-right: 4px;"></i> Accept &amp; Apply
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ── Azure Blob Diagnostics Modal ── *@
+@if (_showAzureDiag)
+{
+    <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000; display: flex; align-items: center; justify-content: center;"
+         @onclick="() => _showAzureDiag = false">
+        <div style="background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 8px; padding: 24px; min-width: 520px; max-width: 700px; max-height: 80vh; overflow-y: auto;"
+             @onclick:stopPropagation="true">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+                <h3 style="margin: 0; font-size: 15px;">
+                    <i class="fa-solid fa-stethoscope" style="margin-right: 6px; color: var(--accent);"></i>
+                    Azure Blob Connection Diagnostics
+                </h3>
+                <button style="background: none; border: none; color: var(--text-secondary); cursor: pointer; font-size: 16px;" @onclick="() => _showAzureDiag = false">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            @if (_azureDiagData != null)
+            {
+                <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                    @foreach (var kvp in _azureDiagData)
+                    {
+                        <tr style="border-bottom: 1px solid var(--border);">
+                            <td style="padding: 6px 10px; color: var(--text-secondary); white-space: nowrap; vertical-align: top; font-weight: 500;">@kvp.Key</td>
+                            <td style="padding: 6px 10px; color: var(--text-primary); font-family: monospace; word-break: break-all;">@kvp.Value</td>
+                        </tr>
+                    }
+                </table>
+            }
+
+            <p style="font-size: 11px; color: var(--text-muted); margin-top: 12px;">
+                <i class="fa-solid fa-shield-halved" style="margin-right: 4px;"></i>
+                Account keys and full signatures are never shown. SAS signatures are truncated.
+            </p>
+        </div>
+    </div>
+}
+
+@* ── L4: CM-3 Re-baseline Confirmation ── *@
+@if (_showRebaselineConfirm)
+{
+    <div class="modal-overlay">
+        <div class="modal" style="max-width: 480px;">
+            <h3><i class="fa-solid fa-shield-check" style="margin-right:6px;"></i> Re-baseline Configuration</h3>
+            <p style="color:var(--text-secondary);margin-bottom:16px;">
+                This will snapshot the current <code>appsettings.json</code> and <code>Config/*.json</code>
+                as the new baseline. Future drift will be measured against today's state.
+            </p>
+            <div style="display:flex;gap:8px;justify-content:flex-end;">
+                <button class="settings-btn" style="background:var(--bg-hover);" @onclick="() => _showRebaselineConfirm = false">Cancel</button>
+                <button class="settings-btn" style="background:var(--accent);" @onclick="ConfirmRebaseline">Accept &amp; Re-baseline</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* ── L6: AU-9 HMAC Rotation Confirmation ── *@
+@if (_showRotateConfirm)
+{
+    <div class="modal-overlay">
+        <div class="modal" style="max-width: 480px;">
+            <h3><i class="fa-solid fa-key" style="margin-right:6px;color:var(--red);"></i> Rotate HMAC Key</h3>
+            <p style="color:var(--text-secondary);margin-bottom:12px;">
+                A new HMAC key will be generated and DPAPI-wrapped. A chain-anchor entry
+                (<code>HmacKeyRotated</code>) is appended to the audit log — the chain is
+                <strong>not</strong> broken. All future entries are signed with the new key.
+            </p>
+            <p style="color:var(--orange);font-size:12px;margin-bottom:16px;">
+                <i class="fa-solid fa-triangle-exclamation" style="margin-right:4px;"></i>
+                This action cannot be undone. The old key is permanently replaced.
+            </p>
+            <div style="display:flex;gap:8px;justify-content:flex-end;">
+                <button class="settings-btn" style="background:var(--bg-hover);" @onclick="() => _showRotateConfirm = false">Cancel</button>
+                <button class="settings-btn" style="background:var(--red);color:#fff;" @onclick="ConfirmRotateHmacKey">Rotate Key</button>
+            </div>
+        </div>
+    </div>
+}
+
+@* Upload Output Confirmation Modal *@
+@if (_showUploadConfirm)
+{
+    <div class="modal-overlay">
+        <div class="modal" style="max-width: 600px;">
+            <h3><i class="fa-solid fa-cloud-arrow-up" style="margin-right: 6px;"></i> Upload Output to Azure</h3>
+            <p style="color: var(--text-secondary); margin-bottom: 12px;">
+                Found <strong style="color: var(--accent);">@_outputFiles.Count</strong> file(s) in the output folder:
+            </p>
+            <div style="max-height: 300px; overflow-y: auto; background: var(--bg-secondary); border-radius: 6px; padding: 8px; margin-bottom: 16px;">
+                @foreach (var file in _outputFiles)
+                {
+                    <div style="padding: 4px 8px; font-family: Consolas; font-size: 12px; color: var(--text-primary); border-bottom: 1px solid var(--border);">
+                        <i class="fa-solid fa-file-csv" style="margin-right: 6px; color: var(--green);"></i>
+                        @System.IO.Path.GetFileName(file)
+                        <span style="float: right; color: var(--text-muted);">@(new System.IO.FileInfo(file).Length / 1024) KB</span>
+                    </div>
+                }
+            </div>
+            <div style="display: flex; gap: 8px; justify-content: flex-end;">
+                <button class="settings-btn" style="background: var(--bg-hover);" @onclick="() => _showUploadConfirm = false">Cancel</button>
+                <button class="settings-btn" style="background: var(--accent);" @onclick="ConfirmUploadOutput">Upload All</button>
+            </div>
+        </div>
+    </div>
+}
+
+</div> @* /.settings-page *@

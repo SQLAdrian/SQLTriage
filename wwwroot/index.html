@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SQLTriage — Compliance Platform</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico" />
+    <base href="/" />
+    <link href="css/app.css" rel="stylesheet" />
+    <link href="css/qp.css" rel="stylesheet" />
+    <link href="css/qp_icons_v2.css" rel="stylesheet" />
+    <link href="fontawesome/css/all.min.css" rel="stylesheet" />
+    <!-- Radzen theme CSS — swapped dynamically by radzenTheme.setTheme() -->
+    <link id="radzen-theme-css" href="_content/Radzen.Blazor/css/dark-base.css" rel="stylesheet" />
+</head>
+<body>
+    <!-- ═══════════════════════════════════════════════════════════
+         LOADING SCREEN V2  (card style — matches app design language)
+         To revert to V1: uncomment the "LOADING SCREEN V1" block below
+         and delete / comment-out this V2 block.
+         ═══════════════════════════════════════════════════════════ -->
+    <div id="loading-screen">
+        <div class="ls-card">
+            <div class="ls-logo">
+                <i class="fa-solid fa-database ls-db-icon"></i>
+                <div class="ls-db-pulse"></div>
+            </div>
+            <div class="ls-title">
+                <span class="ls-title-sql">SQL</span>Triage
+            </div>
+            <div class="ls-subtitle">Initializing monitoring engine</div>
+            <div class="ls-progress-wrap">
+                <div class="ls-progress-fill"></div>
+            </div>
+            <div class="ls-rows">
+                <div class="ls-row">
+                    <span class="ls-row-cell ls-row-key"></span>
+                    <span class="ls-row-cell ls-row-val"></span>
+                    <span class="ls-row-cell ls-row-status"></span>
+                </div>
+                <div class="ls-row">
+                    <span class="ls-row-cell ls-row-key"></span>
+                    <span class="ls-row-cell ls-row-val"></span>
+                    <span class="ls-row-cell ls-row-status"></span>
+                </div>
+                <div class="ls-row">
+                    <span class="ls-row-cell ls-row-key"></span>
+                    <span class="ls-row-cell ls-row-val"></span>
+                    <span class="ls-row-cell ls-row-status"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════
+         LOADING SCREEN V1  (Legacy — spinning rings / cyberpunk)
+         To revert: uncomment this block and remove the V2 block above.
+         ═══════════════════════════════════════════════════════════
+    <div id="loading-screen">
+        <div class="loader-container">
+            <div class="loader-ring"></div>
+            <div class="loader-ring"></div>
+            <div class="loader-ring"></div>
+            <div class="loader-core">
+                <div class="core-inner"></div>
+                <div class="core-pulse"></div>
+            </div>
+            <div class="loader-particles">
+                <span></span><span></span><span></span><span></span><span></span>
+                <span></span><span></span><span></span><span></span><span></span>
+                <span></span><span></span><span></span><span></span><span></span>
+            </div>
+            <div class="loader-text">
+                <span class="letter">L</span>
+                <span class="letter">O</span>
+                <span class="letter">A</span>
+                <span class="letter">D</span>
+                <span class="letter">I</span>
+                <span class="letter">N</span>
+                <span class="letter">G</span>
+            </div>
+            <div class="loader-progress">
+                <div class="progress-bar"></div>
+            </div>
+            <div class="loader-subtitle">Initializing SQLTriage</div>
+        </div>
+    </div>
+    ═══════════════════════════════════════════════════════════ -->
+
+    <div id="app">Loading...</div>
+
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="" class="reload">Reload</a>
+        <a class="dismiss">Dismiss</a>
+    </div>
+
+    <script>
+        // Stamp print header date just before each print/PDF export
+        window.addEventListener('beforeprint', function() {
+            var d = new Date();
+            var stamp = d.toLocaleDateString(undefined, { year:'numeric', month:'short', day:'2-digit' })
+                      + '\u2002'
+                      + d.toLocaleTimeString(undefined, { hour:'2-digit', minute:'2-digit' });
+            var dateEl = document.getElementById('print-header-date');
+            if (dateEl) dateEl.textContent = stamp;
+        });
+    </script>
+    <script src="_framework/blazor.webview.js"></script>
+    <script src="_content/Radzen.Blazor/Radzen.Blazor.js"></script>
+    <script src="scripts/error-handler.js"></script>
+    <script src="scripts/download.js"></script>
+    <script src="scripts/qp.js"></script>
+    <script src="scripts/queryPlan.js"></script>
+    <script src="scripts/queryPlanV2.js"></script>
+    <script src="scripts/environmentView.js"></script>
+    <script src="scripts/codeHotspots.js"></script>
+    <script src="scripts/bubbleDrag.js"></script>
+    <script src="scripts/ambientBg.js"></script>
+    <script src="scripts/parallaxBg.js"></script>
+    <script src="themes.js"></script>
+    <script>
+        window.radzenTheme = {
+            setTheme: function(theme) {
+                var link = document.getElementById('radzen-theme-css');
+                if (link) {
+                    link.href = '_content/Radzen.Blazor/css/' + theme + '-base.css';
+                }
+            }
+        };
+    </script>
+    
+    <script>
+        // Loading screen with 1.5 second minimum display
+        (function() {
+            const loadingScreen = document.getElementById('loading-screen');
+
+            // Load saved theme immediately
+            if (typeof loadSavedTheme === 'function') {
+                loadSavedTheme();
+            }
+
+            // Hide loading screen after 1s (+ 0.5s fade = 1.5s total)
+            setTimeout(function() {
+                loadingScreen.style.opacity = '0';
+                loadingScreen.style.transition = 'opacity 1s ease-out';
+                setTimeout(function() {
+                    loadingScreen.style.display = 'none';
+                }, 1000);
+            }, 1500);
+        })();
+    </script>
+</body>
+</html>

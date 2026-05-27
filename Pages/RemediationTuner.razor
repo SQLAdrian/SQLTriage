@@ -1,0 +1,296 @@
+@*/* In the name of God, the Merciful, the Compassionate */*@
+@page "/remediation-tuner"
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@inject CheckRepositoryService CheckRepo
+@inject RemediationWeightStore Weights
+@inject QuickCheckResultStore RunStore
+@inject UserSettingsService UserSettings
+@inject ToastService Toast
+
+<PageTitle>Remediation Cost Tuner - SQLTriage</PageTitle>
+
+@if (!_authorised)
+{
+    <AccessDenied Message="The Remediation Cost Tuner is restricted to the corpus maintainer's workstation." />
+    return;
+}
+
+<div class="remediation-tuner">
+@if (_loading)
+{
+    <PageLoadingSpinner Message="Loading remediation tuner..." />
+}
+else
+{
+    <div class="remediation-tuner-header">
+        <div>
+            <h2><i class="fa-solid fa-sliders"></i> Remediation Cost Tuner</h2>
+            <div class="remediation-tuner-sub">
+                Tune per-check effort hours. Overrides save to
+                <code>Config/sql-check-weights-override.json</code>. Corpus YAMLs and
+                <code>sql-checks.json</code> stay untouched.
+            </div>
+        </div>
+        <div class="remediation-tuner-meta">
+            <div><i class="fa-solid fa-coins"></i> Rate: <strong>NZ$@_hourlyRate.ToString("N0")/hr</strong> (from Settings)</div>
+            <div><i class="fa-solid fa-server"></i> Estate failures sourced from <strong>@_serversWithRuns</strong> Quick Assessment run(s)</div>
+            <div><i class="fa-solid fa-pen"></i> Tuned: <strong>@_currentOverrides</strong> of @_allChecks.Count</div>
+        </div>
+    </div>
+
+    <div class="remediation-tuner-toolbar">
+        <input class="remediation-tuner-search" placeholder="Filter by name or ID..."
+               @bind="_searchText" @bind:event="oninput" @bind:after="ApplyFilter" />
+        <div class="remediation-tuner-chips">
+            <button class="remediation-chip @(_filter == "unweighted" ? "active" : "")"
+                    @onclick='() => SelectFilter("unweighted")'>
+                Unweighted <span class="remediation-chip-count">@_countUnweighted</span>
+            </button>
+            <button class="remediation-chip @(_filter == "weighted" ? "active" : "")"
+                    @onclick='() => SelectFilter("weighted")'>
+                Weighted <span class="remediation-chip-count">@_countWeighted</span>
+            </button>
+            <button class="remediation-chip @(_filter == "all" ? "active" : "")"
+                    @onclick='() => SelectFilter("all")'>
+                All <span class="remediation-chip-count">@_allChecks.Count</span>
+            </button>
+        </div>
+        <div class="remediation-tuner-totals">
+            <div>Estate total: <strong>@_estateHoursTotal.ToString("N1") hrs</strong></div>
+            <div>≈ <strong>NZ$@_estateCostTotal.ToString("N0")</strong></div>
+        </div>
+    </div>
+
+    <div class="remediation-tuner-table-wrap">
+        <table class="remediation-tuner-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>Sev</th>
+                    <th class="remediation-num">Baseline (hrs)</th>
+                    <th class="remediation-num">Override (hrs)</th>
+                    <th class="remediation-num">Times failed</th>
+                    <th class="remediation-num">Sub-total (hrs)</th>
+                    <th class="remediation-num">Sub-total (NZ$)</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in _filteredRows)
+                {
+                    var effective = row.Override ?? row.Baseline;
+                    var subtotalHrs = effective * row.TimesFailed;
+                    var subtotalCost = subtotalHrs * _hourlyRate;
+                    <tr class="@(row.Override.HasValue ? "remediation-overridden" : "")">
+                        <td class="remediation-id">@row.Id</td>
+                        <td class="remediation-name" title="@row.Name">@TruncateName(row.Name, 70)</td>
+                        <td><span class="remediation-sev sev-@row.Severity.ToLowerInvariant()">@row.Severity</span></td>
+                        <td class="remediation-num">@row.Baseline.ToString("0.##")</td>
+                        <td class="remediation-num">
+                            <input type="number" step="0.25" min="0" max="200"
+                                   class="remediation-edit"
+                                   value="@(row.Override?.ToString("0.##") ?? "")"
+                                   placeholder="@row.Baseline.ToString("0.##")"
+                                   @onchange="@((ChangeEventArgs e) => OnEdit(row, e.Value?.ToString()))" />
+                        </td>
+                        <td class="remediation-num">@row.TimesFailed</td>
+                        <td class="remediation-num">@subtotalHrs.ToString("N1")</td>
+                        <td class="remediation-num">@subtotalCost.ToString("N0")</td>
+                        <td>
+                            @if (row.Override.HasValue)
+                            {
+                                <button class="remediation-reset" title="Revert to baseline" @onclick="() => OnReset(row)">
+                                    <i class="fa-solid fa-rotate-left"></i>
+                                </button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        @if (_filteredRows.Count == 0)
+        {
+            <div class="remediation-tuner-empty">
+                No checks match the current filter.
+            </div>
+        }
+    </div>
+}
+</div>
+
+@code {
+    private const string AllowedMachine = "MSI";
+    private const string AllowedUser    = "afsul";
+    private bool _authorised;
+    private bool _loading = true;
+
+    private List<TunerRow> _allChecks = new();
+    private List<TunerRow> _filteredRows = new();
+    private string _searchText = "";
+    private string _filter = "unweighted";
+
+    private int _countWeighted;
+    private int _countUnweighted;
+    private int _currentOverrides;
+    private int _serversWithRuns;
+    private double _hourlyRate;
+    private double _estateHoursTotal;
+    private double _estateCostTotal;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _authorised = string.Equals(Environment.MachineName, AllowedMachine, StringComparison.OrdinalIgnoreCase)
+                       && string.Equals(Environment.UserName,    AllowedUser,    StringComparison.OrdinalIgnoreCase);
+            if (!_authorised) return;
+
+            _hourlyRate = UserSettings.GetRemediationHourlyRate();
+
+            if (CheckRepo.GetAllChecks().Count == 0)
+                await CheckRepo.LoadChecksAsync();
+
+            // Build estate failure map: checkId -> total fail count across all server runs.
+            var failureMap = BuildFailureMap();
+            _serversWithRuns = RunStore.GetServersWithRuns().Count;
+
+            var checks = CheckRepo.GetAllChecks();
+            foreach (var c in checks)
+            {
+                var ovr = Weights.GetOverride(c.Id);
+                var failed = failureMap.TryGetValue(c.Id, out var f) ? f : 0;
+                _allChecks.Add(new TunerRow
+                {
+                    Id = c.Id,
+                    Name = c.Name,
+                    Severity = c.Severity ?? "Warning",
+                    Baseline = c.EffortHours,
+                    Override = ovr,
+                    TimesFailed = failed,
+                });
+            }
+
+            RecomputeAggregates();
+            ApplyFilter();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private Dictionary<string, int> BuildFailureMap()
+    {
+        var map = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            foreach (var server in RunStore.GetServersWithRuns())
+            {
+                var run = RunStore.ReadLatestRun(server);
+                if (run == null) continue;
+                foreach (var r in run)
+                {
+                    if (r.ErrorMessage != null) continue;
+                    if (r.Passed) continue;
+                    if (!map.TryAdd(r.CheckId, 1))
+                        map[r.CheckId]++;
+                }
+            }
+        }
+        catch { /* best-effort */ }
+        return map;
+    }
+
+    private void RecomputeAggregates()
+    {
+        _countWeighted   = _allChecks.Count(r => (r.Override ?? r.Baseline) > 0);
+        _countUnweighted = _allChecks.Count - _countWeighted;
+        _currentOverrides = Weights.OverrideCount;
+
+        _estateHoursTotal = _allChecks.Sum(r => (r.Override ?? r.Baseline) * r.TimesFailed);
+        _estateCostTotal  = _estateHoursTotal * _hourlyRate;
+    }
+
+    private void SelectFilter(string filter)
+    {
+        _filter = filter;
+        ApplyFilter();
+    }
+
+    private void ApplyFilter()
+    {
+        IEnumerable<TunerRow> q = _allChecks;
+        q = _filter switch
+        {
+            "weighted"   => q.Where(r => (r.Override ?? r.Baseline) > 0),
+            "unweighted" => q.Where(r => (r.Override ?? r.Baseline) == 0),
+            _            => q,
+        };
+        if (!string.IsNullOrWhiteSpace(_searchText))
+        {
+            var s = _searchText.Trim();
+            q = q.Where(r =>
+                r.Id.Contains(s, StringComparison.OrdinalIgnoreCase) ||
+                r.Name.Contains(s, StringComparison.OrdinalIgnoreCase));
+        }
+        // Surface most-impactful first: fail count desc, then severity weight, then id.
+        _filteredRows = q
+            .OrderByDescending(r => (r.Override ?? r.Baseline) * r.TimesFailed)
+            .ThenByDescending(r => r.TimesFailed)
+            .ThenBy(r => r.Id)
+            .ToList();
+    }
+
+    private void OnEdit(TunerRow row, string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            // Empty = revert to baseline
+            row.Override = null;
+            Weights.SetOverride(row.Id, null);
+        }
+        else if (double.TryParse(raw, System.Globalization.NumberStyles.Float,
+                                 System.Globalization.CultureInfo.InvariantCulture, out var hours))
+        {
+            hours = Math.Max(0, Math.Min(200, hours));
+            row.Override = hours;
+            Weights.SetOverride(row.Id, hours);
+        }
+        else
+        {
+            Toast.ShowError("Tuner", $"'{raw}' is not a valid number");
+            return;
+        }
+        RecomputeAggregates();
+        StateHasChanged();
+        Toast.ShowSuccess("Tuner", $"Saved override for {row.Id}");
+    }
+
+    private void OnReset(TunerRow row)
+    {
+        row.Override = null;
+        Weights.SetOverride(row.Id, null);
+        RecomputeAggregates();
+        StateHasChanged();
+        Toast.ShowSuccess("Tuner", $"Reverted {row.Id} to baseline");
+    }
+
+    private static string TruncateName(string name, int max)
+    {
+        if (string.IsNullOrEmpty(name)) return "";
+        return name.Length > max ? name.Substring(0, max) + "…" : name;
+    }
+
+    private class TunerRow
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string Severity { get; set; } = "Warning";
+        public double Baseline { get; set; }
+        public double? Override { get; set; }
+        public int TimesFailed { get; set; }
+    }
+}

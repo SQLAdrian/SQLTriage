@@ -1,0 +1,763 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/code-hotspots"
+<PageTitle>SQLTriage - Code Hotspots</PageTitle>
+@inject IJSRuntime JS
+@inject ServerConnectionManager ConnectionManager
+@inject SQLTriage.Data.Services.CodeHotspotsService Service
+@inject SQLTriage.Data.Services.CodeHotspotsCacheService Cache
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@implements IAsyncDisposable
+
+<div class="hot-page">
+
+    <!-- Slim top toolbar: source, metric, mode -->
+    <div class="hot-toolbar">
+        <div class="hot-toolbar-left">
+            <i class="fa-solid fa-fire" style="color:var(--orange);font-size:16px;"></i>
+            <span class="hot-title">Code Hotspots</span>
+            @if (!_useMock && !string.IsNullOrEmpty(_selectedServer))
+            {
+                <span class="hot-source-pill"><i class="fa-solid fa-bolt"></i> @ServerDisplayName(_selectedServer)</span>
+            }
+            else if (_useMock)
+            {
+                <span class="hot-source-pill is-mock"><i class="fa-solid fa-flask"></i> Mock data</span>
+            }
+        </div>
+        <div class="hot-toolbar-right">
+            @if (!_useMock)
+            {
+                <ServerSelector Items="HotServerItems"
+                                SelectedId="@(string.IsNullOrEmpty(_selectedServer) ? null : _selectedServer)"
+                                SelectedIdChanged="OnHotServerChanged" />
+            }
+            @if (!_useMock)
+            {
+                <button class="hot-mode-toggle @(_viewMode == "delta" ? "is-live" : "")"
+                        @onclick="ToggleViewModeAsync"
+                        title="@(_viewMode == "delta" ? "Showing change since last snapshot (~5 min). Click for cumulative since plan cache." : "Showing cumulative since plan cache. Click for delta since last snapshot.")">
+                    <i class="fa-solid @(_viewMode == "delta" ? "fa-clock-rotate-left" : "fa-database")"></i>
+                    @(_viewMode == "delta" ? "Delta" : "Cumulative")
+                </button>
+            }
+            <button class="hot-mode-toggle @(_useMock ? "is-mock" : "is-live")" @onclick="ToggleMockAsync"
+                    title="Toggle between mocked sample data and live DMV">
+                <i class="fa-solid @(_useMock ? "fa-flask" : "fa-bolt")"></i>
+                @(_useMock ? "Mock" : "Live")
+            </button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_errorMessage))
+    {
+        <div class="hot-error">
+            <i class="fa-solid fa-triangle-exclamation"></i> @_errorMessage
+            <button class="hot-error-close" @onclick="() => _errorMessage = string.Empty">×</button>
+        </div>
+    }
+
+    <div class="hot-body">
+
+        <!-- ── Left rail: drilldown navigator ──────────────────────── -->
+        <aside class="hot-rail">
+            <div class="hot-rail-head">
+                <i class="fa-solid fa-list-tree"></i>
+                <span>Drill down</span>
+            </div>
+
+            @if (!_useMock && string.IsNullOrEmpty(_selectedServer))
+            {
+                <div class="hot-rail-empty">
+                    <i class="fa-solid fa-server"></i>
+                    <p>Pick a server in the toolbar to begin.</p>
+                </div>
+            }
+            else if (_loading && _dbs.Count == 0)
+            {
+                <div class="hot-rail-empty">
+                    <i class="fa-solid fa-spinner fa-spin"></i>
+                    <p>Loading databases…</p>
+                </div>
+            }
+            else if (_dbs.Count == 0)
+            {
+                <div class="hot-rail-empty">
+                    <i class="fa-solid fa-circle-info"></i>
+                    <p>No data yet.</p>
+                </div>
+            }
+            else
+            {
+                <div class="hot-rail-section-label">@_dbs.Count Databases</div>
+                <div class="hot-rail-list">
+                    @foreach (var db in _dbs)
+                    {
+                        var isOpen = _drillDb == db.Name && _level >= 1;
+                        var isActive = _drillDb == db.Name;
+                        <div class="hot-rail-item-wrap">
+                            <button class="hot-rail-item lvl-db @(isActive ? "active" : "")"
+                                    @onclick="() => OnDbClicked(db.Name)">
+                                <i class="fa-solid @(isOpen ? "fa-folder-open" : "fa-database")"></i>
+                                <span class="hot-rail-name">@db.Name</span>
+                                <span class="hot-rail-bar" style="--w: @PctOfMaxDb(db)%"></span>
+                                <span class="hot-rail-stat">@FormatMs(db.TotalCpuMs)</span>
+                            </button>
+
+                            @if (isOpen)
+                            {
+                                @if (_loading && _objs.Count == 0)
+                                {
+                                    <div class="hot-rail-sub-loading"><i class="fa-solid fa-spinner fa-spin"></i> Loading…</div>
+                                }
+                                else
+                                {
+                                    @foreach (var obj in _objs)
+                                    {
+                                        var objIsActive = _drillObj == obj.Name && _level == 2;
+                                        var objIsOpen = _drillObj == obj.Name && _level >= 2;
+                                        <div class="hot-rail-item-wrap">
+                                            <button class="hot-rail-item lvl-obj @(objIsActive ? "active" : "")"
+                                                    @onclick="() => OnObjClicked(obj.Name)">
+                                                <i class="fa-solid @ObjIcon(obj.Kind)"></i>
+                                                <span class="hot-rail-name" title="@obj.Name">@TruncateMid(obj.Name, 28)</span>
+                                                <span class="hot-rail-bar" style="--w: @PctOfMaxObj(obj)%"></span>
+                                                <span class="hot-rail-stat">@FormatMs(obj.TotalCpuMs)</span>
+                                            </button>
+
+                                            @if (objIsOpen)
+                                            {
+                                                @if (_loading && _stmts.Count == 0)
+                                                {
+                                                    <div class="hot-rail-sub-loading"><i class="fa-solid fa-spinner fa-spin"></i> Loading…</div>
+                                                }
+                                                else
+                                                {
+                                                    @foreach (var s in _stmts)
+                                                    {
+                                                        var stmtIsActive = _selectedLeaf?.Name == s.Name;
+                                                        <button class="hot-rail-item lvl-stmt @(stmtIsActive ? "active" : "")"
+                                                                @onclick="() => OnStmtClicked(s)">
+                                                            <i class="fa-solid fa-code"></i>
+                                                            <span class="hot-rail-name" title="@s.Name">@TruncateMid(s.Name, 32)</span>
+                                                            <span class="hot-rail-bar" style="--w: @PctOfMaxStmt(s)%"></span>
+                                                            <span class="hot-rail-stat">@FormatMs(s.TotalCpuMs)</span>
+                                                        </button>
+                                                    }
+                                                }
+                                            }
+                                        </div>
+                                    }
+                                }
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </aside>
+
+        <!-- ── Right pane: treemap + detail ────────────────────────── -->
+        <main class="hot-main">
+            <div class="hot-main-head">
+                <span class="hot-main-title">
+                    @if (_level == 0) { <text>CPU breakdown by database</text> }
+                    else if (_level == 1) { <text>CPU breakdown of objects in <b>@_drillDb</b></text> }
+                    else { <text>CPU breakdown of statements in <b>@_drillObj</b></text> }
+                </span>
+                <div class="hot-metric-switch" title="Click a metric to re-pack tiles by that value">
+                    @foreach (var m in _metrics)
+                    {
+                        <button class="hot-metric-btn @(_metric == m.Key ? "active" : "")"
+                                @onclick="() => SetMetric(m.Key)" title="@m.Tip">
+                            <i class="@m.Icon"></i> <span class="hot-metric-label">@m.Label</span>
+                        </button>
+                    }
+                </div>
+            </div>
+
+            <div class="hot-canvas-wrap">
+                <div id="hot-treemap" class="hot-canvas"></div>
+
+                @if (_selectedLeaf is not null)
+                {
+                    <aside class="hot-detail">
+                        <div class="hot-detail-head">
+                            <span class="hot-detail-kind">@_selectedLeaf.Kind</span>
+                            <span class="hot-detail-name">@_selectedLeaf.Name</span>
+                            <button class="hot-detail-close" @onclick="() => _selectedLeaf = null">×</button>
+                        </div>
+                        @if (!string.IsNullOrEmpty(_selectedLeaf.Snippet))
+                        {
+                            <pre class="hot-detail-sql">@_selectedLeaf.Snippet</pre>
+                        }
+                        <div class="hot-detail-grid">
+                            <div><span class="hot-k">Executions</span><span class="hot-v">@_selectedLeaf.Execs.ToString("N0")</span></div>
+                            <div><span class="hot-k">Total CPU</span><span class="hot-v">@FormatMs(_selectedLeaf.TotalCpuMs)</span></div>
+                            <div><span class="hot-k">Avg CPU</span><span class="hot-v">@FormatMs(_selectedLeaf.AvgCpuMs)</span></div>
+                            <div><span class="hot-k">Total Reads</span><span class="hot-v">@_selectedLeaf.Reads.ToString("N0")</span></div>
+                            <div><span class="hot-k">Total Writes</span><span class="hot-v">@_selectedLeaf.Writes.ToString("N0")</span></div>
+                            <div><span class="hot-k">% of CPU</span><span class="hot-v">@_selectedLeaf.PctOfTotal.ToString("F2")%</span></div>
+                        </div>
+                    </aside>
+                }
+
+                @if (HasNoData())
+                {
+                    <div class="hot-canvas-empty">
+                        <i class="fa-solid fa-arrow-left"></i>
+                        <p><b>Pick a level on the left to drill in.</b></p>
+                        <p class="hot-canvas-empty-sub">
+                            @if (!_useMock && string.IsNullOrEmpty(_selectedServer))
+                            {
+                                <text>You'll need to pick a SQL Server connection first.</text>
+                            }
+                            else
+                            {
+                                <text>Hover a row to preview, click to drill in. Switch metric (top right) to change what 'biggest' means.</text>
+                            }
+                        </p>
+                    </div>
+                }
+
+            </div>
+
+            <!-- ── Stats strip ───────────────────────────────────────────── -->
+            @{
+                var rows = CurrentRows();
+                var hasRows = rows.Count > 0;
+                var totalExecs = hasRows ? rows.Sum(r => r.Execs) : 0;
+                var totalCpu = hasRows ? rows.Sum(r => r.TotalCpuMs) : 0;
+                var totalReads = hasRows ? rows.Sum(r => r.Reads) : 0;
+                var totalWrites = hasRows ? rows.Sum(r => r.Writes) : 0;
+                var distinct = rows.Count;
+                var topRow = hasRows ? rows.OrderByDescending(r => r.TotalCpuMs).First() : null;
+                var topPct = (hasRows && totalCpu > 0) ? topRow!.TotalCpuMs * 100.0 / totalCpu : 0;
+                var deltaPrefix = _viewMode == "delta" ? "Δ " : "";
+                var grainLabel = _level switch { 0 => "databases", 1 => "objects", _ => "statements" };
+            }
+            <div class="hot-stats-strip">
+                <div class="hot-stat-tile @(_viewMode == "delta" ? "is-delta" : "")">
+                    <span class="hot-stat-label">@(deltaPrefix)Executions</span>
+                    <span class="hot-stat-value">@totalExecs.ToString("N0")</span>
+                    <span class="hot-stat-sub">across @distinct @grainLabel</span>
+                </div>
+                <div class="hot-stat-tile @(_viewMode == "delta" ? "is-delta" : "")">
+                    <span class="hot-stat-label">@(deltaPrefix)Total CPU</span>
+                    <span class="hot-stat-value">@FormatMs(totalCpu)</span>
+                    <span class="hot-stat-sub">@(_viewMode == "delta" ? "since last snapshot" : "since plan cache")</span>
+                </div>
+                <div class="hot-stat-tile @(_viewMode == "delta" ? "is-delta" : "")">
+                    <span class="hot-stat-label">@(deltaPrefix)Reads / Writes</span>
+                    <span class="hot-stat-value">@totalReads.ToString("N0") <span class="hot-stat-sep">/</span> @totalWrites.ToString("N0")</span>
+                    <span class="hot-stat-sub">logical pages</span>
+                </div>
+                <div class="hot-stat-tile @(_viewMode == "delta" ? "is-delta" : "") hot-stat-tile-wide">
+                    <span class="hot-stat-label">Top @grainLabel.TrimEnd('s')</span>
+                    <span class="hot-stat-value hot-stat-value-name">@(topRow?.Name ?? "—")</span>
+                    <span class="hot-stat-sub">@(topRow is null ? "no data" : $"{FormatMs(topRow.TotalCpuMs)} · {topPct:F1}% of CPU")</span>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+
+@code {
+
+    private int _level = 0;
+    private string _drillDb = "";
+    private string _drillObj = "";
+    private string _metric = "cpu";
+    private bool _useMock = false;
+    private string _viewMode = "cumulative"; // "cumulative" | "delta" — flips to delta automatically when ≥2 snapshots exist
+    private LeafInfo? _selectedLeaf;
+    private DotNetObjectReference<CodeHotspots>? _dotNetRef;
+    private bool _jsReady;
+
+    private string _selectedServer = "";
+
+    // Shared ServerSelector (id mode, composite Key) adapter.
+    private IReadOnlyList<(string Id, string Label)> HotServerItems =>
+        _availableServers.Select(s => (s.Key, s.Display)).ToList();
+
+    private async Task OnHotServerChanged(string? id)
+    {
+        _selectedServer = id ?? "";
+        await OnServerChangedAsync();
+    }
+    private string _errorMessage = "";
+    private bool _loading;
+    private List<ServerOpt> _availableServers = new();
+
+    private List<SQLTriage.Data.Services.CodeHotspotsService.DbRow> _dbs = new();
+    private List<SQLTriage.Data.Services.CodeHotspotsService.ObjRow> _objs = new();
+    private List<SQLTriage.Data.Services.CodeHotspotsService.StatementRow> _stmts = new();
+
+    private record ServerOpt(string Key, string Display, ServerConnection Conn, string Server);
+    private record MetricDef(string Key, string Label, string Icon, string Tip);
+    private readonly MetricDef[] _metrics = new[]
+    {
+        new MetricDef("cpu",     "CPU",        "fa-solid fa-microchip",       "Sized by total worker time"),
+        new MetricDef("reads",   "Reads",      "fa-solid fa-book-open",       "Sized by total logical reads"),
+        new MetricDef("writes",  "Writes",     "fa-solid fa-pen-to-square",   "Sized by total logical writes"),
+        new MetricDef("execs",   "Execs",      "fa-solid fa-play",            "Sized by execution count"),
+        new MetricDef("avgcpu",  "Avg CPU",    "fa-solid fa-stopwatch",       "Sized by avg CPU per execution"),
+    };
+
+    public sealed class LeafInfo
+    {
+        public string Kind { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string? Snippet { get; set; }
+        public long Execs { get; set; }
+        public double TotalCpuMs { get; set; }
+        public double AvgCpuMs { get; set; }
+        public long Reads { get; set; }
+        public long Writes { get; set; }
+        public double PctOfTotal { get; set; }
+    }
+
+    protected override void OnInitialized()
+    {
+        _availableServers = ConnectionManager.GetEnabledConnections()
+            .SelectMany(c => c.GetServerList().Select(s => new ServerOpt(c.Id + "|" + s, s, c, s)))
+            .ToList();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("codeHotspots.init", "hot-treemap", _dotNetRef);
+            _jsReady = true;
+            await ReloadCurrentLevelAsync();
+        }
+    }
+
+    private async Task ReloadCurrentLevelAsync()
+    {
+        if (_useMock)
+        {
+            if (_dbs.Count == 0) _dbs = MockData.Databases();
+            if (_level >= 1 && _objs.Count == 0) _objs = MockData.Objects(_drillDb);
+            if (_level >= 2 && _stmts.Count == 0) _stmts = MockData.Statements(_drillDb, _drillObj);
+            await PushDataAsync();
+            StateHasChanged();
+            return;
+        }
+
+        if (string.IsNullOrEmpty(_selectedServer))
+        {
+            _dbs.Clear(); _objs.Clear(); _stmts.Clear();
+            await PushDataAsync();
+            return;
+        }
+
+        var opt = _availableServers.FirstOrDefault(o => o.Key == _selectedServer);
+        if (opt is null) { _errorMessage = "Selected server not found."; return; }
+
+        _loading = true;
+        _errorMessage = "";
+        StateHasChanged();
+        try
+        {
+            var useDelta = _viewMode == "delta" && Cache.HasDelta(opt.Server);
+
+            if (_level == 0 || _dbs.Count == 0)
+            {
+                _dbs = useDelta
+                    ? Cache.ComputeDeltaDatabases(opt.Server).Select(DbRowFromDelta).ToList()
+                    : await Service.GetDatabasesAsync(opt.Conn, opt.Server);
+            }
+            if (_level >= 1 && _objs.Count == 0)
+            {
+                _objs = useDelta
+                    ? Cache.ComputeDeltaObjects(opt.Server, _drillDb).Select(ObjRowFromDelta).ToList()
+                    : await Service.GetObjectsAsync(opt.Conn, opt.Server, _drillDb);
+            }
+            if (_level >= 2 && _stmts.Count == 0)
+            {
+                _stmts = useDelta
+                    ? Cache.ComputeDeltaStatements(opt.Server, _drillDb, _drillObj).Select(StatementRowFromDelta).ToList()
+                    : await Service.GetStatementsAsync(opt.Conn, opt.Server, _drillDb, _drillObj);
+            }
+            await PushDataAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Live query failed: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private static SQLTriage.Data.Services.CodeHotspotsService.DbRow DbRowFromDelta(
+        SQLTriage.Data.Services.CodeHotspotsCacheService.DeltaRow d) => new()
+    {
+        Name = d.DisplayName ?? d.Key,
+        Objects = 0, // delta doesn't track distinct object count
+        Execs = d.DeltaExecs,
+        TotalCpuMs = d.DeltaTotalCpuMs,
+        AvgCpuMs = d.DeltaAvgCpuMs,
+        Reads = d.DeltaReads,
+        Writes = d.DeltaWrites
+    };
+
+    private static SQLTriage.Data.Services.CodeHotspotsService.ObjRow ObjRowFromDelta(
+        SQLTriage.Data.Services.CodeHotspotsCacheService.DeltaRow d) => new()
+    {
+        Name = d.DisplayName ?? d.Key,
+        Kind = d.Kind ?? "Other",
+        Statements = 0,
+        Execs = d.DeltaExecs,
+        TotalCpuMs = d.DeltaTotalCpuMs,
+        AvgCpuMs = d.DeltaAvgCpuMs,
+        Reads = d.DeltaReads,
+        Writes = d.DeltaWrites
+    };
+
+    private static SQLTriage.Data.Services.CodeHotspotsService.StatementRow StatementRowFromDelta(
+        SQLTriage.Data.Services.CodeHotspotsCacheService.DeltaRow d) => new()
+    {
+        Name = SQLTriage.Data.Services.CodeHotspotsService.ShortNameForDelta(d.DisplayName ?? ""),
+        Snippet = d.DisplayName ?? "",
+        Execs = d.DeltaExecs,
+        TotalCpuMs = d.DeltaTotalCpuMs,
+        AvgCpuMs = d.DeltaAvgCpuMs,
+        Reads = d.DeltaReads,
+        Writes = d.DeltaWrites,
+        PctOfTotal = 0 // recomputed at render time
+    };
+
+    private async Task ToggleViewModeAsync()
+    {
+        _viewMode = _viewMode == "delta" ? "cumulative" : "delta";
+        _dbs.Clear(); _objs.Clear(); _stmts.Clear();
+        await ReloadCurrentLevelAsync();
+    }
+
+    private async Task PushDataAsync()
+    {
+        if (!_jsReady) return;
+        var nodes = BuildNodes();
+        await JS.InvokeVoidAsync("codeHotspots.render", "hot-treemap", nodes, _metric);
+    }
+
+    private async Task SetMetric(string key)
+    {
+        if (_metric == key) return;
+        _metric = key;
+        await PushDataAsync();
+    }
+
+    private async Task ToggleMockAsync()
+    {
+        _useMock = !_useMock;
+        _level = 0; _drillDb = ""; _drillObj = "";
+        _selectedLeaf = null;
+        _dbs.Clear(); _objs.Clear(); _stmts.Clear();
+        _errorMessage = "";
+        await ReloadCurrentLevelAsync();
+    }
+
+    private async Task OnServerChangedAsync()
+    {
+        _level = 0; _drillDb = ""; _drillObj = "";
+        _selectedLeaf = null;
+        _dbs.Clear(); _objs.Clear(); _stmts.Clear();
+        await ReloadCurrentLevelAsync();
+    }
+
+    private async Task OnDbClicked(string dbName)
+    {
+        if (_drillDb == dbName && _level >= 1)
+        {
+            // Already open — collapse back to root level
+            _drillDb = "";
+            _drillObj = "";
+            _level = 0;
+            _objs.Clear();
+            _stmts.Clear();
+        }
+        else
+        {
+            _drillDb = dbName;
+            _drillObj = "";
+            _level = 1;
+            _objs.Clear();
+            _stmts.Clear();
+        }
+        _selectedLeaf = null;
+        await ReloadCurrentLevelAsync();
+    }
+
+    private async Task OnObjClicked(string objName)
+    {
+        if (_drillObj == objName && _level >= 2)
+        {
+            _drillObj = "";
+            _level = 1;
+            _stmts.Clear();
+        }
+        else
+        {
+            _drillObj = objName;
+            _level = 2;
+            _stmts.Clear();
+        }
+        _selectedLeaf = null;
+        await ReloadCurrentLevelAsync();
+    }
+
+    private void OnStmtClicked(SQLTriage.Data.Services.CodeHotspotsService.StatementRow s)
+    {
+        _selectedLeaf = new LeafInfo
+        {
+            Kind = "Statement", Name = s.Name, Snippet = s.Snippet,
+            Execs = s.Execs, TotalCpuMs = s.TotalCpuMs, AvgCpuMs = s.AvgCpuMs,
+            Reads = s.Reads, Writes = s.Writes, PctOfTotal = s.PctOfTotal
+        };
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task OnTileClicked(string nodeId, string nodeName, string nodeKind)
+    {
+        if (nodeKind == "db" && _level == 0) await OnDbClicked(nodeName);
+        else if (nodeKind == "obj" && _level == 1) await OnObjClicked(nodeName);
+        else if (nodeKind == "stmt")
+        {
+            var s = _stmts.FirstOrDefault(x => x.Name == nodeName);
+            if (s != null) OnStmtClicked(s);
+        }
+    }
+
+    private bool HasNoData()
+    {
+        if (_level == 0) return _dbs.Count == 0;
+        if (_level == 1) return _objs.Count == 0;
+        return _stmts.Count == 0;
+    }
+
+    private sealed record StatRow(string Name, long Execs, double TotalCpuMs, long Reads, long Writes);
+
+    /// <summary>Uniform projection of the current drill level — used by the
+    /// stats strip so it doesn't need to know about Db/Obj/Stmt row types.</summary>
+    private List<StatRow> CurrentRows() => _level switch
+    {
+        0 => _dbs.Select(d => new StatRow(d.Name, d.Execs, d.TotalCpuMs, d.Reads, d.Writes)).ToList(),
+        1 => _objs.Select(o => new StatRow(o.Name, o.Execs, o.TotalCpuMs, o.Reads, o.Writes)).ToList(),
+        _ => _stmts.Select(s => new StatRow(s.Name, s.Execs, s.TotalCpuMs, s.Reads, s.Writes)).ToList(),
+    };
+
+    private object[] BuildNodes()
+    {
+        if (_level == 0)
+        {
+            if (_dbs.Count == 0) return Array.Empty<object>();
+            var maxAvg = Math.Max(1, _dbs.Max(d => d.AvgCpuMs));
+            return _dbs.Select(d => new
+            {
+                id     = "db:" + d.Name,
+                name   = d.Name,
+                kind   = "db",
+                value  = MetricVal(d.Execs, d.TotalCpuMs, d.AvgCpuMs, d.Reads, d.Writes),
+                color  = HeatColor(d.AvgCpuMs, 0, maxAvg),
+                tip    = $"<b>{d.Name}</b><br/>Objects: {d.Objects}<br/>Execs: {d.Execs:N0}<br/>CPU: {FormatMs(d.TotalCpuMs)}<br/>Reads: {d.Reads:N0}<br/>Writes: {d.Writes:N0}"
+            }).Cast<object>().ToArray();
+        }
+        if (_level == 1)
+        {
+            if (_objs.Count == 0) return Array.Empty<object>();
+            var maxAvg = Math.Max(1, _objs.Max(o => o.AvgCpuMs));
+            return _objs.Select(o => new
+            {
+                id     = "obj:" + o.Name,
+                name   = o.Name,
+                kind   = "obj",
+                value  = MetricVal(o.Execs, o.TotalCpuMs, o.AvgCpuMs, o.Reads, o.Writes),
+                color  = HeatColor(o.AvgCpuMs, 0, maxAvg),
+                tip    = $"<b>{o.Name}</b><br/><i>{o.Kind}</i><br/>Statements: {o.Statements}<br/>Execs: {o.Execs:N0}<br/>CPU: {FormatMs(o.TotalCpuMs)}<br/>Avg: {FormatMs(o.AvgCpuMs)}/exec"
+            }).Cast<object>().ToArray();
+        }
+        if (_stmts.Count == 0) return Array.Empty<object>();
+        var maxStmt = Math.Max(1, _stmts.Max(s => s.AvgCpuMs));
+        return _stmts.Select(s => new
+        {
+            id     = "stmt:" + s.Name,
+            name   = s.Name,
+            kind   = "stmt",
+            value  = MetricVal(s.Execs, s.TotalCpuMs, s.AvgCpuMs, s.Reads, s.Writes),
+            color  = HeatColor(s.AvgCpuMs, 0, maxStmt),
+            tip    = $"<pre style='margin:0;font-size:10px;max-width:280px;white-space:pre-wrap'>{System.Web.HttpUtility.HtmlEncode(s.Snippet ?? s.Name)}</pre><br/>CPU: {FormatMs(s.TotalCpuMs)}<br/>Avg: {FormatMs(s.AvgCpuMs)}/exec<br/>Reads: {s.Reads:N0}"
+        }).Cast<object>().ToArray();
+    }
+
+    private double MetricVal(long execs, double totCpu, double avgCpu, long rds, long wrs) => _metric switch
+    {
+        "execs"  => execs,
+        "reads"  => rds,
+        "writes" => wrs,
+        "avgcpu" => avgCpu,
+        _        => totCpu
+    };
+
+    private double PctOfMaxDb(SQLTriage.Data.Services.CodeHotspotsService.DbRow d)
+    {
+        if (_dbs.Count == 0) return 0;
+        var max = _dbs.Max(x => x.TotalCpuMs);
+        return max <= 0 ? 0 : Math.Min(100, d.TotalCpuMs / max * 100);
+    }
+    private double PctOfMaxObj(SQLTriage.Data.Services.CodeHotspotsService.ObjRow o)
+    {
+        if (_objs.Count == 0) return 0;
+        var max = _objs.Max(x => x.TotalCpuMs);
+        return max <= 0 ? 0 : Math.Min(100, o.TotalCpuMs / max * 100);
+    }
+    private double PctOfMaxStmt(SQLTriage.Data.Services.CodeHotspotsService.StatementRow s)
+    {
+        if (_stmts.Count == 0) return 0;
+        var max = _stmts.Max(x => x.TotalCpuMs);
+        return max <= 0 ? 0 : Math.Min(100, s.TotalCpuMs / max * 100);
+    }
+
+    private string ServerDisplayName(string key)
+    {
+        var opt = _availableServers.FirstOrDefault(o => o.Key == key);
+        return opt?.Display ?? key;
+    }
+
+    private static string HeatColor(double avgMs, double lo, double hi)
+    {
+        var t = Math.Clamp((avgMs - lo) / Math.Max(0.001, hi - lo), 0, 1);
+        var bucket = t < 0.20 ? "cold" : t < 0.45 ? "cool" : t < 0.65 ? "mid" : t < 0.85 ? "warm" : "hot";
+        return $"var(--hot-{bucket})";
+    }
+
+    private static string ObjIcon(string kind) => kind switch
+    {
+        "StoredProc" => "fa-cube",
+        "ScalarFn"   => "fa-superscript",
+        "TableFn"    => "fa-table",
+        "InlineFn"   => "fa-bolt",
+        "Trigger"    => "fa-arrow-right-arrow-left",
+        "View"       => "fa-eye",
+        _            => "fa-code"
+    };
+
+    private static string TruncateMid(string s, int maxLen)
+    {
+        if (string.IsNullOrEmpty(s) || s.Length <= maxLen) return s;
+        var keep = (maxLen - 1) / 2;
+        return s[..keep] + "…" + s[^keep..];
+    }
+
+    private static string FormatMs(double ms)
+    {
+        if (ms < 1) return $"{ms:F2} ms";
+        if (ms < 1000) return $"{ms:F0} ms";
+        if (ms < 60000) return $"{ms/1000.0:F1} s";
+        return $"{ms/60000.0:F1} min";
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { await JS.InvokeVoidAsync("codeHotspots.dispose", "hot-treemap"); } catch { }
+        _dotNetRef?.Dispose();
+    }
+
+    // ── Mock data ──────────────────────────────────────────────────
+    private static class MockData
+    {
+        public static List<SQLTriage.Data.Services.CodeHotspotsService.DbRow> Databases() => new()
+        {
+            new() { Name="SQLWATCH",       Objects=16,  Execs=15_966, TotalCpuMs=130_673, AvgCpuMs=8.2,  Reads=6_598_020, Writes=69_045 },
+            new() { Name="msdb",           Objects=42,  Execs=22_148, TotalCpuMs= 38_902, AvgCpuMs=1.8,  Reads=  214_881, Writes=11_402 },
+            new() { Name="WideWorldImporters", Objects=87, Execs= 4_551, TotalCpuMs= 21_307, AvgCpuMs=4.7, Reads=1_038_412, Writes=82_119 },
+            new() { Name="AdventureWorks", Objects=51,  Execs= 1_982, TotalCpuMs=  9_133, AvgCpuMs=4.6,  Reads=  448_029, Writes= 6_810 },
+            new() { Name="ContosoSales",   Objects=23,  Execs=   711, TotalCpuMs=  3_204, AvgCpuMs=4.5,  Reads=   88_114, Writes= 2_117 },
+            new() { Name="tempdb (adhoc)", Objects=8,   Execs=   612, TotalCpuMs=  1_088, AvgCpuMs=1.8,  Reads=   12_488, Writes=   801 },
+        };
+
+        public static List<SQLTriage.Data.Services.CodeHotspotsService.StatementRow> Statements(string dbName, string objName)
+        {
+            if (dbName == "SQLWATCH" && objName.StartsWith("usp_sqlwatch_logger_performance"))
+            {
+                return new()
+                {
+                    new() { Name="INSERT @target FROM sys.dm_os_performance_counters", Snippet="INSERT INTO @target\nSELECT counter_name, instance_name, cntr_value\nFROM sys.dm_os_performance_counters\nWHERE counter_name IN (...)", Execs=174,  TotalCpuMs=54_144, AvgCpuMs=311.2, Reads=413_223, Writes=6_490, PctOfTotal=41.43 },
+                    new() { Name="INSERT logger_perfmon SELECT ... perf_counters_history", Snippet="INSERT INTO dbo.logger_perfmon\nSELECT ... FROM dbo.perf_counters_history\nWHERE snapshot_time > @last", Execs=654,  TotalCpuMs=13_679, AvgCpuMs=20.9,  Reads=231_431, Writes=144,    PctOfTotal=10.47 },
+                    new() { Name="UPDATE wait_stats baseline diff", Snippet="UPDATE w SET wait_time_ms = w.wait_time_ms - p.wait_time_ms\nFROM dbo.logger_wait_stats w\nJOIN dbo.logger_wait_stats_prev p ON w.wait_type = p.wait_type", Execs=1075, TotalCpuMs=12_498, AvgCpuMs=11.6, Reads=639_690, Writes=3_434, PctOfTotal=9.56 },
+                    new() { Name="MERGE logger_disk_usage", Snippet="MERGE dbo.logger_disk_usage target\nUSING (SELECT ... FROM sys.dm_io_virtual_file_stats(NULL,NULL)) src\nON ...", Execs=1075, TotalCpuMs=10_757, AvgCpuMs=10.0, Reads=438_815, Writes=8_040, PctOfTotal=8.23 },
+                    new() { Name="INSERT logger_blocking from sys.dm_tran_locks", Snippet="INSERT INTO dbo.logger_blocking\nSELECT ... FROM sys.dm_tran_locks l\nJOIN sys.dm_exec_requests r ON ...", Execs=1075, TotalCpuMs=10_109, AvgCpuMs=9.4, Reads=1_230_060, Writes=136, PctOfTotal=7.74 },
+                    new() { Name="INSERT logger_index_usage SELECT ... index_usage_stats", Snippet="INSERT INTO dbo.logger_index_usage\nSELECT * FROM sys.dm_db_index_usage_stats", Execs=1075, TotalCpuMs= 8_264, AvgCpuMs=7.7, Reads=1_378_778, Writes=4_581, PctOfTotal=6.32 },
+                    new() { Name="DELETE old rows older than retention", Snippet="DELETE FROM dbo.logger_perfmon\nWHERE snapshot_time < DATEADD(DAY,-@retention,GETDATE())", Execs=350, TotalCpuMs=890, AvgCpuMs=2.5, Reads=12_488, Writes=1_402, PctOfTotal=0.68 },
+                    new() { Name="SELECT @last = MAX(snapshot_id) FROM logger_header", Snippet="SELECT @last = MAX(snapshot_id) FROM dbo.logger_header", Execs=174, TotalCpuMs=18, AvgCpuMs=0.10, Reads=348, Writes=0, PctOfTotal=0.01 },
+                };
+            }
+            return Enumerable.Range(1, 6).Select(i => new SQLTriage.Data.Services.CodeHotspotsService.StatementRow
+            {
+                Name = $"Statement #{i} of {objName}",
+                Snippet = $"-- statement {i}\nSELECT ...",
+                Execs = 100 * i,
+                TotalCpuMs = 1500.0 / i,
+                AvgCpuMs = (1500.0 / i) / (100 * i),
+                Reads = 8000 * i, Writes = 200 * i,
+                PctOfTotal = 100.0 / (i + 1)
+            }).ToList();
+        }
+
+        public static List<SQLTriage.Data.Services.CodeHotspotsService.ObjRow> Objects(string dbName) => dbName switch
+        {
+            "SQLWATCH" => new()
+            {
+                new() { Name="usp_sqlwatch_logger_performance", Kind="StoredProc", Statements=8, Execs=5_128, TotalCpuMs=110_359, AvgCpuMs=21.5, Reads=4_344_445, Writes=22_825 },
+                new() { Name="usp_sqlwatch_logger_xes_blockers",Kind="StoredProc", Statements=4, Execs=  205, TotalCpuMs=  4_071, AvgCpuMs=19.9, Reads=  226_525, Writes=    62 },
+                new() { Name="usp_sqlwatch_internal_get_xes_data",Kind="StoredProc",Statements=3,Execs=  410, TotalCpuMs=    353, AvgCpuMs=0.86, Reads=      820, Writes=     0 },
+                new() { Name="ufn_sqlwatch_get_clr_collector_status",Kind="ScalarFn",Statements=1,Execs=2_870,TotalCpuMs=    637, AvgCpuMs=0.22, Reads=   68_880, Writes=     0 },
+                new() { Name="usp_sqlwatch_internal_action_queue_get_next",Kind="StoredProc",Statements=2,Execs=1_240,TotalCpuMs=   533, AvgCpuMs=0.43, Reads=    2_480, Writes=     0 },
+                new() { Name="usp_sqlwatch_internal_insert_header",Kind="StoredProc",Statements=2,Execs=1_240,TotalCpuMs=  657, AvgCpuMs=0.53, Reads=   28_932, Writes=   831 },
+                new() { Name="ufn_sqlwatch_get_config_value", Kind="ScalarFn",   Statements=1, Execs=12_400,TotalCpuMs=  1_240, AvgCpuMs=0.10, Reads=   24_800, Writes=     0 },
+                new() { Name="usp_sqlwatch_logger_requests_and_sessions",Kind="StoredProc",Statements=3,Execs=  654, TotalCpuMs=  2_412, AvgCpuMs=3.69, Reads=   54_936, Writes=     0 },
+                new() { Name="usp_sqlwatch_internal_process_checks",Kind="StoredProc",Statements=5,Execs=  410, TotalCpuMs= 1_431, AvgCpuMs=3.49, Reads=  151_843, Writes= 1_595 },
+                new() { Name="ufn_sqlwatch_get_product_version", Kind="ScalarFn",  Statements=1, Execs=8_960, TotalCpuMs=     448, AvgCpuMs=0.05, Reads=        0, Writes=     0 },
+            },
+            "msdb" => new()
+            {
+                new() { Name="sp_sqlagent_log_jobhistory",   Kind="StoredProc", Statements=12, Execs= 7_870, TotalCpuMs=30_143, AvgCpuMs=3.83, Reads= 51_745, Writes= 301 },
+                new() { Name="sp_sqlagent_has_server_access",Kind="StoredProc", Statements= 4, Execs=    9, TotalCpuMs= 6_624, AvgCpuMs=735.9,Reads= 14_245, Writes=  33 },
+                new() { Name="sp_get_jobhistory",            Kind="StoredProc", Statements= 6, Execs=   88, TotalCpuMs=   612, AvgCpuMs=6.95, Reads=  4_410, Writes=   0 },
+                new() { Name="sp_help_jobcount",             Kind="StoredProc", Statements= 2, Execs=   44, TotalCpuMs=   141, AvgCpuMs=3.21, Reads=    220, Writes=   0 },
+            },
+            "WideWorldImporters" => new()
+            {
+                new() { Name="Sales.usp_GetCustomerOrders",  Kind="StoredProc", Statements= 9, Execs= 1_822, TotalCpuMs=12_415, AvgCpuMs=6.81, Reads=611_892, Writes=12_410 },
+                new() { Name="Warehouse.fn_StockBalance",    Kind="ScalarFn",   Statements= 1, Execs=12_410, TotalCpuMs= 5_811, AvgCpuMs=0.47, Reads=212_044, Writes=     0 },
+                new() { Name="Sales.usp_RecalculateTotals",  Kind="StoredProc", Statements= 6, Execs=    98, TotalCpuMs= 2_011, AvgCpuMs=20.5, Reads= 88_440, Writes=70_009 },
+                new() { Name="Reporting.fn_DateRange",       Kind="InlineFn",   Statements= 1, Execs= 6_220, TotalCpuMs=   720, AvgCpuMs=0.12, Reads= 12_440, Writes=     0 },
+                new() { Name="Sales.tr_OrderInsert",         Kind="Trigger",    Statements= 4, Execs=    90, TotalCpuMs=   350, AvgCpuMs=3.89, Reads=  1_890, Writes=   720 },
+            },
+            "AdventureWorks" => new()
+            {
+                new() { Name="HumanResources.usp_AdjustSalaries", Kind="StoredProc", Statements=4, Execs=148, TotalCpuMs=4_822, AvgCpuMs=32.6, Reads=200_115, Writes=4_140 },
+                new() { Name="Sales.fn_CommissionRate",          Kind="ScalarFn",   Statements=1, Execs=8_822, TotalCpuMs=2_915, AvgCpuMs=0.33, Reads=176_440, Writes=    0 },
+                new() { Name="Production.usp_ReorderPoint",      Kind="StoredProc", Statements=7, Execs=    52, TotalCpuMs=  998, AvgCpuMs=19.2, Reads= 35_122, Writes= 2_404 },
+            },
+            "ContosoSales" => new()
+            {
+                new() { Name="dbo.usp_LoadDailyFacts",  Kind="StoredProc", Statements=5, Execs=21,  TotalCpuMs=2_104, AvgCpuMs=100.2, Reads=72_204, Writes=2_011 },
+                new() { Name="dbo.fn_FxRate",           Kind="ScalarFn",   Statements=1, Execs=4_120, TotalCpuMs=  812, AvgCpuMs=0.20, Reads= 8_240, Writes=    0 },
+            },
+            "tempdb (adhoc)" => new()
+            {
+                new() { Name="ad-hoc batch #1",         Kind="Other", Statements=1, Execs=212, TotalCpuMs=441, AvgCpuMs=2.08, Reads=4_240, Writes=212 },
+                new() { Name="ad-hoc batch #2",         Kind="Other", Statements=1, Execs=180, TotalCpuMs=380, AvgCpuMs=2.11, Reads=3_600, Writes=120 },
+                new() { Name="ad-hoc batch #3",         Kind="Other", Statements=1, Execs=220, TotalCpuMs=267, AvgCpuMs=1.21, Reads=4_648, Writes=469 },
+            },
+            _ => new()
+        };
+    }
+}

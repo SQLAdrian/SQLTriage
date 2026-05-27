@@ -1,0 +1,586 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/check-validator"
+<PageTitle>SQLTriage - Check Validator</PageTitle>
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@using SQLTriage.Components.Shared
+@using Microsoft.Data.SqlClient
+@using System.Data
+@using System.Text.Json
+@using System.Text.RegularExpressions
+@inject AlertDefinitionService AlertDefs
+@inject CheckRepositoryService CheckRepository
+@inject ServerConnectionManager ConnectionManager
+@inject UserSettingsService UserSettings
+@inject LocalLogService Log
+@inject ToastService Toast
+@inject SQLTriage.Data.Services.AppUserState UserState
+
+@if (!RbacService.HasPermission(UserState.Role, "run_scripts"))
+{
+    <div style="padding: 32px;">
+        <AccessDenied RequiredRole="Operator" Message="Check Validator requires Operator or Admin role." />
+    </div>
+    return;
+}
+
+<div class="cv-page">
+
+    <!-- ── Header ─────────────────────────────────────────────────────── -->
+    <div class="cv-header">
+        <div class="cv-header-title">
+            <h1>
+                <i class="fa-solid fa-vial" style="color:var(--red);"></i>
+                Check Validator
+                <span class="cv-nopants-badge">NO PANTS</span>
+            </h1>
+            <p>Test and validate SQL checks from configuration files against live server instances.</p>
+        </div>
+        <div class="cv-controls">
+            <span class="cv-server-label"><i class="fa-solid fa-server"></i> Server:</span>
+            <ServerSelector Servers="_servers" Selected="@_selectedServer" SelectedChanged="@(v => { _selectedServer = v ?? string.Empty; StateHasChanged(); })" />
+            <button class="btn btn-secondary btn-sm" @onclick="RunAllVisible"
+                    disabled="@(_running || string.IsNullOrEmpty(_selectedServer))"
+                    style="white-space:nowrap;">
+                @if (_running)
+                {
+                    <i class="fa-solid fa-spinner fa-spin"></i>
+                }
+                else
+                {
+                    <i class="fa-solid fa-play"></i>
+                }
+                &nbsp;Run All
+            </button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_globalError))
+    {
+        <div style="padding:10px 14px; background:rgba(239,68,68,.1); border:1px solid rgba(239,68,68,.3); border-radius:6px; color:#fca5a5; font-size:13px; margin-bottom:16px;">
+            <i class="fa-solid fa-circle-exclamation"></i> @_globalError
+        </div>
+    }
+
+    <!-- ── Tabs ───────────────────────────────────────────────────────── -->
+    <div class="cv-tabs">
+        <button class="cv-tab @(_activeTab == "Alerts" ? "active" : "")" @onclick='() => SwitchTab("Alerts")'>
+            <i class="fa-solid fa-bell"></i>
+            Alerts
+            <span class="cv-tab-count">@_alertRows.Count</span>
+        </button>
+        <button class="cv-tab @(_activeTab == "SQL Checks" ? "active" : "")" @onclick='() => SwitchTab("SQL Checks")'>
+            <i class="fa-solid fa-list-check"></i>
+            SQL Checks
+            <span class="cv-tab-count">@_sqlCheckRows.Count</span>
+        </button>
+        <!-- quick-filter by category chips -->
+        @{
+            var categorySource = _activeTab == "Alerts" ? _alertRows : _sqlCheckRows;
+            var cats = categorySource.Select(r => r.Category).Distinct().OrderBy(c => c).ToList();
+        }
+        @if (cats.Count > 1)
+        {
+            <div style="display:flex;gap:4px;flex-wrap:wrap;margin-left:8px;align-items:center;">
+                @foreach (var cat in cats)
+                {
+                    var isActive = _searchText == cat;
+                    <button class="cv-cat-chip @(isActive ? "active" : "")"
+                            @onclick="() => _searchText = isActive ? string.Empty : cat">
+                        @cat
+                    </button>
+                }
+            </div>
+        }
+    </div>
+
+    <!-- ── Search ───────────────────────────────────────────────────── -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+        <div style="position:relative;flex:1;max-width:380px;">
+            <i class="fa-solid fa-magnifying-glass" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:13px;pointer-events:none;"></i>
+            <input type="search" placeholder="Search by name, category, description…"
+                   @bind="_searchText" @bind:event="oninput"
+                   style="width:100%;padding:6px 10px 6px 30px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:6px;font-size:13px;" />
+        </div>
+        @if (!string.IsNullOrWhiteSpace(_searchText))
+        {
+            <span style="font-size:12px;color:var(--text-muted);">
+                @(FilteredRows.Count) of @(_activeTab == "Alerts" ? _alertRows.Count : _sqlCheckRows.Count)
+            </span>
+            <button style="background:transparent;border:none;color:var(--text-muted);cursor:pointer;font-size:12px;" @onclick="() => _searchText = string.Empty">
+                <i class="fa-solid fa-xmark"></i> Clear
+            </button>
+        }
+    </div>
+
+    <!-- ── Table ──────────────────────────────────────────────────────── -->
+    @if (_activeTab == "Alerts")
+    {
+        <CheckValidatorTable Rows="FilteredRows" OnTest="TestAlertRow" OnEdit="EditAlertRow" ShowAlertColumns="true" />
+    }
+    else
+    {
+        <CheckValidatorTable Rows="FilteredRows" OnTest="TestSqlCheckRow" OnEdit="EditSqlCheckRow" ShowAlertColumns="false" />
+    }
+
+    @if (_running)
+    {
+        <div class="cv-progress">
+            Testing @_progressCurrent / @_progressTotal…
+            <div class="cv-progress-bar">
+                <div class="cv-progress-fill" style="width:@(ProgressPct.ToString("F0"))%;"></div>
+            </div>
+        </div>
+    }
+</div>
+
+<!-- ── Modal ──────────────────────────────────────────────────────────── -->
+@if (_modalOpen)
+{
+    <div class="modal-overlay" @onclick="CloseModal">
+        <div class="cv-modal" @onclick:stopPropagation="true">
+
+            <div class="modal-header">
+                <div>
+                    <div style="font-size:14px; font-weight:600; color:var(--text-primary);">@_modalTitle</div>
+                    @if (!string.IsNullOrEmpty(_selectedServer))
+                    {
+                        <div style="font-size:11px; color:var(--text-secondary); margin-top:2px;">
+                            <i class="fa-solid fa-server" style="font-size:10px;"></i> @_selectedServer
+                        </div>
+                    }
+                </div>
+                <button class="btn-icon" @onclick="CloseModal" title="Close" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <div class="modal-body" style="display:flex; flex-direction:column; gap:12px;">
+
+                <div>
+                    <label style="display:block; font-size:11px; font-weight:600; color:var(--text-secondary); margin-bottom:5px; text-transform:uppercase; letter-spacing:.5px;">Query</label>
+                    <textarea class="cv-query-area" rows="7"
+                              @bind="_modalQuery" @bind:event="oninput" />
+                    @if (IsDangerous(_modalQuery))
+                    {
+                        <div class="cv-danger-warn">
+                            <i class="fa-solid fa-triangle-exclamation"></i>
+                            Blocked — contains dangerous keywords (INSERT / UPDATE / DELETE / DROP / TRUNCATE / EXEC).
+                        </div>
+                    }
+                    else if (_noPantsMode && !string.IsNullOrEmpty(_modalQuery) && _dangerousPattern.IsMatch(_modalQuery))
+                    {
+                        <div class="cv-danger-warn" style="border-color:rgba(245,158,11,0.4);background:rgba(245,158,11,0.08);color:var(--orange);">
+                            <i class="fa-solid fa-triangle-exclamation"></i>
+                            No-Pants Mode — SQL safety bypassed. Query contains potentially destructive keywords.
+                        </div>
+                    }
+                </div>
+
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                    <button class="btn btn-primary btn-sm" @onclick="RunModalTest"
+                            disabled="@(_modalRunning || IsDangerous(_modalQuery) || string.IsNullOrEmpty(_selectedServer))">
+                        @if (_modalRunning)
+                        {
+                            <i class="fa-solid fa-spinner fa-spin"></i>
+                        }
+                        else
+                        {
+                            <i class="fa-solid fa-play"></i>
+                        }
+                        &nbsp;Test
+                    </button>
+                    @if (_canSaveModal)
+                    {
+                        <button class="btn btn-secondary btn-sm" @onclick="SaveModalEdit">
+                            <i class="fa-solid fa-floppy-disk"></i> Save to Config
+                        </button>
+                    }
+                    @if (string.IsNullOrEmpty(_selectedServer))
+                    {
+                        <span style="font-size:11px; color:#fcd34d;">
+                            <i class="fa-solid fa-triangle-exclamation"></i> Select a server above to test.
+                        </span>
+                    }
+                </div>
+
+                @if (_modalResult != null)
+                {
+                    <div style="border:1px solid var(--border); border-radius:6px; overflow:hidden;">
+                        <div class="cv-result-meta">
+                            <span><strong>@_modalResult.Rows.Count</strong> rows</span>
+                            <span><strong>@_modalResult.Columns.Count</strong> cols</span>
+                            @if (_modalDuration.HasValue)
+                            {
+                                <span><strong>@_modalDuration.Value.TotalMilliseconds.ToString("F0") ms</strong></span>
+                            }
+                        </div>
+                        @if (_modalResult.Rows.Count > 0)
+                        {
+                            <div class="cv-result-table-wrap">
+                                <table class="results-table" style="font-size:11px;">
+                                    <thead>
+                                        <tr>
+                                            @foreach (DataColumn col in _modalResult.Columns)
+                                            {
+                                                <th>@col.ColumnName</th>
+                                            }
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (DataRow row in _modalResult.Rows)
+                                        {
+                                            <tr>
+                                                @foreach (DataColumn col in _modalResult.Columns)
+                                                {
+                                                    <td>@row[col]?.ToString()</td>
+                                                }
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                        else
+                        {
+                            <div style="padding:14px; font-size:12px; color:var(--text-secondary); text-align:center;">
+                                <i class="fa-solid fa-inbox"></i> No rows returned.
+                            </div>
+                        }
+                    </div>
+                }
+
+                @if (!string.IsNullOrEmpty(_modalError))
+                {
+                    <div class="cv-modal-error">@_modalError</div>
+                }
+
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private string _activeTab = "Alerts";
+    private string _searchText = string.Empty;
+    private List<string> _servers = new();
+    private string _selectedServer = "";
+    private List<CheckValidatorTable.CheckRow> _alertRows = new();
+    private List<CheckValidatorTable.CheckRow> _sqlCheckRows = new();
+
+    private List<CheckValidatorTable.CheckRow> FilteredRows
+    {
+        get
+        {
+            var source = _activeTab == "Alerts" ? _alertRows : _sqlCheckRows;
+            if (string.IsNullOrWhiteSpace(_searchText)) return source;
+            var q = _searchText.Trim();
+            return source.Where(r =>
+                r.Name.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                r.Category.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                (r.Description?.Contains(q, StringComparison.OrdinalIgnoreCase) == true))
+                .ToList();
+        }
+    }
+    private bool _running;
+    private int _progressCurrent, _progressTotal;
+    private string _globalError = "";
+
+    // Modal
+    private bool _modalOpen;
+    private string _modalTitle = "";
+    private string _modalQuery = "";
+    private bool _modalRunning;
+    private DataTable? _modalResult;
+    private TimeSpan? _modalDuration;
+    private string _modalError = "";
+    private bool _canSaveModal;
+    private Action? _modalSaveAction;
+    private bool _noPantsMode;
+
+    private double ProgressPct => _progressTotal == 0 ? 0 : _progressCurrent * 100.0 / _progressTotal;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _noPantsMode = UserSettings.GetNoPantsMode();
+        LoadServerList();
+        LoadAlertRows();
+        await LoadSqlCheckRowsAsync();
+    }
+
+    private void LoadServerList()
+    {
+        _servers = ConnectionManager.GetConnections()
+            .SelectMany(c => c.GetServerList())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(s => s)
+            .ToList();
+        if (_servers.Count == 1) _selectedServer = _servers[0];
+    }
+
+    private void LoadAlertRows()
+    {
+        _alertRows = AlertDefs.GetAllAlerts()
+            .Select(a => new CheckValidatorTable.CheckRow
+            {
+                Id = a.Id,
+                Name = a.Name,
+                Category = a.Category,
+                Description = a.Description,
+                Severity = a.Severity,
+                Enabled = a.Enabled,
+                Query = a.Query,
+                AlertDef = a,
+                ThresholdWarning = a.Thresholds?.Warning,
+                ThresholdCritical = a.Thresholds?.Critical,
+                FrequencySeconds = a.FrequencySeconds,
+                QueryMode = a.QueryMode,
+                AlertOperator = a.Operator,
+                ExpectedDisplay = BuildAlertExpectedDisplay(a)
+            })
+            .OrderBy(r => r.Category).ThenBy(r => r.Name)
+            .ToList();
+    }
+
+    private static string BuildAlertExpectedDisplay(SQLTriage.Data.Models.AlertDefinition a)
+    {
+        var op = a.Operator switch
+        {
+            "greater_than"          => ">",
+            "less_than"             => "<",
+            "greater_than_or_equal" => "≥",
+            "less_than_or_equal"    => "≤",
+            "equals"                => "=",
+            "not_equals"            => "≠",
+            _ => a.Operator ?? ""
+        };
+        var warn = a.Thresholds?.Warning;
+        var crit = a.Thresholds?.Critical;
+        if (crit.HasValue && warn.HasValue) return $"w{op}{warn} c{op}{crit}";
+        if (crit.HasValue) return $"crit {op}{crit}";
+        if (warn.HasValue) return $"warn {op}{warn}";
+        return "";
+    }
+
+    private async Task LoadSqlCheckRowsAsync()
+    {
+        try
+        {
+            if (CheckRepository.Checks.Count == 0)
+                await CheckRepository.LoadChecksAsync();
+
+            _sqlCheckRows = CheckRepository.Checks
+                .Select(c => new CheckValidatorTable.CheckRow
+                {
+                    Id = c.Id ?? "",
+                    Name = c.Name ?? "",
+                    Category = c.Category ?? "",
+                    Description = c.Description ?? "",
+                    Severity = c.Severity ?? "",
+                    Enabled = c.Enabled,
+                    Query = c.SqlQuery ?? "",
+                    Priority = c.Priority,
+                    ExpectedValue = c.ExpectedValue,
+                    RowCountCondition = c.RowCountCondition,
+                    ExpectedDisplay = $"= {c.ExpectedValue}"
+                })
+                .OrderBy(r => r.Category).ThenBy(r => r.Name)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _globalError = $"Failed to load checks from catalog: {ex.Message}";
+            Log.LogError("CheckValidator: failed to load checks from CheckRepository", ex);
+        }
+    }
+
+    private void SwitchTab(string tab) { _activeTab = tab; _globalError = ""; }
+
+    private async Task RunAllVisible()
+    {
+        if (string.IsNullOrEmpty(_selectedServer)) return;
+        var rows = _activeTab == "Alerts" ? _alertRows : _sqlCheckRows;
+        _running = true;
+        _progressCurrent = 0;
+        _progressTotal = rows.Count;
+        StateHasChanged();
+
+        await Parallel.ForEachAsync(rows,
+            new ParallelOptions { MaxDegreeOfParallelism = 4 },
+            async (row, _) =>
+            {
+                await TestRowAsync(row);
+                Interlocked.Increment(ref _progressCurrent);
+                await InvokeAsync(StateHasChanged);
+            });
+
+        _running = false;
+        StateHasChanged();
+        var passed = rows.Count(r => r.TestResult.StartsWith("Pass"));
+        var failed = rows.Count(r => r.TestResult == "Error");
+        Toast.ShowInfo($"Done — {passed} passed, {failed} errors.");
+        Log.LogInfo($"CheckValidator bulk test: tab='{_activeTab}' server='{_selectedServer}' passed={passed} errors={failed}");
+    }
+
+    private async Task TestRowAsync(CheckValidatorTable.CheckRow row)
+    {
+        if (IsDangerous(row.Query))
+        {
+            row.TestResult = "Blocked"; row.Tested = true; return;
+        }
+        if (string.IsNullOrWhiteSpace(row.Query))
+        {
+            row.TestResult = "Skipped"; row.Tested = true; return;
+        }
+        try
+        {
+            using var conn = new SqlConnection(GetConnectionString(_selectedServer));
+            await conn.OpenAsync();
+            using var cmd = new SqlCommand(row.Query, conn) { CommandTimeout = 30 };
+            using var reader = await cmd.ExecuteReaderAsync();
+            var dt = new DataTable();
+            dt.Load(reader);
+            row.TestResult = dt.Rows.Count > 0 ? "Pass" : "Pass (no rows)";
+            row.ErrorText = null;
+
+            // Capture the first cell of the first row as the actual value
+            if (dt.Rows.Count > 0 && dt.Columns.Count > 0)
+            {
+                var raw = dt.Rows[0][0];
+                row.ActualValue = raw == DBNull.Value ? "NULL" : raw?.ToString() ?? "NULL";
+
+                // Evaluate against expected
+                if (row.AlertDef != null)
+                {
+                    // Alert: check against warning/critical thresholds
+                    if (double.TryParse(row.ActualValue, out var actualNum))
+                    {
+                        var op = row.AlertDef.Operator ?? "greater_than";
+                        var warn = row.AlertDef.Thresholds?.Warning;
+                        var crit = row.AlertDef.Thresholds?.Critical;
+                        var threshold = crit ?? warn;
+                        if (threshold.HasValue)
+                        {
+                            row.ActualMatchesExpected = op switch
+                            {
+                                "greater_than"          => actualNum <= threshold.Value,
+                                "less_than"             => actualNum >= threshold.Value,
+                                "greater_than_or_equal" => actualNum < threshold.Value,
+                                "less_than_or_equal"    => actualNum > threshold.Value,
+                                "equals"                => actualNum == threshold.Value,
+                                "not_equals"            => actualNum != threshold.Value,
+                                _                       => null
+                            };
+                        }
+                    }
+                }
+                else if (row.ExpectedValue.HasValue)
+                {
+                    // SQL check: compare scalar to ExpectedValue
+                    if (double.TryParse(row.ActualValue, out var actualNum))
+                        row.ActualMatchesExpected = actualNum == row.ExpectedValue.Value;
+                    else
+                        row.ActualMatchesExpected = null;
+                }
+            }
+            else
+            {
+                row.ActualValue = "(no rows)";
+                // No rows = passes for Equals0 / ExpectedValue=0 checks
+                if (row.ExpectedValue == 0 || row.RowCountCondition == "Equals0")
+                    row.ActualMatchesExpected = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            row.TestResult = "Error";
+            row.ErrorText = ex.Message;
+            row.ActualValue = null;
+            row.ActualMatchesExpected = null;
+        }
+        row.Tested = true;
+    }
+
+    private async Task TestAlertRow(CheckValidatorTable.CheckRow row)
+    {
+        if (string.IsNullOrEmpty(_selectedServer)) { Toast.ShowWarning("Select a server first."); return; }
+        await TestRowAsync(row); StateHasChanged();
+    }
+
+    private async Task TestSqlCheckRow(CheckValidatorTable.CheckRow row)
+    {
+        if (string.IsNullOrEmpty(_selectedServer)) { Toast.ShowWarning("Select a server first."); return; }
+        await TestRowAsync(row); StateHasChanged();
+    }
+
+    private void EditAlertRow(CheckValidatorTable.CheckRow row)
+    {
+        _modalTitle = $"{row.Name}";
+        _modalQuery = row.Query;
+        _modalResult = null; _modalError = ""; _modalDuration = null;
+        _canSaveModal = true;
+        _modalSaveAction = () =>
+        {
+            if (row.AlertDef != null)
+            {
+                row.AlertDef.Query = _modalQuery;
+                AlertDefs.UpdateAlert(row.AlertDef);
+                row.Query = _modalQuery;
+                Toast.ShowSuccess($"Saved query for '{row.Name}'");
+                Log.LogInfo($"CheckValidator: saved alert query '{row.Id}'");
+            }
+        };
+        _modalOpen = true;
+    }
+
+    private void EditSqlCheckRow(CheckValidatorTable.CheckRow row)
+    {
+        _modalTitle = row.Name;
+        _modalQuery = row.Query;
+        _modalResult = null; _modalError = ""; _modalDuration = null;
+        _canSaveModal = false; _modalSaveAction = null;
+        _modalOpen = true;
+    }
+
+    private async Task RunModalTest()
+    {
+        if (IsDangerous(_modalQuery) || string.IsNullOrEmpty(_selectedServer)) return;
+        _modalRunning = true; _modalResult = null; _modalError = "";
+        StateHasChanged();
+        try
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            using var conn = new SqlConnection(GetConnectionString(_selectedServer));
+            await conn.OpenAsync();
+            using var cmd = new SqlCommand(_modalQuery, conn) { CommandTimeout = 30 };
+            using var reader = await cmd.ExecuteReaderAsync();
+            var dt = new DataTable(); dt.Load(reader); sw.Stop();
+            _modalResult = dt; _modalDuration = sw.Elapsed;
+            Log.LogInfo($"CheckValidator modal: {dt.Rows.Count} rows in {sw.ElapsedMilliseconds}ms on '{_selectedServer}'");
+        }
+        catch (Exception ex)
+        {
+            _modalError = ex.Message;
+            Log.LogError($"CheckValidator modal failed on '{_selectedServer}'", ex);
+        }
+        finally { _modalRunning = false; StateHasChanged(); }
+    }
+
+    private void SaveModalEdit() { _modalSaveAction?.Invoke(); CloseModal(); }
+    private void CloseModal() { _modalOpen = false; _modalResult = null; _modalError = ""; }
+
+    private static readonly Regex _dangerousPattern = new(
+        @"\b(INSERT|UPDATE|DELETE|DROP|TRUNCATE|EXEC|EXECUTE|xp_|sp_configure|sp_addextendedproc)\b",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private bool IsDangerous(string? sql) =>
+        !_noPantsMode && !string.IsNullOrEmpty(sql) && _dangerousPattern.IsMatch(sql);
+
+    private string GetConnectionString(string serverName)
+    {
+        var conn = ConnectionManager.GetConnections()
+            .FirstOrDefault(c => c.GetServerList().Contains(serverName, StringComparer.OrdinalIgnoreCase));
+        return conn?.GetConnectionString(serverName, "master")
+            ?? $"Server={serverName};Database=master;Integrated Security=True;TrustServerCertificate=True;";
+    }
+
+}

@@ -1,0 +1,208 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/checks/trend/{CheckId}"
+@using SQLTriage.Components.Shared
+@using SQLTriage.Data.Services
+@inject GovernanceHistoryService HistoryService
+@inject NavigationManager Navigation
+
+<PageTitle>Check Trend - @CheckId - SQLTriage</PageTitle>
+
+<div class="check-trend-page">
+    <div class="check-trend-header">
+        <button class="btn btn-secondary" @onclick="GoBack" title="Back">
+            <i class="fa-solid fa-arrow-left"></i> Back
+        </button>
+        <h2><i class="fa-solid fa-chart-line"></i> Check Trend &mdash; <code>@CheckId</code></h2>
+    </div>
+
+    @if (_loading)
+    {
+        <PageLoadingSpinner Message="Loading check history..." />
+    }
+    else if (_points.Count == 0)
+    {
+        <div class="check-trend-empty">
+            <p>No history recorded for <code>@CheckId</code> in the last 90 days.</p>
+            <p style="color: var(--text-muted); font-size: 13px;">
+                History is captured every time the check runs (Quick Assessment, Governance scoring, etc).
+                If this check has never run on a connected server, no rows will appear.
+            </p>
+        </div>
+    }
+    else
+    {
+        <div class="check-trend-meta">
+            @if (!string.IsNullOrEmpty(_checkName))
+            {
+                <div class="check-trend-meta-row">
+                    <span class="check-trend-meta-label">Name:</span>
+                    <span>@_checkName</span>
+                </div>
+            }
+            @if (!string.IsNullOrEmpty(_category))
+            {
+                <div class="check-trend-meta-row">
+                    <span class="check-trend-meta-label">Category:</span>
+                    <span>@_category</span>
+                </div>
+            }
+        </div>
+
+        <div class="check-trend-summary">
+            <div class="check-trend-stat">
+                <div class="check-trend-stat-value">@_points.Count</div>
+                <div class="check-trend-stat-label">Total runs (90 days)</div>
+            </div>
+            <div class="check-trend-stat">
+                <div class="check-trend-stat-value">@_serverCount</div>
+                <div class="check-trend-stat-label">Servers</div>
+            </div>
+            <div class="check-trend-stat">
+                <div class="check-trend-stat-value" style="color: @(OverallPassRate >= 90 ? "var(--green)" : OverallPassRate >= 70 ? "var(--orange)" : "var(--red)");">
+                    @OverallPassRate.ToString("F0")%
+                </div>
+                <div class="check-trend-stat-label">Pass rate</div>
+            </div>
+            <div class="check-trend-stat">
+                <div class="check-trend-stat-value">@(_lastRun?.ToString("yyyy-MM-dd HH:mm") ?? "—")</div>
+                <div class="check-trend-stat-label">Last run</div>
+            </div>
+        </div>
+
+        <div class="check-trend-section">
+            <h3>By server</h3>
+            <table class="check-trend-table">
+                <thead>
+                    <tr>
+                        <th>Server</th>
+                        <th>Runs</th>
+                        <th>Pass rate</th>
+                        <th>Sparkline (last @MaxFlagsPerServer)</th>
+                        <th>Last result</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var grp in _byServer)
+                    {
+                        var rate = grp.Total > 0 ? (grp.Passed * 100.0 / grp.Total) : 0;
+                        <tr>
+                            <td><strong>@grp.Server</strong></td>
+                            <td>@grp.Total</td>
+                            <td style="color: @(rate >= 90 ? "var(--green)" : rate >= 70 ? "var(--orange)" : "var(--red)");">
+                                @rate.ToString("F0")%
+                            </td>
+                            <td>
+                                <Sparkline PassFlags="grp.Flags"
+                                           Width="120" Height="20"
+                                           AriaLabel="@($"{grp.Server} {grp.Passed} of {grp.Total} passes")" />
+                            </td>
+                            <td>
+                                @if (grp.LastPassed)
+                                {
+                                    <span class="check-trend-badge pass"><i class="fa-solid fa-check"></i> pass</span>
+                                }
+                                else
+                                {
+                                    <span class="check-trend-badge fail"><i class="fa-solid fa-xmark"></i> fail</span>
+                                }
+                                <span style="color: var(--text-muted); margin-left: 6px; font-size: 12px;">
+                                    @grp.LastRun.ToString("yyyy-MM-dd HH:mm")
+                                </span>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        @if (_dailyRates.Count > 1)
+        {
+            <div class="check-trend-section">
+                <h3>Daily aggregate pass rate</h3>
+                <Sparkline Values="_dailyRates" Width="640" Height="80"
+                           AriaLabel="Daily pass rate trend" />
+                <p style="color: var(--text-muted); font-size: 12px; margin-top: 6px;">
+                    @_dailyRates.Count daily samples · range
+                    @_dailyRates.Min().ToString("F0")% &ndash; @_dailyRates.Max().ToString("F0")%
+                </p>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public string CheckId { get; set; } = "";
+
+    private const int MaxFlagsPerServer = 30;
+    private bool _loading = true;
+    private List<CheckHistoryPoint> _points = new();
+    private List<ServerGroup> _byServer = new();
+    private List<double> _dailyRates = new();
+    private int _serverCount;
+    private DateTime? _lastRun;
+    private string _checkName = "";
+    private string _category = "";
+
+    private double OverallPassRate =>
+        _points.Count == 0 ? 0 : _points.Count(p => p.Passed) * 100.0 / _points.Count;
+
+    protected override void OnInitialized()
+    {
+        try
+        {
+            _points = HistoryService.GetCheckHistory(CheckId, 90);
+
+            if (_points.Count > 0)
+            {
+                _checkName = _points.Last().CheckName;
+                _category = _points.Last().Category;
+
+                _byServer = _points
+                    .GroupBy(p => p.Server, StringComparer.OrdinalIgnoreCase)
+                    .Select(g => {
+                        var ordered = g.OrderBy(p => p.RecordedAt).ToList();
+                        var last = ordered.Last();
+                        return new ServerGroup
+                        {
+                            Server     = g.Key,
+                            Total      = ordered.Count,
+                            Passed     = ordered.Count(p => p.Passed),
+                            Flags      = ordered.TakeLast(MaxFlagsPerServer).Select(p => p.Passed).ToList(),
+                            LastPassed = last.Passed,
+                            LastRun    = ParseDate(last.RecordedAt),
+                        };
+                    })
+                    .OrderByDescending(s => s.LastRun)
+                    .ToList();
+
+                _serverCount = _byServer.Count;
+                _lastRun = _byServer.Max(s => (DateTime?)s.LastRun);
+
+                _dailyRates = _points
+                    .GroupBy(p => ParseDate(p.RecordedAt).Date)
+                    .OrderBy(g => g.Key)
+                    .Select(g => g.Count(p => p.Passed) * 100.0 / g.Count())
+                    .ToList();
+            }
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static DateTime ParseDate(string s) =>
+        DateTime.TryParse(s, out var d) ? d : DateTime.MinValue;
+
+    private void GoBack() => Navigation.NavigateTo("/checks");
+
+    private class ServerGroup
+    {
+        public string Server { get; set; } = "";
+        public int Total { get; set; }
+        public int Passed { get; set; }
+        public List<bool> Flags { get; set; } = new();
+        public bool LastPassed { get; set; }
+        public DateTime LastRun { get; set; }
+    }
+}

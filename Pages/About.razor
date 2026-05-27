@@ -1,0 +1,594 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/about"
+<PageTitle>SQLTriage - About</PageTitle>
+@inject NavigationManager Navigation
+@inject AutoUpdateService UpdateService
+
+<div class="about-container">
+    <h1>About SQLTriage</h1>
+
+    <div class="about-section credits-section">
+        <h2><i class="fa-solid fa-hands-praying"></i> Built With</h2>
+        <p>This application stands on the shoulders of giants. Immense gratitude to:</p>
+        <div class="credits-grid">
+                    <a class="credit-card" href="https://github.com/BrentOzarULTD/SQL-Server-First-Responder-Kit" target="_blank">
+                <div class="credit-icon"><i class="fa-solid fa-truck-medical"></i></div>
+                <div class="credit-body">
+                    <div class="credit-name">sp_Blitz</div>
+                    <div class="credit-author">Brent Ozar Unlimited</div>
+                    <div class="credit-desc">SQL Server First Responder Kit — health check scripts</div>
+                </div>
+            </a>
+            <a class="credit-card" href="https://sqldba.org" target="_blank">
+                <div class="credit-icon"><i class="fa-solid fa-database"></i></div>
+                <div class="credit-body">
+                    <div class="credit-name">sqldba.org</div>
+                    <div class="credit-author">Adrian Sullivan</div>
+                    <div class="credit-desc">sp_triage — SQL health check scripts</div>
+                </div>
+            </a>
+            <a class="credit-card" href="https://github.com/erikdarlingdata/PerformanceMonitor" target="_blank">
+                <div class="credit-icon"><i class="fa-solid fa-gauge-high"></i></div>
+                <div class="credit-body">
+                    <div class="credit-name">PerformanceMonitor</div>
+                    <div class="credit-author">Erik Darling</div>
+                    <div class="credit-desc">SQL Server performance monitoring queries and dashboards</div>
+                </div>
+            </a>
+            <a class="credit-card" href="https://github.com/MadeiraData/MadeiraToolbox" target="_blank">
+                <div class="credit-icon"><i class="fa-solid fa-toolbox"></i></div>
+                <div class="credit-body">
+                    <div class="credit-name">MadeiraToolbox</div>
+                    <div class="credit-author">Eitan Blumin</div>
+                    <div class="credit-desc">SQL Server maintenance, diagnostics, and best-practice scripts</div>
+                </div>
+            </a>
+            <a class="credit-card" href="https://github.com/marcingminski/sqlwatch" target="_blank">
+                <div class="credit-icon"><i class="fa-solid fa-database"></i></div>
+                <div class="credit-body">
+                    <div class="credit-name">SQLWATCH</div>
+                    <div class="credit-author">Marcin Gminski</div>
+                    <div class="credit-desc">SQL Server monitoring framework — the data foundation this app is built on</div>
+                </div>
+            </a>
+            <a class="credit-card" href="https://github.com/JustinPealing/html-query-plan" target="_blank">
+                <div class="credit-icon"><i class="fa-solid fa-chart-column"></i></div>
+                <div class="credit-body">
+                    <div class="credit-name">html-query-plan</div>
+                    <div class="credit-author">Justin Pealing</div>
+                    <div class="credit-desc">Interactive graphical SQL Server execution plan viewer</div>
+                </div>
+            </a>
+            <a class="credit-card" href="https://github.com/apexcharts/Blazor-ApexCharts" target="_blank">
+                <div class="credit-icon"><i class="fa-solid fa-chart-line"></i></div>
+                <div class="credit-body">
+                    <div class="credit-name">Blazor-ApexCharts</div>
+                    <div class="credit-author">ApexCharts Team</div>
+                    <div class="credit-desc">Rich interactive charts and time-series visualisations</div>
+                </div>
+            </a>
+            <a class="credit-card" href="https://github.com/serilog/serilog" target="_blank">
+                <div class="credit-icon"><i class="fa-solid fa-pen-to-square"></i></div>
+                <div class="credit-body">
+                    <div class="credit-name">Serilog</div>
+                    <div class="credit-author">Serilog Contributors</div>
+                    <div class="credit-desc">Structured diagnostic logging for .NET</div>
+                </div>
+            </a>
+
+            <a class="credit-card" href="https://github.com/dotnet/efcore" target="_blank">
+                <div class="credit-icon"><i class="fa-solid fa-floppy-disk"></i></div>
+                <div class="credit-body">
+                    <div class="credit-name">Microsoft.Data.Sqlite</div>
+                    <div class="credit-author">Microsoft / .NET Foundation</div>
+                    <div class="credit-desc">Local SQLite caching layer for offline resilience</div>
+                </div>
+            </a>
+             <a class="credit-card" href="https://github.com/microsoft/tigertoolbox/tree/master" target="_blank">
+                <div class="credit-icon"><i class="fa-solid fa-dragon"></i></div>
+                <div class="credit-body">
+                    <div class="credit-name">TigerToolbox</div>
+                    <div class="credit-author">Pedro Lopes (Microsoft)</div>
+                    <div class="credit-desc">Collection of SQL Server tools and utilities</div>
+                </div>
+            </a>
+            <a class="credit-card" href="https://ola.hallengren.com" target="_blank">
+                <div class="credit-icon"><i class="fa-solid fa-broom"></i></div>
+                <div class="credit-body">
+                    <div class="credit-name">SQL Server Maintenance Solution</div>
+                    <div class="credit-author">Ola Hallengren</div>
+                    <div class="credit-desc">Industry-standard backup, integrity check, and index maintenance scripts</div>
+                </div>
+            </a>
+            <a class="credit-card" href="https://sqlskills.com/blogs/glenn" target="_blank">
+                <div class="credit-icon"><i class="fa-solid fa-magnifying-glass-chart"></i></div>
+                <div class="credit-body">
+                    <div class="credit-name">SQL Server DMV Diagnostic Queries</div>
+                    <div class="credit-author">Glenn Berry</div>
+                    <div class="credit-desc">SQL Server DMV-based diagnostic and performance queries</div>
+                </div>
+            </a>
+            <a class="credit-card" href="https://blog.waynesheffield.com" target="_blank">
+                <div class="credit-icon"><i class="fa-solid fa-sliders"></i></div>
+                <div class="credit-body">
+                    <div class="credit-name">SQL Server Startup Parameters</div>
+                    <div class="credit-author">Wayne Sheffield</div>
+                    <div class="credit-desc">SQL Server registry-based startup parameter scripts</div>
+                </div>
+            </a>
+            <a class="credit-card" href="https://github.com/ktaranov/sqlserver-kit" target="_blank">
+                <div class="credit-icon"><i class="fa-solid fa-flag"></i></div>
+                <div class="credit-body">
+                    <div class="credit-name">sqlserver-kit</div>
+                    <div class="credit-author">Konstantin Taranov</div>
+                    <div class="credit-desc">SQL Server trace flags reference and best-practice scripts</div>
+                </div>
+            </a>
+            <a class="credit-card" href="https://tracyboggiano.com" target="_blank">
+                <div class="credit-icon"><i class="fa-solid fa-shield-halved"></i></div>
+                <div class="credit-body">
+                    <div class="credit-name">SQL Audit (STIG)</div>
+                    <div class="credit-author">Tracy Boggiano</div>
+                    <div class="credit-desc">SQL Server STIG audit and compliance scripts</div>
+                </div>
+            </a>
+            <a class="credit-card" href="https://sqlmag.com" target="_blank">
+                <div class="credit-icon"><i class="fa-solid fa-envelope"></i></div>
+                <div class="credit-body">
+                    <div class="credit-name">Database Mail Configuration</div>
+                    <div class="credit-author">Tim Ford</div>
+                    <div class="credit-desc">SQL Server Database Mail one-script configuration</div>
+                </div>
+            </a>
+        </div>
+    </div>
+
+    <div class="about-section">
+        <h2><i class="fa-solid fa-book"></i> Overview</h2>
+        <p>
+            <strong>SQLTriage</strong> is a free, open-source SQL Server monitoring and health assessment tool
+            for Windows DBAs. Built on the SQLWATCH framework, it provides real-time monitoring, audit
+            health checks, interactive query execution plans, wait statistics, Always On AG monitoring, replication health,
+            SQL Agent job tracking, multi-channel alerting, and performance dashboards for multiple instances.
+        </p>
+        <p>
+            The application is designed to be a UI interface from various SQL Server health check scripts, with a focus on performance, security, and usability.
+            It is ideal for DBAs who want a powerful monitoring solution without the overhead of commercial tools.
+        </p>
+        <p>
+            Work on this app started late 2021, with various iterations and rewrites over time. The current version (V2) was a complete rewrite in .NET 8 and WPF, with a focus on performance, security, and user experience.
+        </p>
+        <p>
+            <strong>Version:</strong> @UpdateService.GetCurrentVersion() |
+            <strong>Platform:</strong> .NET 8 · WPF · Blazor WebView |
+            <strong>License:</strong> GPL v3.0
+        </p>
+    </div>
+
+    <div class="about-section">
+        <h2><i class="fa-solid fa-robot"></i> Development</h2>
+        <p>
+            This project was developed with assistance from AI coding assistants:
+        </p>
+        <ul>
+            <li><strong>Claude (Anthropic)</strong> — Architecture design, code generation, feature development, code review</li>
+            <li><strong>Amazon Q Developer</strong> — Code review, code refactoring, code generation</li>
+            <li><strong>Gemini (Google)</strong> — Architecture design, feature development</li>
+            <li><strong>Kilo (Codeium)</strong> — Real-time code completion, code generation, code review</li>
+            <li><strong>Cline</strong> — Local LLM access. Real-time code completion, code generation, code review</li>
+            <li><strong>LM Studio</strong> — Local LLM host.</li>
+            <li><strong>Minimax</strong> — Local LLM</li>
+            <li><strong>Qwen 3.5 -9b</strong> — Local LLM</li>
+            <li><strong>GLM 4.7 Flash</strong> — Local LLM</li>
+            <li><strong>Deepseek R1</strong> — Local LLM</li>
+            <li><strong>Gemma 3 27B</strong> — Local LLM</li>
+
+        </ul>
+    </div>
+
+    <div class="about-section">
+        <h2><i class="fa-solid fa-wand-magic-sparkles"></i> Features</h2>
+        <div class="features-grid">
+            <div class="feature-card">
+                <h3><i class="fa-solid fa-shield-halved"></i> Security Hardening</h3>
+                <ul>
+                    <li>AES-256-GCM credential encryption (DPAPI machine-key backed)</li>
+                    <li>Ephemeral session keys for in-memory data protection</li>
+                    <li>Parameterised queries (SQL injection prevention)</li>
+                    <li>Assembly obfuscation (ConfuserEx2 — anti-tamper, anti-debug)</li>
+                    <li>Single-file deployment with compressed bundling</li>
+                    <li>Comprehensive audit logging</li>
+                    <li>Process integrity validation</li>
+                </ul>
+            </div>
+            <div class="feature-card">
+                <h3><i class="fa-solid fa-bolt"></i> Performance</h3>
+                <ul>
+                    <li>Streaming JSON serialisation (Utf8JsonWriter)</li>
+                    <li>ArrayPool&lt;T&gt; zero-allocation row reading</li>
+                    <li>Per-query concurrent cache write locks</li>
+                    <li>Two-tier query throttle (heavy / light)</li>
+                    <li>Server GC + concurrent GC tuning</li>
+                    <li>Memory pressure monitoring &amp; alerts</li>
+                </ul>
+            </div>
+            <div class="feature-card">
+                <h3><i class="fa-solid fa-floppy-disk"></i> Caching</h3>
+                <ul>
+                    <li>SQLite WAL-mode persistent cache</li>
+                    <li>Delta-fetch for time-series panels</li>
+                    <li>Automatic stale-data eviction</li>
+                    <li>Offline resilience (serves cached data on SQL failure)</li>
+                    <li>Scheduled VACUUM + optimise maintenance</li>
+                </ul>
+            </div>
+            <div class="feature-card">
+                <h3><i class="fa-solid fa-chart-column"></i> Observability</h3>
+                <ul>
+                    <li>Serilog structured logging</li>
+                    <li>Query execution tracking with timing</li>
+                    <li>30-day rolling log retention</li>
+                    <li>Panel-level error reporting</li>
+                </ul>
+            </div>
+            <div class="feature-card">
+                <h3><i class="fa-solid fa-magnifying-glass"></i> Query Analysis</h3>
+                <ul>
+                    <li>Interactive graphical execution plan viewer (V2)</li>
+                    <li>Detail pane: full object path, cost breakdown, predicates, seek predicates, output columns, runtime stats, warnings</li>
+                    <li>Root operator always shows 100% cumulative cost</li>
+                    <li>Copy-to-clipboard button on plan detail pane</li>
+                    <li>Pane fade-on-exit (2.5 s) with hover-cancel</li>
+                    <li>Top usage queries by CPU / duration / reads</li>
+                    <li>Long-running query detection</li>
+                    <li>Blocking chain analysis</li>
+                </ul>
+            </div>
+            <div class="feature-card">
+                <h3><i class="fa-solid fa-bell"></i> Alerting &amp; Notifications</h3>
+                <ul>
+                    <li>Timer-based alert evaluation (30 s cycle)</li>
+                    <li>6 notification channels: Email (SMTP), Teams, Slack, Webhooks, PagerDuty, ServiceNow</li>
+                    <li>Configurable severity thresholds and cooldowns</li>
+                    <li>Alert history with SQLite persistence</li>
+                    <li>Scheduled task engine (60 s cycle) with CSV/Blob output</li>
+                    <li>All credentials AES-256-GCM encrypted</li>
+                </ul>
+            </div>
+            <div class="feature-card">
+                <h3><i class="fa-solid fa-tags"></i> Server Management</h3>
+                <ul>
+                    <li>Multi-server connection management</li>
+                    <li>Server tagging and environment labels (Prod/Staging/Dev/QA/DR)</li>
+                    <li>Filter servers by tag or environment</li>
+                    <li>Windows, SQL Server, and Entra MFA authentication</li>
+                    <li>Automatic connection testing on startup</li>
+                    <li>RBAC: Admin / Operator / Viewer roles with OAuth</li>
+                </ul>
+            </div>
+            <div class="feature-card">
+                <h3><i class="fa-solid fa-cloud-arrow-up"></i> Azure Blob Export</h3>
+                <ul>
+                    <li>Auto-upload audit CSVs to Azure Blob Storage</li>
+                    <li>Dual upload: Azure SDK &amp; AzCopy fallback</li>
+                    <li>SAS token &amp; User Delegation SAS auth</li>
+                    <li>Directory-scoped SAS support</li>
+                    <li>Connection diagnostics modal</li>
+                    <li>Toast notifications for upload results</li>
+                </ul>
+            </div>
+            <div class="feature-card">
+                <h3><i class="fa-solid fa-palette"></i> User Experience</h3>
+                <ul>
+                    <li>Toast notifications</li>
+                    <li>Keyboard shortcuts (Ctrl+1–9)</li>
+                    <li>Configurable auto-refresh</li>
+                    <li>Cancel in-flight dashboard loads</li>
+                    <li>Panel maximise / full-screen view</li>
+                    <li>WCAG 2.1 AA accessibility</li>
+                    <li>2-column settings layout for quick access</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="about-section">
+        <h2><i class="fa-solid fa-rocket"></i> Deploying SQLWatch Database</h2>
+
+        <h3>Option 1: Deploy via Application (Recommended)</h3>
+        <ol>
+            <li>Go to <strong>Monitoring new server</strong> from the navigation menu</li>
+            <li>Enter your SQL Server connection details (server name, authentication method)</li>
+            <li>Select the database name (default: SQLWATCH)</li>
+            <li>Click <strong>Deploy</strong> — the application will create the database and tables automatically</li>
+            <li>Once deployed, the server will appear in your servers list</li>
+        </ol>
+
+        <h3>Option 2: Manual Deployment</h3>
+        <ol>
+            <li>Locate the SQLWATCH deployment scripts in the application directory</li>
+            <li>Run <code>01_CreateSQLWATCHDB.sql</code> to create the database and tables</li>
+            <li>Run <code>02_PostSQLWATCHDBcreate.sql</code> to add post-creation objects</li>
+            <li>Configure SQL Agent jobs for data collection (optional)</li>
+        </ol>
+
+        <div class="alert alert-info">
+            <strong>Note:</strong> The application requires SQL Server 2016 or later for full functionality.
+        </div>
+
+        <h3><i class="fa-solid fa-lock"></i> Trust Server Certificate</h3>
+        <p>
+            If you encounter SSL/TLS connection errors, enable the <strong>Trust Server Certificate</strong> option:
+        </p>
+        <ul>
+            <li><strong>Via Settings:</strong> Go to Settings and enable "Trust Server Certificate"</li>
+            <li><strong>New Server:</strong> Check "Trust Server Certificate" when adding a server</li>
+            <li><strong>Connection String:</strong> Add <code>TrustServerCertificate=True</code> manually</li>
+        </ul>
+        <div class="alert alert-warning">
+            <strong>Security Note:</strong> Only enable Trust Server Certificate in trusted environments.
+            In production, ensure the SQL Server has a valid SSL certificate installed.
+        </div>
+    </div>
+
+    <div class="about-section">
+        <h2><i class="fa-solid fa-bolt"></i> Audit Assessment &amp; Diagnostics</h2>
+
+        <h3>Audit Assessment (Ctrl+Q)</h3>
+        <p>Framework-mapped check corpus run against your SQL Server instances, covering:</p>
+        <ul>
+            <li>CPU utilisation and memory pressure</li>
+            <li>Active sessions and blocking queries</li>
+            <li>Index health (missing and unused indexes)</li>
+            <li>Configurable severity filtering (Critical / Warning / Info)</li>
+        </ul>
+
+        <h3>Raw Diagnostics (Ctrl+4)</h3>
+        <p>Raw diagnostic <code>.sql</code> scripts executed against selected servers with results
+        exported to CSV — an expert tool, distinct from the curated Audit Assessment corpus.</p>
+    </div>
+
+    <div class="about-section">
+        <h2><i class="fa-solid fa-chart-column"></i> Available Dashboards</h2>
+        <table class="dashboards-table">
+            <thead>
+                <tr>
+                    <th>Dashboard</th>
+                    <th>Description</th>
+                    <th>Shortcut</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>Repository</td><td>Status overview of all monitored servers</td><td>Ctrl+1</td></tr>
+                <tr><td>Live Monitor</td><td>Real-time sessions, waits, top queries, execution plans</td><td>Ctrl+2</td></tr>
+                <tr><td>Instance Overview</td><td>Detailed per-instance metrics and trends</td><td>Ctrl+3</td></tr>
+                <tr><td>Query Store</td><td>Query Store statistics and plan analysis</td><td>—</td></tr>
+                <tr><td>Long Queries</td><td>Queries exceeding duration threshold</td><td>—</td></tr>
+                <tr><td>Wait Events</td><td>Wait statistics categorized and trended</td><td>—</td></tr>
+                <tr><td>Blocking</td><td>Blocking chains and deadlock analysis</td><td>—</td></tr>
+                <tr><td>Sessions</td><td>Live session bubble view with blocking chains</td><td>—</td></tr>
+                <tr><td>Performance Monitor</td><td>Erik Darling's Performance Monitor dashboards</td><td>—</td></tr>
+                <tr><td>Live Wait Stats</td><td>Wait category breakdown including locking waits %</td><td>—</td></tr>
+                <tr><td>Live Index Health</td><td>Missing indexes, fragmentation, unused indexes</td><td>—</td></tr>
+                <tr><td>Backup Health</td><td>Databases overdue for full / log backups, history</td><td>—</td></tr>
+                <tr><td>Live Query Stats</td><td>Plan cache hit ratio, top CPU / IO / duration queries</td><td>—</td></tr>
+                <tr><td>Live Jobs</td><td>Running jobs, failed jobs (24 h), job history</td><td>—</td></tr>
+                <tr><td>Live TempDB</td><td>TempDB usage, version store, long transactions</td><td>—</td></tr>
+                <tr><td>Replication</td><td>Publications, subscriptions, undistributed commands, agent history</td><td>—</td></tr>
+                <tr><td>Always On AG</td><td>AG health, replica status, redo/send queue trends, listeners</td><td>—</td></tr>
+                <tr><td>Job Monitor</td><td>Agent jobs overview, failures detail, schedules, long-running jobs</td><td>—</td></tr>
+                <tr><td>Vulnerability Assessment</td><td>SQL Server security assessment results</td><td>—</td></tr>
+                <tr><td>Checks</td><td>Automated health check results</td><td>—</td></tr>
+                <tr><td>Audit Assessment</td><td>Framework-mapped check corpus</td><td>Ctrl+Q</td></tr>
+                <tr><td>Raw Diagnostics</td><td>Diagnostic .sql scripts → CSV</td><td>Ctrl+4</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="about-section">
+        <h2><i class="fa-solid fa-circle-question"></i> Frequently Asked Questions</h2>
+
+        <details>
+            <summary><strong>Q: How do I add a new SQL Server to monitor?</strong></summary>
+            <p>
+                Go to <strong>Servers</strong> (Ctrl+8), click <strong>Add Server</strong>,
+                enter the connection details, and click Save. You can then deploy the SQLWatch
+                database to start monitoring.
+            </p>
+        </details>
+
+        <details>
+            <summary><strong>Q: What permissions does the monitoring user need?</strong></summary>
+            <ul>
+                <li>VIEW SERVER STATE</li>
+                <li>VIEW DATABASE STATE</li>
+                <li>db_owner role on the SQLWATCH database</li>
+            </ul>
+        </details>
+
+        <details>
+            <summary><strong>Q: How do I view a query execution plan?</strong></summary>
+            <p>
+                Rows with a <i class="fa-solid fa-clipboard-list"></i> badge have a cached execution plan. Click any such row to open the
+                interactive graphical plan viewer. Plans are available in:
+            </p>
+            <ul>
+                <li><strong>Live Monitor</strong> → Top Usage Queries panel</li>
+                <li><strong>Performance Monitor</strong> → Expensive Queries grid (<code>query_plan_xml</code> column)</li>
+                <li><strong>Live Query Stats</strong> → top query grids</li>
+            </ul>
+            <p>
+                Hover over any node to see the detail pane (object path, cost breakdown, predicate).
+                The pane fades after 2.5 s; hover the pane itself to keep it visible. Use the copy button to copy node details.
+            </p>
+        </details>
+
+        <details>
+            <summary><strong>Q: How often is data collected?</strong></summary>
+            <p>
+                By default, data is collected every minute via SQL Agent jobs. The dashboard
+                auto-refresh interval is configurable in Settings.
+            </p>
+        </details>
+
+        <details>
+            <summary><strong>Q: Can I monitor multiple servers from one dashboard?</strong></summary>
+            <p>
+                Yes — use the Instance dropdown to switch between servers, or select "All Instances"
+                for aggregated data across all monitored servers.
+            </p>
+        </details>
+
+        <details>
+            <summary><strong>Q: Where is data stored?</strong></summary>
+            <p>
+                Application settings: <code>appsettings.json</code> and <code>user-settings.json</code>.<br/>
+                Dashboard cache: <code>SQLTriage-cache.db</code> (SQLite, WAL mode).<br/>
+                Monitoring data: SQLWATCH database on your SQL Server.<br/>
+                Logs: <code>logs/app-YYYYMMDD.log</code> (30-day rolling).
+            </p>
+        </details>
+
+        <details>
+            <summary><strong>Q: How do I troubleshoot connection issues?</strong></summary>
+            <p>
+                1. Verify SQL Server is running and network-accessible<br/>
+                2. Check Windows Firewall / port 1433<br/>
+                3. Enable Trust Server Certificate in Settings for encrypted connections<br/>
+                4. Check <code>logs/app-*.log</code> for detailed error messages
+            </p>
+        </details>
+    </div>
+
+    <div class="about-section">
+        <h2><i class="fa-solid fa-keyboard"></i> Keyboard Shortcuts</h2>
+        <p>Press <kbd>?</kbd> to show the shortcuts dialog at any time.</p>
+        <table class="shortcuts-table">
+            <thead>
+                <tr><th>Shortcut</th><th>Action</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><kbd>Ctrl+1–9</kbd></td><td>Navigate to dashboards 1–9</td></tr>
+                <tr><td><kbd>Ctrl+H</kbd></td><td>Health page</td></tr>
+                <tr><td><kbd>Ctrl+Q</kbd></td><td>Audit Assessment</td></tr>
+                <tr><td><kbd>Ctrl+E</kbd></td><td>Dashboard Editor</td></tr>
+                <tr><td><kbd>Ctrl+S</kbd></td><td>Save (in editor)</td></tr>
+                <tr><td><kbd>?</kbd></td><td>Show shortcuts help</td></tr>
+                <tr><td><kbd>Esc</kbd></td><td>Close dialogs / modals</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="about-section">
+        <h2><i class="fa-solid fa-wrench"></i> Configuration</h2>
+        <p>Application settings are managed through environment-specific configuration files:</p>
+        <ul>
+            <li><strong>appsettings.json</strong> — Base configuration (timeouts, cache limits, refresh intervals)</li>
+            <li><strong>appsettings.Development.json</strong> — Development overrides</li>
+            <li><strong>appsettings.Production.json</strong> — Production overrides</li>
+            <li><strong>dashboard-config.json</strong> — Dashboard and panel definitions (editable in-app)</li>
+        </ul>
+    </div>
+
+    <div class="about-section">
+        <h2><i class="fa-solid fa-box"></i> Deployment</h2>
+        <p><strong>Build Type:</strong> Self-contained single-file executable (win-x64).</p>
+        <ul>
+            <li>ReadyToRun (R2R) pre-compilation for fast startup</li>
+            <li>All DLLs bundled into a single compressed exe</li>
+            <li>Assembly protection via ConfuserEx2 (obfuscation, anti-tamper, anti-debug)</li>
+            <li>Server GC + concurrent GC for optimal throughput</li>
+            <li>Windows Service mode for headless deployment on servers</li>
+        </ul>
+        <p>Manage updates via <strong>Configure → Service &amp; Updates</strong>.</p>
+    </div>
+
+    <div class="about-section">
+        <h2><i class="fa-solid fa-shield-halved"></i> Enterprise Security Architecture</h2>
+        <p>SQLTriage is hardened for enterprise database environments:</p>
+        <table class="dashboards-table">
+            <thead><tr><th>Layer</th><th>Protection</th><th>Detail</th></tr></thead>
+            <tbody>
+                <tr><td>Credentials</td><td>AES-256-GCM</td><td>Machine-scoped DPAPI key file + authenticated encryption. Works for interactive and service accounts.</td></tr>
+                <tr><td>In-Memory Data</td><td>Ephemeral AES-256-GCM</td><td>Dashboard results encrypted with a per-process session key (never persisted). Memory dumps cannot recover previous sessions.</td></tr>
+                <tr><td>SQL Execution</td><td>Parameterised Queries</td><td>All SQL is parameterised — no string concatenation. Query throttling prevents abuse.</td></tr>
+                <tr><td>Assembly</td><td>ConfuserEx2 Obfuscation</td><td>Symbol renaming, string encryption, control flow obfuscation, anti-tamper, anti-debug, reference proxying.</td></tr>
+                <tr><td>Transport</td><td>TLS / Encrypted Connection</td><td>SQL connections support TLS. Server mode uses Kestrel with configurable HTTPS.</td></tr>
+                <tr><td>Audit</td><td>Structured Logging</td><td>All operations logged with Serilog. 30-day rolling retention. User + machine context on every entry.</td></tr>
+                <tr><td>Process</td><td>Resilience + Isolation</td><td>Polly retry policies, connection pooling, query timeouts, memory pressure monitoring.</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="about-section">
+        <h2><i class="fa-solid fa-envelope"></i> Email Notifications — OAuth2 Setup (O365)</h2>
+        <p>
+            Microsoft 365 has disabled Basic Auth for SMTP. To send alert emails from an O365 mailbox,
+            create an Azure App Registration with <strong>Mail.Send</strong> application permission,
+            then enable OAuth2 in <strong>Alerting Config → Email (SMTP)</strong>.
+        </p>
+        <ol>
+            <li>
+                <strong>portal.azure.com</strong> → Azure Active Directory → App registrations → <strong>New registration</strong><br />
+                <span style="color: var(--text-muted); font-size: 13px;">Name: anything · Account type: This org only · No redirect URI needed</span>
+            </li>
+            <li>
+                App → API permissions → <strong>Add a permission</strong> → Microsoft Graph → Application permissions → <code>Mail.Send</code> → Add<br />
+                → <strong>Grant admin consent</strong> (requires Global Admin)
+            </li>
+            <li>
+                Certificates &amp; secrets → <strong>New client secret</strong> — copy the <strong>Value</strong> immediately (shown once only)
+            </li>
+            <li>
+                From the app Overview page, copy <strong>Directory (tenant) ID</strong> and <strong>Application (client) ID</strong>
+            </li>
+            <li>
+                In Alerting Config → Email → check <strong>Use OAuth2</strong>, enter the three values,
+                set <strong>From Address</strong> to the licensed mailbox, Save, then Test.
+            </li>
+        </ol>
+        <p style="font-size: 13px; color: var(--text-muted);">
+            <i class="fa-solid fa-circle-info" style="margin-right: 4px;"></i>
+            The From Address must match the mailbox the app registration has Mail.Send permission on.
+            Username and Password are ignored when OAuth2 is enabled. A <strong>?</strong> button
+            next to the OAuth2 toggle in Alerting Config shows these same instructions in-context.
+        </p>
+    </div>
+
+    <div class="about-section">
+        <h2><i class="fa-solid fa-phone"></i> Support</h2>
+        <p>
+            For issues and feedback, visit the project repository:
+            <a href="https://github.com/SQLAdrian/SQLTriage" target="_blank">github.com/SQLAdrian/SQLTriage</a>
+        </p>
+        <h4>Get Help</h4>
+        <ul>
+            <li><a href="https://github.com/SQLAdrian/SQLTriage/discussions" target="_blank">Ask a question (GitHub Discussions)</a></li>
+            <li><a href="https://github.com/SQLAdrian/SQLTriage/issues/new?template=bug_report.md" target="_blank">Report a bug</a></li>
+            <li><a href="https://github.com/SQLAdrian/SQLTriage/blob/main/QUICKSTART.md#frequently-asked-questions" target="_blank">FAQ</a></li>
+        </ul>
+    </div>
+
+    <div class="about-actions">
+        <button class="btn btn-primary" @onclick="GoToQuickCheck">
+            <i class="fa-solid fa-bolt"></i> Run Audit Assessment
+        </button>
+        <button class="btn btn-secondary" @onclick="GoToMonitoring">
+            <i class="fa-solid fa-microscope"></i> Deploy Monitoring
+        </button>
+    </div>
+</div>
+
+@code {
+    private void GoToQuickCheck()
+    {
+        Navigation.NavigateTo(RouteConstants.QuickCheck);
+    }
+
+    private void GoToMonitoring()
+    {
+        Navigation.NavigateTo(RouteConstants.DeploySqlWatch);
+    }
+}
+
+<!-- Styles extracted to wwwroot/css/About.css 2026-05-11 (CLAUDE.md convention). -->

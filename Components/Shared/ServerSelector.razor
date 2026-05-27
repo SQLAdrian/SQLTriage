@@ -1,0 +1,200 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@* ServerSelector — shared chip/button grid for server selection.
+   Two modes:
+     Name mode  (Items == null): Servers list of strings, Selected/SelectedChanged.
+     Id mode    (Items != null): Items list of (Id, Label) tuples, SelectedId/SelectedIdChanged.
+   Falls back to a <select> when item count > DropdownFallbackThreshold. *@
+
+@{
+    // Resolve which item list and selection key to use for rendering.
+    var isIdMode  = Items != null;
+    var itemCount = isIdMode ? Items!.Count : Servers.Count;
+    // In id-mode "nothing selected" == null/empty SelectedId (== AllScope).
+    var allSelected = isIdMode
+        ? string.IsNullOrEmpty(SelectedId)
+        : (Selected == null);
+}
+
+@* ── Empty state ──────────────────────────────────────────────────────────── *@
+@if (itemCount == 0)
+{
+    <p class="ss-empty">No connections — <a href="/settings">add a server</a></p>
+}
+@* ── Chip / button grid (THE MODE: one pattern, always — scroll on overflow,
+     never a silent mode-switch to a dropdown) ───────────────────────────────── *@
+else
+{
+    <div class="ss-buttons">
+        @if (AllowAllScope)
+        {
+            <button class="ss-btn ss-btn-all @(allSelected ? "selected" : "")"
+                    @onclick="SelectAll">
+                @if (allSelected)
+                {
+                    <i class="fa-solid fa-circle-check"></i>
+                }
+                All servers
+            </button>
+        }
+        @if (isIdMode)
+        {
+            @foreach (var item in Items!)
+            {
+                var itemId    = item.Id;
+                var itemLabel = item.Label;
+                var isSelected = itemId == SelectedId;
+                <button class="ss-btn @(isSelected ? "selected" : "")"
+                        @onclick="() => SelectById(itemId)">
+                    @if (isSelected)
+                    {
+                        <i class="fa-solid fa-circle-check"></i>
+                    }
+                    @itemLabel
+                </button>
+            }
+        }
+        else
+        {
+            @foreach (var s in Servers)
+            {
+                var serverName = s;
+                <button class="ss-btn @(serverName == Selected ? "selected" : "")"
+                        @onclick="() => SelectSingle(serverName)">
+                    @if (serverName == Selected)
+                    {
+                        <i class="fa-solid fa-circle-check"></i>
+                    }
+                    @serverName
+                </button>
+            }
+        }
+    </div>
+}
+
+@code {
+    // ── Parameters ────────────────────────────────────────────────────────────
+
+    /// <summary>Ordered list of server display names to present (name mode).</summary>
+    [Parameter]
+    public IReadOnlyList<string> Servers { get; set; } = Array.Empty<string>();
+
+    // ── Id-keyed mode (additive — does not break existing name-string callers) ─
+
+    /// <summary>Id/Label pairs for id-keyed mode. When non-null, the component
+    /// renders chips whose text is Label but whose value is Id.
+    /// Existing callers that only pass Servers leave this null.</summary>
+    [Parameter] public IReadOnlyList<(string Id, string Label)>? Items { get; set; }
+
+    /// <summary>Currently selected connection Id in id-keyed mode.
+    /// Null / empty = "All servers" selected.</summary>
+    [Parameter] public string? SelectedId { get; set; }
+
+    /// <summary>Raised when the selected Id changes. Null = "All servers".</summary>
+    [Parameter] public EventCallback<string?> SelectedIdChanged { get; set; }
+
+    // ── Single-select name mode ────────────────────────────────────────────────
+
+    /// <summary>Currently selected server name. Null / empty = nothing selected.</summary>
+    [Parameter] public string? Selected { get; set; }
+
+    /// <summary>Raised when the single-select value changes.</summary>
+    [Parameter] public EventCallback<string?> SelectedChanged { get; set; }
+
+    // ── Multi-select (future use — API surface baked in, minimally stubbed) ───
+
+    /// <summary>When true the component supports selecting multiple servers.
+    /// NOTE: pilot (CheckValidator) uses single-select only. Multi behaviour
+    /// is compile-correct but not yet wired to distinct multi-select UI.</summary>
+    [Parameter] public bool AllowMultiple { get; set; } = false;
+
+    /// <summary>Currently selected servers when AllowMultiple is true.</summary>
+    [Parameter] public IReadOnlyList<string> SelectedMany { get; set; } = Array.Empty<string>();
+
+    /// <summary>Raised when the multi-select set changes.</summary>
+    [Parameter] public EventCallback<IReadOnlyList<string>> SelectedManyChanged { get; set; }
+
+    // ── Scope ─────────────────────────────────────────────────────────────────
+
+    /// <summary>When true, renders a loud first "All servers" chip that is
+    /// pre-selected by default (default-is-destiny). Single-select pages leave
+    /// this false.</summary>
+    [Parameter] public bool AllowAllScope { get; set; } = false;
+
+    // ── Layout / threshold ────────────────────────────────────────────────────
+
+    /// <summary>DEPRECATED / no-op. Retained only so existing call-sites keep
+    /// compiling. THE MODE locked 2026-05-18: the chip grid is ALWAYS rendered
+    /// (it scrolls on overflow) — there is no silent dropdown mode-switch.</summary>
+    [Parameter] public int DropdownFallbackThreshold { get; set; } = 12;
+
+    /// <summary>DEPRECATED / no-op (dropdown fallback removed). Retained for
+    /// call-site API compatibility only.</summary>
+    [Parameter] public string? Placeholder { get; set; }
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
+
+    protected override void OnParametersSet()
+    {
+        if (Items != null)
+        {
+            // Id mode: auto-select the single item when exactly one exists and
+            // nothing has been selected yet (unhappy-path: 1 server → no busywork).
+            if (Items.Count == 1 && string.IsNullOrEmpty(SelectedId))
+                _ = SelectById(Items[0].Id);
+        }
+        else
+        {
+            // Name mode: auto-select the single server when exactly one available.
+            if (Servers.Count == 1 && string.IsNullOrEmpty(Selected))
+                _ = SelectSingleAsync(Servers[0]);
+        }
+    }
+
+    // ── Private helpers — id mode ─────────────────────────────────────────────
+
+    private async Task SelectById(string id)
+    {
+        await SelectedIdChanged.InvokeAsync(id);
+    }
+
+    // ── Private helpers — name mode ───────────────────────────────────────────
+
+    private async Task SelectSingle(string server)
+    {
+        await SelectSingleAsync(server);
+    }
+
+    private async Task SelectSingleAsync(string server)
+    {
+        if (AllowMultiple)
+        {
+            // Multi-select: toggle membership.
+            var current = SelectedMany.ToList();
+            if (current.Contains(server, StringComparer.OrdinalIgnoreCase))
+                current.Remove(server);
+            else
+                current.Add(server);
+            await SelectedManyChanged.InvokeAsync(current.AsReadOnly());
+        }
+        else
+        {
+            await SelectedChanged.InvokeAsync(server);
+        }
+    }
+
+    private async Task SelectAll()
+    {
+        if (Items != null)
+        {
+            // Id mode: null = "All servers" scope.
+            await SelectedIdChanged.InvokeAsync(null);
+        }
+        else
+        {
+            // Name mode: null clears the single selection.
+            await SelectedChanged.InvokeAsync(null);
+            if (AllowMultiple)
+                await SelectedManyChanged.InvokeAsync(Array.Empty<string>());
+        }
+    }
+}

@@ -1,0 +1,165 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/perf-inspector"
+<PageTitle>SQLTriage - Performance Inspector</PageTitle>
+@using SQLTriage.Data.Services
+@using SQLTriage.Data.Models
+@inject PerformanceInspectorService PerfService
+
+<h2>Performance Inspector</h2>
+
+@if (!PerfService.IsEnabled)
+{
+    <div class="callout callout-warning">
+        <strong>Performance Inspector is disabled.</strong>
+        Enable it in <a href="RouteConstants.Settings">Settings → Performance Diagnostics</a>, then load a dashboard.
+    </div>
+}
+
+@if (!Traces.Any())
+{
+    <p>No traces captured yet. Load a dashboard while the inspector is enabled.</p>
+}
+else
+{
+    var last = LastLoadTraces;
+    if (last.Length == 0)
+    {
+        <p>No traces for the most recent dashboard load.</p>
+    }
+    else
+    {
+        var minStart = last.Min(t => t.StartedAt);
+        var maxEnd = last.Max(t => t.DataReadyAt == default ? t.StartedAt : t.DataReadyAt);
+        var wallClockMs = Math.Max(1, (maxEnd - minStart).TotalMilliseconds);
+        var slowest = last.OrderByDescending(t => t.PipelineDuration).First();
+        var dashboardId = last.First().DashboardId;
+
+        <div class="perf-summary">
+            <div><strong>Dashboard:</strong> @dashboardId</div>
+            <div><strong>Panels:</strong> @last.Length</div>
+            <div><strong>Wall-clock:</strong> @((wallClockMs / 1000.0).ToString("F2")) s (first StartedAt → last DataReadyAt)</div>
+            <div><strong>Slowest panel:</strong> <code>@slowest.PanelId</code> — @slowest.PipelineDuration.TotalMilliseconds.ToString("F0") ms @(slowest.Success ? "" : $"({slowest.ErrorMessage})")</div>
+            <div><strong>Dominant bucket:</strong> @GetDominantBucket(last)</div>
+        </div>
+
+        <h3>Waterfall — last load (sorted slowest first)</h3>
+
+        <div class="waterfall">
+            @{
+                var sorted = last.OrderByDescending(t => t.PipelineDuration).ToArray();
+                // Axis: 5 evenly-spaced ticks
+                var tickValues = Enumerable.Range(0, 6).Select(i => wallClockMs * i / 5).ToArray();
+            }
+
+            <!-- Axis header -->
+            <div class="waterfall-row waterfall-axis">
+                <div class="waterfall-label">&nbsp;</div>
+                <div class="waterfall-track">
+                    @foreach (var tickMs in tickValues)
+                    {
+                        var pct = (tickMs / wallClockMs) * 100.0;
+                        <div class="waterfall-tick" style="left: @(pct.ToString("F2"))%">
+                            <span class="waterfall-tick-label">@((tickMs / 1000.0).ToString("F1"))s</span>
+                        </div>
+                    }
+                </div>
+                <div class="waterfall-duration">duration</div>
+            </div>
+
+            @foreach (var t in sorted)
+            {
+                var startPct = ((t.StartedAt - minStart).TotalMilliseconds / wallClockMs) * 100.0;
+                var durMs = t.PipelineDuration.TotalMilliseconds;
+                var widthPct = Math.Max(0.3, (durMs / wallClockMs) * 100.0);
+                var cls = t.Success ? "waterfall-bar ok" : "waterfall-bar fail";
+                var tip = t.Success
+                    ? $"{t.PanelId} — {durMs:F0} ms, {t.RowCount} rows"
+                    : $"{t.PanelId} — {durMs:F0} ms, FAILED: {t.ErrorMessage}";
+
+                <div class="waterfall-row">
+                    <div class="waterfall-label" title="@t.PanelId">@t.PanelId</div>
+                    <div class="waterfall-track">
+                        @foreach (var tickMs in tickValues.Skip(1).Take(tickValues.Length - 2))
+                        {
+                            var pct = (tickMs / wallClockMs) * 100.0;
+                            <div class="waterfall-gridline" style="left: @(pct.ToString("F2"))%"></div>
+                        }
+                        <div class="@cls" style="left: @(startPct.ToString("F2"))%; width: @(widthPct.ToString("F2"))%;" title="@tip"></div>
+                    </div>
+                    <div class="waterfall-duration @(t.Success ? "" : "fail-text")">@durMs.ToString("F0") ms</div>
+                </div>
+            }
+        </div>
+
+        <h3>All traces (most recent first)</h3>
+        <div class="perf-table-scroll">
+            <table class="results-table compact">
+                <thead>
+                    <tr>
+                        <th>Dashboard</th>
+                        <th>Panel</th>
+                        <th>Type</th>
+                        <th>Server</th>
+                        <th>Cache Tier</th>
+                        <th>Rows</th>
+                        <th>Fetch (ms)</th>
+                        <th>Mapping (ms)</th>
+                        <th>Pipeline (ms)</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var trace in Traces.Reverse())
+                    {
+                        var rowCls = trace.Success ? "" : "row-fail";
+                        <tr class="@rowCls">
+                            <td>@trace.DashboardId</td>
+                            <td><code>@trace.PanelId</code></td>
+                            <td>@trace.PanelType</td>
+                            <td>@trace.ServerName</td>
+                            <td>@trace.CacheHitTier</td>
+                            <td>@trace.RowCount</td>
+                            <td>@trace.FetchDuration.TotalMilliseconds.ToString("F0")</td>
+                            <td>@trace.MappingDuration.TotalMilliseconds.ToString("F0")</td>
+                            <td><strong>@trace.PipelineDuration.TotalMilliseconds.ToString("F0")</strong></td>
+                            <td>@(trace.Success ? "OK" : (trace.ErrorMessage ?? "failed"))</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <p class="perf-caveat">
+            <strong>Scope:</strong> Fetch wraps <code>CachingQueryExecutor.ExecuteQueryAsync</code>
+            (hot-tier + SQLite + SQL round-trip + cache write as one span). Render time is not measured.
+            Failed panels show the error in the Status column and their full timeout duration in Pipeline.
+        </p>
+    }
+}
+
+@code {
+    private IReadOnlyList<PanelTrace> Traces => PerfService.GetRecentTraces();
+    private PanelTrace[] LastLoadTraces => PerfService.GetLastLoadTraces();
+
+    private string GetDominantBucket(IEnumerable<PanelTrace> traces)
+    {
+        var list = traces.ToList();
+        if (list.Count == 0) return "(no data)";
+
+        // A single long-timeout panel should be called out explicitly — averaging hides it.
+        var slowest = list.OrderByDescending(t => t.PipelineDuration).First();
+        var median = list.OrderBy(t => t.PipelineDuration).ElementAt(list.Count / 2);
+        if (slowest.PipelineDuration.TotalMilliseconds > median.PipelineDuration.TotalMilliseconds * 10)
+        {
+            return $"Single slow panel '{slowest.PanelId}' at {slowest.PipelineDuration.TotalMilliseconds:F0} ms " +
+                   $"(median {median.PipelineDuration.TotalMilliseconds:F0} ms). Tune this panel, not the orchestrator.";
+        }
+
+        var avgFetch = list.Average(t => t.FetchDuration.TotalMilliseconds);
+        var avgMap = list.Average(t => t.MappingDuration.TotalMilliseconds);
+
+        if (avgFetch > avgMap)
+            return $"Fetch (cache + SQL + write) — avg {avgFetch:F0} ms per panel across {list.Count} panels";
+        return $"Mapping — avg {avgMap:F0} ms per panel";
+    }
+}

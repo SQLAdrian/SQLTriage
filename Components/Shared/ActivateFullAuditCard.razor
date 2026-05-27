@@ -1,0 +1,189 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using SQLTriage.Data
+@using SQLTriage.Data.Services.Licensing
+@inject LicenseService LicenseSvc
+@inject IBundleAccessor Bundle
+@inject ToastService Toast
+@implements IDisposable
+
+<div class="activate-card">
+    <h3 class="activate-card-title">Full Audit License</h3>
+    <p class="activate-card-subtitle">Enter your customer name and 24-word license key to unlock the complete 700-check corpus.</p>
+
+    <div class="activate-card-status">
+        <span class="activate-status-item">
+            <span class="activate-status-label">Tier</span>
+            <span class="activate-status-value @_tierStatusClass">@_tierStatusText</span>
+        </span>
+        <span class="activate-status-item">
+            <span class="activate-status-label">Customer</span>
+            <span class="activate-status-value">@(_clientName ?? "—")</span>
+        </span>
+        <span class="activate-status-item">
+            <span class="activate-status-label">Bundle</span>
+            <span class="activate-status-value" style="font-family:monospace;font-size:11px;">@_bundleStatusText</span>
+        </span>
+    </div>
+
+    <div class="activate-card-form">
+        <div class="activate-field">
+            <label for="act-customer-name">Customer name</label>
+            <input id="act-customer-name"
+                   type="text"
+                   placeholder="Exact name as supplied in your license email"
+                   @bind="_customerName"
+                   @bind:event="oninput"
+                   disabled="@_busy" />
+        </div>
+
+        <div class="activate-field">
+            <label for="act-license-key">License key</label>
+            <textarea id="act-license-key"
+                      rows="4"
+                      placeholder="24-word BIP39 phrase or Base64 key string"
+                      @bind="_licenseKey"
+                      @bind:event="oninput"
+                      disabled="@_busy"></textarea>
+            <p class="activate-field-hint">Paste the 24-word phrase or Base64 string exactly as supplied.</p>
+        </div>
+
+        <div class="activate-field">
+            <label>Bundle file location</label>
+            <div class="activate-bundle-path">@_installDir</div>
+            @if (_aesgcmFiles.Count == 0)
+            {
+                <p class="activate-field-hint activate-field-hint--warn">
+                    No <code>*.aesgcm</code> bundle found. Save the file Adrian emailed you into this folder, then click Activate.
+                </p>
+            }
+            else
+            {
+                <p class="activate-field-hint">
+                    Found @_aesgcmFiles.Count bundle file@(_aesgcmFiles.Count == 1 ? "" : "s") in this folder:
+                    @string.Join(", ", _aesgcmFiles.Select(System.IO.Path.GetFileName))
+                </p>
+            }
+        </div>
+
+        <div class="activate-actions">
+            <button class="activate-btn-primary"
+                    @onclick="OnActivateClicked"
+                    disabled="@(!CanActivate)">
+                Activate
+            </button>
+
+            @if (_tier == Tier.Full && Bundle.IsUnlocked)
+            {
+                <button class="activate-btn-secondary"
+                        @onclick="OnDeactivateClicked"
+                        disabled="@_busy">
+                    Deactivate Full Audit
+                </button>
+            }
+
+            @if (_busy)
+            {
+                <span class="activate-busy">Working...</span>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private string _customerName = string.Empty;
+    private string _licenseKey   = string.Empty;
+    private bool   _busy         = false;
+
+    private Tier    _tier        => Bundle.Tier;
+    private string? _clientName  => Bundle.ClientName;
+
+    // Install dir where the app looks for *.aesgcm bundles
+    private string _installDir => AppContext.BaseDirectory.TrimEnd(System.IO.Path.DirectorySeparatorChar);
+
+    // All .aesgcm bundles in the install dir at last check
+    private IReadOnlyList<string> _aesgcmFiles =>
+        System.IO.Directory.Exists(_installDir)
+            ? System.IO.Directory.GetFiles(_installDir, "*.aesgcm",
+                System.IO.SearchOption.TopDirectoryOnly)
+            : System.Array.Empty<string>();
+
+    // Tier badge text/class — three states surfaced
+    private string _tierStatusText =>
+        !Bundle.IsUnlocked ? "Not Activated"
+        : _tier == Tier.Full ? "Full"
+        : "Free";
+
+    private string _tierStatusClass =>
+        !Bundle.IsUnlocked ? "tier-not-activated"
+        : _tier == Tier.Full ? "tier-full"
+        : "tier-free";
+
+    // Bundle status — one of: "<filename> (decrypted)", "<N> file(s) found, not decrypted", "no .aesgcm files"
+    private string _bundleStatusText
+    {
+        get
+        {
+            if (Bundle.IsUnlocked && _tier == Tier.Full)
+                return $"{(_aesgcmFiles.FirstOrDefault() is { } f ? System.IO.Path.GetFileName(f) : "(in-memory)")} (decrypted)";
+            if (Bundle.IsUnlocked && _tier == Tier.Free)
+                return "free-bundle.dat (decrypted)";
+            return _aesgcmFiles.Count == 0
+                ? "no .aesgcm files in install dir"
+                : $"{_aesgcmFiles.Count} candidate file(s), none decrypted";
+        }
+    }
+
+    private bool CanActivate =>
+        !_busy &&
+        !string.IsNullOrWhiteSpace(_customerName) &&
+        !string.IsNullOrWhiteSpace(_licenseKey);
+
+    protected override void OnInitialized()
+    {
+        Bundle.BundleStateChanged += OnBundleStateChanged;
+    }
+
+    private async Task OnActivateClicked()
+    {
+        _busy = true;
+        StateHasChanged();
+
+        await Task.Run(() =>
+        {
+            var result = LicenseSvc.TryActivate(_customerName.Trim(), _licenseKey.Trim());
+            if (result.Success)
+            {
+                Toast.ShowSuccess("Full Audit activated.",
+                    "Restart pages to load full data.");
+            }
+            else
+            {
+                Toast.ShowError("Activation failed.",
+                    result.ErrorMessage ?? "Unknown error.");
+            }
+        });
+
+        _busy = false;
+        StateHasChanged();
+    }
+
+    private async Task OnDeactivateClicked()
+    {
+        _busy = true;
+        StateHasChanged();
+
+        await Task.Run(() => LicenseSvc.Deactivate());
+        Toast.ShowInfo("Deactivated — reverted to Free tier.");
+
+        _busy = false;
+        StateHasChanged();
+    }
+
+    private void OnBundleStateChanged(object? sender, EventArgs e)
+        => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Bundle.BundleStateChanged -= OnBundleStateChanged;
+    }
+}

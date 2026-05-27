@@ -1,0 +1,152 @@
+/* Full Audit page — extracted from commented-out <style> block in
+ * Pages/FullAudit.razor (2026-05-11). Aligned with audit-first design system:
+ *   - .run-mode-btn.active: was color:#fff on teal (WCAG fail) → bg-primary
+ *   - radii migrated to var(--r-sm/md)
+ *   - transitions migrated to var(--t-quick) */
+
+/* ── Run-mode toggle row ───────────────────────────────── */
+.run-all-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.run-mode-toggle {
+    display: flex;
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    overflow: hidden;
+}
+
+.run-mode-btn {
+    padding: 0.32rem 0.7rem;
+    font-size: 12px;
+    border: none;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background var(--t-quick), color var(--t-quick);
+    white-space: nowrap;
+    font-weight: 500;
+}
+
+.run-mode-btn:first-child {
+    border-right: 1px solid var(--border);
+}
+
+.run-mode-btn.active {
+    background: var(--accent);
+    color: var(--bg-primary);
+    font-weight: 600;
+}
+
+.run-mode-btn:hover:not(:disabled):not(.active) {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.run-mode-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.delay-input-group {
+    display: flex;
+    align-items: center;
+    gap: 0.32rem;
+}
+
+/* ── Inline result row pills ───────────────────────────── */
+.execution-time {
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.78rem;
+    margin-right: 0.5rem;
+}
+
+.rows {
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.78rem;
+}
+
+/* ── Top connection-info strip ─────────────────────────── */
+.connection-info {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1.25rem;
+    padding: 0.6rem 0.85rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-sm);
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.75rem;
+}
+
+.connection-info strong { color: var(--text-primary); }
+
+/* ── Script-select bar ─────────────────────────────────── */
+.script-select-bar {
+    /* Some inline style is in the markup (display:flex; gap:12px; etc.) — we
+     * supply the visual treatment here so the bar reads as a panel. */
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-sm);
+    padding: 0.55rem 0.85rem;
+}
+
+/* ── First-audit modal ─────────────────────────────────── */
+.fa-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.65);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.fa-modal {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    width: 480px;
+    max-width: 95vw;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.fa-modal-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-secondary);
+}
+
+.fa-modal-header h3 {
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    margin: 0;
+}
+
+.fa-modal-body {
+    padding: 1.25rem;
+    font-size: 0.82rem;
+    color: var(--text-primary);
+    line-height: 1.6;
+}
+
+.fa-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.6rem;
+    padding: 0.85rem 1.25rem;
+    border-top: 1px solid var(--border);
+    background: var(--bg-secondary);
+}

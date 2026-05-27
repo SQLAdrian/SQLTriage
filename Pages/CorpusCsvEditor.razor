@@ -1,0 +1,331 @@
+@*/* In the name of God, the Merciful, the Compassionate */*@
+@page "/corpus-csv-editor"
+@using System.IO
+@using System.Text
+@inject ToastService Toast
+
+<PageTitle>Corpus CSV Editor - SQLTriage</PageTitle>
+
+@if (!_authorised)
+{
+    <div style="padding: 32px;">
+        <h2>Corpus CSV Editor</h2>
+        <p style="color: var(--text-muted);">This page is restricted to the corpus maintainer's workstation.</p>
+    </div>
+    return;
+}
+
+<div class="corpus-editor">
+    <div class="corpus-sidebar">
+        <div class="corpus-sidebar-header">
+            <h3><i class="fa-solid fa-table"></i> AllCheckTable rows</h3>
+            <div style="font-size:11px;color:var(--text-muted);">
+                @_filteredRows.Count of @_rows.Count rows · @_dirtyRows.Count unsaved
+            </div>
+        </div>
+        <input type="text" class="corpus-search" placeholder="Filter by name or ID..."
+               @bind="_searchText" @bind:event="oninput" @bind:after="ApplyFilter" />
+        <div style="padding: 6px 14px;">
+            <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted);cursor:pointer;">
+                <input type="checkbox" @bind="_showOnlyIncluded" @bind:after="ApplyFilter" style="margin:0;" />
+                Top-actions only
+            </label>
+        </div>
+        <div class="corpus-file-list">
+            @foreach (var row in _filteredRows)
+            {
+                <div class="corpus-file-item @(row == _selected ? "selected" : "") @(_dirtyRows.Contains(row) ? "dirty" : "")"
+                     @onclick="() => Select(row)">
+                    @if (_dirtyRows.Contains(row))
+                    {
+                        <i class="fa-solid fa-circle" style="color:var(--orange);font-size:7px;"></i>
+                    }
+                    else if (row.IncludeInMainActions)
+                    {
+                        <i class="fa-solid fa-star" style="color:var(--yellow);font-size:10px;"></i>
+                    }
+                    else
+                    {
+                        <i class="fa-solid fa-table-cells-large"></i>
+                    }
+                    <span title="@row.Name">@(string.IsNullOrEmpty(row.Name) ? "(unnamed)" : row.Name)</span>
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="corpus-main">
+        @if (_selected == null)
+        {
+            <div class="corpus-empty">
+                <i class="fa-solid fa-arrow-left"></i>
+                Pick a row from the left to edit.
+            </div>
+        }
+        else
+        {
+            <div class="corpus-editor-header">
+                <div>
+                    <h2>@(string.IsNullOrEmpty(_selected.Name) ? "(unnamed)" : _selected.Name)</h2>
+                    <div class="corpus-paths">
+                        <span><i class="fa-solid fa-id-badge"></i> Internal ID @_selected.InternalCheckId</span>
+                        @if (!string.IsNullOrEmpty(_selected.BlitzId)) { <span><i class="fa-solid fa-bolt"></i> Blitz @_selected.BlitzId</span> }
+                        <span><i class="fa-solid fa-clock"></i> Effort @_selected.EffortHours h</span>
+                    </div>
+                </div>
+                <div class="corpus-actions">
+                    <button class="settings-btn settings-btn-primary" @onclick="SaveAll" disabled="@(_saving || _dirtyRows.Count == 0)">
+                        <i class="fa-solid fa-floppy-disk"></i>
+                        @(_saving ? "Saving..." : $"Save all ({_dirtyRows.Count})")
+                    </button>
+                    <button class="settings-btn" @onclick="Reload">
+                        <i class="fa-solid fa-rotate"></i> Reload
+                    </button>
+                </div>
+            </div>
+
+            <div class="corpus-csv-fields">
+                <div class="corpus-csv-field">
+                    <label>
+                        <input type="checkbox" @bind="_selected.IncludeInMainActions" @bind:after="() => MarkDirty(_selected)" />
+                        Include in main actions narrative
+                    </label>
+                </div>
+
+                <div class="corpus-csv-field">
+                    <label>Check triggered (one-line — what's wrong)</label>
+                    <textarea class="corpus-textarea-small" rows="2"
+                              @bind="_selected.CheckTriggeredSimplified" @bind:event="oninput"
+                              @bind:after="() => MarkDirty(_selected)"></textarea>
+                </div>
+
+                <div class="corpus-csv-field">
+                    <label>Check clear (one-line — healthy state)</label>
+                    <textarea class="corpus-textarea-small" rows="2"
+                              @bind="_selected.CheckClearSimplified" @bind:event="oninput"
+                              @bind:after="() => MarkDirty(_selected)"></textarea>
+                </div>
+
+                <div class="corpus-csv-field">
+                    <label>Next action (imperative — what to do)</label>
+                    <textarea class="corpus-textarea-small" rows="3"
+                              @bind="_selected.NextAction" @bind:event="oninput"
+                              @bind:after="() => MarkDirty(_selected)"></textarea>
+                </div>
+
+                <div class="corpus-csv-field">
+                    <label>Full story (business context for monthly report)</label>
+                    <textarea class="corpus-textarea-small" rows="5"
+                              @bind="_selected.FullStoryAction" @bind:event="oninput"
+                              @bind:after="() => MarkDirty(_selected)"></textarea>
+                </div>
+
+                <div class="corpus-csv-field">
+                    <label>Effort hours</label>
+                    <input type="number" step="0.25" min="0" max="80"
+                           @bind="_selected.EffortHours" @bind:event="oninput"
+                           @bind:after="() => MarkDirty(_selected)" />
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private const string AllowedMachine = "MSI";
+    private const string AllowedUser    = "afsul";
+    private const string CsvPath        = @"c:\GitHub\SQLTriage-dev\research_output\!🛠AllCheckTable🛠!.csv";
+
+    // Column indices (positional, no header)
+    private const int COL_INTERNAL_ID = 0;
+    private const int COL_BLITZ_ID    = 2;
+    private const int COL_EFFORT      = 10;
+    private const int COL_NAME        = 13;
+    private const int COL_TRIGGERED   = 14;
+    private const int COL_CLEAR       = 15;
+    private const int COL_NEXT        = 16;
+    private const int COL_FULL_STORY  = 24;
+
+    // "IncludeInMainActions" is not in the original CSV — we infer from
+    // Priority column (12) or use a sidecar JSON. v1: use Priority<=2 as proxy
+    // for "main actions" until a dedicated column exists.
+    private const int COL_PRIORITY    = 12;
+
+    private bool _authorised;
+    private List<CsvRow> _rows = new();
+    private List<CsvRow> _filteredRows = new();
+    private HashSet<CsvRow> _dirtyRows = new();
+    private CsvRow? _selected;
+    private string _searchText = "";
+    private bool _showOnlyIncluded;
+    private bool _saving;
+
+    private class CsvRow
+    {
+        public string[] AllColumns { get; set; } = Array.Empty<string>();
+        public string InternalCheckId { get; set; } = "";
+        public string BlitzId { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string CheckTriggeredSimplified { get; set; } = "";
+        public string CheckClearSimplified { get; set; } = "";
+        public string NextAction { get; set; } = "";
+        public string FullStoryAction { get; set; } = "";
+        public double EffortHours { get; set; }
+        public bool IncludeInMainActions { get; set; }
+    }
+
+    protected override void OnInitialized()
+    {
+        _authorised = string.Equals(Environment.MachineName, AllowedMachine, StringComparison.OrdinalIgnoreCase)
+                   && string.Equals(Environment.UserName,    AllowedUser,    StringComparison.OrdinalIgnoreCase);
+        if (!_authorised) return;
+
+        LoadCsv();
+    }
+
+    private void LoadCsv()
+    {
+        _rows.Clear();
+        _dirtyRows.Clear();
+        _selected = null;
+        if (!File.Exists(CsvPath))
+        {
+            Toast.ShowError("Corpus CSV", $"Not found: {CsvPath}");
+            return;
+        }
+        try
+        {
+            var lines = File.ReadAllLines(CsvPath, Encoding.UTF8);
+            foreach (var line in lines)
+            {
+                if (string.IsNullOrWhiteSpace(line)) continue;
+                var cols = ParseCsvLine(line);
+                if (cols.Length < 25) continue;
+
+                _rows.Add(new CsvRow
+                {
+                    AllColumns               = cols,
+                    InternalCheckId          = cols[COL_INTERNAL_ID].Trim(),
+                    BlitzId                  = cols[COL_BLITZ_ID].Trim(),
+                    Name                     = cols[COL_NAME].Trim(),
+                    CheckTriggeredSimplified = cols[COL_TRIGGERED].Trim(),
+                    CheckClearSimplified     = cols[COL_CLEAR].Trim(),
+                    NextAction               = cols[COL_NEXT].Trim(),
+                    FullStoryAction          = cols[COL_FULL_STORY].Trim(),
+                    EffortHours              = double.TryParse(cols[COL_EFFORT].Trim(), out var h) ? h : 0,
+                    IncludeInMainActions     = int.TryParse(cols[COL_PRIORITY].Trim(), out var p) && p > 0 && p <= 2,
+                });
+            }
+            ApplyFilter();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("Corpus CSV", $"Load failed: {ex.Message}");
+        }
+    }
+
+    private void ApplyFilter()
+    {
+        IEnumerable<CsvRow> q = _rows;
+        if (_showOnlyIncluded) q = q.Where(r => r.IncludeInMainActions);
+        if (!string.IsNullOrWhiteSpace(_searchText))
+        {
+            var s = _searchText.Trim();
+            q = q.Where(r =>
+                r.Name.Contains(s, StringComparison.OrdinalIgnoreCase) ||
+                r.InternalCheckId.Contains(s, StringComparison.OrdinalIgnoreCase) ||
+                r.BlitzId.Contains(s, StringComparison.OrdinalIgnoreCase));
+        }
+        _filteredRows = q.ToList();
+    }
+
+    private void Select(CsvRow row) => _selected = row;
+
+    private void MarkDirty(CsvRow row) => _dirtyRows.Add(row);
+
+    private async Task SaveAll()
+    {
+        if (_dirtyRows.Count == 0) return;
+        _saving = true;
+        try
+        {
+            // Rewrite each dirty row's AllColumns from the edited fields
+            foreach (var r in _dirtyRows)
+            {
+                r.AllColumns[COL_NAME]       = r.Name;
+                r.AllColumns[COL_TRIGGERED]  = r.CheckTriggeredSimplified;
+                r.AllColumns[COL_CLEAR]      = r.CheckClearSimplified;
+                r.AllColumns[COL_NEXT]       = r.NextAction;
+                r.AllColumns[COL_FULL_STORY] = r.FullStoryAction;
+                r.AllColumns[COL_EFFORT]     = r.EffortHours.ToString("F2");
+                if (r.IncludeInMainActions && (!int.TryParse(r.AllColumns[COL_PRIORITY], out var p) || p == 0 || p > 2))
+                    r.AllColumns[COL_PRIORITY] = "1";
+                else if (!r.IncludeInMainActions && int.TryParse(r.AllColumns[COL_PRIORITY], out var p2) && p2 > 0 && p2 <= 2)
+                    r.AllColumns[COL_PRIORITY] = "3";
+            }
+
+            // Backup
+            var backup = CsvPath + $".bak-{DateTime.Now:yyyyMMdd-HHmmss}";
+            File.Copy(CsvPath, backup, overwrite: false);
+
+            // Write all rows back
+            using var w = new StreamWriter(CsvPath, append: false, Encoding.UTF8);
+            foreach (var r in _rows)
+            {
+                w.WriteLine(FormatCsvLine(r.AllColumns));
+            }
+            _dirtyRows.Clear();
+            Toast.ShowSuccess("Corpus CSV", $"Saved. Backup: {Path.GetFileName(backup)}");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("Corpus CSV", $"Save failed: {ex.Message}");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void Reload() => LoadCsv();
+
+    private static string[] ParseCsvLine(string line)
+    {
+        var result = new List<string>();
+        bool inQuotes = false;
+        int start = 0;
+        for (int i = 0; i < line.Length; i++)
+        {
+            if (line[i] == '"') inQuotes = !inQuotes;
+            else if (line[i] == ',' && !inQuotes)
+            {
+                result.Add(line[start..i].Trim('"'));
+                start = i + 1;
+            }
+        }
+        result.Add(line[start..].Trim('"'));
+        return result.ToArray();
+    }
+
+    private static string FormatCsvLine(string[] cols)
+    {
+        var sb = new StringBuilder();
+        for (int i = 0; i < cols.Length; i++)
+        {
+            if (i > 0) sb.Append(',');
+            var c = cols[i] ?? "";
+            bool needsQuoting = c.Contains(',') || c.Contains('"') || c.Contains('\n');
+            if (needsQuoting)
+            {
+                sb.Append('"');
+                sb.Append(c.Replace("\"", "\"\""));
+                sb.Append('"');
+            }
+            else
+            {
+                sb.Append(c);
+            }
+        }
+        return sb.ToString();
+    }
+}

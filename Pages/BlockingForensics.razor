@@ -1,0 +1,302 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/blocking-forensics"
+
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@using System.Text
+
+@inject BlockingHistoryService BlockingHistory
+@inject ServerConnectionManager ConnectionManager
+@inject AuditLogService AuditLog
+@inject IJSRuntime JS
+
+<PageTitle>Blocking Forensics - SQLTriage</PageTitle>
+
+<div class="bf-page">
+
+    <div class="page-header">
+        <div>
+            <h2><i class="fa-solid fa-link-slash"></i> Blocking Forensics</h2>
+            <p class="page-description">
+                Historical blocking event timeline. Events are captured automatically when
+                <code>GetBlockingChainAsync</code> detects active blocks; pairs under 5 s are
+                filtered as noise.
+            </p>
+        </div>
+    </div>
+
+    <!-- ── Filters ─────────────────────────────────────────────── -->
+    <div class="bf-filter-bar">
+        <div class="bf-filter-field">
+            <label>Server</label>
+            <select @bind="_selectedServer" class="bf-select">
+                <option value="">— select —</option>
+                @foreach (var conn in _connections)
+                {
+                    <option value="@conn.ServerNames">@conn.ServerNames</option>
+                }
+            </select>
+        </div>
+        <div class="bf-filter-field">
+            <label>Time range</label>
+            <select @bind="_rangeHours" class="bf-select">
+                <option value="1">Last 1 h</option>
+                <option value="6">Last 6 h</option>
+                <option value="24" selected>Last 24 h</option>
+                <option value="168">Last 7 d</option>
+            </select>
+        </div>
+        <div class="bf-filter-field">
+            <label>Blocker login</label>
+            <input @bind="_filterLogin" placeholder="any" class="bf-input" />
+        </div>
+        <div class="bf-filter-field">
+            <label>Wait type</label>
+            <input @bind="_filterWaitType" placeholder="any" class="bf-input" />
+        </div>
+        <div class="bf-filter-field">
+            <label>Database</label>
+            <input @bind="_filterDatabase" placeholder="any" class="bf-input" />
+        </div>
+        <div class="bf-filter-actions">
+            <button class="btn btn-primary" @onclick="LoadAsync">
+                <i class="fa-solid fa-magnifying-glass"></i> Search
+            </button>
+            <button class="btn btn-secondary" @onclick="ResetFilters">Reset</button>
+            <button class="btn btn-secondary" @onclick="ExportCsv" disabled="@(_events.Count == 0)">
+                <i class="fa-solid fa-file-csv"></i> Export CSV
+            </button>
+        </div>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="bf-loading"><i class="fa-solid fa-spinner fa-spin"></i> Loading…</div>
+    }
+    else
+    {
+        <!-- ── Top Offenders ──────────────────────────────────────── -->
+        @if (_offenders.Count > 0)
+        {
+            <div class="bf-section">
+                <h3><i class="fa-solid fa-user-slash"></i> Top Blocking Offenders</h3>
+                <table class="bf-table">
+                    <thead>
+                        <tr>
+                            <th>Blocker login</th>
+                            <th>Events</th>
+                            <th>Total blocked time</th>
+                            <th>SQL excerpt</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var o in _offenders)
+                        {
+                            <tr>
+                                <td>@(o.BlockerLogin ?? "—")</td>
+                                <td>@o.EventCount</td>
+                                <td>@FormatDuration(o.TotalDurationSeconds)</td>
+                                <td class="bf-sql-excerpt" title="@o.SqlExcerpt">@(o.SqlExcerpt ?? "—")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+
+        <!-- ── Event timeline ────────────────────────────────────── -->
+        <div class="bf-section">
+            <h3>
+                <i class="fa-solid fa-timeline"></i> Event Timeline
+                @if (_events.Count > 0)
+                {
+                    <span class="bf-count">@_events.Count event@(_events.Count == 1 ? "" : "s")</span>
+                }
+            </h3>
+
+            @if (_events.Count == 0)
+            {
+                <div class="bf-empty">
+                    No blocking events recorded for the selected filters.
+                    Events are captured each time the blocking chain is polled by the live session views.
+                </div>
+            }
+            else
+            {
+                <table class="bf-table bf-timeline-table">
+                    <thead>
+                        <tr>
+                            <th>Time (UTC)</th>
+                            <th>Blocker SPID / login</th>
+                            <th>Blocked SPID / login</th>
+                            <th>Wait type</th>
+                            <th>Database</th>
+                            <th>Duration</th>
+                            <th>SQL</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var ev in _events)
+                        {
+                            <tr>
+                                <td class="bf-time">@ev.CapturedUtc.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                <td>
+                                    <span class="bf-spid">@ev.BlockerSpid</span>
+                                    @if (!string.IsNullOrEmpty(ev.BlockerLogin))
+                                    {
+                                        <span class="bf-login"> @ev.BlockerLogin</span>
+                                    }
+                                </td>
+                                <td>
+                                    <span class="bf-spid">@ev.BlockedSpid</span>
+                                    @if (!string.IsNullOrEmpty(ev.BlockedLogin))
+                                    {
+                                        <span class="bf-login"> @ev.BlockedLogin</span>
+                                    }
+                                </td>
+                                <td>@(ev.WaitType ?? "—")</td>
+                                <td>@(ev.BlockerDatabase ?? "—")</td>
+                                <td>@FormatDuration(ev.DurationSeconds)</td>
+                                <td class="bf-sql-cell">
+                                    @if (!string.IsNullOrWhiteSpace(ev.BlockerSqlText))
+                                    {
+                                        var excerpt = ev.BlockerSqlText.Length > 100
+                                            ? ev.BlockerSqlText[..100] + "…"
+                                            : ev.BlockerSqlText;
+                                        <span class="bf-sql-excerpt" title="@ev.BlockerSqlText">@excerpt</span>
+                                        @if (ev.BlockerSqlText.Length > 100)
+                                        {
+                                            <button class="bf-expand-btn"
+                                                    @onclick="() => ToggleExpand(ev.Id)"
+                                                    title="Toggle full SQL">
+                                                <i class="fa-solid @(_expanded.Contains(ev.Id) ? "fa-compress" : "fa-expand")"></i>
+                                            </button>
+                                            @if (_expanded.Contains(ev.Id))
+                                            {
+                                                <pre class="bf-sql-full">@ev.BlockerSqlText</pre>
+                                            }
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <span class="bf-na">—</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private List<ServerConnection> _connections = new();
+    private List<BlockingEvent> _events = new();
+    private List<BlockingOffender> _offenders = new();
+    private HashSet<long> _expanded = new();
+
+    private string _selectedServer = "";
+    private int _rangeHours = 24;
+    private string _filterLogin = "";
+    private string _filterWaitType = "";
+    private string _filterDatabase = "";
+    private bool _loading;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _connections = ConnectionManager.GetConnections().Where(c => c.IsEnabled).ToList();
+        if (_connections.Count == 1)
+            _selectedServer = _connections[0].ServerNames;
+    }
+
+    private async Task LoadAsync()
+    {
+        if (string.IsNullOrEmpty(_selectedServer)) return;
+        _loading = true;
+        StateHasChanged();
+
+        var toUtc   = DateTime.UtcNow;
+        var fromUtc = toUtc.AddHours(-_rangeHours);
+
+        var allEvents   = await BlockingHistory.GetEventsAsync(_selectedServer, fromUtc, toUtc);
+        var allOffenders = await BlockingHistory.GetTopOffendersAsync(_selectedServer, fromUtc);
+
+        // Apply client-side filters
+        _events = allEvents
+            .Where(e =>
+                (string.IsNullOrEmpty(_filterLogin)    || string.Equals(e.BlockerLogin,    _filterLogin,    StringComparison.OrdinalIgnoreCase)) &&
+                (string.IsNullOrEmpty(_filterWaitType) || string.Equals(e.WaitType,        _filterWaitType, StringComparison.OrdinalIgnoreCase)) &&
+                (string.IsNullOrEmpty(_filterDatabase) || string.Equals(e.BlockerDatabase, _filterDatabase, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+        _offenders = allOffenders;
+        _expanded.Clear();
+        _loading = false;
+    }
+
+    private void ResetFilters()
+    {
+        _filterLogin = "";
+        _filterWaitType = "";
+        _filterDatabase = "";
+        _events.Clear();
+        _offenders.Clear();
+    }
+
+    private void ToggleExpand(long id)
+    {
+        if (!_expanded.Remove(id))
+            _expanded.Add(id);
+    }
+
+    private async Task ExportCsv()
+    {
+        // Audit log on export (volume-sensitive operations only)
+        AuditLog.LogExportOperation(
+            exportType: "BlockingForensicsCSV",
+            targetName: $"{_selectedServer} ({_rangeHours}h, {_events.Count} rows)",
+            success: true);
+
+        var sb = new StringBuilder();
+        sb.AppendLine("captured_utc,blocker_spid,blocker_login,blocked_spid,blocked_login,wait_type,wait_resource,blocker_database,blocked_database,duration_seconds,blocker_sql_text");
+        foreach (var ev in _events)
+        {
+            sb.AppendLine(string.Join(",",
+                CsvEsc(ev.CapturedUtc.ToString("o")),
+                ev.BlockerSpid,
+                CsvEsc(ev.BlockerLogin),
+                ev.BlockedSpid,
+                CsvEsc(ev.BlockedLogin),
+                CsvEsc(ev.WaitType),
+                CsvEsc(ev.WaitResource),
+                CsvEsc(ev.BlockerDatabase),
+                CsvEsc(ev.BlockedDatabase),
+                ev.DurationSeconds,
+                CsvEsc(ev.BlockerSqlText)));
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(sb.ToString());
+        var b64 = Convert.ToBase64String(bytes);
+        var filename = $"blocking_forensics_{_selectedServer.Replace("\\", "_")}_{DateTime.UtcNow:yyyyMMddHHmm}.csv";
+        await JS.InvokeVoidAsync("downloadFile", filename, b64, "text/csv;charset=utf-8");
+    }
+
+    private static string CsvEsc(string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return "";
+        value = value.Replace("\"", "\"\"");
+        return value.Contains(',') || value.Contains('"') || value.Contains('\n')
+            ? $"\"{value}\""
+            : value;
+    }
+
+    private static string FormatDuration(int seconds)
+    {
+        if (seconds < 60)  return $"{seconds}s";
+        if (seconds < 3600) return $"{seconds / 60}m {seconds % 60}s";
+        return $"{seconds / 3600}h {(seconds % 3600) / 60}m";
+    }
+}

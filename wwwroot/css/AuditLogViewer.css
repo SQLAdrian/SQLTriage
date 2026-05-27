@@ -1,0 +1,258 @@
+/* In the name of God, the Merciful, the Compassionate */
+/* Audit Log Viewer — extracted inline styles + <style> block */
+
+.audit-log-page {
+    padding: 24px;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.audit-log-denied {
+    padding: 32px;
+}
+
+.audit-log-page h2 {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0 0 4px;
+}
+
+.audit-log-page .page-description {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 16px;
+}
+
+/* ── Filters ── */
+.audit-filters {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+    padding: 16px;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+}
+
+.audit-filter-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.audit-filter-field label {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.audit-filter-input {
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 13px;
+}
+
+.audit-filter-actions {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+}
+
+.audit-filter-btn {
+    padding: 6px 16px;
+}
+
+.audit-filter-btn-reset {
+    padding: 6px 12px;
+}
+
+/* ── Status Bar ── */
+.audit-status-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.audit-status-text {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.audit-status-total {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+/* ── Loading ── */
+.audit-loading {
+    text-align: center;
+    padding: 40px;
+}
+
+.audit-loading i {
+    font-size: 24px;
+    color: var(--accent);
+}
+
+.audit-loading p {
+    margin-top: 8px;
+    color: var(--text-secondary);
+}
+
+/* ── Empty State ── */
+.audit-empty {
+    text-align: center;
+    padding: 40px;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+}
+
+.audit-empty-icon {
+    font-size: 32px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+
+.audit-empty p {
+    color: var(--text-secondary);
+}
+
+/* ── Table ── */
+.audit-table-wrapper {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
+.audit-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.audit-table-header {
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+}
+
+.audit-table-th {
+    text-align: left;
+    padding: 10px 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.audit-table-row {
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+}
+
+.audit-table-td {
+    padding: 8px 12px;
+}
+
+.audit-table-td-timestamp {
+    white-space: nowrap;
+    color: var(--text-secondary);
+    font-family: monospace;
+    font-size: 12px;
+}
+
+.audit-table-td-event-type {
+    background: var(--bg-hover);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+.audit-table-td-message {
+    max-width: 400px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.audit-table-td-user {
+    color: var(--text-secondary);
+}
+
+/* ── Severity Badges ── */
+.audit-severity {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.audit-severity-info {
+    background: rgba(59, 130, 246, 0.15);
+    color: var(--accent);
+}
+
+.audit-severity-warning {
+    background: rgba(245, 158, 11, 0.15);
+    color: var(--orange);
+}
+
+.audit-severity-error {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--red);
+}
+
+.audit-severity-critical {
+    background: rgba(239, 68, 68, 0.25);
+    color: var(--red);
+    font-weight: 700;
+}
+
+/* ── Detail Rows ── */
+.audit-detail-row td {
+    padding: 8px 12px 12px;
+    background: var(--bg-secondary);
+}
+
+.audit-detail-grid {
+    font-size: 12px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 6px;
+}
+
+.audit-detail-key {
+    color: var(--text-muted);
+}
+
+.audit-detail-value {
+    color: var(--text-primary);
+    margin-left: 4px;
+    font-family: monospace;
+}
+
+/* ── Pagination ── */
+.audit-pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.audit-page-btn {
+    padding: 4px 10px;
+    font-size: 12px;
+}
+
+.audit-page-info {
+    font-size: 13px;
+    color: var(--text-secondary);
+    min-width: 80px;
+    text-align: center;
+}

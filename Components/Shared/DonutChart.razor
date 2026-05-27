@@ -1,0 +1,94 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using ApexCharts
+@using SQLTriage.Data.Models
+
+<div class="bg-app-bg-panel rounded-lg p-3 my-2"
+     role="img"
+     aria-label="@(!string.IsNullOrEmpty(Title) ? $"Donut chart showing {Title}" : "Donut chart")">
+    @if (!string.IsNullOrEmpty(Title))
+    {
+        <div class="text-sm font-semibold text-app-text-primary mb-2 pl-1">@Title</div>
+    }
+
+    @if (Data != null && Data.Any())
+    {
+        <ApexChart TItem="StatValue"
+                   Height="@Height"
+                   Options="@GetChartOptions()">
+            <ApexPointSeries TItem="StatValue"
+                             Items="@Data"
+                             Name="@Title"
+                             SeriesType="SeriesType.Donut"
+                             XValue="@(s => s.Label)"
+                             YValue="@(s => (decimal)s.Value)" />
+        </ApexChart>
+    }
+    else
+    {
+        <div class="text-center py-10 text-app-text-muted">No data available</div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public List<StatValue>? Data { get; set; }
+    [Parameter] public int Height { get; set; } = 280;
+    [Parameter] public string ValueSuffix { get; set; } = "%";
+
+    private ApexChartOptions<StatValue> GetChartOptions() => new()
+    {
+        Chart = new Chart
+        {
+            Background = "transparent",
+            ForeColor = "#a0a0a0",
+            Toolbar = new Toolbar { Show = false },
+            Animations = new Animations { Enabled = true, Easing = Easing.Easeinout, Speed = 600 }
+        },
+        Theme = new Theme { Mode = Mode.Dark },
+        Colors = new List<string> { "#f44336", "#2196f3", "#4caf50", "#ff9800", "#9c27b0", "#00bcd4", "#ffeb3b", "#e91e63" },
+        Legend = new Legend
+        {
+            Position = LegendPosition.Right,
+            FontSize = "11px",
+            Labels = new LegendLabels { Colors = "#a0a0a0" }
+        },
+        Tooltip = new Tooltip
+        {
+            Theme = Mode.Dark,
+            Y = new TooltipY { Formatter = "function(val) { return val != null ? val.toFixed(1) + '" + ValueSuffix + "' : ''; }" }
+        },
+        PlotOptions = new PlotOptions
+        {
+            Pie = new PlotOptionsPie
+            {
+                Donut = new PlotOptionsDonut
+                {
+                    Size = "62%",
+                    Labels = new DonutLabels
+                    {
+                        Show = true,
+                        Total = new DonutLabelTotal
+                        {
+                            Show = true,
+                            Label = "Total",
+                            Color = "#a0a0a0",
+                            FontSize = "12px",
+                            Formatter = "function(w) { return w.globals.seriesTotals.reduce((a,b)=>a+b,0).toFixed(1) + '" + ValueSuffix + "'; }"
+                        },
+                        Value = new DonutLabelValue
+                        {
+                            Show = true,
+                            Color = "#e0e0e0",
+                            FontSize = "16px",
+                            Formatter = "function(val) { return parseFloat(val).toFixed(1) + '" + ValueSuffix + "'; }"
+                        }
+                    }
+                }
+            }
+        },
+        DataLabels = new DataLabels
+        {
+            Enabled = false
+        }
+    };
+}

@@ -1,0 +1,347 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/disk-io"
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Components.Shared
+@inject ServerConnectionManager ConnectionManager
+@inject SQLTriage.Data.Services.DiskIoService Service
+
+<PageTitle>SQLTriage - Disk IO</PageTitle>
+
+<div class="dio-page">
+
+    <div class="dio-toolbar">
+        <div class="dio-toolbar-left">
+            <i class="fa-solid fa-hard-drive dio-toolbar-icon"></i>
+            <span class="dio-title">Disk IO</span>
+            @if (!string.IsNullOrEmpty(_selectedServer))
+            {
+                <span class="dio-source-pill">
+                    <i class="fa-solid fa-bolt"></i>
+                    @ServerDisplayName(_selectedServer)
+                </span>
+            }
+            @if (_snapshot is not null)
+            {
+                <span class="dio-source-pill dio-source-pill-meta">
+                    <i class="fa-solid fa-stopwatch"></i>
+                    @SnapshotMetaLabel()
+                </span>
+            }
+        </div>
+        <div class="dio-toolbar-right">
+            <ServerSelector Items="DioServerItems"
+                            SelectedId="@(string.IsNullOrEmpty(_selectedServer) ? null : _selectedServer)"
+                            SelectedIdChanged="OnDioServerChanged" />
+            <button class="dio-refresh"
+                    @onclick="ReloadAsync"
+                    disabled="@(_loading || string.IsNullOrEmpty(_selectedServer))"
+                    title="@RefreshTooltip()">
+                <i class="@RefreshIconClass()"></i>
+                @RefreshLabel()
+            </button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_errorMessage))
+    {
+        <div class="dio-error">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            @_errorMessage
+            <button class="dio-error-close" @onclick="ClearError">×</button>
+        </div>
+    }
+
+    <div class="dio-body">
+        @if (string.IsNullOrEmpty(_selectedServer))
+        {
+            <div class="dio-empty">
+                <i class="fa-solid fa-server"></i>
+                <p><b>Pick a server in the toolbar to begin.</b></p>
+                <p class="dio-empty-sub">Disk IO samples sys.dm_io_virtual_file_stats twice with a short gap and shows the delta — current pressure, not month-old totals.</p>
+            </div>
+        }
+        else if (_snapshot is null && !_loading)
+        {
+            <div class="dio-empty">
+                <i class="fa-solid fa-arrow-pointer"></i>
+                <p><b>Click Refresh to sample disk IO.</b></p>
+                <p class="dio-empty-sub">@WindowSecondsLabel() per refresh.</p>
+            </div>
+        }
+        else if (_loading && _snapshot is null)
+        {
+            <div class="dio-empty">
+                <i class="fa-solid fa-spinner fa-spin"></i>
+                <p>Sampling…</p>
+            </div>
+        }
+        else if (_snapshot is not null)
+        {
+            <div class="dio-lanes-wrap">
+                @foreach (var lane in BuildLanes())
+                {
+                    <div class="dio-lane">
+                        <div class="dio-lane-head">
+                            <div class="dio-lane-letter">@lane.LetterDisplay</div>
+                            <div class="dio-lane-meta">
+                                <div class="dio-lane-name">@lane.MountDisplay</div>
+                                <div class="dio-lane-sub">@lane.SubLine</div>
+                                <div class="dio-lane-bar"><span style="@lane.BarStyle"></span></div>
+                            </div>
+                        </div>
+                        <div class="dio-lane-files">
+                            @if (lane.Files.Count == 0)
+                            {
+                                <div class="dio-lane-empty">
+                                    <i class="fa-solid fa-circle-info"></i>
+                                    No SQL files on this drive
+                                </div>
+                            }
+                            else
+                            {
+                                @foreach (var ft in lane.Files)
+                                {
+                                    <div class="@ft.Classes" style="@ft.Style" title="@ft.Title">
+                                        <span class="dio-file-db">@ft.DatabaseName</span>
+                                        <span class="dio-file-name">@ft.LogicalName</span>
+                                        <span class="dio-file-stat">
+                                            <i class="@ft.IconClass"></i>
+                                            @ft.SizeLabel
+                                            @ft.IopsLabel
+                                        </span>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <div class="dio-stats-strip">
+                <div class="dio-stat-tile">
+                    <span class="dio-stat-label">Files / Drives</span>
+                    <span class="dio-stat-value">@FilesDrivesLabel()</span>
+                    <span class="dio-stat-sub">tracked in this window</span>
+                </div>
+                <div class="dio-stat-tile">
+                    <span class="dio-stat-label">IOPS (Δ)</span>
+                    <span class="dio-stat-value">@IopsLabel()</span>
+                    <span class="dio-stat-sub">@IoBreakdownLabel()</span>
+                </div>
+                <div class="dio-stat-tile">
+                    <span class="dio-stat-label">Throughput (Δ)</span>
+                    <span class="dio-stat-value">@MbsLabel()</span>
+                    <span class="dio-stat-sub">across all files</span>
+                </div>
+                <div class="dio-stat-tile dio-stat-tile-wide">
+                    <span class="dio-stat-label">Hottest file (stall)</span>
+                    <span class="dio-stat-value dio-stat-value-name">@HottestLabel()</span>
+                    <span class="dio-stat-sub">@HottestSubLabel()</span>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private string _selectedServer = "";
+    private bool _loading;
+    private string _errorMessage = "";
+    private double _window = 3.0;
+    private SQLTriage.Data.Services.DiskIoService.Snapshot? _snapshot;
+    private List<ServerOpt> _availableServers = new();
+
+    private record ServerOpt(string Key, string Display, ServerConnection Conn, string Server);
+
+    private IReadOnlyList<(string Id, string Label)> DioServerItems =>
+        _availableServers.Select(s => (s.Key, s.Display)).ToList();
+
+    protected override void OnInitialized()
+    {
+        _availableServers = ConnectionManager.GetEnabledConnections()
+            .SelectMany(c => c.GetServerList().Select(s => new ServerOpt(c.Id + "|" + s, s, c, s)))
+            .ToList();
+    }
+
+    private void ClearError() => _errorMessage = "";
+
+    private async Task OnDioServerChanged(string? id)
+    {
+        _selectedServer = id ?? "";
+        _snapshot = null;
+        if (!string.IsNullOrEmpty(_selectedServer))
+        {
+            await ReloadAsync();
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        var opt = _availableServers.FirstOrDefault(o => o.Key == _selectedServer);
+        if (opt is null) return;
+
+        _loading = true;
+        _errorMessage = "";
+        StateHasChanged();
+        try
+        {
+            _snapshot = await Service.GetSnapshotAsync(opt.Conn, opt.Server, _window);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = "Disk IO sample failed: " + ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private string ServerDisplayName(string key) =>
+        _availableServers.FirstOrDefault(o => o.Key == key)?.Display ?? key;
+
+    private string RefreshLabel() => _loading ? "Sampling…" : "Refresh";
+    private string RefreshIconClass() => _loading ? "fa-solid fa-spinner fa-spin" : "fa-solid fa-rotate";
+    private string RefreshTooltip() => string.Format("Re-sample disk IO (takes ~{0:F0}s)", _window);
+    private string WindowSecondsLabel() => string.Format("~{0:F0} seconds", _window);
+
+    private string SnapshotMetaLabel() => _snapshot is null
+        ? ""
+        : string.Format("{0:F0}s window · sampled {1:HH:mm:ss}", _snapshot.WindowSeconds, _snapshot.SampledAt.ToLocalTime());
+
+    private string FilesDrivesLabel() => _snapshot is null
+        ? "—"
+        : string.Format("{0} / {1}", _snapshot.Files.Count, _snapshot.Drives.Count);
+
+    private double TotalIops() => _snapshot is null ? 0 : _snapshot.Files.Sum(f => f.Iops);
+    private double TotalMbs()  => _snapshot is null ? 0 : _snapshot.Files.Sum(f => f.MbPerSec);
+    private long TotalReads()  => _snapshot is null ? 0 : _snapshot.Files.Sum(f => f.DeltaReads);
+    private long TotalWrites() => _snapshot is null ? 0 : _snapshot.Files.Sum(f => f.DeltaWrites);
+
+    private string IopsLabel() => TotalIops().ToString("F0");
+    private string MbsLabel()  => string.Format("{0:F1} MB/s", TotalMbs());
+    private string IoBreakdownLabel() => string.Format("{0:N0} reads · {1:N0} writes", TotalReads(), TotalWrites());
+
+    private SQLTriage.Data.Services.DiskIoService.FileRow? Hottest() => _snapshot?.Files
+        .OrderByDescending(f => f.AvgReadStallMs + f.AvgWriteStallMs)
+        .FirstOrDefault(f => f.AvgReadStallMs + f.AvgWriteStallMs > 0);
+
+    private string HottestLabel()
+    {
+        var h = Hottest();
+        return h is null ? "—" : string.Format("{0} · {1}", h.DatabaseName, h.LogicalName);
+    }
+
+    private string HottestSubLabel()
+    {
+        var h = Hottest();
+        return h is null
+            ? "no IO stalls in the sample window"
+            : string.Format("{0:F1} ms read · {1:F1} ms write avg", h.AvgReadStallMs, h.AvgWriteStallMs);
+    }
+
+    private static string HeatVar(double avgStallMs)
+    {
+        if (avgStallMs < 1)  return "--hot-cold";
+        if (avgStallMs < 5)  return "--hot-cool";
+        if (avgStallMs < 15) return "--hot-mid";
+        if (avgStallMs < 40) return "--hot-warm";
+        return "--hot-hot";
+    }
+
+    private static int DatabaseHash(string dbName)
+    {
+        if (string.IsNullOrEmpty(dbName)) return 0;
+        unchecked
+        {
+            int h = 23;
+            foreach (var c in dbName) h = h * 31 + c;
+            return ((h % 360) + 360) % 360;
+        }
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes < 1024) return bytes + " B";
+        double v = bytes;
+        string[] units = { "KB", "MB", "GB", "TB" };
+        int u = -1;
+        do { v /= 1024.0; u++; } while (v >= 1024 && u < units.Length - 1);
+        return string.Format("{0:F1} {1}", v, units[u]);
+    }
+
+    private sealed class FileVm
+    {
+        public string Classes { get; set; } = "";
+        public string Style { get; set; } = "";
+        public string Title { get; set; } = "";
+        public string IconClass { get; set; } = "";
+        public string DatabaseName { get; set; } = "";
+        public string LogicalName { get; set; } = "";
+        public string SizeLabel { get; set; } = "";
+        public string IopsLabel { get; set; } = "";
+    }
+
+    private sealed class LaneVm
+    {
+        public string LetterDisplay { get; set; } = "?";
+        public string MountDisplay { get; set; } = "";
+        public string SubLine { get; set; } = "";
+        public string BarStyle { get; set; } = "";
+        public List<FileVm> Files { get; set; } = new();
+    }
+
+    private List<LaneVm> BuildLanes()
+    {
+        var result = new List<LaneVm>();
+        if (_snapshot is null) return result;
+
+        foreach (var drive in _snapshot.Drives)
+        {
+            var driveFiles = _snapshot.Files.Where(f => f.DriveLetter == drive.DriveLetter).ToList();
+            var maxFileSize = driveFiles.Count == 0 ? 1 : driveFiles.Max(f => f.SizeBytes);
+            var driveIops = driveFiles.Sum(f => f.Iops);
+            var driveMbs = driveFiles.Sum(f => f.MbPerSec);
+
+            var lane = new LaneVm
+            {
+                LetterDisplay = string.IsNullOrEmpty(drive.DriveLetter) ? "?" : drive.DriveLetter,
+                MountDisplay = string.IsNullOrEmpty(drive.VolumeMountPoint) ? drive.DriveLetter : drive.VolumeMountPoint,
+                SubLine = string.Format("{0} used of {1} · {2} files · {3:F0} IOPS · {4:F1} MB/s",
+                    FormatBytes(drive.TotalBytes - drive.AvailableBytes),
+                    FormatBytes(drive.TotalBytes),
+                    driveFiles.Count, driveIops, driveMbs),
+                BarStyle = string.Format("width:{0:F1}%", drive.PctUsed)
+            };
+
+            foreach (var f in driveFiles.OrderByDescending(x => x.SizeBytes))
+            {
+                var widthPct = maxFileSize > 0 ? Math.Max(8, f.SizeBytes * 100.0 / maxFileSize) : 8;
+                var heatVar = HeatVar(f.AvgReadStallMs + f.AvgWriteStallMs);
+                var isLog = f.TypeDesc == "LOG";
+                var isTempdb = string.Equals(f.DatabaseName, "tempdb", StringComparison.OrdinalIgnoreCase);
+                var pulse = f.Iops > 0;
+                var dbHash = DatabaseHash(f.DatabaseName);
+
+                lane.Files.Add(new FileVm
+                {
+                    Classes = "dio-file " + (isLog ? "is-log " : "is-data ") + (isTempdb ? "is-tempdb " : "") + (pulse ? "is-pulse" : ""),
+                    Style = string.Format("--w:{0:F1}%;--heat:var({1});--db-hash:{2}", widthPct, heatVar, dbHash),
+                    Title = string.Format("{0} {1} ({2}) | {3} | {4:F0} ms read / {5:F0} ms write avg",
+                        f.DatabaseName, f.LogicalName, f.TypeDesc, FormatBytes(f.SizeBytes), f.AvgReadStallMs, f.AvgWriteStallMs),
+                    IconClass = isLog ? "fa-solid fa-list" : "fa-solid fa-table",
+                    DatabaseName = f.DatabaseName,
+                    LogicalName = f.LogicalName,
+                    SizeLabel = FormatBytes(f.SizeBytes),
+                    IopsLabel = pulse ? string.Format(" · {0:F0} IOPS", f.Iops) : ""
+                });
+            }
+
+            result.Add(lane);
+        }
+
+        return result;
+    }
+}

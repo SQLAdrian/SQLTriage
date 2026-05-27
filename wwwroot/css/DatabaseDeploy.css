@@ -1,0 +1,148 @@
+/* Styles extracted to wwwroot/css/DatabaseDeploy.css 2026-05-11 (CLAUDE.md convention). */
+.database-deploy-page {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.deploy-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.database-deploy-page .form-group {
+    margin-bottom: 15px;
+}
+
+.database-deploy-page .form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 500;
+}
+
+.database-deploy-page .form-input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--input-bg);
+    color: var(--text);
+}
+
+.deploy-actions {
+    display: flex;
+    gap: 10px;
+    margin: 20px 0;
+}
+
+.database-deploy-page .btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s;
+}
+
+.database-deploy-page .btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.database-deploy-page .btn-primary {
+    background: var(--primary);
+    color: white;
+}
+
+.database-deploy-page .btn-success {
+    background: var(--green);
+    color: white;
+}
+
+.status-message {
+    padding: 10px;
+    border-radius: 4px;
+    margin: 10px 0;
+}
+
+.status-message.success {
+    background: rgba(33, 201, 122, 0.1);
+    border: 1px solid var(--green);
+    color: var(--green);
+}
+
+.status-message.error {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid var(--red);
+    color: var(--red);
+}
+
+.deploy-log {
+    margin-top: 15px;
+}
+
+.deploy-log pre {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px;
+    font-size: 12px;
+    max-height: 300px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+}
+
+.ready-to-deploy {
+    background: rgba(33, 201, 122, 0.1);
+    border: 1px solid var(--green);
+    border-radius: 4px;
+    padding: 10px;
+    color: var(--green);
+    margin: 10px 0;
+}
+
+.database-deploy-page .btn-danger { background: var(--red); color: #fff; }
+
+.nav-warning-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.nav-warning-dialog {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 28px 32px;
+    max-width: 400px;
+    width: 90%;
+    text-align: center;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+
+.nav-warning-icon { font-size: 2.5rem; margin-bottom: 10px; }
+
+.nav-warning-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.nav-warning-body {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    margin-bottom: 20px;
+}
+
+.nav-warning-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}

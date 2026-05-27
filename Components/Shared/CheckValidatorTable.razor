@@ -1,0 +1,271 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+
+<div style="display:flex; gap:8px; align-items:center; margin-bottom:10px; flex-wrap:wrap;">
+    <div style="position:relative; flex:1; min-width:200px; max-width:340px;">
+        <i class="fa-solid fa-magnifying-glass" style="position:absolute; left:8px; top:50%; transform:translateY(-50%); color:var(--text-secondary); font-size:11px; pointer-events:none;"></i>
+        <input type="text" placeholder="Filter by name, category, ID…"
+               @bind="_filter" @bind:event="oninput"
+               style="width:100%; padding:5px 8px 5px 26px; background:var(--bg-primary); border:1px solid var(--border); border-radius:4px; color:var(--text-primary); font-size:12px;" />
+    </div>
+    <select @bind="_filterEnabled" style="background:var(--bg-primary); border:1px solid var(--border); color:var(--text-primary); padding:5px 8px; border-radius:4px; font-size:12px;">
+        <option value="all">All</option>
+        <option value="enabled">Enabled only</option>
+        <option value="disabled">Disabled only</option>
+    </select>
+    @if (!string.IsNullOrEmpty(_filter) || _filterEnabled != "all")
+    {
+        <span style="font-size:11px; color:var(--text-secondary);">@Filtered.Count / @Rows.Count shown</span>
+    }
+</div>
+
+<div style="overflow-x:auto; border-radius:6px; border:1px solid var(--border); background:var(--bg-panel);">
+    <table class="results-table" style="table-layout:fixed; width:100%;">
+        <colgroup>
+            <col style="width:130px;" />   @* ID *@
+            <col style="width:220px;" />   @* Name *@
+            <col style="width:100px;" />   @* Category *@
+            <col style="width:78px;" />    @* Severity *@
+            @if (ShowAlertColumns)
+            {
+                <col style="width:90px;" />    @* Thresholds *@
+                <col style="width:60px;" />    @* Freq *@
+                <col style="width:70px;" />    @* Mode *@
+            }
+            else
+            {
+                <col style="width:42px;" />    @* Priority *@
+            }
+            <col style="width:44px;" />    @* On *@
+            <col />                        @* Query preview *@
+            <col style="width:140px;" />   @* Result *@
+            <col style="width:82px;" />    @* Actions *@
+        </colgroup>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Category</th>
+                <th>Severity</th>
+                @if (ShowAlertColumns)
+                {
+                    <th title="Warning / Critical thresholds">Thresholds</th>
+                    <th title="Frequency in seconds">Freq</th>
+                    <th title="Query mode">Mode</th>
+                }
+                else
+                {
+                    <th title="Priority (lower = more critical)">Pri</th>
+                }
+                <th style="text-align:center;" title="Enabled">On</th>
+                <th>Query</th>
+                <th style="text-align:center;">Result</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var row in Filtered)
+            {
+                <tr class="@(row.Tested ? (row.TestResult.StartsWith("Pass") ? "row-passed" : row.TestResult == "Error" ? "row-error" : "") : "")">
+
+                    @* ID *@
+                    <td style="font-family:monospace; font-size:10px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="@row.Id">
+                        @row.Id
+                    </td>
+
+                    @* Name + description tooltip *@
+                    <td style="font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="@(string.IsNullOrEmpty(row.Description) ? row.Name : row.Description)">
+                        @row.Name
+                    </td>
+
+                    @* Category *@
+                    <td style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+                        <span style="display:inline-block; font-size:10px; font-weight:500; padding:2px 7px; border-radius:3px; background:var(--bg-primary); border:1px solid var(--border); color:var(--text-secondary);">
+                            @row.Category
+                        </span>
+                    </td>
+
+                    @* Severity *@
+                    <td>
+                        @if (!string.IsNullOrEmpty(row.Severity))
+                        {
+                            <span style="display:inline-block; font-size:10px; font-weight:600; padding:2px 6px; border-radius:3px; @SeverityStyle(row.Severity)">
+                                @row.Severity
+                            </span>
+                        }
+                    </td>
+
+                    @* Alert-specific columns *@
+                    @if (ShowAlertColumns)
+                    {
+                        <td style="font-size:11px; color:var(--text-secondary); white-space:nowrap;" title="Warning / Critical">
+                            @if (row.ThresholdWarning.HasValue || row.ThresholdCritical.HasValue)
+                            {
+                                <span style="color:var(--orange);">@(row.ThresholdWarning?.ToString("G") ?? "—")</span>
+                                <span style="color:var(--text-secondary);"> / </span>
+                                <span style="color:var(--red);">@(row.ThresholdCritical?.ToString("G") ?? "—")</span>
+                            }
+                            else
+                            {
+                                <span>—</span>
+                            }
+                        </td>
+                        <td style="font-size:11px; color:var(--text-secondary);" title="Frequency (seconds)">
+                            @(row.FrequencySeconds > 0 ? $"{row.FrequencySeconds}s" : "—")
+                        </td>
+                        <td style="font-size:10px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="Query mode">
+                            @(string.IsNullOrEmpty(row.QueryMode) ? "—" : row.QueryMode)
+                        </td>
+                    }
+                    else
+                    {
+                        <td style="font-size:11px; color:var(--text-secondary); text-align:center;" title="Priority">
+                            @(row.Priority > 0 ? row.Priority.ToString() : "—")
+                        </td>
+                    }
+
+                    @* Enabled *@
+                    <td style="text-align:center;">
+                        @if (row.Enabled)
+                        {
+                            <i class="fa-solid fa-circle-check" style="color:var(--green); font-size:13px;"></i>
+                        }
+                        else
+                        {
+                            <i class="fa-solid fa-circle-minus" style="color:var(--text-secondary); font-size:13px;"></i>
+                        }
+                    </td>
+
+                    @* Query preview *@
+                    <td style="font-family:'Cascadia Code','Consolas',monospace; font-size:10px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
+                        title="@row.Query">
+                        @(row.Query.Length > 120 ? row.Query[..120] + "…" : row.Query)
+                    </td>
+
+                    @* Result *@
+                    <td style="text-align:center;">
+                        @if (row.Tested)
+                        {
+                            <div style="display:flex; flex-direction:column; align-items:center; gap:3px;">
+                                <span class="cv-result-badge cv-result-@(GetBadgeKey(row.TestResult))" title="@row.ErrorText">
+                                    @row.TestResult
+                                </span>
+                                @if (row.ActualValue != null)
+                                {
+                                    <div style="display:flex; align-items:center; gap:4px; font-size:10px; font-family:'Cascadia Code','Consolas',monospace;">
+                                        <span style="color:@(row.ActualMatchesExpected == true ? "#6ee7b7" : row.ActualMatchesExpected == false ? "#fca5a5" : "var(--text-secondary)");"
+                                              title="Actual returned value">
+                                            @row.ActualValue
+                                        </span>
+                                        @if (!string.IsNullOrEmpty(row.ExpectedDisplay))
+                                        {
+                                            <span style="color:var(--text-muted); font-size:9px;" title="Expected">/ @row.ExpectedDisplay</span>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <span style="color:var(--text-secondary); font-size:11px;">—</span>
+                        }
+                    </td>
+
+                    @* Actions *@
+                    <td>
+                        <div style="display:flex; gap:4px;">
+                            <button class="btn btn-sm btn-secondary" title="Test query against selected server"
+                                    @onclick="() => OnTest.InvokeAsync(row)"
+                                    style="padding:3px 8px; font-size:11px;">
+                                <i class="fa-solid fa-play"></i>
+                            </button>
+                            <button class="btn btn-sm btn-secondary" title="View / edit query"
+                                    @onclick="() => OnEdit.InvokeAsync(row)"
+                                    style="padding:3px 8px; font-size:11px;">
+                                <i class="fa-solid fa-pen"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    @if (!Filtered.Any())
+    {
+        <div style="padding:32px; text-align:center; color:var(--text-secondary); font-size:13px;">
+            <i class="fa-solid fa-inbox" style="font-size:24px; margin-bottom:8px; display:block;"></i>
+            @(Rows.Any() ? "No checks match the current filter." : "No checks loaded.")
+        </div>
+    }
+</div>
+
+@code {
+    /// <summary>Row model shared between CheckValidator page and this table component.</summary>
+    public class CheckRow
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string Category { get; set; } = "";
+        public string Description { get; set; } = "";
+        public string Severity { get; set; } = "";
+        public bool Enabled { get; set; }
+        public string Query { get; set; } = "";
+        public string TestResult { get; set; } = "—";
+        public bool Tested { get; set; }
+        public string? ErrorText { get; set; }
+        public string? ActualValue { get; set; }
+        public string? ExpectedDisplay { get; set; }  // human-readable expected e.g. "= 0" or "warn ≥ 80"
+        public bool? ActualMatchesExpected { get; set; }
+        public SQLTriage.Data.Models.AlertDefinition? AlertDef { get; set; }
+
+        // Alert-specific
+        public double? ThresholdWarning { get; set; }
+        public double? ThresholdCritical { get; set; }
+        public int FrequencySeconds { get; set; }
+        public string? QueryMode { get; set; }
+        public string? AlertOperator { get; set; }
+
+        // SQL Check-specific
+        public int Priority { get; set; }
+        public int? ExpectedValue { get; set; }
+        public string? RowCountCondition { get; set; }
+    }
+
+    [Parameter, EditorRequired] public List<CheckRow> Rows { get; set; } = new();
+    [Parameter, EditorRequired] public EventCallback<CheckRow> OnTest { get; set; }
+    [Parameter, EditorRequired] public EventCallback<CheckRow> OnEdit { get; set; }
+    [Parameter] public bool ShowAlertColumns { get; set; }
+
+    private string _filter = "";
+    private string _filterEnabled = "all";
+
+    private List<CheckRow> Filtered => Rows
+        .Where(r =>
+        {
+            if (_filterEnabled == "enabled" && !r.Enabled) return false;
+            if (_filterEnabled == "disabled" && r.Enabled) return false;
+            if (string.IsNullOrWhiteSpace(_filter)) return true;
+            var f = _filter.Trim();
+            return r.Name.Contains(f, StringComparison.OrdinalIgnoreCase)
+                || r.Id.Contains(f, StringComparison.OrdinalIgnoreCase)
+                || r.Category.Contains(f, StringComparison.OrdinalIgnoreCase)
+                || r.Severity.Contains(f, StringComparison.OrdinalIgnoreCase);
+        })
+        .ToList();
+
+    private static string GetBadgeKey(string result) =>
+        result.StartsWith("Pass") ? "pass" :
+        result == "Error" ? "error" :
+        result == "Blocked" ? "blocked" :
+        "skip";
+
+    private static string SeverityStyle(string severity) => severity.ToLowerInvariant() switch
+    {
+        "critical" => "background:rgba(239,68,68,.18); color:#fca5a5;",
+        "high"     => "background:rgba(239,68,68,.12); color:#f87171;",
+        "medium"   => "background:rgba(245,158,11,.18); color:#fcd34d;",
+        "warning"  => "background:rgba(245,158,11,.18); color:#fcd34d;",
+        "low"      => "background:rgba(16,185,129,.18); color:#6ee7b7;",
+        "info"     => "background:rgba(99,102,241,.15); color:#a5b4fc;",
+        _          => "background:var(--bg-primary); color:var(--text-secondary); border:1px solid var(--border);"
+    };
+}

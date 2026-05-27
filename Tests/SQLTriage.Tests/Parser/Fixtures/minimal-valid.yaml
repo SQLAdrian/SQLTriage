@@ -1,0 +1,13 @@
+check_id: SQLT-CORE-00010
+schema_version: 2
+legacy_ids: [10]
+title: Minimal valid check fixture
+description: Smallest viable schema_version 2 YAML for B2 Slice 1 parser tests.
+category: Performance
+priority: Medium
+framework_mappings:
+  - framework: NIST SP 800-53 Rev 5
+    control_id: 'CM-6'
+    mapping_type: direct_match
+query_analysis:
+  enhanced_query: "SELECT CASE WHEN 1=0 THEN 1 ELSE 0 END"

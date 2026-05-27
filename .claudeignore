@@ -1,0 +1,117 @@
+# Historical analysis and planning docs — never auto-load (7000+ lines saved)
+MEMORY_OPTIMIZATION_ANALYSIS.md
+MEMORY_OPTIMIZATION_RECOMMENDATIONS.md
+MEMORY_LEAK_CHECKLIST.md
+MEMORY_LEAK_STATUS.md
+REFACTORING_RECOMMENDATIONS.md
+PROJECT_GAP_ANALYSIS.md
+MODERN_FRAMEWORKS_COMPARISON.md
+SIMPLEST_IMPLEMENTATION.md
+UI_MODERNIZATION_PLAN.md
+LOG_ISSUES_ANALYSIS.md
+LOG_REVIEW_FIXES_2026-03-07.md
+FIX_VERIFICATION_CHECKLIST.md
+SQL_FIXES_SUMMARY.md
+FOOTPRINT_REDUCTION_GUIDE.md
+FOOTPRINT_REDUCTION_QUICK.md
+DACPAC_REMOVAL_SUMMARY.md
+CICD_QUICKSTART.md
+QUICK_FIX_REFERENCE.md
+NEWFEATURES.md
+NewAppTodoQ.md
+PMworking.md
+analysis-live-dashboard.md
+dashboard-analysis-progress.md
+dashboard-work-plan.md
+WORKFILE_BlitzReport.md
+
+# Community docs — not needed for coding
+CODE_OF_CONDUCT.md
+CONTRIBUTING.md
+CONTRIBUTORS.md
+AUTHORS.md
+SUPPORT.md
+SECURITY.md
+
+# Reference docs — read only when explicitly needed
+DEPLOYMENT_GUIDE.md
+CHANGELOG.md
+README.md
+
+# SQL scripts — large, rarely relevant
+BPScripts/
+SQLWATCH_db/
+scripts/
+Deploy/
+
+# Build output and worktrees
+bin/
+obj/
+.claude/worktrees/
+
+# Confidential check mapping table
+Config/!🛠AllCheckTable🛠!.csv
+
+# Binary and large files
+*.pdf
+*.xsd
+*.dacpac
+*.rdl
+Dacpacs/
+Runtimes/
+
+# Week 0 housekeeping scratch
+WORKLIST_Week0_Housekeeping.md
+
+# Agent-pass output (343 split SQL files — large, read on demand only)
+Data/Sql/HealthChecks/
+
+# Integration test project (not relevant to Blazor/service work)
+Tests/SQLTriage.Tests.Integration/
+
+# Week 0 — token savers (30–80k tokens per broad search)
+research_output/
+research_logs/
+CheckValidator/
+CheckMerger/
+backup/
+failed/
+in_progress/
+input/
+unknown/
+temp/
+tools/
+
+# Archive folder (historical docs — read on explicit request only)
+.ignore/archive/
+
+# Planning docs — read on demand only (not via auto-load)
+.ignore/SQLTriage_PRD.md
+.ignore/SQLTriage_Release_Checklist.md
+.ignore/SQLTriage_Strategic_Blueprint.md
+.ignore/DEVELOPMENT_STRATEGY.md
+.ignore/WORKFILE_remaining.md
+.ignore/OPUS_ANALYSIS_COMPLETE_*.md
+.ignore/OPUS_MEGA_PROMPT_COMPLETE.md
+.ignore/PRE-MORTEM_*.md
+.ignore/DECISIONS/
+.ignore/review/
+
+# SQL (Adrian owns SQL — do not auto-search)
+*.sql
+*.sqlplan
+*.dacpac.xml
+
+# Generated/cached
+BPScripts/Ignore/
+Deploy/
+!Deploy/installer/
+
+# Sibling RAG-Builder repo — never auto-search; ~2GB of cached web pages
+SQLTriage-RAG-Builder/
+
+# Test fixtures
+Tests/**/TestData/
+Tests/**/Fixtures/
+
+

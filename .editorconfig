@@ -1,0 +1,54 @@
+# SQLTriage — editorconfig
+#
+# Purpose: define ONE house style so new and edited code is consistent,
+# enforced by IDEs and `dotnet format`. This file is intentionally
+# NON-DISRUPTIVE:
+#   * It does NOT mass-reformat the existing tree (that would be a 100+
+#     file whitespace-churn commit colliding with concurrent work).
+#   * Style rule severities are `suggestion`/`silent`, NOT `warning`/
+#     `error`, so adding this file does NOT raise the `dotnet build`
+#     warning count (CLAUDE.md code-quality rule 3) or retroactively
+#     red-ball the build on pre-existing formatting drift.
+#   * It applies naturally: files you touch get cleaned via IDE format /
+#     `dotnet format <file>`; the backlog converges over time, no big-bang.
+#
+# The Basmalah header convention (CLAUDE.md, non-negotiable) is a project
+# rule, not an editorconfig concern — no rule here adds/removes/reorders
+# file headers. `dotnet format` does not touch comment content.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+
+[*.{cs,razor}]
+indent_size = 4
+# Most common style conventions; severity kept low on purpose (see header).
+dotnet_sort_system_directives_first = true
+dotnet_separate_import_directive_groups = false
+csharp_new_line_before_open_brace = all
+csharp_prefer_braces = true:suggestion
+csharp_style_namespace_declarations = file_scoped:suggestion
+dotnet_style_qualification_for_field = false:suggestion
+dotnet_style_qualification_for_property = false:suggestion
+csharp_style_var_for_built_in_types = false:silent
+csharp_style_var_when_type_is_apparent = true:silent
+dotnet_style_prefer_conditional_expression_over_return = true:silent
+
+[*.{json,yml,yaml}]
+indent_size = 2
+trim_trailing_whitespace = true
+
+[*.{xml,xaml,csproj,props,targets}]
+indent_size = 2
+
+[*.md]
+# Markdown: keep trailing whitespace (two-space line breaks are meaningful).
+trim_trailing_whitespace = false
+
+[*.{ps1,psm1}]
+indent_size = 4

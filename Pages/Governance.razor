@@ -1,0 +1,240 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/governance"
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@using static SQLTriage.Data.Services.GovernanceService
+@using Microsoft.Data.SqlClient
+@using System.Data
+@inject IGovernanceService GovernanceService
+@inject IFindingTranslator FindingTranslator
+@inject IQuickCheckRunner QuickCheckRunner
+@inject ServerConnectionManager ConnectionManager
+@inject NavigationManager Navigation
+@inject ToastService Toast
+
+<PageTitle>Governance - SQLTriage</PageTitle>
+
+<div class="governance-container">
+    <div class="governance-header">
+        <h1>SQL Server Governance</h1>
+        <p>Health assessment and compliance overview</p>
+    </div>
+
+    <!-- Indicative Check Banner -->
+    @if (_isIndicative)
+    {
+        <div class="indicative-banner">
+            <i class="fa-solid fa-info-circle"></i>
+            <span>This is an <strong>indicative assessment</strong> from the Audit Assessment (≤60 seconds). Run a full Vulnerability Assessment for complete governance scoring.</span>
+        </div>
+    }
+
+    <!-- Status Overview -->
+    @if (_governanceScore != null)
+    {
+        <div class="score-overview">
+            <div class="score-card">
+                <h3>Governance Score</h3>
+                <div class="score-value">@_governanceScore.Overall.ToString("F0")</div>
+                <div class="score-band">@_governanceScore.Band</div>
+                <div class="score-severity severity-medium">
+                    Indicative
+                </div>
+            </div>
+
+            <div class="score-details">
+                <div class="detail-item">
+                    <span class="label">Passed Findings:</span>
+                    <span class="value">@_governanceScore.PassedFindings</span>
+                </div>
+                <div class="detail-item">
+                    <span class="label">Total Findings:</span>
+                    <span class="value">@_governanceScore.TotalFindings</span>
+                </div>
+                <div class="detail-item">
+                    <span class="label">Failed Findings:</span>
+                    <span class="value">@_governanceScore.FailedFindings</span>
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <PageLoadingSpinner Message="Computing governance score..." />
+    }
+
+    <!-- Action Buttons -->
+    <div class="action-buttons">
+        @if (_isIndicative)
+        {
+            <button class="btn btn-primary" @onclick="RunFullAssessment">
+                <i class="fa-solid fa-search"></i> Run Full Vulnerability Assessment
+            </button>
+        }
+        <button class="btn btn-secondary" @onclick="RunQuickCheck">
+            <i class="fa-solid fa-refresh"></i> Re-run Audit Assessment
+        </button>
+        <button class="btn btn-info" @onclick="NavigateToValidator">
+            <i class="fa-solid fa-external-link"></i> Open Check Validator
+        </button>
+    </div>
+
+    <!-- Findings Summary -->
+    @if (_findings.Any())
+    {
+        <div class="findings-section">
+            <h3>Key Findings</h3>
+            <div class="findings-list">
+                @foreach (var finding in _findings.Take(5))
+                {
+                    <div class="finding-item severity-@finding.Severity.ToString().ToLower()">
+                        <div class="finding-header">
+                            <span class="finding-title">@finding.CheckName</span>
+                            <span class="finding-severity">@finding.Severity</span>
+                        </div>
+                        <div class="finding-description">@finding.Description</div>
+                        <div class="finding-action">@finding.RecommendedAction</div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    <!-- Loading State -->
+    @if (_loading)
+    {
+        <div class="loading-state">
+            <div class="spinner"></div>
+            <p>@_loadingMessage</p>
+        </div>
+    }
+</div>
+
+<!-- Styles extracted to wwwroot/css/Governance.css 2026-05-11 (CLAUDE.md convention).
+     Imported via app.css @import "Governance.css". -->
+
+@code {
+    private bool _isIndicative = false;
+    private GovernanceScore? _governanceScore;
+    private List<CheckResult> _findings = new();
+    private bool _loading = false;
+    private string _loadingMessage = "";
+
+    protected override Task OnInitializedAsync()
+    {
+        // Check if this is from a quick check (indicated by query parameter)
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var queryParams = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
+        _isIndicative = queryParams.TryGetValue("IsIndicative", out var indicativeValue) && string.Equals(indicativeValue, "true", StringComparison.OrdinalIgnoreCase);
+
+        LoadDataAsync();
+        return Task.CompletedTask;
+    }
+
+    private void LoadDataAsync()
+    {
+        _loading = true;
+        _loadingMessage = "Loading governance data...";
+
+        try
+        {
+            // For now, create a mock governance score
+            // In a real implementation, this would come from stored assessment results
+            _governanceScore = new GovernanceScore
+            {
+                IsIndicative = _isIndicative,
+                Overall = 75.0,
+                Band = ScoreBand.Silver,
+                TotalFindings = 20,
+                PassedFindings = 15,
+                FailedFindings = 5,
+                Categories = new Dictionary<string, CategoryScore>()
+            };
+
+            // Mock findings
+            _findings = new List<CheckResult>
+            {
+                new CheckResult
+                {
+                    CheckId = "VA-001",
+                    CheckName = "Backup Validation",
+                    Description = "Recent full backups not found for all databases",
+                    Severity = "High",
+                    RecommendedAction = "Schedule regular full backups and verify backup integrity",
+                    Passed = false
+                },
+                new CheckResult
+                {
+                    CheckId = "VA-002",
+                    CheckName = "Memory Configuration",
+                    Description = "SQL Server memory settings may not be optimal",
+                    Severity = "Medium",
+                    RecommendedAction = "Review and adjust max server memory settings",
+                    Passed = false
+                }
+            };
+
+            // In a real implementation, load from stored assessment data
+            // _governanceScore = await GovernanceService.GetLatestScoreAsync(serverName);
+            // _findings = await FindingTranslator.TranslateFindingsAsync(latestResults);
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("Failed to load governance data", ex.Message);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task RunQuickCheck()
+    {
+        // Get the first connected server
+        var connection = ConnectionManager.GetEnabledConnections().FirstOrDefault();
+        if (connection == null)
+        {
+            Toast.ShowWarning("No server connection", "Please configure a server connection first.");
+            Navigation.NavigateTo(RouteConstants.Servers);
+            return;
+        }
+
+        _loading = true;
+        _loadingMessage = "Running Audit Assessment...";
+
+        try
+        {
+            var progress = new Progress<QuickCheckProgress>(p =>
+            {
+                _loadingMessage = $"Running Audit Assessment... ({p.Completed}/{p.Total})";
+                StateHasChanged();
+            });
+
+            var result = await QuickCheckRunner.RunAsync(connection, connection.ServerNames.Split(',')[0], progress);
+            Toast.ShowSuccess("Audit Assessment complete", $"{result.Summary.Passed}/{result.Summary.TotalChecks} passed");
+
+            // Reload data
+        LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("Audit Assessment failed", ex.Message);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void RunFullAssessment()
+    {
+        // Navigate to full vulnerability assessment
+        Navigation.NavigateTo(RouteConstants.VulnerabilityAssessment);
+    }
+
+    private void NavigateToValidator()
+    {
+        Navigation.NavigateTo(RouteConstants.CheckValidator);
+    }
+}

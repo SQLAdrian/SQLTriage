@@ -1,0 +1,197 @@
+/* In the name of God, the Merciful, the Compassionate */
+
+/* ── SpBlitzDropZone component styles ─────────────────────────────────────────
+   Colour-blind safe: all status/severity colours use canonical CSS vars
+   (--green, --red, --orange, --yellow) so body.colorblind-mode remaps
+   automatically via Accessibility.css.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+.spblitz-dropzone-wrapper {
+    margin-top: 1.25rem;
+    border: 1px solid var(--border-color, #d4d4d4);
+    border-radius: 8px;
+    background: var(--card-bg, #fff);
+    padding: 1rem 1.25rem;
+}
+
+.spblitz-dropzone-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.spblitz-dropzone-title {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--text-primary, #111);
+    margin: 0;
+}
+
+/* Drop target */
+.spblitz-drop-target {
+    border: 2px dashed var(--border-color, #bbb);
+    border-radius: 6px;
+    padding: 1.25rem 1rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    background: var(--surface, #fafafa);
+    user-select: none;
+}
+
+.spblitz-drop-target:hover,
+.spblitz-drop-target.drag-over {
+    border-color: var(--accent, #3b82f6);
+    background: color-mix(in srgb, var(--accent, #3b82f6) 6%, transparent);
+}
+
+.spblitz-drop-hint {
+    color: var(--text-secondary, #666);
+    font-size: 0.875rem;
+    margin: 0;
+}
+
+/* Server label row */
+.spblitz-import-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.spblitz-import-row label {
+    font-size: 0.875rem;
+    color: var(--text-secondary, #555);
+    white-space: nowrap;
+}
+
+.spblitz-server-input {
+    flex: 1;
+    min-width: 180px;
+    padding: 0.35rem 0.6rem;
+    border: 1px solid var(--border-color, #ccc);
+    border-radius: 4px;
+    font-size: 0.875rem;
+    background: var(--input-bg, #fff);
+    color: var(--text-primary, #111);
+}
+
+.spblitz-server-input:focus {
+    outline: 2px solid var(--accent, #3b82f6);
+    outline-offset: 1px;
+}
+
+/* Result message */
+.spblitz-result-msg {
+    margin-top: 0.5rem;
+    font-size: 0.875rem;
+    padding: 0.35rem 0.6rem;
+    border-radius: 4px;
+}
+
+.spblitz-result-msg.success {
+    background: color-mix(in srgb, var(--green, #16a34a) 12%, transparent);
+    color: var(--green, #16a34a);
+    border: 1px solid var(--green, #16a34a);
+}
+
+.spblitz-result-msg.error {
+    background: color-mix(in srgb, var(--red, #dc2626) 10%, transparent);
+    color: var(--red, #dc2626);
+    border: 1px solid var(--red, #dc2626);
+}
+
+/* Imports history table */
+.spblitz-imports-table-wrapper {
+    margin-top: 1rem;
+    overflow-x: auto;
+}
+
+.spblitz-imports-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+}
+
+.spblitz-imports-table th {
+    text-align: left;
+    padding: 0.35rem 0.6rem;
+    border-bottom: 1px solid var(--border-color, #ddd);
+    color: var(--text-secondary, #555);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.spblitz-imports-table td {
+    padding: 0.35rem 0.6rem;
+    border-bottom: 1px solid var(--border-color, #eee);
+    vertical-align: top;
+    color: var(--text-primary, #111);
+}
+
+.spblitz-imports-table tr:last-child td {
+    border-bottom: none;
+}
+
+.spblitz-remove-btn {
+    font-size: 0.75rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    border: 1px solid var(--red, #dc2626);
+    color: var(--red, #dc2626);
+    background: transparent;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.12s;
+}
+
+.spblitz-remove-btn:hover {
+    background: color-mix(in srgb, var(--red, #dc2626) 10%, transparent);
+}
+
+/* Merged findings banner */
+.spblitz-merge-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.4rem 0.75rem;
+    background: color-mix(in srgb, var(--accent, #3b82f6) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent, #3b82f6) 30%, transparent);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    color: var(--text-primary, #111);
+    margin-bottom: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.spblitz-merge-count {
+    font-weight: 600;
+}
+
+.spblitz-toggle-btn {
+    font-size: 0.75rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    border: 1px solid var(--border-color, #bbb);
+    background: var(--card-bg, #fff);
+    cursor: pointer;
+    color: var(--text-primary, #111);
+    transition: background 0.12s;
+    margin-left: auto;
+}
+
+.spblitz-toggle-btn:hover {
+    background: var(--surface, #f5f5f5);
+}
+
+/* Disabled/free-state banner */
+.spblitz-disabled-banner {
+    padding: 0.6rem 0.75rem;
+    border-radius: 6px;
+    border: 1px solid var(--border-color, #ddd);
+    background: var(--surface, #fafafa);
+    color: var(--text-secondary, #888);
+    font-size: 0.85rem;
+}

@@ -1,0 +1,232 @@
+/* In the name of God, the Merciful, the Compassionate */
+/* Remediation Cost Tuner page — gated to MSI/afsul. */
+
+.remediation-tuner {
+    padding: 18px 22px 32px;
+    max-width: 1500px;
+}
+
+.remediation-tuner-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 24px;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+}
+
+.remediation-tuner-header h2 {
+    margin: 0 0 6px;
+    font-size: 22px;
+    color: var(--text-primary);
+}
+
+.remediation-tuner-sub {
+    color: var(--text-muted);
+    font-size: 12px;
+    max-width: 720px;
+    line-height: 1.4;
+}
+
+.remediation-tuner-sub code {
+    color: var(--accent);
+    background: var(--bg-hover);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 11px;
+}
+
+.remediation-tuner-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.remediation-tuner-meta strong {
+    color: var(--text-primary);
+}
+
+.remediation-tuner-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+}
+
+.remediation-tuner-search {
+    flex: 1 1 240px;
+    min-width: 200px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 13px;
+}
+
+.remediation-tuner-chips {
+    display: flex;
+    gap: 6px;
+}
+
+.remediation-chip {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    padding: 6px 12px;
+    border-radius: 14px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 120ms, color 120ms, border-color 120ms;
+}
+
+.remediation-chip:hover {
+    color: var(--text-primary);
+    border-color: var(--accent);
+}
+
+.remediation-chip.active {
+    background: var(--accent);
+    color: var(--bg-page);
+    border-color: var(--accent);
+}
+
+.remediation-chip-count {
+    margin-left: 6px;
+    opacity: 0.85;
+    font-weight: 600;
+}
+
+.remediation-tuner-totals {
+    margin-left: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    text-align: right;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.remediation-tuner-totals strong {
+    color: var(--accent-strong, var(--accent));
+    font-size: 14px;
+}
+
+.remediation-tuner-table-wrap {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: auto;
+    max-height: calc(100vh - 280px);
+}
+
+.remediation-tuner-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+.remediation-tuner-table th {
+    text-align: left;
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+    padding: 8px 10px;
+    font-weight: 600;
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.remediation-tuner-table td {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border-soft, var(--border));
+    color: var(--text-primary);
+    vertical-align: middle;
+}
+
+.remediation-tuner-table tr:hover td {
+    background: var(--bg-hover);
+}
+
+.remediation-tuner-table .remediation-num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.remediation-overridden td {
+    background: rgba(56, 189, 248, 0.04);
+}
+
+.remediation-overridden td:first-child::before {
+    content: "•";
+    color: var(--accent);
+    margin-right: 4px;
+    font-weight: 700;
+}
+
+.remediation-id {
+    font-family: var(--mono, ui-monospace, Consolas, monospace);
+    font-size: 11px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.remediation-name {
+    max-width: 540px;
+}
+
+.remediation-sev {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    border: 1px solid var(--border);
+}
+
+.remediation-sev.sev-critical { color: var(--red);    border-color: var(--red); }
+.remediation-sev.sev-warning  { color: var(--yellow); border-color: var(--yellow); }
+.remediation-sev.sev-info     { color: var(--accent); border-color: var(--accent); }
+
+.remediation-edit {
+    width: 70px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    border-radius: 3px;
+    padding: 3px 6px;
+    font-size: 12px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.remediation-edit:focus {
+    border-color: var(--accent);
+    outline: none;
+}
+
+.remediation-reset {
+    background: transparent;
+    border: 0;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 3px;
+}
+
+.remediation-reset:hover {
+    color: var(--accent);
+    background: var(--bg-hover);
+}
+
+.remediation-tuner-empty {
+    padding: 40px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+}

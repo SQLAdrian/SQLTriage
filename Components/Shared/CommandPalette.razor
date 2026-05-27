@@ -1,0 +1,113 @@
+@inject NavigationManager Navigation
+
+@if (_isOpen)
+{
+    <div class="cmd-overlay" @onclick="Close">
+        <div class="cmd-palette" @onclick:stopPropagation @onclick="(() => {})" @onkeydown="HandleKeyDown">
+            <div class="cmd-input-wrapper">
+                <i class="fa-solid fa-search cmd-search-icon"></i>
+                <input class="cmd-input" type="text" placeholder="Search pages... (Ctrl+K)" @bind="_query" @bind:event="oninput" @onkeydown="HandleKeyDown" autofocus />
+            </div>
+            <div class="cmd-results">
+                @foreach (var item in _filteredPages)
+                {
+                    var index = _filteredPages.IndexOf(item);
+                    <div class="cmd-item @(_selectedIndex == index ? "cmd-item-selected" : "")" @onclick="() => NavigateTo(item.Route)" @onmouseenter="() => _selectedIndex = index">
+                        <span class="cmd-item-icon"><i class="@item.Icon"></i></span>
+                        <span class="cmd-item-label">@item.Label</span>
+                        <span class="cmd-item-hint">@item.Hint</span>
+                    </div>
+                }
+                @if (_filteredPages.Count == 0)
+                {
+                    <div class="cmd-item cmd-item-empty">No pages match "@_query"</div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool _isOpen;
+    private string _query = "";
+    private int _selectedIndex;
+    private List<PalettePage> _allPages = new();
+    private List<PalettePage> _filteredPages = new();
+
+    public static Action? RequestOpen;
+
+    protected override void OnInitialized()
+    {
+        RequestOpen = Open;
+
+        // Gate: pages currently hidden behind the maintainer workstation check
+        // (CIO Dashboard, Compliance Roadmap, Compliance Map, Governance Report)
+        // are filtered from the palette unless we're on MSI/afsul.
+        var gated = string.Equals(Environment.MachineName, "MSI",   StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(Environment.UserName,    "afsul", StringComparison.OrdinalIgnoreCase);
+
+        _allPages = new List<PalettePage>();
+        if (gated)
+        {
+            _allPages.Add(new("CIO Dashboard", "/cio", "fa-solid fa-crown", "Executive overview"));
+            _allPages.Add(new("Governance Scoring", "/governance", "fa-solid fa-scale-balanced", "Health assessment"));
+            _allPages.Add(new("Compliance Map", "/compliance-map", "fa-solid fa-shield-halved", "Framework coverage"));
+            _allPages.Add(new("Compliance Roadmap", "/diagnostics-roadmap", "fa-solid fa-road", "Maturity levels"));
+            _allPages.Add(new("Cost Tuner", "/remediation-tuner", "fa-solid fa-sliders", "Tune check effort hours"));
+        }
+        _allPages.AddRange(new[]
+        {
+            new PalettePage("Remediation Playbooks", "/playbooks", "fa-solid fa-book-medical", "Actionable guidance"),
+            new PalettePage("Audit Assessment", "/audit", "fa-solid fa-bolt", "Run the framework-mapped check corpus"),
+            new PalettePage("Raw Diagnostics", "/fullaudit", "fa-solid fa-magnifying-glass-chart", "Diagnostic .sql scripts → CSV"),
+            new PalettePage("Servers", "/servers", "fa-solid fa-server", "Connection management"),
+            new PalettePage("Index Analysis", "/index-analysis", "fa-solid fa-list-ol", "Missing/unused/fragmented"),
+            new PalettePage("Audit Log", "/audit-log", "fa-solid fa-clipboard-list", "Security events"),
+            new PalettePage("Settings", "/settings", "fa-solid fa-gear", "Configuration"),
+            new PalettePage("Alerts", "/alerts", "fa-solid fa-bell", "Alert management"),
+            new PalettePage("Alerting Config", "/alerting-config", "fa-solid fa-sliders", "Notification channels"),
+            new PalettePage("NOC Board", "/alerts-noc", "fa-solid fa-tv", "Alert wallboard"),
+            new PalettePage("Scheduled Tasks", "/scheduled-tasks", "fa-solid fa-clock", "Automation"),
+            new PalettePage("Blocking", "/blocking", "fa-solid fa-chain-broken", "Lock analysis"),
+            new PalettePage("Blocking Forensics", "/blocking-forensics", "fa-solid fa-link-slash", "Blocking history timeline"),
+            new PalettePage("Wait Events", "/waitevents", "fa-solid fa-hourglass-half", "Performance waits"),
+            new PalettePage("Long Queries", "/longqueries", "fa-solid fa-timeline", "Expensive queries"),
+            new PalettePage("Memory", "/memory", "fa-solid fa-memory", "Memory health"),
+            new PalettePage("Environment", "/environment", "fa-solid fa-leaf", "Instance overview"),
+            new PalettePage("Code Hotspots", "/code-hotspots", "fa-solid fa-fire", "Query patterns"),
+            new PalettePage("Capacity", "/capacity", "fa-solid fa-chart-line", "Forecasting"),
+            new PalettePage("Live Monitor", "/dashboard/live", "fa-solid fa-heart-pulse", "Real-time metrics"),
+            new PalettePage("Guide", "/guide", "fa-solid fa-compass", "Navigation help"),
+            new PalettePage("About", "/about", "fa-solid fa-circle-info", "App info"),
+            new PalettePage("Vulnerability", "/vulnerabilityassessment", "fa-solid fa-bug", "Security scan"),
+            new PalettePage("Benchmark", "/benchmark", "fa-solid fa-gauge-high", "Performance tests"),
+            new PalettePage("Service Management", "/service-management", "fa-solid fa-wrench", "Windows services"),
+            new PalettePage("Deploy SQLWATCH", "/deploysqlwatch", "fa-solid fa-rocket", "Monitoring setup"),
+        });
+        _filteredPages = _allPages;
+    }
+
+    private void OnQueryChanged()
+    {
+        _filteredPages = string.IsNullOrWhiteSpace(_query)
+            ? _allPages
+            : _allPages.Where(p => (p.Label + " " + p.Hint).Contains(_query, StringComparison.OrdinalIgnoreCase)).ToList();
+        _selectedIndex = 0;
+    }
+
+    private void HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") { Close(); }
+        else if (e.Key == "ArrowDown") { _selectedIndex = Math.Min(_selectedIndex + 1, _filteredPages.Count - 1); }
+        else if (e.Key == "ArrowUp") { _selectedIndex = Math.Max(_selectedIndex - 1, 0); }
+        else if (e.Key == "Enter" && _filteredPages.Count > 0) { NavigateTo(_filteredPages[_selectedIndex].Route); }
+        else { OnQueryChanged(); return; }
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void NavigateTo(string route) { Close(); Navigation.NavigateTo(route); }
+    private void Open() { _isOpen = true; _query = ""; _selectedIndex = 0; _filteredPages = _allPages; InvokeAsync(StateHasChanged); }
+    private void Close() { _isOpen = false; InvokeAsync(StateHasChanged); }
+
+    private record PalettePage(string Label, string Route, string Icon, string Hint);
+}

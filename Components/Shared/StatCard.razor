@@ -1,0 +1,86 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->@using SQLTriage.Data
+
+<div class="bg-app-bg-panel rounded-lg p-4 border-l-3 transition-all duration-200 @(!string.IsNullOrEmpty(Description) ? "has-tooltip" : "")"
+     style="background-color: @(ResolvedColor + "22"); border-left: 3px solid @ResolvedColor;"
+     @onmouseenter="ShowTooltip" @onmouseleave="HideTooltip">
+    <div class="text-xs uppercase tracking-wide text-app-text-secondary mb-1">@Label</div>
+    <div class="text-2xl font-bold leading-tight" style="color: @ResolvedColor;">
+        @FormatValue()
+    </div>
+    @if (!string.IsNullOrEmpty(Unit))
+    {
+        <div class="text-xs text-app-text-muted mt-0.5">@Unit</div>
+    }
+    @if (!string.IsNullOrEmpty(Instance))
+    {
+        <div class="text-xs text-app-text-muted mt-1">@Instance</div>
+    }
+    @if (!string.IsNullOrEmpty(Description) && _showTooltip)
+    {
+        <div class="absolute bg-app-bg-hover text-app-text-primary text-xs p-2 rounded mt-1 z-50 shadow-lg">@Description</div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public double Value { get; set; }
+    [Parameter] public string Unit { get; set; } = "";
+    [Parameter] public string Instance { get; set; } = "";
+    [Parameter] public int DecimalPlaces { get; set; } = 1;
+    /// <summary>Pre-resolved color hex. If set, overrides ThresholdConfig lookup.</summary>
+    [Parameter] public string? Color { get; set; }
+    /// <summary>Description shown as tooltip on mouseover.</summary>
+    [Parameter] public string Description { get; set; } = "";
+    /// <summary>Value format string (e.g., N0, P2, 0.## GB)</summary>
+    [Parameter] public string ValueFormat { get; set; } = "";
+
+    private bool _showTooltip;
+    private string Fmt => string.IsNullOrEmpty(ValueFormat) ? $"F{DecimalPlaces}" : ValueFormat;
+
+    /// <summary>Uses explicit Color parameter if provided, otherwise falls back to ThresholdConfig.</summary>
+    private string ResolvedColor => !string.IsNullOrEmpty(Color) ? Color : ThresholdConfig.GetColor(Label, Value);
+
+    private void ShowTooltip() { if (!string.IsNullOrEmpty(Description)) _showTooltip = true; }
+    private void HideTooltip() { _showTooltip = false; }
+
+    private string FormatValue()
+    {
+        // Use custom format if provided
+        if (!string.IsNullOrEmpty(ValueFormat))
+        {
+            try
+            {
+                return Value.ToString(ValueFormat) + (!string.IsNullOrEmpty(Unit) ? $" {Unit}" : "");
+            }
+            catch
+            {
+                // Fall back to default formatting
+            }
+        }
+        
+        if (Unit == "%" || Unit == "percentunit")
+        {
+            var pct = Unit == "percentunit" ? Value * 100 : Value;
+            return pct.ToString(Fmt) + "%";
+        }
+        if (Unit == "ms")
+            return Value.ToString(Fmt) + " ms";
+        if (Unit == "Bps" || Unit == "bytes")
+            return FormatBytes(Value);
+        if (Unit == "reqps" || Unit == "cps")
+            return Value.ToString(Fmt) + "/s";
+        if (Value >= 1_000_000)
+            return $"{Value / 1_000_000:F1}M";
+        if (Value >= 1_000)
+            return $"{Value / 1_000:F1}K";
+        return Value.ToString(Fmt);
+    }
+
+    private string FormatBytes(double bytes)
+    {
+        if (bytes >= 1_073_741_824) return $"{bytes / 1_073_741_824:F1} GB/s";
+        if (bytes >= 1_048_576) return $"{bytes / 1_048_576:F1} MB/s";
+        if (bytes >= 1_024) return $"{bytes / 1_024:F1} KB/s";
+        return $"{bytes:F0} B/s";
+    }
+}

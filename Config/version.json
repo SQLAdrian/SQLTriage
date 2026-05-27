@@ -1,0 +1,15 @@
+{
+    "version":  "0.90.2",
+    "buildNumber":  1963,
+    "buildDate":  "2026-05-26",
+    "releaseType":  "Production",
+    "updateCheckUrl":  "https://api.github.com/repos/SQLAdrian/SQLTriage/releases/latest",
+    "whatsnew":  [
+                     "Audit-first: Free tier now ships with a curated set of checks (non-overlapping with sp_BLITZ) plus first-class sp_BLITZ CSV import — paste your existing sp_BLITZ output and see it merged with live findings on the Audit Assessment page.",
+                     "Full tier unlock: Activate Full Audit in Settings to enable the complete ~700-check corpus, governance weighting, build catalogue, and SQL licensing-cost estimator. License keys are issued as 24-word BIP39 phrases for easy phone/email handoff.",
+                     "Security: All Full-tier IP now ships encrypted (AES-256-GCM) in a per-customer bundle next to sqltriage.exe. Customer name binds cryptographically to the bundle (GCM AAD watermark). No phone-home; activation is fully offline.",
+                     "RAG retrieval (Full + RAG tier only): rag.db is distributed separately via secure share. The app gates RAG features by license; drop the file next to sqltriage.exe to enable.",
+                     "Release packaging: LICENSE.txt now ships with the installer and appears as a wizard accept page. Curation artefacts and the stray measurement_*.json files no longer leak into release builds.",
+                     "Boot-order: governance-weights.json no longer required at IConfiguration time; lazy-loaded from the active bundle. Removes the v0.90.1 hard failure when the file was missing."
+                 ]
+}

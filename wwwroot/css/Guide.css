@@ -1,0 +1,230 @@
+/* Guide page styles — aligned with audit-first design system 2026-05-11.
+ * Adds the missing nav-map / guide-card / container rules that were not
+ * defined when Guide.razor was extended (sweep findings 2026-05-11). */
+
+.guide-container {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 24px 28px 48px;
+    color: var(--text-primary);
+}
+
+.guide-container > h1 {
+    font-size: 1.875rem;
+    font-weight: 700;
+    letter-spacing: -0.012em;
+    margin: 0 0 0.5rem;
+    color: var(--text-primary);
+}
+
+.guide-container > p {
+    color: var(--text-secondary);
+    margin-bottom: 1.5rem;
+    max-width: 760px;
+    line-height: 1.55;
+}
+
+/* ── Section panel ─────────────────────────────────────── */
+.guide-section {
+    border: 1px solid var(--border-soft);
+    background: var(--bg-panel);
+    border-radius: var(--r-md);
+    padding: 1.25rem 1.4rem;
+    margin-bottom: 1.25rem;
+}
+
+/* Slightly accented panel when ambient bg is on, so cards float over the
+ * photo. Keeps glass-style consistency with the rest of the app. */
+body.has-ambient-bg .guide-section {
+    border-color: var(--border);
+    background: rgba(45, 212, 191, 0.04);
+}
+
+.guide-section h2 {
+    margin-top: 0;
+    margin-bottom: 0.6rem;
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+}
+
+.guide-section h2 i {
+    color: var(--accent);
+    font-size: 0.95em;
+}
+
+.guide-section p {
+    color: var(--text-secondary);
+    margin-bottom: 0.85rem;
+    line-height: 1.55;
+}
+
+.guide-description {
+    color: var(--text-secondary);
+    margin-bottom: 1rem;
+    line-height: 1.55;
+}
+
+/* ── Top "Found a bug?" links row ──────────────────────── */
+.guide-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+}
+
+.guide-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.55rem 0.95rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    text-decoration: none;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: background var(--t-quick), border-color var(--t-quick), color var(--t-quick);
+}
+
+.guide-link:hover {
+    background: var(--bg-hover);
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+}
+
+.guide-link .guide-link-icon {
+    color: var(--accent);
+}
+
+.guide-link .guide-link-icon-linkedin {
+    /* LinkedIn brand colour kept (recognisable) — colour-blind audit acceptable
+     * because it's a brand mark, not status semantics. */
+    color: #0a66c2;
+}
+
+/* ── Navigation map grid ───────────────────────────────── */
+.nav-map-section .nav-map-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 1rem;
+    margin-top: 0.5rem;
+}
+
+.nav-map-group {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-md);
+    padding: 0.85rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.nav-map-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    margin-bottom: 0.35rem;
+    padding-bottom: 0.35rem;
+    border-bottom: 1px solid var(--border-soft);
+}
+
+.nav-map-item {
+    display: grid;
+    grid-template-columns: 1.25rem 1fr;
+    align-items: center;
+    column-gap: 0.55rem;
+    padding: 0.45rem 0.55rem;
+    border-radius: var(--r-sm);
+    text-decoration: none;
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: background var(--t-quick), color var(--t-quick);
+}
+
+.nav-map-item > i {
+    color: var(--text-secondary);
+    text-align: center;
+    font-size: 0.85rem;
+    transition: color var(--t-quick);
+}
+
+.nav-map-item > span:nth-of-type(1) {
+    /* Primary item label */
+    line-height: 1.2;
+}
+
+.nav-map-item .nav-map-hint {
+    grid-column: 2;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    font-weight: 400;
+    line-height: 1.3;
+    margin-top: 0.1rem;
+}
+
+.nav-map-item:hover {
+    background: var(--bg-hover);
+    color: var(--accent-strong);
+}
+
+.nav-map-item:hover > i { color: var(--accent); }
+
+/* ── Per-feature card grid ─────────────────────────────── */
+.guide-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1rem;
+    margin-top: 0.75rem;
+}
+
+.guide-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-md);
+    padding: 1rem 1.15rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    transition: border-color var(--t-base), transform var(--t-base);
+}
+
+.guide-card:hover {
+    border-color: var(--border-strong);
+    transform: translateY(-2px);
+}
+
+.guide-card h3 {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+.guide-card h3 i {
+    color: var(--accent);
+    font-size: 0.9em;
+}
+
+.guide-card p {
+    color: var(--text-secondary);
+    margin: 0;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    flex: 1;
+}
+
+.guide-card .btn {
+    align-self: flex-start;
+    margin-top: 0.25rem;
+}

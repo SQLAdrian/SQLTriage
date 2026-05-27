@@ -1,0 +1,83 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using System.Text.Json
+
+@if (IsVisible && _notes.Count > 0)
+{
+    <div class="modal-backdrop" style="z-index:9000;"></div>
+    <div style="position:fixed; inset:0; z-index:9001; display:flex; align-items:center; justify-content:center; pointer-events:none;">
+        <div class="release-notes-modal" style="pointer-events:all;">
+
+            <div class="release-notes-header">
+                <span style="font-size:22px; color:var(--accent);"><i class="fa-solid fa-rocket"></i></span>
+                <div>
+                    <div style="font-size:15px; font-weight:600; color:var(--text-primary);">What's new in v@(_version)</div>
+                    <div style="font-size:12px; color:var(--text-muted);">@(_buildDate)</div>
+                </div>
+                <button class="modal-close" style="margin-left:auto;" @onclick="Close" title="Close">×</button>
+            </div>
+
+            <div class="release-notes-body">
+                <ul class="release-notes-list">
+                    @foreach (var note in _notes)
+                    {
+                        <li>
+                            <span class="release-note-bullet"><i class="fa-solid fa-circle-check"></i></span>
+                            <span>@note</span>
+                        </li>
+                    }
+                </ul>
+            </div>
+
+            <div class="release-notes-footer">
+                <label style="font-size:12px; color:var(--text-muted); display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none;">
+                    <input type="checkbox" @bind="_dontShowAgain" style="cursor:pointer;" />
+                    Don't show this again
+                </label>
+                <button class="settings-btn settings-btn-primary" @onclick="Close">
+                    <i class="fa-solid fa-check"></i> Got it
+                </button>
+            </div>
+
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public EventCallback<bool> OnClose { get; set; }
+
+    private List<string> _notes = new();
+    private string _version = "";
+    private string _buildDate = "";
+    private bool _dontShowAgain = false;
+
+    protected override void OnInitialized()
+    {
+        LoadFromVersionJson();
+    }
+
+    private void LoadFromVersionJson()
+    {
+        try
+        {
+            var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config", "version.json");
+            if (!File.Exists(path))
+                path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config", "version.json");
+            if (!File.Exists(path)) return;
+
+            var json = File.ReadAllText(path);
+            var doc  = JsonDocument.Parse(json);
+
+            _version   = doc.RootElement.TryGetProperty("version",   out var v) ? v.GetString() ?? "" : "";
+            _buildDate = doc.RootElement.TryGetProperty("buildDate",  out var d) ? d.GetString() ?? "" : "";
+
+            if (doc.RootElement.TryGetProperty("whatsnew", out var arr) && arr.ValueKind == JsonValueKind.Array)
+                foreach (var item in arr.EnumerateArray())
+                    if (item.GetString() is { } note)
+                        _notes.Add(note);
+        }
+        catch { /* non-fatal — modal simply won't show */ }
+    }
+
+    private async Task Close() => await OnClose.InvokeAsync(_dontShowAgain);
+}

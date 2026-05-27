@@ -1,0 +1,279 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/capacity"
+<PageTitle>SQLTriage - Capacity Planning</PageTitle>
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@using SQLTriage.Data.Caching
+@using System.Data
+@using Microsoft.Data.SqlClient
+@using Microsoft.Extensions.Logging
+@inject ServerConnectionManager ConnectionManager
+@inject ForecastService Forecast
+@inject liveQueriesCacheStore CacheStore
+@inject ToastService Toast
+@inject ILogger<CapacityPlanning> Logger
+
+<div class="settings-page" style="max-width: 1400px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h2 style="margin: 0;">Capacity Planning</h2>
+        <div style="display: flex; gap: 8px; align-items: center;">
+            <button class="settings-btn" @onclick="RefreshForecasts" disabled="@_loading">
+                <i class="fa-solid @(_loading ? "fa-spinner fa-spin" : "fa-rotate")"></i>
+                @(_loading ? "Analyzing..." : "Refresh")
+            </button>
+        </div>
+    </div>
+
+    @if (_loading)
+    {
+        <PageLoadingSpinner Message="Analyzing capacity data..." />
+    }
+    else if (_diskForecasts.Count == 0 && _cpuForecasts.Count == 0)
+    {
+        <div style="text-align: center; padding: 48px; color: var(--text-muted);">
+            <i class="fa-solid fa-chart-line" style="font-size: 48px; margin-bottom: 16px; opacity: 0.3;"></i>
+            <div style="font-size: 14px; margin-bottom: 8px;">No forecast data available yet</div>
+            <div style="font-size: 12px;">Forecasting requires at least 24 hours of cached time-series data.<br/>
+            Connect to a server and let the dashboards collect data, then return here.</div>
+        </div>
+    }
+    else
+    {
+        @* ── Disk Space Forecasts ── *@
+        <CollapsibleSection Title="Disk Space Forecasts" IsExpanded="true">
+            <div style="padding: 12px 16px;">
+                @if (_diskForecasts.Count == 0 && !_loading)
+                {
+                    <div style="color: var(--text-muted); font-size: 12px;">
+                        No disk space time-series data in cache. Visit a dashboard with disk space panels to start collecting data.
+                    </div>
+                }
+                else
+                {
+                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px;">
+                        @foreach (var f in _diskForecasts)
+                        {
+                            <div style="border: 1px solid var(--border); border-radius: 6px; padding: 12px; background: var(--bg-secondary);">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <span style="font-weight: 600; font-size: 13px; color: var(--text-primary);">@f.Label</span>
+                                    @if (f.Result?.DaysUntilThreshold != null)
+                                    {
+                                        <span class="severity-badge @GetUrgencyClass(f.Result.DaysUntilThreshold.Value)" style="font-size: 11px;">
+                                            @FormatDaysUntil(f.Result.DaysUntilThreshold.Value)
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="severity-badge severity-info" style="font-size: 11px;">Stable</span>
+                                    }
+                                </div>
+                                @if (f.Result != null)
+                                {
+                                    <div style="display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 11px; color: var(--text-secondary);">
+                                        <span style="color: var(--text-muted);">Current:</span>
+                                        <span>@f.Result.CurrentValue.ToString("N1") @f.Unit</span>
+                                        <span style="color: var(--text-muted);">Trend:</span>
+                                        <span style="color: @(f.Result.SlopePerDay > 0 ? "var(--orange)" : "var(--green)");">
+                                            @(f.Result.SlopePerDay > 0 ? "+" : "")@f.Result.SlopePerDay.ToString("N2") @f.Unit/day
+                                        </span>
+                                        @if (f.Result.PredictedDate != null)
+                                        {
+                                            <span style="color: var(--text-muted);">Full by:</span>
+                                            <span style="color: var(--red);">@f.Result.PredictedDate.Value.ToString("dd MMM yyyy")</span>
+                                        }
+                                        <span style="color: var(--text-muted);">Data points:</span>
+                                        <span>@f.Result.DataPointCount (@(f.Result.IsReliable ? "reliable" : "low confidence"))</span>
+                                        <span style="color: var(--text-muted);">R²:</span>
+                                        <span>@f.Result.RSquared.ToString("N3")</span>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </CollapsibleSection>
+
+        @* ── CPU Usage Forecasts ── *@
+        <CollapsibleSection Title="CPU Usage Trends" IsExpanded="true">
+            <div style="padding: 12px 16px;">
+                @if (_cpuForecasts.Count == 0 && !_loading)
+                {
+                    <div style="color: var(--text-muted); font-size: 12px;">
+                        No CPU time-series data in cache. Visit the Instance dashboard to start collecting CPU data.
+                    </div>
+                }
+                else
+                {
+                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px;">
+                        @foreach (var f in _cpuForecasts)
+                        {
+                            <div style="border: 1px solid var(--border); border-radius: 6px; padding: 12px; background: var(--bg-secondary);">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                    <span style="font-weight: 600; font-size: 13px; color: var(--text-primary);">@f.Label</span>
+                                    @if (f.Result != null && f.Result.SlopePerDay > 0.5)
+                                    {
+                                        <span class="severity-badge severity-warning" style="font-size: 11px;">
+                                            Rising +@f.Result.SlopePerDay.ToString("N1")%/day
+                                        </span>
+                                    }
+                                    else if (f.Result != null)
+                                    {
+                                        <span class="severity-badge severity-info" style="font-size: 11px;">Stable</span>
+                                    }
+                                </div>
+                                @if (f.Result != null)
+                                {
+                                    <div style="display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 11px; color: var(--text-secondary);">
+                                        <span style="color: var(--text-muted);">Current Avg:</span>
+                                        <span>@f.Result.CurrentValue.ToString("N1")%</span>
+                                        <span style="color: var(--text-muted);">Trend:</span>
+                                        <span style="color: @(f.Result.SlopePerDay > 0.5 ? "var(--orange)" : "var(--green)");">
+                                            @(f.Result.SlopePerDay > 0 ? "+" : "")@f.Result.SlopePerDay.ToString("N2")%/day
+                                        </span>
+                                        @if (f.Result.DaysUntilThreshold != null)
+                                        {
+                                            <span style="color: var(--text-muted);">90% sustained by:</span>
+                                            <span style="color: var(--red);">@f.Result.PredictedDate?.ToString("dd MMM yyyy") (@FormatDaysUntil(f.Result.DaysUntilThreshold.Value))</span>
+                                        }
+                                        <span style="color: var(--text-muted);">Data points:</span>
+                                        <span>@f.Result.DataPointCount</span>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </CollapsibleSection>
+    }
+</div>
+
+@code {
+    private bool _loading = false;
+    private List<ForecastEntry> _diskForecasts = new();
+    private List<ForecastEntry> _cpuForecasts = new();
+
+    private record ForecastEntry(string Label, string Unit, ForecastService.ForecastResult? Result);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshForecasts();
+    }
+
+    private async Task RefreshForecasts()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            var diskResults = new List<ForecastEntry>();
+            var cpuResults = new List<ForecastEntry>();
+
+            // Get all panel query IDs from cache that have time-series data
+            // Disk space — look for panels with "disk" in the ID
+            var diskPanelIds = new[] { "instance.disk_space", "instance.file_stats" };
+            var cpuPanelIds = new[] { "instance.cpu", "repo.cpu" };
+
+            // For CPU: use instance.cpu panel data (TimeSeries with "Processor Time %" series)
+            foreach (var panelId in cpuPanelIds)
+            {
+                var result = await Forecast.ForecastAsync(panelId, "__all__", "Processor Time %", 90, 168);
+                if (result != null)
+                {
+                    cpuResults.Add(new ForecastEntry($"CPU ({panelId})", "%", result));
+                }
+            }
+
+            // For disk: query current disk space directly and forecast from any cached series
+            // Since disk_space is a BarGauge (point-in-time), we need to create time-series from snapshots
+            // For now, show what we can from the live query
+            await LoadDiskForecastsFromServer(diskResults);
+
+            _diskForecasts = diskResults;
+            _cpuForecasts = cpuResults;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load forecasts");
+            Toast.ShowWarning("Some forecast data could not be loaded");
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadDiskForecastsFromServer(List<ForecastEntry> results)
+    {
+        var server = ConnectionManager.CurrentServer;
+        if (server == null) return;
+
+        try
+        {
+            var connStr = server.GetConnectionString(server.ServerNames, "master");
+            var dt = new DataTable();
+
+            await Task.Run(async () =>
+            {
+                using var conn = new SqlConnection(connStr);
+                await conn.OpenAsync();
+                using var cmd = new SqlCommand(@"
+                    SELECT
+                        vs.volume_mount_point AS Drive,
+                        CAST(vs.total_bytes / 1073741824.0 AS DECIMAL(10,1)) AS TotalGB,
+                        CAST(vs.available_bytes / 1073741824.0 AS DECIMAL(10,1)) AS FreeGB,
+                        CAST((vs.total_bytes - vs.available_bytes) * 100.0 / vs.total_bytes AS DECIMAL(5,1)) AS UsedPct
+                    FROM (SELECT DISTINCT volume_mount_point, total_bytes, available_bytes
+                          FROM sys.master_files CROSS APPLY sys.dm_os_volume_stats(database_id, file_id)) vs
+                    ORDER BY vs.volume_mount_point", conn) { CommandTimeout = 15 };
+                using var reader = await cmd.ExecuteReaderAsync();
+                dt.Load(reader);
+            });
+
+            foreach (DataRow row in dt.Rows)
+            {
+                var drive = row["Drive"]?.ToString()?.Trim() ?? "?";
+                var totalGb = Convert.ToDouble(row["TotalGB"]);
+                var freeGb = Convert.ToDouble(row["FreeGB"]);
+                var usedPct = Convert.ToDouble(row["UsedPct"]);
+
+                results.Add(new ForecastEntry(
+                    $"{server.ServerNames} — {drive} ({totalGb:N0} GB total, {freeGb:N0} GB free)",
+                    "%",
+                    new ForecastService.ForecastResult
+                    {
+                        CurrentValue = usedPct,
+                        SlopePerDay = 0, // Point-in-time — no trend data yet
+                        DataPointCount = 1,
+                        RSquared = 0
+                    }
+                ));
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "Failed to query disk space for forecasting");
+        }
+    }
+
+    private static string GetUrgencyClass(double days)
+    {
+        if (days <= 7) return "severity-critical";
+        if (days <= 30) return "severity-high";
+        if (days <= 90) return "severity-warning";
+        return "severity-info";
+    }
+
+    private static string FormatDaysUntil(double days)
+    {
+        if (days <= 1) return "less than 1 day";
+        if (days <= 7) return $"{days:N0} days";
+        if (days <= 30) return $"{days / 7:N0} weeks";
+        if (days <= 365) return $"{days / 30:N0} months";
+        return "over 1 year";
+    }
+}

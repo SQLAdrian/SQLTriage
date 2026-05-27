@@ -1,0 +1,478 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/guide"
+<PageTitle>SQLTriage - Guide</PageTitle>
+@inject NavigationManager Navigation
+
+<div class="guide-container">
+    <h1>SQLTriage — SQL Server Audit &amp; Compliance Platform</h1>
+    <p>Point SQLTriage at your servers for an instant compliance assessment. 577 checks mapped to CIS Controls v8, ISO 27001, SOC 2, and NIST CSF 2.0. Generates signed audit PDFs with attestation.</p>
+
+    <!-- ── Feedback / Report section — first thing ── -->
+    <div class="guide-section">
+        <h2><i class="fa-solid fa-flag guide-link-icon"></i> Found a bug? Have a suggestion?</h2>
+        <p>
+            This is free software built by one person. Feedback, bug reports, and feature requests are always welcome — they genuinely shape what gets built next.
+        </p>
+        <div class="guide-links">
+            <a href="https://github.com/SQLAdrian/SQLTriage/issues/new" target="_blank" class="guide-link">
+                <i class="fa-brands fa-github guide-link-icon"></i> Report a Bug (GitHub)
+            </a>
+            <a href="https://github.com/SQLAdrian/SQLTriage/discussions/new?category=ideas" target="_blank" class="guide-link">
+                <i class="fa-regular fa-lightbulb guide-link-icon"></i> Feature Request
+            </a>
+            <a href="mailto:adrian@sqldba.org?subject=SQLTriage Feedback" target="_blank" class="guide-link">
+                <i class="fa-solid fa-envelope guide-link-icon"></i> Email Adrian
+            </a>
+            <a href="https://www.linkedin.com/in/milliondollardba/" target="_blank" class="guide-link">
+                <i class="fa-brands fa-linkedin guide-link-icon-linkedin"></i> LinkedIn
+            </a>
+        </div>
+    </div>
+
+    <!-- Nav Map: inline replica of the sidebar grouped by section -->
+    <div class="guide-section nav-map-section">
+        <h2><i class="fa-solid fa-map"></i> Navigation Map</h2>
+        <p class="guide-description">
+            Everything available in the sidebar — click any item to go there directly.
+        </p>
+        <div class="nav-map-grid">
+
+            <div class="nav-map-group">
+                <div class="nav-map-label">Audits</div>
+                <a href="RouteConstants.Servers" class="nav-map-item"><i class="fa-solid fa-server"></i><span>Servers</span><span class="nav-map-hint">Manage connections</span></a>
+                <a href="RouteConstants.QuickCheck" class="nav-map-item"><i class="fa-solid fa-bolt"></i><span>Audit Assessment</span><span class="nav-map-hint">Framework-mapped check corpus · Ctrl+Q</span></a>
+                <a href="RouteConstants.FullAudit" class="nav-map-item"><i class="fa-solid fa-clipboard-check"></i><span>Raw Diagnostics</span><span class="nav-map-hint">Diagnostic .sql scripts → CSV · Ctrl+4</span></a>
+                <a href="RouteConstants.VulnerabilityAssessment" class="nav-map-item"><i class="fa-solid fa-shield-halved"></i><span>Vulnerability Assessment</span><span class="nav-map-hint">Security vulnerability scan</span></a>
+                <a href="RouteConstants.Environment" class="nav-map-item"><i class="fa-solid fa-diagram-project"></i><span>Environment View</span><span class="nav-map-hint">Network topology graph</span></a>
+                <a href="RouteConstants.DiagnosticsRoadmap" class="nav-map-item"><i class="fa-solid fa-road"></i><span>Diagnostics Roadmap</span><span class="nav-map-hint">Maturity level analysis</span></a>
+            </div>
+
+            <div class="nav-map-group">
+                <div class="nav-map-label">Tools</div>
+                <a href="RouteConstants.BestPractice" class="nav-map-item"><i class="fa-solid fa-star"></i><span>Best Practice</span><span class="nav-map-hint">SQL Server best practices</span></a>
+                <a href="RouteConstants.DbaTools" class="nav-map-item"><i class="fa-solid fa-wrench"></i><span>DBA Tools</span><span class="nav-map-hint">Diagnostic scripts</span></a>
+                <a href="RouteConstants.Capacity" class="nav-map-item"><i class="fa-solid fa-chart-line"></i><span>Capacity Planning</span><span class="nav-map-hint">Disk &amp; CPU forecasts</span></a>
+                <a href="RouteConstants.XEvents" class="nav-map-item"><i class="fa-solid fa-circle-nodes"></i><span>XEvents</span><span class="nav-map-hint">Extended event sessions</span></a>
+            </div>
+
+            <div class="nav-map-group">
+                <div class="nav-map-label">Live Dashboards</div>
+                <a href="/dashboard/SQLTriage" class="nav-map-item"><i class="fa-solid fa-eye"></i><span>Live Monitor</span><span class="nav-map-hint">Sessions, blocks, top queries</span></a>
+                <a href="/dashboard/instanceoverview" class="nav-map-item"><i class="fa-solid fa-chart-area"></i><span>Instance Overview</span><span class="nav-map-hint">CPU, memory, I/O trends</span></a>
+                <a href="/dashboard/waitstats" class="nav-map-item"><i class="fa-solid fa-clock-rotate-left"></i><span>Wait Events</span><span class="nav-map-hint">Wait stat analysis</span></a>
+            </div>
+
+            <div class="nav-map-group">
+                <div class="nav-map-label">SQLWATCH</div>
+                <a href="RouteConstants.DashboardRepository" class="nav-map-item"><i class="fa-solid fa-table-list"></i><span>Repository</span><span class="nav-map-hint">Server health overview</span></a>
+                <a href="/dashboard/resourcehealth" class="nav-map-item"><i class="fa-solid fa-chart-pie"></i><span>Resource Health</span><span class="nav-map-hint">CPU, memory, disk trends</span></a>
+                <a href="RouteConstants.DashboardSecurity" class="nav-map-item"><i class="fa-solid fa-lock"></i><span>Security</span><span class="nav-map-hint">Logins, permissions, alerts</span></a>
+            </div>
+
+            <div class="nav-map-group">
+                <div class="nav-map-label">Performance Monitor</div>
+                <a href="/dashboard/expensivequeries" class="nav-map-item"><i class="fa-solid fa-sliders"></i><span>Expensive Queries</span><span class="nav-map-hint">CPU, reads, writes analysis</span></a>
+                <a href="/dashboard/indexhealth" class="nav-map-item"><i class="fa-solid fa-list-check"></i><span>Index Health</span><span class="nav-map-hint">Missing, unused, fragmented</span></a>
+                <a href="RouteConstants.DashboardQueryStore" class="nav-map-item"><i class="fa-solid fa-layer-group"></i><span>Query Store</span><span class="nav-map-hint">Plan regressions, trends</span></a>
+            </div>
+
+            <div class="nav-map-group">
+                <div class="nav-map-label">Configure</div>
+                <a href="RouteConstants.Settings" class="nav-map-item"><i class="fa-solid fa-gear"></i><span>Settings</span><span class="nav-map-hint">App preferences · Ctrl+6</span></a>
+                <a href="RouteConstants.DashboardEditor" class="nav-map-item"><i class="fa-solid fa-table-columns"></i><span>Dashboard Editor</span><span class="nav-map-hint">Custom dashboards · Ctrl+7</span></a>
+                <a href="RouteConstants.Alerts" class="nav-map-item"><i class="fa-solid fa-bell"></i><span>Alert Rules</span><span class="nav-map-hint">Thresholds &amp; notifications</span></a>
+                <a href="RouteConstants.AlertingConfig" class="nav-map-item"><i class="fa-solid fa-sliders"></i><span>Alerting Config</span><span class="nav-map-hint">Alert channel settings</span></a>
+                <a href="RouteConstants.ServiceManagement" class="nav-map-item"><i class="fa-solid fa-microchip"></i><span>Service &amp; Updates</span><span class="nav-map-hint">Background service, updates</span></a>
+            </div>
+
+            <div class="nav-map-group">
+                <div class="nav-map-label">Deploy</div>
+                <a href="RouteConstants.DeploySqlWatch" class="nav-map-item"><i class="fa-solid fa-cloud-arrow-up"></i><span>Deploy SQLWATCH</span><span class="nav-map-hint">Install monitoring framework</span></a>
+                <a href="/deploydarlingPM" class="nav-map-item"><i class="fa-solid fa-chart-simple"></i><span>Deploy Perf Monitor</span><span class="nav-map-hint">Install Darling tools</span></a>
+            </div>
+
+        </div>
+    </div>
+
+    <div class="guide-section">
+        <h2><i class="fa-solid fa-chart-line"></i> Live Dashboards</h2>
+        <p>Real-time monitoring dashboards that show current server activity, sessions, waits, and performance metrics.</p>
+        <div class="guide-cards">
+            <div class="guide-card">
+                <h3><i class="fa-solid fa-eye"></i> Live Monitor</h3>
+                <p>View real-time sessions, blocking chains, top queries, and execution plans. Ideal for troubleshooting active issues.</p>
+                <button class="btn btn-primary" @onclick="GoToSQLTriage">
+                    Open Live Monitor
+                </button>
+            </div>
+            <div class="guide-card">
+                <h3><i class="fa-solid fa-chart-area"></i> Instance Overview</h3>
+                <p>Detailed per-instance metrics and trends including CPU, memory, disk I/O, and wait statistics over time.</p>
+                <button class="btn btn-primary" @onclick="GoToInstanceOverview">
+                    Open Instance Overview
+                </button>
+            </div>
+            <div class="guide-card">
+                <h3><i class="fa-solid fa-clock-rotate-left"></i> Wait Events</h3>
+                <p>Analyze wait statistics categorized by type (CPU, IO, Lock, Latch) with trending views to identify bottlenecks.</p>
+                <button class="btn btn-primary" @onclick="GoToWaitEvents">
+                    Open Wait Events
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="guide-section">
+        <h2><i class="fa-solid fa-database"></i> SQLWATCH Monitoring</h2>
+        <p>Built on the SQLWATCH framework, these dashboards monitor server health from collected metrics.</p>
+        <div class="guide-cards">
+            <div class="guide-card">
+                <h3><i class="fa-solid fa-table-list"></i> Repository</h3>
+                <p>Status overview of all monitored servers with health indicators, last check times, and alert summaries.</p>
+                <button class="btn btn-primary" @onclick="GoToRepository">
+                    Open Repository
+                </button>
+            </div>
+            <div class="guide-card">
+                <h3><i class="fa-solid fa-chart-pie"></i> Resource Health</h3>
+                <p>CPU, memory, disk, and network utilization trends with historical comparisons and threshold alerting.</p>
+                <button class="btn btn-primary" @onclick="GoToResourceHealth">
+                    Open Resource Health
+                </button>
+            </div>
+            <div class="guide-card">
+                <h3><i class="fa-solid fa-shield-halved"></i> Security</h3>
+                <p>Security assessment results including failed logins, permission changes, and vulnerability scan results.</p>
+                <button class="btn btn-primary" @onclick="GoToSecurity">
+                    Open Security Dashboard
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="guide-section">
+        <h2><i class="fa-solid fa-gauge-high"></i> Performance Monitor</h2>
+        <p>Erik Darling's Performance Monitor dashboards for deep query performance analysis and wait statistics.</p>
+        <div class="guide-cards">
+            <div class="guide-card">
+                <h3><i class="fa-solid fa-sliders-h"></i> Expensive Queries</h3>
+                <p>Identify resource-intensive queries by CPU, duration, reads, and writes with execution plan analysis.</p>
+                <button class="btn btn-primary" @onclick="GoToExpensiveQueries">
+                    Open Expensive Queries
+                </button>
+            </div>
+            <div class="guide-card">
+                <h3><i class="fa-solid fa-list-check"></i> Index Health</h3>
+                <p>Analysis of missing indexes, unused indexes, and fragmentation levels with optimization recommendations.</p>
+                <button class="btn btn-primary" @onclick="GoToIndexHealth">
+                    Open Index Health
+                </button>
+            </div>
+            <div class="guide-card">
+                <h3><i class="fa-solid fa-layer-group"></i> Query Store</h3>
+                <p>Query Store statistics including plan regressions, forced plans, and performance trends over time.</p>
+                <button class="btn btn-primary" @onclick="GoToQueryStore">
+                    Open Query Store
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="guide-section">
+        <h2><i class="fa-solid fa-clipboard-list"></i> Audits & Assessments</h2>
+        <p>Tools for performing health checks, security assessments, and generating reports on your SQL Server environment.</p>
+        <div class="guide-cards">
+            <div class="guide-card">
+                <h3><i class="fa-solid fa-bolt"></i> Audit Assessment</h3>
+                <p>Framework-mapped check corpus covering configuration, performance, security, and compliance (Ctrl+Q).</p>
+                <button class="btn btn-primary" @onclick="GoToQuickCheck">
+                    Run Audit Assessment
+                </button>
+            </div>
+            <div class="guide-card">
+                <h3><i class="fa-solid fa-clipboard-check"></i> Full Audit</h3>
+                <p>Comprehensive deep-dive analysis including configuration review, performance baseline, security assessment, and more (Ctrl+4).</p>
+                <button class="btn btn-primary" @onclick="GoToFullAudit">
+                    Run Full Audit
+                </button>
+            </div>
+            <div class="guide-card">
+                <h3><i class="fa-solid fa-shield-halved"></i> Vulnerability Assessment</h3>
+                <p>Scan your SQL Server for security vulnerabilities using Microsoft's Security Assessment rules.</p>
+                <button class="btn btn-primary" @onclick="GoToVulnerabilityAssessment">
+                    Run Vulnerability Assessment
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="guide-section">
+        <h2><i class="fa-solid fa-server"></i> Monitoring New Server</h2>
+        <p>Add and configure new SQL Server instances for monitoring by deploying the required monitoring framework.</p>
+        <div class="guide-cards">
+            <div class="guide-card">
+                <h3><i class="fa-solid fa-eye"></i> Deploy SQLWATCH</h3>
+                <p>Deploy the SQLWATCH monitoring framework to a new SQL Server instance (database, tables, jobs).</p>
+                <button class="btn btn-primary" @onclick="GoToDeploySqlwatch">
+                    Deploy SQLWATCH
+                </button>
+            </div>
+            <div class="guide-card">
+                <h3><i class="fa-solid fa-chart-simple"></i> Deploy Darling Perf Monitor</h3>
+                <p>Deploy Erik Darling's Performance Monitor framework to a new SQL Server instance.</p>
+                <button class="btn btn-primary" @onclick="GoToDeployDarlingPm">
+                    Deploy Performance Monitor
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="guide-section">
+        <h2><i class="fa-solid fa-gear"></i> Configuration</h2>
+        <p>Manage application settings, server connections, dashboard layouts, and other administrative functions.</p>
+        <div class="guide-cards">
+            <div class="guide-card">
+                <h3><i class="fa-solid fa-gear"></i> Settings</h3>
+                <p>Configure application-wide settings including refresh intervals, notifications, and advanced options (Ctrl+6).</p>
+                <button class="btn btn-primary" @onclick="GoToSettings">
+                    Open Settings
+                </button>
+            </div>
+            <div class="guide-card">
+                <h3><i class="fa-solid fa-table-columns"></i> Dashboard Editor</h3>
+                <p>Create, modify, and organize custom dashboards and panels (Ctrl+7).</p>
+                <button class="btn btn-primary" @onclick="GoToDashboardEditor">
+                    Open Dashboard Editor
+                </button>
+            </div>
+            <div class="guide-card">
+                <h3><i class="fa-solid fa-server"></i> Servers</h3>
+                <p>Manage your SQL Server connections, add new instances, and configure monitoring properties (Ctrl+8).</p>
+                <button class="btn btn-primary" @onclick="GoToServers">
+                    Manage Servers
+                </button>
+            </div>
+            <div class="guide-card">
+                <h3><i class="fa-solid fa-bell"></i> Alerting</h3>
+                <p>Configure alert rules, notification channels, and severity thresholds for proactive monitoring.</p>
+                <button class="btn btn-primary" @onclick="GoToAlerting">
+                    Configure Alerting
+                </button>
+            </div>
+            <div class="guide-card">
+                <h3><i class="fa-solid fa-microchip"></i> Service &amp; Updates</h3>
+                <p>Manage the background service, check for application updates, and configure Windows Service mode.</p>
+                <button class="btn btn-primary" @onclick="GoToServiceManagement">
+                    Service &amp; Updates
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="guide-section">
+        <h2><i class="fa-solid fa-info-circle"></i> About</h2>
+        <p>Information about the application, its components, credits, and technical details.</p>
+        <div class="guide-cards">
+            <div class="guide-card">
+                <h3><i class="fa-solid fa-circle-info"></i> Application Info</h3>
+                <p>Learn about the SQLTriage tool, its features, licensing, and development credits.</p>
+                <button class="btn btn-primary" @onclick="GoToAbout">
+                    Learn About the App
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- <style>
+    .nav-map-section { margin-bottom: 35px; }
+
+    .nav-map-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 16px;
+        margin-top: 8px;
+    }
+
+    .nav-map-group {
+        background: var(--bg-card);
+        border: 1px solid var(--border-light);
+        border-radius: 8px;
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .nav-map-label {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        padding: 0 4px 6px;
+        border-bottom: 1px solid var(--border-light);
+        margin-bottom: 4px;
+    }
+
+    .nav-map-item {
+        display: grid;
+        grid-template-columns: 20px 1fr;
+        grid-template-rows: auto auto;
+        column-gap: 8px;
+        padding: 6px 8px;
+        border-radius: 6px;
+        text-decoration: none;
+        color: var(--text-secondary);
+        transition: background 0.15s, color 0.15s;
+        align-items: start;
+    }
+
+    .nav-map-item:hover {
+        background: var(--bg-hover);
+        color: var(--text-primary);
+        text-decoration: none;
+    }
+
+    .nav-map-item i {
+        font-size: 13px;
+        color: var(--accent);
+        grid-row: 1 / 3;
+        padding-top: 2px;
+        justify-self: center;
+    }
+
+    .nav-map-item > span:first-of-type {
+        font-size: 13px;
+        font-weight: 500;
+        color: inherit;
+        line-height: 1.3;
+    }
+
+    .nav-map-hint {
+        font-size: 11px;
+        color: var(--text-muted);
+        line-height: 1.2;
+    }
+
+    @@media (max-width: 768px) {
+        .nav-map-grid { grid-template-columns: 1fr; }
+    }
+</style> -->
+
+@code {
+    private void GoToSQLTriage() => Navigation.NavigateTo("/dashboard/live");
+    private void GoToInstanceOverview() => Navigation.NavigateTo(RouteConstants.DashboardInstance);
+    private void GoToWaitEvents() => Navigation.NavigateTo(RouteConstants.DashboardLiveWaits);
+    private void GoToRepository() => Navigation.NavigateTo(RouteConstants.DashboardRepository);
+    private void GoToResourceHealth() => Navigation.NavigateTo(RouteConstants.DashboardPmHealth);
+    private void GoToSecurity() => Navigation.NavigateTo(RouteConstants.DashboardSecurity);
+    private void GoToExpensiveQueries() => Navigation.NavigateTo(RouteConstants.DashboardLongQueries);
+    private void GoToIndexHealth() => Navigation.NavigateTo(RouteConstants.DashboardLiveIndexes);
+    private void GoToQueryStore() => Navigation.NavigateTo(RouteConstants.DashboardQueryStore);
+    private void GoToQuickCheck() => Navigation.NavigateTo(RouteConstants.QuickCheck);
+    private void GoToFullAudit() => Navigation.NavigateTo(RouteConstants.FullAudit);
+    private void GoToVulnerabilityAssessment() => Navigation.NavigateTo(RouteConstants.VulnerabilityAssessment);
+    private void GoToDeploySqlwatch() => Navigation.NavigateTo(RouteConstants.DeploySqlWatch);
+    private void GoToDeployDarlingPm() => Navigation.NavigateTo(RouteConstants.DeployDarlingPm);
+    private void GoToSettings() => Navigation.NavigateTo(RouteConstants.Settings);
+    private void GoToDashboardEditor() => Navigation.NavigateTo(RouteConstants.DashboardEditor);
+    private void GoToServers() => Navigation.NavigateTo(RouteConstants.Servers);
+    private void GoToAlerting() => Navigation.NavigateTo(RouteConstants.AlertingConfig);
+    private void GoToServiceManagement() => Navigation.NavigateTo(RouteConstants.ServiceManagement);
+    private void GoToAbout() => Navigation.NavigateTo(RouteConstants.About);
+}
+
+<!-- <style>
+    .guide-container {
+        max-width: 80%;
+        margin: 0 auto;
+        padding: 20px;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    .guide-container h1 {
+        color: var(--text-primary);
+        border-bottom: 3px solid var(--accent);
+        padding-bottom: 10px;
+        margin-bottom: 30px;
+    }
+
+    .guide-section {
+        margin-bottom: 35px;
+        background: var(--bg-panel);
+        padding: 20px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+    }
+
+    .guide-section h2 {
+        color: var(--accent);
+        margin-top: 0;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .guide-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 16px;
+        margin-top: 20px;
+    }
+
+    .guide-card {
+        background: var(--bg-card);
+        border: 1px solid var(--border-light);
+        border-radius: 8px;
+        padding: 20px;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .guide-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+
+    .guide-card h3 {
+        color: var(--text-primary);
+        margin-top: 0;
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .guide-card p {
+        color: var(--text-secondary);
+        margin-bottom: 18px;
+        line-height: 1.5;
+        flex: 1;
+    }
+
+    .guide-card .btn {
+        width: 100%;
+        padding: 10px;
+        font-weight: 500;
+        transition: all 0.2s ease;
+        margin-top: auto;
+    }
+
+    .guide-card .btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+
+    @@media (max-width: 768px) {
+        .guide-container {
+            max-width: 90%;
+            padding: 15px;
+        }
+        
+        .guide-cards {
+            grid-template-columns: 1fr;
+        }
+    }
+</style> -->

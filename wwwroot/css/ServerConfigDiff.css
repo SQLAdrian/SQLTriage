@@ -1,0 +1,197 @@
+/* In the name of God, the Merciful, the Compassionate */
+
+/* ── ServerConfigDiff.razor — Config Snapshot & Diff page ──────────── */
+
+.scd-page {
+    padding: var(--space-4);
+    max-width: 1400px;
+}
+
+/* ── Toolbar ──────────────────────────────────────────────────────────── */
+.scd-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-4);
+}
+
+.scd-toolbar-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 200px;
+}
+
+.scd-toolbar-group label {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.scd-capture-group {
+    flex-direction: row;
+    align-items: flex-end;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+
+.scd-capture-group label {
+    align-self: flex-start;
+    margin-bottom: var(--space-1);
+    width: 100%;
+}
+
+.scd-select,
+.scd-input {
+    padding: var(--space-2) var(--space-3);
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+    height: 36px;
+}
+
+.scd-select {
+    min-width: 240px;
+}
+
+.scd-input {
+    width: 240px;
+}
+
+.scd-toolbar-actions {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--space-2);
+    margin-left: auto;
+}
+
+/* ── Status bar ───────────────────────────────────────────────────────── */
+.scd-status {
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-sm);
+    margin-bottom: var(--space-3);
+    font-size: var(--text-sm);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.scd-status-ok  { background: color-mix(in srgb, var(--green) 15%, transparent); color: var(--green); border: 1px solid var(--green); }
+.scd-status-error { background: color-mix(in srgb, var(--red) 15%, transparent); color: var(--red); border: 1px solid var(--red); }
+
+.scd-loading {
+    padding: var(--space-4);
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+}
+
+/* ── Summary badges ───────────────────────────────────────────────────── */
+.scd-summary-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+    flex-wrap: wrap;
+}
+
+.scd-badge {
+    padding: var(--space-1) var(--space-3);
+    border-radius: var(--radius-pill);
+    font-size: var(--text-sm);
+    font-weight: 600;
+}
+
+.scd-badge-modified { background: color-mix(in srgb, var(--orange) 20%, transparent); color: var(--orange); border: 1px solid var(--orange); }
+.scd-badge-added    { background: color-mix(in srgb, var(--green)  20%, transparent); color: var(--green);  border: 1px solid var(--green); }
+.scd-badge-removed  { background: color-mix(in srgb, var(--red)    20%, transparent); color: var(--red);    border: 1px solid var(--red); }
+
+.scd-no-changes {
+    color: var(--green);
+    font-size: var(--text-sm);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+/* ── Diff sections ────────────────────────────────────────────────────── */
+.scd-section {
+    margin-bottom: var(--space-5);
+}
+
+.scd-section-title {
+    font-size: var(--text-base);
+    font-weight: 600;
+    margin-bottom: var(--space-2);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.scd-section-title.scd-modified { color: var(--orange); }
+.scd-section-title.scd-added    { color: var(--green); }
+.scd-section-title.scd-removed  { color: var(--red); }
+
+/* Colorblind-mode remaps handled by Accessibility.css via var(--green)/var(--red)/var(--orange) */
+
+/* ── Table ────────────────────────────────────────────────────────────── */
+.scd-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--text-sm);
+}
+
+.scd-table thead tr {
+    border-bottom: 2px solid var(--border);
+}
+
+.scd-table th {
+    text-align: left;
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+}
+
+.scd-table td {
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--border-subtle, var(--border));
+    vertical-align: top;
+}
+
+.scd-table tbody tr:hover {
+    background: var(--bg-hover, color-mix(in srgb, var(--accent) 6%, transparent));
+}
+
+.scd-row-modified { background: color-mix(in srgb, var(--orange) 5%, transparent); }
+.scd-row-added    { background: color-mix(in srgb, var(--green)  5%, transparent); }
+.scd-row-removed  { background: color-mix(in srgb, var(--red)    5%, transparent); }
+
+.scd-key  { font-weight: 600; white-space: nowrap; }
+.scd-old  { color: var(--red);    font-family: var(--font-mono, monospace); }
+.scd-new  { color: var(--green);  font-family: var(--font-mono, monospace); }
+.scd-desc { color: var(--text-muted); font-size: var(--text-xs); max-width: 360px; }
+
+/* ── Clean state ──────────────────────────────────────────────────────── */
+.scd-clean {
+    padding: var(--space-6);
+    text-align: center;
+    color: var(--green);
+    font-size: var(--text-base);
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+}

@@ -1,0 +1,348 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using SQLTriage.Data.Models
+
+@using Microsoft.Extensions.Logging
+@inject ServerConnectionManager ConnectionManager
+@inject ILogger<ConnectionDialog> Logger
+
+<div class="connection-dialog-overlay @(Show ? "visible" : "hidden")">
+    <div class="connection-dialog">
+        <div class="dialog-header">
+            <h3>Server Connections</h3>
+            <button class="close-btn" @onclick="Close">&times;</button>
+        </div>
+
+        <div class="dialog-body">
+            <div class="form-group">
+                <label>Server Names (one per line)</label>
+                <textarea @bind="Connection.ServerNames" rows="5" placeholder="Server1&#10;Server2&#10;Server3"></textarea>
+                <small>Each server will be saved as its own connection block</small>
+            </div>
+
+            <div class="form-group">
+                <label>Database</label>
+                <input type="text" @bind="Connection.Database" placeholder="master" />
+            </div>
+
+            <div class="form-group">
+                <label>Authentication</label>
+                <div class="radio-group">
+                    <label>
+                        <input type="radio" name="auth" checked="@Connection.UseWindowsAuthentication" 
+                               @onchange="() => Connection.UseWindowsAuthentication = true" />
+                        Windows Authentication
+                    </label>
+                    <label>
+                        <input type="radio" name="auth" checked="@(!Connection.UseWindowsAuthentication)" 
+                               @onchange="() => Connection.UseWindowsAuthentication = false" />
+                        SQL Server Authentication
+                    </label>
+                </div>
+            </div>
+
+            @if (!Connection.UseWindowsAuthentication)
+            {
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" @bind="Connection.Username" placeholder="sa" />
+                </div>
+
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" value="@_passwordInput" @onchange="OnPasswordChanged" placeholder="Password" />
+                </div>
+            }
+
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" @bind="Connection.TrustServerCertificate" />
+                    Trust Server Certificate
+                </label>
+                <small>Enable this for local/development servers</small>
+            </div>
+
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" @bind="Connection.MultiSubnetFailover" />
+                    Multi-Subnet Failover
+                </label>
+                <small>Enable when connecting to an Availability Group listener to prevent connection being redirected to the underlying instance</small>
+            </div>
+
+            @if (!string.IsNullOrEmpty(StatusMessage))
+            {
+                <div class="status-message @(IsSuccess ? "success" : "error")">
+                    @StatusMessage
+                </div>
+            }
+
+            @if (_testResults.Count > 0)
+            {
+                <div class="test-results">
+                    <h4>Test Results:</h4>
+                    <ul>
+                        @foreach (var result in _testResults)
+                        {
+                            <li class="@(result.Success ? "success" : "error")">
+                                <i class="@(result.Success ? "fa-solid fa-check" : "fa-solid fa-xmark")"></i> @result.ServerName - @(result.Success ? "Connected" : result.Error)
+                            </li>
+                        }
+                    </ul>
+                </div>
+            }
+        </div>
+
+        <div class="dialog-footer">
+            <button class="btn btn-secondary" @onclick="Close">Cancel</button>
+            <button class="btn btn-secondary" @onclick="TestConnection" disabled="@IsTesting">
+                @(IsTesting ? "Testing..." : "Test Connection")
+            </button>
+            <button class="btn btn-primary" @onclick="Save" disabled="@IsSaving">
+                @(IsSaving ? "Saving..." : "Save")
+            </button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public bool Show { get; set; }
+    [Parameter] public EventCallback<bool> ShowChanged { get; set; }
+    [Parameter] public EventCallback OnConnectionSaved { get; set; }
+    [Parameter] public ServerConnection? EditingConnection { get; set; }
+    [Parameter] public EventCallback<ServerConnection?> EditingConnectionChanged { get; set; }
+
+    private ServerConnection Connection { get; set; } = new();
+    private string _passwordInput = string.Empty;
+    private bool IsTesting { get; set; }
+    private bool IsSaving { get; set; }
+    private string StatusMessage { get; set; } = string.Empty;
+    private bool IsSuccess { get; set; }
+    private List<TestResult> _testResults = new();
+
+    private void OnPasswordChanged(ChangeEventArgs e)
+    {
+        _passwordInput = e.Value?.ToString() ?? string.Empty;
+        Connection.SetPassword(_passwordInput);
+    }
+
+    private class TestResult
+    {
+        public string ServerName { get; set; } = string.Empty;
+        public bool Success { get; set; }
+        public string Error { get; set; } = string.Empty;
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (EditingConnection != null)
+        {
+            // Editing existing connection - copy values
+            Connection = new ServerConnection
+            {
+                Id = EditingConnection.Id,
+                ServerNames = EditingConnection.ServerNames,
+                Database = EditingConnection.Database,
+                Username = EditingConnection.Username,
+                Password = EditingConnection.Password, // Already encrypted on disk
+                UseWindowsAuthentication = EditingConnection.UseWindowsAuthentication,
+                AuthenticationType = EditingConnection.AuthenticationType,
+                TrustServerCertificate = EditingConnection.TrustServerCertificate,
+                MultiSubnetFailover = EditingConnection.MultiSubnetFailover,
+                ConnectionTimeout = EditingConnection.ConnectionTimeout,
+                HasSqlWatch = EditingConnection.HasSqlWatch,
+                IsEnabled = EditingConnection.IsEnabled,
+                Environment = EditingConnection.Environment,
+                Tags = new List<string>(EditingConnection.Tags ?? new List<string>()),
+                SuccessfulServers = new List<string>(EditingConnection.SuccessfulServers ?? new List<string>()),
+                IsConnected = EditingConnection.IsConnected,
+                LastConnected = EditingConnection.LastConnected
+            };
+            // Show masked placeholder for existing password, don't expose the real one
+            _passwordInput = string.IsNullOrEmpty(EditingConnection.Password) ? string.Empty : "********";
+        }
+        else
+        {
+            // New connection - reset to defaults
+            Connection = new ServerConnection
+            {
+                Database = "master",
+                UseWindowsAuthentication = true,
+                TrustServerCertificate = true
+            };
+            _passwordInput = string.Empty;
+        }
+        StatusMessage = string.Empty;
+        _testResults = new List<TestResult>();
+    }
+
+    private async Task TestConnection()
+    {
+        IsTesting = true;
+        StatusMessage = string.Empty;
+        _testResults = new List<TestResult>();
+
+        var servers = Connection.GetServerList();
+        if (servers.Count == 0)
+        {
+            StatusMessage = "Please enter at least one server name.";
+            IsSuccess = false;
+            IsTesting = false;
+            return;
+        }
+
+        var successfulServers = new List<string>();
+
+        foreach (var server in servers)
+        {
+            var result = new TestResult { ServerName = server };
+            try
+            {
+                await Task.Run(() =>
+                {
+                    // Use master database for testing to allow adding servers before SQLWATCH is deployed
+                    using var connection = new Microsoft.Data.SqlClient.SqlConnection(Connection.GetConnectionString(server, "master"));
+                    connection.Open();
+                    using var command = connection.CreateCommand();
+                    command.CommandText = "SELECT @@VERSION";
+                    command.CommandTimeout = 5;
+                    var version = command.ExecuteScalar();
+                    result.Success = version != null;
+                    if (result.Success)
+                    {
+                        successfulServers.Add(server);
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                result.Success = false;
+                result.Error = ex.Message;
+                Logger.LogError(ex, "Connection test failed for {Server}", server);
+            }
+            _testResults.Add(result);
+        }
+
+        IsSuccess = successfulServers.Count > 0;
+        StatusMessage = $"Tested {servers.Count} servers. {successfulServers.Count} succeeded, {servers.Count - successfulServers.Count} failed.";
+        
+        IsTesting = false;
+
+        // Update the connection with successful servers
+        if (successfulServers.Count > 0)
+        {
+            Connection.SuccessfulServers = successfulServers;
+            Connection.IsConnected = true;
+            Connection.LastConnected = DateTime.Now;
+        }
+    }
+
+    private async Task Save()
+    {
+        var servers = Connection.GetServerList();
+        if (servers.Count == 0)
+        {
+            StatusMessage = "Please enter at least one server name.";
+            IsSuccess = false;
+            return;
+        }
+
+        IsSaving = true;
+
+        try
+        {
+            var successfulServers = Connection.SuccessfulServers ?? new List<string>();
+            if (successfulServers.Count == 0)
+                successfulServers = servers; // untested — treat all as candidates
+
+            if (servers.Count == 1)
+            {
+                // Single server — normal path
+                Connection.SuccessfulServers = successfulServers;
+                Connection.IsConnected = successfulServers.Count > 0;
+                if (successfulServers.Count > 0)
+                    Connection.LastConnected = DateTime.Now;
+
+                if (EditingConnection != null && !string.IsNullOrEmpty(EditingConnection.Id))
+                {
+                    Connection.Id = EditingConnection.Id;
+                    ConnectionManager.UpdateConnection(Connection);
+                }
+                else
+                {
+                    ConnectionManager.AddConnection(Connection);
+                }
+            }
+            else
+            {
+                // Multiple servers — each gets its own connection block
+                if (EditingConnection != null && !string.IsNullOrEmpty(EditingConnection.Id))
+                {
+                    // Update the existing entry with the first server only
+                    var firstConn = CloneConnectionForServer(Connection, servers[0], successfulServers);
+                    firstConn.Id = EditingConnection.Id;
+                    ConnectionManager.UpdateConnection(firstConn);
+
+                    // Create a new connection block for every additional server
+                    foreach (var server in servers.Skip(1))
+                        ConnectionManager.AddConnection(CloneConnectionForServer(Connection, server, successfulServers));
+                }
+                else
+                {
+                    foreach (var server in servers)
+                        ConnectionManager.AddConnection(CloneConnectionForServer(Connection, server, successfulServers));
+                }
+            }
+
+            StatusMessage = servers.Count > 1
+                ? $"{servers.Count} server connections saved successfully!"
+                : "Connection saved successfully!";
+            IsSuccess = true;
+
+            await Task.Delay(500);
+            await Close();
+            await OnConnectionSaved.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error saving connection: {ex.Message}";
+            IsSuccess = false;
+            Logger.LogError(ex, "Error saving connection");
+        }
+        finally
+        {
+            IsSaving = false;
+        }
+    }
+
+    private ServerConnection CloneConnectionForServer(ServerConnection template, string serverName, List<string> testedSuccessful)
+    {
+        var isConnected = testedSuccessful.Contains(serverName, StringComparer.OrdinalIgnoreCase);
+        return new ServerConnection
+        {
+            ServerNames = serverName,
+            Database = template.Database,
+            UseWindowsAuthentication = template.UseWindowsAuthentication,
+            AuthenticationType = template.AuthenticationType,
+            Username = template.Username,
+            Password = template.Password,
+            TrustServerCertificate = template.TrustServerCertificate,
+            MultiSubnetFailover = template.MultiSubnetFailover,
+            HasSqlWatch = template.HasSqlWatch,
+            IsEnabled = template.IsEnabled,
+            ConnectionTimeout = template.ConnectionTimeout,
+            Environment = template.Environment,
+            Tags = new List<string>(template.Tags ?? new List<string>()),
+            SuccessfulServers = isConnected ? new List<string> { serverName } : new List<string>(),
+            IsConnected = isConnected,
+            LastConnected = isConnected ? DateTime.Now : null
+        };
+    }
+
+    private async Task Close()
+    {
+        Show = false;
+        await ShowChanged.InvokeAsync(false);
+        StatusMessage = string.Empty;
+        _testResults = new List<TestResult>();
+    }
+}

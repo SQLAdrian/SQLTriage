@@ -1,0 +1,86 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using SQLTriage.Data
+@implements IDisposable
+
+<div class="stat-card @(!string.IsNullOrEmpty(Description) ? "has-tooltip" : "")"
+     style="background-color: @(ResolvedColor + "22"); border-left: 3px solid @ResolvedColor; position: relative;"
+     @onmouseenter="ShowTooltip" @onmouseleave="HideTooltip">
+    <div class="stat-label">@Label</div>
+    <div class="stat-value" style="color: @ResolvedColor;">
+        @FormatValue(Value)
+    </div>
+    @if (!string.IsNullOrEmpty(Unit))
+    {
+        <div class="stat-unit">@Unit</div>
+    }
+    <div class="stat-delta">
+        @FormatValue(DeltaValue)/sec
+    </div>
+    @if (!string.IsNullOrEmpty(Description) && _showTooltip)
+    {
+        <div class="stat-tooltip">@Description</div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public double Value { get; set; }
+    [Parameter] public string Unit { get; set; } = "";
+    [Parameter] public string? Color { get; set; }
+    [Parameter] public string Description { get; set; } = "";
+    [Parameter] public string ValueFormat { get; set; } = "";
+    // Description is displayed as a tooltip via _showTooltip — no layout impact
+
+    private bool _showTooltip;
+    private static Dictionary<string, Queue<(DateTime Time, double Value)>> _valueHistory = new();
+    private const int MaxHistoryCount = 5;
+    private double DeltaValue;
+    private string ResolvedColor => !string.IsNullOrEmpty(Color) ? Color : ThresholdConfig.GetColor(Label, DeltaValue);
+
+    protected override void OnParametersSet()
+    {
+        if (!_valueHistory.ContainsKey(Label))
+            _valueHistory[Label] = new Queue<(DateTime, double)>();
+
+        var history = _valueHistory[Label];
+        var now = DateTime.Now;
+        
+        history.Enqueue((now, Value));
+        while (history.Count > MaxHistoryCount)
+            history.Dequeue();
+
+        if (history.Count >= 2)
+        {
+            var oldest = history.First();
+            var newest = history.Last();
+            var timeDiff = (newest.Time - oldest.Time).TotalSeconds;
+            DeltaValue = timeDiff > 0 ? (newest.Value - oldest.Value) / timeDiff : 0;
+        }
+        else
+        {
+            DeltaValue = 0;
+        }
+    }
+
+    private void ShowTooltip() { if (!string.IsNullOrEmpty(Description)) _showTooltip = true; }
+    private void HideTooltip() { _showTooltip = false; }
+
+    private string FormatValue(double value)
+    {
+        if (!string.IsNullOrEmpty(ValueFormat))
+        {
+            try { return value.ToString(ValueFormat); }
+            catch (FormatException) { /* invalid ValueFormat — fall through to default */ }
+        }
+        
+        if (value >= 1_000_000) return $"{value / 1_000_000:F1}M";
+        if (value >= 1_000) return $"{value / 1_000:F1}K";
+        return value.ToString("F0");
+    }
+
+    public void Dispose()
+    {
+        if (_valueHistory.ContainsKey(Label))
+            _valueHistory.Remove(Label);
+    }
+}

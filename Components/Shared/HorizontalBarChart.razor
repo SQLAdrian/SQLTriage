@@ -1,0 +1,89 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using ApexCharts
+@using SQLTriage.Data.Models
+
+<div class="chart-panel"
+     role="img"
+     aria-label="@(!string.IsNullOrEmpty(Title) ? $"Bar chart showing {Title}" : "Horizontal bar chart")">
+    @if (!string.IsNullOrEmpty(Title))
+    {
+        <div class="chart-title">@Title</div>
+    }
+
+    @if (Data != null && Data.Any())
+    {
+        <ApexChart TItem="StatValue"
+                   Height="@Height"
+                   Options="@GetChartOptions()">
+            <ApexPointSeries TItem="StatValue"
+                             Items="@Data"
+                             Name="@SeriesName"
+                             SeriesType="SeriesType.Bar"
+                             XValue="@(s => s.Label)"
+                             YValue="@(s => (decimal)s.Value)" />
+        </ApexChart>
+    }
+    else
+    {
+        <div class="chart-empty">No data available</div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public List<StatValue>? Data { get; set; }
+    [Parameter] public int Height { get; set; } = 300;
+    [Parameter] public string SeriesName { get; set; } = "Value";
+    [Parameter] public string ValueSuffix { get; set; } = "";
+    [Parameter] public string BarColor { get; set; } = "#2196f3";
+
+    private ApexChartOptions<StatValue> GetChartOptions() => new()
+    {
+        Chart = new Chart
+        {
+            Background = "transparent",
+            ForeColor = "#a0a0a0",
+            Toolbar = new Toolbar { Show = false },
+            Animations = new Animations { Enabled = true, Easing = Easing.Easeinout, Speed = 500 }
+        },
+        Theme = new Theme { Mode = Mode.Dark },
+        Colors = new List<string> { BarColor, "#4caf50", "#ff9800", "#f44336", "#9c27b0" },
+        PlotOptions = new PlotOptions
+        {
+            Bar = new PlotOptionsBar
+            {
+                Horizontal = true,
+                BarHeight = "70%",
+                Distributed = true,
+                DataLabels = new PlotOptionsBarDataLabels { Position = BarDataLabelPosition.Top }
+            }
+        },
+        Xaxis = new XAxis
+        {
+            Labels = new XAxisLabels
+            {
+                Style = new AxisLabelStyle { FontSize = "11px", Colors = "#a0a0a0" },
+                Formatter = "function(val) { return val != null ? (val >= 1000000 ? (val/1000000).toFixed(1)+'M' : val >= 1000 ? (val/1000).toFixed(1)+'K' : val.toFixed(0)) : ''; }"
+            }
+        },
+        Yaxis = new List<YAxis>
+        {
+            new YAxis
+            {
+                Labels = new YAxisLabels
+                {
+                    Style = new AxisLabelStyle { FontSize = "10px", Colors = "#a0a0a0" },
+                    MaxWidth = 160
+                }
+            }
+        },
+        Grid = new Grid { BorderColor = "#333", StrokeDashArray = 3 },
+        Tooltip = new Tooltip
+        {
+            Theme = Mode.Dark,
+            Y = new TooltipY { Formatter = "function(val) { return val != null ? val.toLocaleString() + '" + ValueSuffix + "' : ''; }" }
+        },
+        Legend = new Legend { Show = false },
+        DataLabels = new DataLabels { Enabled = false }
+    };
+}

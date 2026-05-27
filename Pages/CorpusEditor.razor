@@ -1,0 +1,491 @@
+@*/* In the name of God, the Merciful, the Compassionate */*@
+@page "/corpus-editor"
+@using System.IO
+@using System.Data
+@using Microsoft.Data.SqlClient
+@using Microsoft.AspNetCore.Components.Web
+@using SQLTriage.Data.Services
+@inject IJSRuntime JS
+@inject ToastService Toast
+@inject RemediationWeightStore Weights
+
+<PageTitle>Corpus Editor - SQLTriage</PageTitle>
+
+@if (!_authorised)
+{
+    <div style="padding: 32px;">
+        <h2>Corpus Editor</h2>
+        <p style="color: var(--text-muted);">This page is restricted to the corpus maintainer's workstation.</p>
+        <p style="color: var(--text-muted); font-size: 12px;">Detected host: <code>@Environment.MachineName</code> / user <code>@Environment.UserName</code></p>
+    </div>
+    return;
+}
+
+<div class="corpus-editor">
+    <div class="corpus-sidebar">
+        <div class="corpus-sidebar-header">
+            <h3><i class="fa-solid fa-folder-tree"></i> Corpus Files</h3>
+            <div style="font-size:11px;color:var(--text-muted);">@_filteredFiles.Count of @_allFiles.Count files</div>
+        </div>
+        <input type="text" class="corpus-search" placeholder="Filter by name..."
+               @bind="_searchText" @bind:event="oninput" @bind:after="ApplyFilter" />
+
+        <div class="corpus-filter-chips">
+            @foreach (var f in _filterOptions)
+            {
+                <button class="corpus-filter-chip @(_selectedFilter == f.Key ? "active" : "")"
+                        @onclick="() => SelectFilter(f.Key)" title="@f.Tooltip">
+                    @f.Label <span class="corpus-chip-count">@(_classifications.Values.Count(s => f.Match(s)))</span>
+                </button>
+            }
+        </div>
+
+        <div class="corpus-file-list">
+            @foreach (var file in _filteredFiles)
+            {
+                var status = _classifications.TryGetValue(file, out var s) ? s : CorpusFileStatus.Healthy;
+                <div class="corpus-file-item @(file == _selectedFile ? "selected" : "") corpus-status-@status.ToString().ToLowerInvariant()"
+                     @onclick="() => LoadFile(file)"
+                     title="@StatusTooltip(status)">
+                    <i class="fa-solid @StatusIcon(status)"></i>
+                    @Path.GetFileNameWithoutExtension(file)
+                </div>
+            }
+        </div>
+    </div>
+
+    <div class="corpus-main">
+        @if (_selectedFile == null)
+        {
+            <div class="corpus-empty">
+                <i class="fa-solid fa-arrow-left"></i>
+                Pick a corpus file from the left to start editing.
+            </div>
+        }
+        else
+        {
+            <div class="corpus-editor-header">
+                <div>
+                    <h2>@Path.GetFileNameWithoutExtension(_selectedFile)</h2>
+                    <div class="corpus-paths">
+                        <span><i class="fa-solid fa-file-lines"></i> @Path.GetFileName(_yamlPath)</span>
+                        @if (_sqlPath != null)
+                        {
+                            <span><i class="fa-solid fa-database"></i> @Path.GetFileName(_sqlPath)</span>
+                        }
+                    </div>
+                </div>
+                <div class="corpus-actions">
+                    <button class="settings-btn settings-btn-primary" @onclick="Save" disabled="@_saving">
+                        <i class="fa-solid fa-floppy-disk"></i> @(_saving ? "Saving..." : "Save")
+                    </button>
+                    <button class="settings-btn" @onclick="Reload">
+                        <i class="fa-solid fa-rotate"></i> Reload
+                    </button>
+                </div>
+            </div>
+
+            <div class="corpus-editor-pane">
+                <div class="corpus-pane-header">
+                    <h4><i class="fa-solid fa-file-code"></i> YAML</h4>
+                </div>
+                <textarea class="corpus-textarea corpus-yaml" @bind="_yamlContent" @bind:event="oninput" spellcheck="false"></textarea>
+            </div>
+
+            @if (!string.IsNullOrEmpty(_extractedCheckId))
+            {
+                <div class="corpus-effort-stage">
+                    <div class="corpus-effort-label">
+                        <i class="fa-solid fa-sliders"></i>
+                        Effort hours
+                        <span class="corpus-effort-hint">check id <code>@_extractedCheckId</code> · stages to <code>sql-check-weights-override.json</code></span>
+                    </div>
+                    <div class="corpus-effort-controls">
+                        <input type="number" step="0.25" min="0" max="200"
+                               class="corpus-effort-input"
+                               value="@(_effortHours?.ToString("0.##") ?? "")"
+                               placeholder="(unset)"
+                               @onchange="@((ChangeEventArgs e) => OnEffortChange(e.Value?.ToString()))" />
+                        @if (_effortHours.HasValue)
+                        {
+                            <button class="settings-btn" @onclick="ClearEffort" title="Revert to baseline">
+                                <i class="fa-solid fa-rotate-left"></i> Reset
+                            </button>
+                        }
+                        <span class="corpus-effort-status">@_effortStatus</span>
+                    </div>
+                </div>
+            }
+
+            @if (_sqlPath != null)
+            {
+                <div class="corpus-editor-pane">
+                    <div class="corpus-pane-header">
+                        <h4><i class="fa-solid fa-database"></i> SQL</h4>
+                        <div class="corpus-sql-actions">
+                            <button class="settings-btn" @onclick="RunSql" disabled="@_running">
+                                <i class="fa-solid @(_running ? "fa-spinner fa-spin" : "fa-bolt")"></i>
+                                @(_running ? "Running..." : "Run against localhost")
+                            </button>
+                        </div>
+                    </div>
+                    <textarea class="corpus-textarea corpus-sql" @bind="_sqlContent" @bind:event="oninput" spellcheck="false"></textarea>
+
+                    @if (_runResult != null)
+                    {
+                        <div class="corpus-run-result @(_runResult.Error == null ? "ok" : "err")">
+                            <div class="corpus-run-status">
+                                <i class="fa-solid @(_runResult.Error == null ? "fa-circle-check" : "fa-circle-xmark")"></i>
+                                @(_runResult.Error == null ? $"OK · {_runResult.RowCount} rows · {_runResult.DurationMs} ms" : "Error")
+                            </div>
+                            @if (_runResult.Error != null)
+                            {
+                                <pre class="corpus-run-error">@_runResult.Error</pre>
+                            }
+                            else if (_runResult.Rows != null && _runResult.Rows.Count > 0)
+                            {
+                                <div class="corpus-run-grid-wrapper">
+                                    <table class="corpus-run-grid">
+                                        <thead>
+                                            <tr>
+                                                @foreach (var col in _runResult.Columns!)
+                                                {
+                                                    <th>@col</th>
+                                                }
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var row in _runResult.Rows)
+                                            {
+                                                <tr>
+                                                    @foreach (var cell in row)
+                                                    {
+                                                        <td>@cell</td>
+                                                    }
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private const string AllowedMachine = "MSI";
+    private const string AllowedUser    = "afsul";
+    private const string CorpusDir      = @"c:\GitHub\SQLTriage-dev\research_output\LLM1_deepseek";
+
+    private bool _authorised;
+    private List<string> _allFiles = new();
+    private List<string> _filteredFiles = new();
+    private string _searchText = "";
+    private string _selectedFilter = "all";
+    private Dictionary<string, CorpusFileStatus> _classifications = new();
+
+    private enum CorpusFileStatus
+    {
+        Healthy,
+        NeedsReview,    // contains _NEEDS_HUMAN_REVIEW markers
+        Mojibake,       // contains � replacement char or encoding damage
+        MissingSql,     // no paired .sql file
+        MissingFields,  // missing critical fields
+    }
+
+    private class FilterOption
+    {
+        public string Key { get; init; } = "";
+        public string Label { get; init; } = "";
+        public string Tooltip { get; init; } = "";
+        public Func<CorpusFileStatus, bool> Match { get; init; } = _ => true;
+    }
+
+    private static readonly FilterOption[] _filterOptions = new[]
+    {
+        new FilterOption { Key="all",      Label="All",        Tooltip="All files",                                Match = _ => true },
+        new FilterOption { Key="broken",   Label="Broken",     Tooltip="Files with any status flag",               Match = s => s != CorpusFileStatus.Healthy },
+        new FilterOption { Key="review",   Label="Needs review", Tooltip="Has _NEEDS_HUMAN_REVIEW markers",          Match = s => s == CorpusFileStatus.NeedsReview },
+        new FilterOption { Key="mojibake", Label="Mojibake",   Tooltip="Encoding damage (� chars)",                Match = s => s == CorpusFileStatus.Mojibake },
+        new FilterOption { Key="nosql",    Label="No SQL",     Tooltip="No paired .sql file",                      Match = s => s == CorpusFileStatus.MissingSql },
+        new FilterOption { Key="missing",  Label="Missing fields", Tooltip="Missing description or query",         Match = s => s == CorpusFileStatus.MissingFields },
+    };
+
+    private static string StatusIcon(CorpusFileStatus s) => s switch
+    {
+        CorpusFileStatus.NeedsReview    => "fa-circle-question",
+        CorpusFileStatus.Mojibake       => "fa-bug",
+        CorpusFileStatus.MissingSql     => "fa-link-slash",
+        CorpusFileStatus.MissingFields  => "fa-triangle-exclamation",
+        _                               => "fa-file-code",
+    };
+
+    private static string StatusTooltip(CorpusFileStatus s) => s switch
+    {
+        CorpusFileStatus.NeedsReview    => "Contains _NEEDS_HUMAN_REVIEW markers — needs editing",
+        CorpusFileStatus.Mojibake       => "Encoding damage — replacement chars present",
+        CorpusFileStatus.MissingSql     => "No paired .sql file",
+        CorpusFileStatus.MissingFields  => "Missing critical fields",
+        _                               => "Healthy",
+    };
+
+    private void SelectFilter(string key)
+    {
+        _selectedFilter = key;
+        ApplyFilter();
+    }
+
+    private string? _selectedFile;
+    private string? _yamlPath;
+    private string? _sqlPath;
+    private string _yamlContent = "";
+    private string _sqlContent = "";
+    private bool _saving;
+    private bool _running;
+
+    // Effort-hours staging — uses RemediationWeightStore (same override file the
+    // Cost Tuner reads). YAMLs themselves stay untouched.
+    private string? _extractedCheckId;
+    private double? _effortHours;
+    private string _effortStatus = "";
+
+    private RunResult? _runResult;
+
+    private class RunResult
+    {
+        public List<string>? Columns { get; set; }
+        public List<List<string?>>? Rows { get; set; }
+        public int RowCount { get; set; }
+        public long DurationMs { get; set; }
+        public string? Error { get; set; }
+    }
+
+    protected override void OnInitialized()
+    {
+        _authorised = string.Equals(Environment.MachineName, AllowedMachine, StringComparison.OrdinalIgnoreCase)
+                   && string.Equals(Environment.UserName,    AllowedUser,    StringComparison.OrdinalIgnoreCase);
+        if (!_authorised) return;
+
+        if (Directory.Exists(CorpusDir))
+        {
+            _allFiles = Directory.GetFiles(CorpusDir, "*.yaml")
+                                 .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
+                                 .ToList();
+            ClassifyAll();
+            ApplyFilter();
+        }
+    }
+
+    private void ClassifyAll()
+    {
+        _classifications.Clear();
+        foreach (var path in _allFiles)
+        {
+            try
+            {
+                var sqlPath = Path.ChangeExtension(path, ".sql");
+                var status = CorpusFileStatus.Healthy;
+                var yamlContent = File.ReadAllText(path);
+
+                if (yamlContent.Contains("_NEEDS_HUMAN_REVIEW") || yamlContent.Contains("NEEDS_HUMAN_REVIEW"))
+                    status = CorpusFileStatus.NeedsReview;
+                else if (yamlContent.Contains('�'))   // U+FFFD = replacement char (mojibake tell)
+                    status = CorpusFileStatus.Mojibake;
+                else if (!File.Exists(sqlPath))
+                    status = CorpusFileStatus.MissingSql;
+                else if (!yamlContent.Contains("description:") || yamlContent.Length < 200)
+                    status = CorpusFileStatus.MissingFields;
+
+                _classifications[path] = status;
+            }
+            catch
+            {
+                _classifications[path] = CorpusFileStatus.MissingFields;
+            }
+        }
+    }
+
+    private void ApplyFilter()
+    {
+        IEnumerable<string> q = _allFiles;
+
+        if (_selectedFilter != "all")
+        {
+            var filter = _filterOptions.FirstOrDefault(f => f.Key == _selectedFilter);
+            if (filter != null)
+            {
+                q = q.Where(f => _classifications.TryGetValue(f, out var s) && filter.Match(s));
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(_searchText))
+        {
+            var s = _searchText.Trim();
+            q = q.Where(f => Path.GetFileName(f).Contains(s, StringComparison.OrdinalIgnoreCase));
+        }
+
+        _filteredFiles = q.ToList();
+    }
+
+    private void LoadFile(string path)
+    {
+        _selectedFile = path;
+        _yamlPath = path;
+        _sqlPath  = Path.ChangeExtension(path, ".sql");
+        _runResult = null;
+        try
+        {
+            _yamlContent = File.ReadAllText(_yamlPath);
+            if (File.Exists(_sqlPath))
+                _sqlContent = File.ReadAllText(_sqlPath);
+            else
+            {
+                _sqlPath = null;
+                _sqlContent = "";
+            }
+            // Pull check_id from the YAML so we can stage effort hours against it
+            _extractedCheckId = ExtractCheckId(_yamlContent);
+            _effortHours = string.IsNullOrEmpty(_extractedCheckId) ? null : Weights.GetOverride(_extractedCheckId);
+            _effortStatus = _effortHours.HasValue ? $"staged: {_effortHours.Value:0.##} hrs" : "no override yet";
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("Corpus", $"Failed to load: {ex.Message}");
+        }
+    }
+
+    private static string? ExtractCheckId(string yaml)
+    {
+        // Look for "check_id: '<id>'" or "check_id: <id>" at the top of the file.
+        if (string.IsNullOrEmpty(yaml)) return null;
+        using var rdr = new StringReader(yaml);
+        string? line;
+        while ((line = rdr.ReadLine()) != null)
+        {
+            var trimmed = line.TrimStart();
+            if (!trimmed.StartsWith("check_id:", StringComparison.OrdinalIgnoreCase)) continue;
+            var value = trimmed.Substring("check_id:".Length).Trim();
+            // Strip optional surrounding quotes
+            if (value.Length >= 2 &&
+                ((value[0] == '\'' && value[^1] == '\'') ||
+                 (value[0] == '"'  && value[^1] == '"')))
+                value = value.Substring(1, value.Length - 2);
+            return string.IsNullOrEmpty(value) ? null : value;
+        }
+        return null;
+    }
+
+    private void OnEffortChange(string? raw)
+    {
+        if (string.IsNullOrEmpty(_extractedCheckId)) return;
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            ClearEffort();
+            return;
+        }
+        if (!double.TryParse(raw, System.Globalization.NumberStyles.Float,
+                             System.Globalization.CultureInfo.InvariantCulture, out var hours))
+        {
+            Toast.ShowError("Corpus", $"'{raw}' is not a valid number");
+            return;
+        }
+        hours = Math.Max(0, Math.Min(200, hours));
+        Weights.SetOverride(_extractedCheckId, hours);
+        _effortHours = hours;
+        _effortStatus = $"staged: {hours:0.##} hrs";
+        Toast.ShowSuccess("Corpus", $"Staged {hours:0.##}h for {_extractedCheckId}");
+    }
+
+    private void ClearEffort()
+    {
+        if (string.IsNullOrEmpty(_extractedCheckId)) return;
+        Weights.SetOverride(_extractedCheckId, null);
+        _effortHours = null;
+        _effortStatus = "no override yet";
+        Toast.ShowSuccess("Corpus", $"Cleared override for {_extractedCheckId}");
+    }
+
+    private async Task Save()
+    {
+        if (_yamlPath == null) return;
+        _saving = true;
+        try
+        {
+            await File.WriteAllTextAsync(_yamlPath, _yamlContent);
+            if (_sqlPath != null)
+                await File.WriteAllTextAsync(_sqlPath, _sqlContent);
+            Toast.ShowSuccess("Corpus", "Saved");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("Corpus", $"Save failed: {ex.Message}");
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void Reload()
+    {
+        if (_selectedFile != null) LoadFile(_selectedFile);
+    }
+
+    private async Task RunSql()
+    {
+        if (string.IsNullOrWhiteSpace(_sqlContent)) return;
+        _running = true;
+        _runResult = null;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            const string connStr = "Server=localhost;Database=master;Trusted_Connection=Yes;TrustServerCertificate=Yes;Connect Timeout=8;Application Name=SQLTriage-CorpusEditor";
+            using var conn = new SqlConnection(connStr);
+            await conn.OpenAsync();
+
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = _sqlContent;
+            cmd.CommandTimeout = 30;
+
+            using var rdr = await cmd.ExecuteReaderAsync();
+            var cols = new List<string>();
+            for (int i = 0; i < rdr.FieldCount; i++)
+                cols.Add(rdr.GetName(i));
+
+            var rows = new List<List<string?>>();
+            while (await rdr.ReadAsync() && rows.Count < 500)
+            {
+                var row = new List<string?>();
+                for (int i = 0; i < rdr.FieldCount; i++)
+                    row.Add(rdr.IsDBNull(i) ? null : rdr.GetValue(i)?.ToString());
+                rows.Add(row);
+            }
+            sw.Stop();
+
+            _runResult = new RunResult
+            {
+                Columns = cols,
+                Rows = rows,
+                RowCount = rows.Count,
+                DurationMs = sw.ElapsedMilliseconds,
+            };
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            _runResult = new RunResult
+            {
+                Error = ex.Message,
+                DurationMs = sw.ElapsedMilliseconds,
+            };
+        }
+        finally
+        {
+            _running = false;
+        }
+    }
+}

@@ -1,0 +1,643 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/environment"
+<PageTitle>SQLTriage - Environment</PageTitle>
+@inject ServerConnectionManager ConnectionManager
+@inject IJSRuntime JS
+@inject AuditLogService AuditLog
+@using Microsoft.Data.SqlClient
+@using System.Data
+@using System.Linq
+@using System.Threading
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@implements IDisposable
+
+<div class="env-page">
+
+    <!-- ── Toolbar ─────────────────────────────────────────────────────── -->
+    <div class="env-toolbar">
+        <div class="env-toolbar-left">
+            <i class="fa-solid fa-network-wired" style="color:var(--accent);font-size:18px;"></i>
+            <span style="font-size:15px;font-weight:600;color:var(--text-primary);">Environment View</span>
+            @if (_serverResults.Count > 0 && !_isScanning)
+            {
+                <span style="font-size:11px;color:var(--text-muted);margin-left:6px;">
+                    @_serverResults.Count server(s) · @(_serverResults.Sum(s => s.HostCount)) hosts
+                </span>
+            }
+        </div>
+        <div class="env-toolbar-right">
+            <ServerSelector Items="EnvServerItems"
+                            SelectedId="@(_runAllServers ? null : _selectedConnectionId)"
+                            SelectedIdChanged="OnEnvServerChanged"
+                            AllowAllScope="true" />
+            <button class="btn btn-primary" @onclick="ScanEnvironment"
+                    disabled="@(_isScanning || (!_runAllServers && string.IsNullOrEmpty(_selectedConnectionId)))">
+                @if (_isScanning)
+                {
+                    <i class="fa-solid fa-spinner fa-spin"></i><span> Scanning...</span>
+                }
+                else
+                {
+                    <i class="fa-solid fa-radar"></i><span> Scan</span>
+                }
+            </button>
+            @if (_serverResults.Count > 0)
+            {
+                <button class="btn btn-secondary" @onclick="ClearResults">Clear</button>
+                <button class="btn btn-secondary" @onclick="ExportPngAsync" title="Download topology as PNG">
+                    <i class="fa-solid fa-image"></i> Export PNG
+                </button>
+            }
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_errorMessage))
+    {
+        <div class="env-alert-error">
+            <i class="fa-solid fa-circle-exclamation"></i> @_errorMessage
+        </div>
+    }
+
+    @if (_serverResults.Count == 0 && !_isScanning)
+    {
+        <div class="env-empty">
+            <i class="fa-solid fa-network-wired"></i>
+            <p>Select server(s) and click <strong>Scan</strong> to visualize your environment.</p>
+        </div>
+    }
+
+    @if (_serverResults.Count > 0 || _isScanning)
+    {
+        <!-- ── Main topology area ──────────────────────────────────────── -->
+        <div class="env-lower" style="flex:1;min-height:0;">
+
+            <!-- Force-directed topology canvas -->
+            <div class="env-topo-strip" style="flex:1;min-width:0;">
+                <div id="env-topo-canvas" class="env-topo-canvas">
+                    @if (_isScanning)
+                    {
+                        <div style="display:flex;align-items:center;justify-content:center;height:100%;gap:10px;color:var(--text-secondary);">
+                            <i class="fa-solid fa-spinner fa-spin"></i>
+                            <span>Scanning @_scanProgress…</span>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <!-- Host detail panel (slides in on node click) -->
+            @if (_selectedHost != null)
+            {
+                <div class="env-host-detail">
+                    <div class="env-host-detail-header">
+                        <i class="fa-solid fa-desktop"></i>
+                        <strong>@_selectedHost.Hostname</strong>
+                        <span style="font-size:10px;color:var(--text-muted);margin-left:4px;">via @_selectedHostServer</span>
+                        <button class="env-detail-close" @onclick="() => _selectedHost = null"><i class="fa-solid fa-xmark"></i></button>
+                    </div>
+                    <div class="env-detail-badges">
+                        <span class="env-badge"><i class="fa-solid fa-plug"></i> @_selectedHost.ConnectionCount conn</span>
+                        <span class="env-badge"><i class="fa-solid fa-cube"></i> @_selectedHost.UniqueApps apps</span>
+                        <span class="env-badge"><i class="fa-solid fa-user"></i> @_selectedHost.UniqueUsers users</span>
+                        <span class="env-badge"><i class="fa-solid fa-database"></i> @_selectedHost.UniqueDbs DBs</span>
+                    </div>
+                    <div class="env-host-detail-table-wrap">
+                        <table class="env-detail-table">
+                            <thead>
+                                <tr>
+                                    <th>Application</th>
+                                    <th>User</th>
+                                    <th>Database</th>
+                                    <th>IP</th>
+                                    <th>Driver</th>
+                                    <th>Protocol</th>
+                                    <th>Auth</th>
+                                    <th>Encrypt</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var c in _selectedHost.Connections)
+                                {
+                                    <tr>
+                                        <td title="@c.App">@c.App</td>
+                                        <td title="@c.User">@c.User</td>
+                                        <td title="@c.Database">@c.Database</td>
+                                        <td>@c.IP</td>
+                                        <td>@c.DriverVersion</td>
+                                        <td>@c.ProtocolVersion</td>
+                                        <td>@c.AuthScheme</td>
+                                        <td>@c.EncryptOption</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    // ── State ────────────────────────────────────────────────────────────
+    private List<ServerConnection> _connections = new();
+    private List<ServerConnection> _enabledConnections = new();
+    private bool _runAllServers = true;
+    private string _selectedConnectionId = "";
+
+    // Shared ServerSelector (id mode, composite "connId|server" + All-scope) adapter.
+    private IReadOnlyList<(string Id, string Label)> EnvServerItems => _enabledConnections
+        .SelectMany(c => c.GetServerList().Select(s => (c.Id + "|" + s, s)))
+        .ToList();
+
+    private void OnEnvServerChanged(string? id)
+    {
+        if (string.IsNullOrEmpty(id)) { _runAllServers = true; }
+        else { _runAllServers = false; _selectedConnectionId = id; }
+    }
+    private bool _isScanning = false;
+    private string? _errorMessage;
+    private string _scanProgress = "";
+
+    private List<ServerEnvironmentResult> _serverResults = new();
+    private List<CrossLink> _crossLinks = new();
+
+    private HostNode? _selectedHost;
+    private string _selectedHostServer = "";
+
+    private DotNetObjectReference<EnvironmentView>? _dotNetRef;
+    private bool _disposed = false;
+    private bool _needsTopologyRender = false;
+    private System.Threading.Timer? _progressTimer;
+
+    protected override void OnInitialized()
+    {
+        _connections = ConnectionManager.GetConnections();
+        _enabledConnections = ConnectionManager.GetEnabledConnections();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef ??= DotNetObjectReference.Create(this);
+            try
+            {
+                // Reuse the stored reference; a second Create() would leak (never disposed).
+                await JS.InvokeVoidAsync("environmentView.setHostCallback", _dotNetRef);
+            }
+            catch { /* JS not ready on first navigation — harmless */ }
+        }
+
+        if (_needsTopologyRender)
+        {
+            _needsTopologyRender = false;
+            await RenderTopology();
+        }
+    }
+
+    [Microsoft.JSInterop.JSInvokable]
+    public void OnHostNodeClicked(string hostname)
+    {
+        if (_disposed) return;
+        if (string.IsNullOrEmpty(hostname))
+        {
+            _selectedHost = null;
+            _selectedHostServer = "";
+            _ = InvokeAsync(StateHasChanged);
+            return;
+        }
+        foreach (var sr in _serverResults)
+        {
+            var host = sr.Hosts?.FirstOrDefault(
+                h => string.Equals(h.Hostname, hostname, StringComparison.OrdinalIgnoreCase));
+            if (host != null)
+            {
+                _selectedHost = host;
+                _selectedHostServer = sr.ServerName;
+                break;
+            }
+        }
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ScanEnvironment()
+    {
+        _isScanning = true;
+        _errorMessage = null;
+        _serverResults.Clear();
+        _crossLinks.Clear();
+        _selectedHost = null;
+        _selectedHostServer = "";
+        _needsTopologyRender = false;
+        StateHasChanged();
+
+        try
+        {
+            var targets = new List<(ServerConnection conn, string serverName)>();
+            if (_runAllServers)
+            {
+                foreach (var conn in _enabledConnections)
+                    foreach (var s in conn.GetServerList())
+                        targets.Add((conn, s));
+            }
+            else
+            {
+                var parts = _selectedConnectionId.Split('|', 2);
+                var conn  = _connections.FirstOrDefault(c => c.Id == parts[0]);
+                if (conn != null)
+                {
+                    var srv = parts.Length > 1 ? parts[1] : conn.GetServerList().FirstOrDefault();
+                    if (!string.IsNullOrEmpty(srv))
+                        targets.Add((conn, srv));
+                }
+            }
+
+            if (targets.Count == 0) { _errorMessage = "No servers selected."; return; }
+
+            // Start progress timer for UI updates
+            _progressTimer = new System.Threading.Timer(_ => InvokeAsync(() => StateHasChanged()), null, 0, 500);
+
+            // Scan with progress feedback
+            var results = new List<ServerEnvironmentResult>();
+            for (int i = 0; i < targets.Count; i++)
+            {
+                var t = targets[i];
+                _scanProgress = $"{t.serverName} ({i+1}/{targets.Count})";
+                var r = await ScanServerAsync(t.conn, t.serverName);
+                if (r != null) results.Add(r);
+            }
+
+            _serverResults = MergeByPhysicalHost(results);
+
+            if (_serverResults.Count == 0) { _errorMessage = "No results returned."; return; }
+
+            BuildCrossLinks();
+
+            // Schedule topology render after next render cycle
+            _needsTopologyRender = true;
+        }
+        catch (Exception ex) { _errorMessage = $"Scan failed: {ex.Message}"; }
+        finally 
+        { 
+            _progressTimer?.Dispose(); 
+            _progressTimer = null; 
+            _isScanning = false; 
+            _scanProgress = ""; 
+            StateHasChanged(); 
+        }
+    }
+
+    private async Task RenderTopology()
+    {
+        await Task.Delay(50); // let DOM render canvas div
+
+        var json = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            servers = _serverResults.Select(sr => new
+            {
+                name   = sr.ServerName,
+                error  = sr.Error,
+                counts = new
+                {
+                    hosts = sr.HostCount,
+                    apps  = sr.AppCount,
+                    users = sr.UserCount,
+                    dbs   = sr.DbCount,
+                    ips   = sr.IpCount,
+                    auth  = sr.AuthCount
+                },
+                hosts = (sr.Hosts ?? new()).Select(h => new
+                {
+                    hostname        = h.Hostname,
+                    connectionCount = h.ConnectionCount,
+                    uniqueApps      = h.UniqueApps,
+                    uniqueUsers     = h.UniqueUsers,
+                    uniqueDbs       = h.UniqueDbs
+                })
+            }),
+            crossLinks = _crossLinks.Select(l => new
+            {
+                fromServer      = l.FromServer,
+                toServer        = l.ToServer,
+                connectionCount = l.ConnectionCount
+            })
+        });
+
+        try
+        {
+            await JS.InvokeVoidAsync("environmentView.renderTopology", "env-topo-canvas", json);
+        }
+        catch { }
+    }
+
+    private void ClearResults()
+    {
+        _serverResults.Clear();
+        _crossLinks.Clear();
+        _selectedHost = null;
+        _selectedHostServer = "";
+        _errorMessage = null;
+    }
+
+    private async Task ExportPngAsync()
+    {
+        var fileName = $"topology-{DateTime.Now:yyyyMMdd}.png";
+        try
+        {
+            var dataUrl = await JS.InvokeAsync<string>("environmentView.exportPng", "env-topo-canvas");
+            if (string.IsNullOrEmpty(dataUrl) || !dataUrl.StartsWith("data:image/png;base64,"))
+            {
+                _errorMessage = "Export failed: topology canvas not found. Run a Scan first.";
+                StateHasChanged();
+                return;
+            }
+            var base64 = dataUrl.Substring("data:image/png;base64,".Length);
+            await JS.InvokeVoidAsync("blazorDownloadFile", fileName, "image/png", base64);
+            AuditLog.LogExportOperation("PNG", fileName, true);
+        }
+        catch (Exception ex)
+        {
+            AuditLog.LogExportOperation("PNG", fileName, false, ex.Message);
+            _errorMessage = $"Export failed: {ex.Message}";
+            StateHasChanged();
+        }
+    }
+
+    // ── Physical host deduplication ──────────────────────────────────────
+    // When two SQL instances share the same physical machine (e.g. MSI and MSI\NEW2022),
+    // merge them into one result keyed on the machine name.
+    private static List<ServerEnvironmentResult> MergeByPhysicalHost(List<ServerEnvironmentResult> results)
+    {
+        // Group by the machine name (everything before the first backslash)
+        var groups = new Dictionary<string, List<ServerEnvironmentResult>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in results)
+        {
+            var machine = r.ServerName.Split('\\')[0];
+            if (!groups.TryGetValue(machine, out var g)) groups[machine] = g = new();
+            g.Add(r);
+        }
+
+        var merged = new List<ServerEnvironmentResult>();
+        foreach (var (machine, group) in groups)
+        {
+            if (group.Count == 1) { merged.Add(group[0]); continue; }
+
+            // Pick a display name: prefer the bare machine name entry if it exists,
+            // otherwise use the first sorted entry.
+            var primary = group.FirstOrDefault(r =>
+                string.Equals(r.ServerName, machine, StringComparison.OrdinalIgnoreCase))
+                ?? group.OrderBy(r => r.ServerName).First();
+
+            // Collect all hosts from all instances, dedup by hostname,
+            // merge connection details when the same host appears on multiple instances.
+            var allHosts = group
+                .Where(r => r.Error == null && r.Hosts != null)
+                .SelectMany(r => r.Hosts!)
+                .ToList();
+
+            var mergedHosts = allHosts
+                .GroupBy(h => h.Hostname, StringComparer.OrdinalIgnoreCase)
+                .Select(hg => new HostNode
+                {
+                    Hostname        = hg.Key,
+                    Connections     = hg.SelectMany(h => h.Connections).ToList(),
+                    ConnectionCount = hg.Sum(h => h.ConnectionCount),
+                    UniqueApps      = hg.SelectMany(h => h.Connections).Select(c => c.App)
+                                       .Where(a => !string.IsNullOrEmpty(a)).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+                    UniqueUsers     = hg.SelectMany(h => h.Connections).Select(c => c.User)
+                                       .Where(u => !string.IsNullOrEmpty(u)).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+                    UniqueDbs       = hg.SelectMany(h => h.Connections).Select(c => c.Database)
+                                       .Where(d => !string.IsNullOrEmpty(d)).Distinct(StringComparer.OrdinalIgnoreCase).Count()
+                })
+                .OrderByDescending(h => h.ConnectionCount)
+                .ToList();
+
+            // Label with all instance names so the user knows which instances were merged
+            var instanceNames = string.Join(" + ", group.Select(r => r.ServerName).OrderBy(n => n));
+
+            merged.Add(new ServerEnvironmentResult
+            {
+                ServerName = instanceNames,
+                Error      = group.All(r => r.Error != null)
+                               ? string.Join("; ", group.Where(r => r.Error != null).Select(r => r.Error))
+                               : null,
+                Hosts      = mergedHosts,
+                HostCount  = mergedHosts.Count,
+                AppCount   = mergedHosts.SelectMany(h => h.Connections).Select(c => c.App)
+                               .Where(a => !string.IsNullOrEmpty(a)).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+                UserCount  = mergedHosts.SelectMany(h => h.Connections).Select(c => c.User)
+                               .Where(u => !string.IsNullOrEmpty(u)).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+                DbCount    = mergedHosts.SelectMany(h => h.Connections).Select(c => c.Database)
+                               .Where(d => !string.IsNullOrEmpty(d)).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+                IpCount    = mergedHosts.SelectMany(h => h.Connections).Select(c => c.IP)
+                               .Where(ip => !string.IsNullOrEmpty(ip)).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+                AuthCount  = mergedHosts.SelectMany(h => h.Connections).Select(c => c.AuthScheme)
+                               .Where(a => !string.IsNullOrEmpty(a)).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+                EncrCount  = mergedHosts.SelectMany(h => h.Connections).Select(c => c.EncryptOption)
+                               .Where(e => !string.IsNullOrEmpty(e)).Distinct(StringComparer.OrdinalIgnoreCase).Count()
+            });
+        }
+
+        return merged.OrderBy(r => r.ServerName).ToList();
+    }
+
+    // ── Cross-link helpers ───────────────────────────────────────────────
+    private void BuildCrossLinks()
+    {
+        _crossLinks.Clear();
+        var serverNames = _serverResults.Select(s => s.ServerName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var sr in _serverResults.Where(s => s.Error == null && s.Hosts != null))
+        {
+            foreach (var host in sr.Hosts!)
+            {
+                foreach (var other in serverNames)
+                {
+                    if (string.Equals(sr.ServerName, other, StringComparison.OrdinalIgnoreCase)) continue;
+                    var machinePart = other.Split('\\')[0];
+                    if (host.Hostname.StartsWith(machinePart, StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (!_crossLinks.Any(l =>
+                            string.Equals(l.FromServer, sr.ServerName, StringComparison.OrdinalIgnoreCase) &&
+                            string.Equals(l.ToServer, other, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            _crossLinks.Add(new CrossLink
+                            {
+                                FromServer      = sr.ServerName,
+                                ToServer        = other,
+                                ViaHost         = host.Hostname,
+                                ConnectionCount = host.ConnectionCount
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Data models ──────────────────────────────────────────────────────
+    private class ServerEnvironmentResult
+    {
+        public string ServerName { get; set; } = "";
+        public string? Error { get; set; }
+        public int HostCount { get; set; }
+        public int AppCount  { get; set; }
+        public int UserCount { get; set; }
+        public int DbCount   { get; set; }
+        public int IpCount   { get; set; }
+        public int AuthCount { get; set; }
+        public int EncrCount { get; set; }
+        public List<HostNode>? Hosts { get; set; }
+    }
+
+    private class HostNode
+    {
+        public string Hostname       { get; set; } = "";
+        public int ConnectionCount   { get; set; }
+        public int UniqueApps        { get; set; }
+        public int UniqueUsers       { get; set; }
+        public int UniqueDbs         { get; set; }
+        public List<HostConnectionDetail> Connections { get; set; } = new();
+    }
+
+    private class HostConnectionDetail
+    {
+        public string App             { get; set; } = "";
+        public string DriverVersion   { get; set; } = "";
+        public string Database        { get; set; } = "";
+        public string ProtocolVersion { get; set; } = "";
+        public string User            { get; set; } = "";
+        public int    NonEngineConnection { get; set; }
+        public string IP              { get; set; } = "";
+        public string AuthScheme      { get; set; } = "";
+        public string EncryptOption   { get; set; } = "";
+    }
+
+    private class CrossLink
+    {
+        public string FromServer    { get; set; } = "";
+        public string ToServer      { get; set; } = "";
+        public string ViaHost       { get; set; } = "";
+        public int    ConnectionCount { get; set; }
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _progressTimer?.Dispose();
+        _dotNetRef?.Dispose();
+        // Best-effort: clear the JS reference so click callbacks don't fire into a disposed component.
+        // Fire-and-forget — Dispose() is synchronous.
+        try { _ = JS.InvokeVoidAsync("environmentView.setHostCallback", (object?)null); } catch { }
+    }
+
+    // ── SQL query ────────────────────────────────────────────────────────
+    private async Task<ServerEnvironmentResult?> ScanServerAsync(ServerConnection conn, string serverName)
+    {
+        try
+        {
+            var connString = conn.GetConnectionString(serverName, "master");
+            using var sqlConn = new SqlConnection(connString);
+            await sqlConn.OpenAsync();
+            using var cmd = new SqlCommand(EnvironmentQuery, sqlConn) { CommandTimeout = 30 };
+            using var reader = await cmd.ExecuteReaderAsync();
+            using var dt = new DataTable();
+            dt.Load(reader);
+
+            if (dt.Rows.Count == 0) return null;
+
+            var firstRow = dt.Rows[0];
+            var result = new ServerEnvironmentResult
+            {
+                ServerName = firstRow["Server"]?.ToString() ?? serverName,
+                HostCount  = Convert.ToInt32(firstRow["C_Hosts"]),
+                AppCount   = Convert.ToInt32(firstRow["C_App"]),
+                UserCount  = Convert.ToInt32(firstRow["C_Users"]),
+                DbCount    = Convert.ToInt32(firstRow["C_DBs"]),
+                IpCount    = Convert.ToInt32(firstRow["C_IPs"]),
+                AuthCount  = Convert.ToInt32(firstRow["C_Auth"]),
+                EncrCount  = Convert.ToInt32(firstRow["C_Encr"])
+            };
+
+            var hostGroups = new Dictionary<string, List<HostConnectionDetail>>(StringComparer.OrdinalIgnoreCase);
+            foreach (DataRow row in dt.Rows)
+            {
+                var hostname = row["Hostname"]?.ToString() ?? "(unknown)";
+                if (!hostGroups.ContainsKey(hostname)) hostGroups[hostname] = new();
+                hostGroups[hostname].Add(new HostConnectionDetail
+                {
+                    App               = row["App"]?.ToString() ?? "",
+                    DriverVersion     = row["DriverVersion"]?.ToString() ?? "",
+                    Database          = row["Database"]?.ToString() ?? "",
+                    ProtocolVersion   = row["ProtocolVersion"]?.ToString() ?? "",
+                    User              = row["User"]?.ToString() ?? "",
+                    NonEngineConnection = Convert.ToInt32(row["Non-engine connection"]),
+                    IP                = row["IP"]?.ToString() ?? "",
+                    AuthScheme        = row["auth_scheme"]?.ToString() ?? "",
+                    EncryptOption     = row["encrypt_option"]?.ToString() ?? ""
+                });
+            }
+
+            result.Hosts = hostGroups.Select(g => new HostNode
+            {
+                Hostname        = g.Key,
+                Connections     = g.Value,
+                ConnectionCount = g.Value.Count,
+                UniqueApps      = g.Value.Select(c => c.App).Where(a => !string.IsNullOrEmpty(a)).Distinct().Count(),
+                UniqueUsers     = g.Value.Select(c => c.User).Where(u => !string.IsNullOrEmpty(u)).Distinct().Count(),
+                UniqueDbs       = g.Value.Select(c => c.Database).Where(d => !string.IsNullOrEmpty(d)).Distinct().Count()
+            }).OrderByDescending(h => h.ConnectionCount).ToList();
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            return new ServerEnvironmentResult { ServerName = serverName, Error = ex.Message };
+        }
+    }
+
+    private const string EnvironmentQuery = @"
+DECLARE @ThisServer [NVARCHAR] (500)
+DECLARE @CharToCheck [NVARCHAR] (5)
+SET @CharToCheck = CHAR(92)
+  IF (select CHARINDEX(@CharToCheck,@@SERVERNAME)) > 0
+    SELECT @ThisServer = @@SERVERNAME
+  IF (select CHARINDEX(@CharToCheck,@@SERVERNAME)) = 0
+    SELECT @ThisServer = CAST( Serverproperty( 'ComputerNamePhysicalNetBIOS' ) AS [NVARCHAR] (500))
+
+SELECT
+    [Server], Hostname
+    , MAX(RANKHostname)        OVER (PARTITION BY [Server] ORDER BY [Server]) [C_Hosts]
+    , MAX(RANKApp)             OVER (PARTITION BY [Server] ORDER BY [Server]) [C_App]
+    , MAX([RANKUser])          OVER (PARTITION BY [Server] ORDER BY [Server]) [C_Users]
+    , MAX([RANKDatabase])      OVER (PARTITION BY [Server] ORDER BY [Server]) [C_DBs]
+    , MAX([RANKIP])            OVER (PARTITION BY [Server] ORDER BY [Server]) [C_IPs]
+    , MAX(RANKauth_scheme)     OVER (PARTITION BY [Server] ORDER BY [Server]) [C_Auth]
+    , MAX(RANKencrypt_option)  OVER (PARTITION BY [Server] ORDER BY [Server]) [C_Encr]
+    , App, DriverVersion, [Database], ProtocolVersion, [User]
+    , [Non-engine connection], [IP], auth_scheme, encrypt_option
+FROM (
+    SELECT DISTINCT @ThisServer [Server]
+    , ISNULL(T.host_name,'') Hostname
+    , REPLACE(ISNULL(CASE WHEN T.program_name LIKE 'Microsoft SQL Server Management Studio%' THEN 'Microsoft SQL Server Management Studio' ELSE T.program_name END,''),':','_') App
+    , ISNULL(T.nt_user_name,'') [User]
+    , ISNULL(DB_NAME(T.database_id),ISNULL(DB_NAME(R.database_id),'')) [Database]
+    , client_net_address [IP], C.auth_scheme, C.encrypt_option
+    , DENSE_RANK() OVER (PARTITION BY @ThisServer ORDER BY ISNULL(T.host_name,'')) RANKHostname
+    , DENSE_RANK() OVER (PARTITION BY @ThisServer ORDER BY REPLACE(ISNULL(CASE WHEN T.program_name LIKE 'Microsoft SQL Server Management Studio%' THEN 'Microsoft SQL Server Management Studio' ELSE T.program_name END,''),':','_')) RANKApp
+    , DENSE_RANK() OVER (PARTITION BY @ThisServer ORDER BY ISNULL(T.nt_user_name,'')) [RANKUser]
+    , DENSE_RANK() OVER (PARTITION BY @ThisServer ORDER BY ISNULL(DB_NAME(T.database_id),ISNULL(DB_NAME(R.database_id),''))) [RANKDatabase]
+    , DENSE_RANK() OVER (PARTITION BY @ThisServer ORDER BY client_net_address) [RANKIP]
+    , DENSE_RANK() OVER (PARTITION BY @ThisServer ORDER BY C.auth_scheme) RANKauth_scheme
+    , DENSE_RANK() OVER (PARTITION BY @ThisServer ORDER BY C.encrypt_option) RANKencrypt_option
+    , ISNULL(CASE WHEN T.client_version < 3 THEN 'SQL 6' WHEN T.client_version = 3 THEN 'SQL 7' WHEN T.client_version = 4 THEN 'SQL 2000' WHEN T.client_version = 5 THEN 'SQL 2005' WHEN T.client_version = 6 THEN 'SQL 2008' WHEN T.client_version = 7 THEN 'SQL 2012+' ELSE 'SQL 2014+' END,'') DriverVersion
+    , ISNULL(CASE SUBSTRING(CAST(C.protocol_version AS BINARY(4)),1,1) WHEN 0x04 THEN 'Pre-SQL7' WHEN 0x70 THEN 'SQL 7.0' WHEN 0x71 THEN 'SQL 2000' WHEN 0x72 THEN 'SQL 2005' WHEN 0x73 THEN 'SQL 2008' WHEN 0x74 THEN 'SQL 2012+' ELSE SUBSTRING(CAST(C.protocol_version AS BINARY(4)),1,1) END,'') ProtocolVersion
+    , CASE WHEN [services].service_account IS NULL AND client_net_address = '<local machine>' THEN 1 ELSE 0 END [Non-engine connection]
+    FROM [sys].dm_exec_sessions T WITH(NOLOCK)
+    LEFT OUTER JOIN [sys].dm_exec_connections C WITH(NOLOCK) ON C.session_id = T.session_id
+    LEFT OUTER JOIN [sys].dm_exec_requests R WITH(NOLOCK) ON R.session_id = T.session_id
+    LEFT OUTER JOIN [sys].dm_server_services AS [services] WITH(NOLOCK) ON T.original_login_name = [services].service_account
+    WHERE T.client_version > 0 AND [services].service_account IS NULL
+) C1";
+}

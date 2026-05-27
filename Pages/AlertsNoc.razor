@@ -1,0 +1,438 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/alerts-noc"
+<PageTitle>SQLTriage - NOC Alert Status Board</PageTitle>
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@using Serilog
+@inject AlertDefinitionService Definitions
+@inject AlertEvaluationService Engine
+@inject AlertHistoryService History
+@inject ServerConnectionManager ConnectionManager
+@inject AlertBaselineService Baseline
+@inject SQLTriage.Data.Services.AppUserState UserState
+@inject SQLTriage.Data.ToastService Toast
+@implements IDisposable
+
+<div style="padding: 16px; max-width: 100%;">
+
+    @* ── Header bar ── *@
+    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 20px;">
+        <div>
+            <h2 style="margin: 0; font-size: 20px; display: flex; align-items: center; gap: 8px;">
+                <i class="fa-solid fa-tower-broadcast" style="color: var(--accent);"></i>
+                NOC — Alert Status Board
+            </h2>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                Live view across all monitored servers &nbsp;·&nbsp;
+                Refreshes every 30 s &nbsp;·&nbsp;
+                <span style="color: @(Engine.IsRunning ? "var(--green)" : "var(--red)");">
+                    <i class="fa-solid fa-circle" style="font-size: 7px; margin-right: 3px;"></i>
+                    @(Engine.IsRunning ? "Engine running" : "Engine stopped")
+                </span>
+            </div>
+        </div>
+        <div style="margin-left: auto; display: flex; gap: 8px; align-items: center;">
+            @if (_criticalCount > 0)
+            {
+                <span style="background: var(--red); color: var(--text-primary); border-radius: 20px; padding: 4px 14px; font-size: 13px; font-weight: 600;">
+                    <i class="fa-solid fa-circle-exclamation" style="margin-right: 5px;"></i>@_criticalCount Critical
+                </span>
+            }
+            @if (_warningCount > 0)
+            {
+                <span style="background: var(--yellow); color: #000; border-radius: 20px; padding: 4px 14px; font-size: 13px; font-weight: 600;">
+                    <i class="fa-solid fa-triangle-exclamation" style="margin-right: 5px;"></i>@_warningCount Warning
+                </span>
+            }
+            @if (_criticalCount == 0 && _warningCount == 0)
+            {
+                <span style="background: var(--green); color: var(--text-primary); border-radius: 20px; padding: 4px 14px; font-size: 13px; font-weight: 600;">
+                    <i class="fa-solid fa-circle-check" style="margin-right: 5px;"></i>All Clear
+                </span>
+            }
+            <button class="settings-btn" style="padding: 5px 12px; font-size: 12px;" @onclick="Refresh">
+                <i class="fa-solid fa-rotate" style="margin-right: 4px;"></i>Refresh
+            </button>
+        </div>
+    </div>
+
+    <BaselineSeedingProgress />
+
+    @* ── Server health grid ── *@
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin-bottom: 24px;">
+        @foreach (var server in _serverCards)
+        {
+            var cardBorder = server.Status switch
+            {
+                NocStatus.Critical => "var(--red)",
+                NocStatus.Warning  => "var(--yellow)",
+                NocStatus.Ok       => "var(--green)",
+                _                  => "var(--border)"
+            };
+            var cardBg = server.Status switch
+            {
+                NocStatus.Critical => "var(--red-faint)",
+                NocStatus.Warning  => "var(--yellow-faint)",
+                NocStatus.Ok       => "rgba(78,201,176,0.06)",
+                _                  => "var(--bg-panel)"
+            };
+            <div style="border: 2px solid @cardBorder; border-radius: 8px; padding: 14px; background: @cardBg; position: relative;">
+                @* Status dot *@
+                <div style="display: flex; align-items: flex-start; gap: 10px;">
+                    <div style="width: 12px; height: 12px; border-radius: 50%; background: @cardBorder; margin-top: 3px; flex-shrink: 0;
+                                @(server.Status == NocStatus.Critical ? "box-shadow: 0 0 6px " + cardBorder + ";" : "")"></div>
+                    <div style="flex: 1; min-width: 0;">
+                        <div style="font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"
+                             title="@server.ServerName">
+                            @server.ServerName
+                        </div>
+                        <div style="font-size: 11px; color: var(--text-muted); margin-top: 1px;">
+                            @(server.Status == NocStatus.Critical ? "CRITICAL"
+                            : server.Status == NocStatus.Warning  ? "WARNING"
+                            : server.Status == NocStatus.Ok       ? "OK — no active alerts"
+                            : "No data")
+                        </div>
+                    </div>
+                </div>
+
+                @* Alert counts *@
+                @if (server.CriticalCount > 0 || server.WarningCount > 0)
+                {
+                    <div style="display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap;">
+                        @if (server.CriticalCount > 0)
+                        {
+                            <span style="background: rgba(244,71,71,0.15); color: var(--red); border: 1px solid var(--red);
+                                          border-radius: 12px; padding: 2px 10px; font-size: 11px; font-weight: 600;">
+                                @server.CriticalCount critical
+                            </span>
+                        }
+                        @if (server.WarningCount > 0)
+                        {
+                            <span style="background: rgba(255,204,0,0.12); color: var(--yellow); border: 1px solid var(--yellow);
+                                          border-radius: 12px; padding: 2px 10px; font-size: 11px; font-weight: 600;">
+                                @server.WarningCount warning
+                            </span>
+                        }
+                    </div>
+                }
+
+                @* Top alert name *@
+                @if (!string.IsNullOrEmpty(server.TopAlertName))
+                {
+                    <div style="margin-top: 8px; font-size: 11px; color: var(--text-secondary); white-space: nowrap;
+                                 overflow: hidden; text-overflow: ellipsis;" title="@server.TopAlertName">
+                        <i class="fa-solid fa-bell" style="font-size: 9px; margin-right: 3px; color: @cardBorder;"></i>
+                        @server.TopAlertName
+                    </div>
+                }
+
+                @* Escalated badge *@
+                @if (server.HasEscalated)
+                {
+                    <div style="position: absolute; top: 8px; right: 8px;">
+                        <span style="background: var(--red); color: var(--text-primary); font-size: 9px; font-weight: 700;
+                                      padding: 2px 6px; border-radius: 3px; letter-spacing: 0.05em;">ESC</span>
+                    </div>
+                }
+
+                @* Last alert time *@
+                @if (server.LastAlertTime.HasValue)
+                {
+                    <div style="margin-top: 6px; font-size: 10px; color: var(--text-muted);">
+                        Last: @server.LastAlertTime.Value.ToLocalTime().ToString("HH:mm:ss")
+                    </div>
+                }
+            </div>
+        }
+
+        @if (_serverCards.Count == 0)
+        {
+            <div style="grid-column: 1 / -1; text-align: center; color: var(--text-muted); padding: 40px 0; font-size: 13px;">
+                <i class="fa-solid fa-server" style="font-size: 32px; margin-bottom: 12px; opacity: 0.3; display: block;"></i>
+                No servers configured, or no servers have been evaluated yet.
+            </div>
+        }
+    </div>
+
+    @* ── Live alert feed ── *@
+    <div class="settings-group">
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+            <h3 style="margin: 0; font-size: 14px;">
+                <i class="fa-solid fa-list" style="margin-right: 6px; color: var(--accent);"></i>
+                Active Alert Feed
+            </h3>
+            <span style="font-size: 12px; color: var(--text-muted);">(@_activeAlerts.Count active)</span>
+            @if (_activeAlerts.Any(a => a.Status == AlertStatus.Active))
+            {
+                <button class="settings-btn" style="margin-left: auto; font-size: 11px; padding: 3px 10px;"
+                        @onclick="AckAll">Acknowledge All</button>
+            }
+        </div>
+
+        @if (_activeAlerts.Count == 0)
+        {
+            <div style="text-align: center; color: var(--green); padding: 32px 0; font-size: 13px;">
+                <i class="fa-solid fa-circle-check" style="font-size: 28px; display: block; margin-bottom: 8px;"></i>
+                No active alerts across any server.
+            </div>
+        }
+        else
+        {
+            <table class="results-table" style="width: 100%; font-size: 12px;">
+                <thead>
+                    <tr>
+                        <th style="width: 24px;"></th>
+                        <th style="width: 90px;">Severity</th>
+                        <th>Alert</th>
+                        <th style="width: 160px;">Server</th>
+                        <th style="width: 80px; text-align: right;">Value</th>
+                        <th style="width: 50px; text-align: center;">Hits</th>
+                        <th style="width: 110px;">First Seen</th>
+                        <th style="width: 110px;">Last Seen</th>
+                        <th style="width: 90px;">Status</th>
+                        <th style="width: 80px;"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var alert in _activeAlerts.OrderByDescending(a => SeverityRank(a.Severity)).ThenByDescending(a => a.LastTriggered))
+                    {
+                        <tr style="border-left: 3px solid @GetSeverityColor(alert.Severity);
+                                   @(alert.IsEscalated ? "background: rgba(244,71,71,0.06);" : "")">
+                            <td style="padding: 4px 6px;">
+                                @if (alert.IsEscalated)
+                                {
+                                    <span title="Escalated" style="color: var(--red); font-size: 11px;">
+                                        <i class="fa-solid fa-triangle-exclamation"></i>
+                                    </span>
+                                }
+                            </td>
+                            <td>
+                                <span class="severity-badge severity-@(alert.Severity.ToLower())"
+                                      style="font-size: 10px; padding: 2px 6px;">
+                                    @alert.Severity
+                                </span>
+                            </td>
+                            <td>
+                                <div style="font-weight: 500;">@alert.AlertName</div>
+                                <div style="font-size: 10px; color: var(--text-muted);">@alert.Message</div>
+                            </td>
+                            <td style="font-family: monospace; font-size: 11px;">@alert.ServerName</td>
+                            <td style="font-family: monospace; text-align: right;">@alert.LastValue.ToString("N1")</td>
+                            <td style="text-align: center; color: @(alert.HitCount > 5 ? "var(--orange)" : "inherit");">@alert.HitCount</td>
+                            <td style="font-size: 11px; color: var(--text-muted);">@alert.FirstTriggered.ToLocalTime().ToString("MM/dd HH:mm")</td>
+                            <td style="font-size: 11px; color: var(--text-muted);">@alert.LastTriggered.ToLocalTime().ToString("MM/dd HH:mm")</td>
+                            <td>
+                                <span class="severity-badge @(alert.Status == AlertStatus.Active ? "severity-warning" : "severity-info")"
+                                      style="font-size: 10px; padding: 2px 6px;">
+                                    @alert.Status
+                                </span>
+                            </td>
+                            <td style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap;">
+                                @if (alert.Status == AlertStatus.Active)
+                                {
+                                    <button class="settings-btn" style="font-size: 10px; padding: 2px 7px;"
+                                            @onclick="() => AckOne(alert)">Ack</button>
+                                }
+                                @{
+                                    var _hr = _historyAlerts.FirstOrDefault(h =>
+                                        h.AlertId == alert.AlertId &&
+                                        h.ServerName.Equals(alert.ServerName, StringComparison.OrdinalIgnoreCase));
+                                }
+                                @if (_hr != null &&
+                                     (_hr.IncidentState == null || _hr.IncidentState == "open" || _hr.IncidentState == ""))
+                                {
+                                    <button class="settings-btn" style="font-size: 10px; padding: 2px 7px;"
+                                            @onclick="() => _ = AcknowledgeIR5(_hr)">Acknowledge</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+
+    @* ── Recent history strip ── *@
+    @if (_recentHistory.Count > 0)
+    {
+        <div class="settings-group" style="margin-top: 16px;">
+            <h3 style="margin-top: 0; font-size: 14px;">
+                <i class="fa-solid fa-clock-rotate-left" style="margin-right: 6px; color: var(--text-muted);"></i>
+                Recent Resolved / Acknowledged (last 24 h)
+            </h3>
+            <table class="results-table" style="width: 100%; font-size: 11px;">
+                <thead>
+                    <tr>
+                        <th style="width: 70px;">Sev</th>
+                        <th>Alert</th>
+                        <th style="width: 150px;">Server</th>
+                        <th style="width: 100px;">Resolved</th>
+                        <th style="width: 70px;">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in _recentHistory)
+                    {
+                        <tr style="opacity: 0.75;">
+                            <td>
+                                <span class="severity-badge severity-@(r.Severity.ToLower())"
+                                      style="font-size: 10px; padding: 2px 5px;">@r.Severity.Substring(0,1)</span>
+                            </td>
+                            <td>@r.AlertName</td>
+                            <td style="font-family: monospace; font-size: 11px;">@r.ServerName</td>
+                            <td style="font-size: 11px; color: var(--text-muted);">
+                                @((r.ResolvedAt ?? r.AcknowledgedAt)?.ToLocalTime().ToString("MM/dd HH:mm") ?? "—")
+                            </td>
+                            <td>
+                                <span class="severity-badge" style="font-size: 10px; padding: 2px 5px;
+                                      background: var(--bg-tertiary); color: var(--text-secondary);">@r.Status</span>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+</div>
+
+@code {
+    private enum NocStatus { Unknown, Ok, Warning, Critical }
+
+    private record ServerCard(
+        string ServerName,
+        NocStatus Status,
+        int CriticalCount,
+        int WarningCount,
+        bool HasEscalated,
+        string? TopAlertName,
+        DateTime? LastAlertTime);
+
+    private List<ServerCard> _serverCards = new();
+    private List<AlertState> _activeAlerts = new();
+    private List<AlertHistoryRecord> _recentHistory = new();
+    private List<AlertHistoryRecord> _historyAlerts = new();
+    private int _criticalCount;
+    private int _warningCount;
+
+    protected override void OnInitialized()
+    {
+        Refresh();
+        Engine.OnAlertsChanged += OnEngineChanged;
+    }
+
+    private void Refresh()
+    {
+        _activeAlerts = Engine.ActiveAlerts.ToList();
+
+        // Build per-server cards from all configured connections
+        var allServers = ConnectionManager.GetConnections()
+            .SelectMany(c => c.GetServerList())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var cards = new List<ServerCard>();
+        foreach (var server in allServers)
+        {
+            var serverAlerts = _activeAlerts.Where(a =>
+                a.ServerName.Equals(server, StringComparison.OrdinalIgnoreCase)).ToList();
+
+            var critCount = serverAlerts.Count(a => a.Severity is "Critical" or "High");
+            var warnCount = serverAlerts.Count(a => a.Severity is "Warning" or "Medium");
+            var hasEsc   = serverAlerts.Any(a => a.IsEscalated);
+            var status   = critCount > 0 ? NocStatus.Critical
+                         : warnCount > 0 ? NocStatus.Warning
+                         : NocStatus.Ok;
+            var topAlert = serverAlerts
+                .OrderByDescending(a => SeverityRank(a.Severity))
+                .ThenByDescending(a => a.LastTriggered)
+                .FirstOrDefault()?.AlertName;
+            var lastTime = serverAlerts.Count > 0
+                ? serverAlerts.Max(a => a.LastTriggered)
+                : (DateTime?)null;
+
+            cards.Add(new ServerCard(server, status, critCount, warnCount, hasEsc, topAlert, lastTime));
+        }
+
+        // Sort: Critical first, then Warning, then Ok
+        _serverCards = cards
+            .OrderByDescending(c => (int)c.Status)
+            .ThenBy(c => c.ServerName)
+            .ToList();
+
+        _criticalCount = _activeAlerts.Count(a => a.Severity is "Critical" or "High");
+        _warningCount  = _activeAlerts.Count(a => a.Severity is "Warning" or "Medium");
+
+        // IR-5: active history records keyed by AlertId+ServerName for incident state lookup
+        _historyAlerts = History.GetActiveAlerts();
+
+        // Recent history — resolved/acknowledged in last 24h
+        _recentHistory = History.GetRecentHistory(100)
+            .Where(r => r.Status != "Active"
+                && (r.ResolvedAt ?? r.AcknowledgedAt) >= DateTime.UtcNow.AddHours(-24))
+            .OrderByDescending(r => r.ResolvedAt ?? r.AcknowledgedAt)
+            .Take(30)
+            .ToList();
+    }
+
+    private async void OnEngineChanged()
+    {
+        try
+        {
+            Refresh();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "OnEngineChanged failed in AlertsNoc");
+        }
+    }
+
+    private void AckOne(AlertState alert)
+    {
+        if (!RbacService.HasPermission(UserState.Role, "acknowledge_alerts"))
+        { Toast.ShowWarning("Insufficient permissions. Operator role required."); return; }
+        Engine.AcknowledgeAlert(alert.AlertId, alert.ServerName);
+        Refresh();
+    }
+
+    // IR-5: incident lifecycle acknowledge
+    private async Task AcknowledgeIR5(AlertHistoryRecord rec)
+    {
+        if (!RbacService.HasPermission(UserState.Role, "acknowledge_alerts"))
+        { Toast.ShowWarning("Insufficient permissions. Operator role required."); return; }
+        await History.AcknowledgeAsync(rec.Id, UserState.Role);
+        Refresh();
+    }
+
+    private void AckAll()
+    {
+        if (!RbacService.HasPermission(UserState.Role, "acknowledge_alerts"))
+        { Toast.ShowWarning("Insufficient permissions. Operator role required."); return; }
+        Engine.AcknowledgeAll();
+        Refresh();
+    }
+
+    private static int SeverityRank(string s) => s.ToLower() switch
+    {
+        "critical" => 5,
+        "high"     => 4,
+        "warning" or "medium" => 3,
+        "low"      => 2,
+        _          => 1
+    };
+
+    private static string GetSeverityColor(string severity) => severity.ToLower() switch
+    {
+        "critical" => "var(--red)",
+        "high"     => "var(--orange)",
+        "warning" or "medium" => "var(--yellow)",
+        _ => "var(--accent)"
+    };
+
+    public void Dispose()
+    {
+        Engine.OnAlertsChanged -= OnEngineChanged;
+    }
+}

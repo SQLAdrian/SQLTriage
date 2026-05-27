@@ -1,0 +1,288 @@
+@page "/bestpractice"
+<PageTitle>SQLTriage - Best Practices</PageTitle>
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using System.Data
+@using Microsoft.Data.SqlClient
+@inject BPScriptService BPService
+@inject IDbConnectionFactory ConnectionFactory
+@inject NavigationManager Nav
+@inject SQLTriage.Data.Services.AppUserState UserState
+
+@if (!RbacService.HasPermission(UserState.Role, "run_scripts"))
+{
+    <div style="padding: 32px;">
+        <AccessDenied RequiredRole="Operator" Message="Best Practice scripts require Operator or Admin role." />
+    </div>
+    return;
+}
+
+<h1>Best Practices</h1>
+<h2>Deploy Best Practice Scripts</h2>
+
+<div style="padding: 16px;">
+    <button @onclick="SyncScripts" class="btn-secondary"><i class="fa-solid fa-rotate"></i> Sync Scripts from Folder</button>
+    <button @onclick="RunSelected" class="btn-primary" disabled="@(!_config.Scripts.Any(s => s.Enabled))"><i class="fa-solid fa-play"></i> Run Selected Scripts</button>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px;">
+    <div>
+        <h4>Available Scripts</h4>
+        @foreach (var script in _config.Scripts.OrderBy(s => s.Order))
+        {
+            <div style="background: var(--bg-secondary); padding: 12px; margin-bottom: 8px; border-radius: 4px; border-left: 4px solid @(script.Enabled ? "var(--green)" : "var(--text-muted)");">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <input type="checkbox" @bind="script.Enabled" @bind:after="SaveConfig" />
+                        <strong style="margin-left: 8px;">@script.DisplayName</strong>
+                    </div>
+                    <div>
+                        <button @onclick="() => MoveUp(script)" disabled="@(script.Order == 0)">↑</button>
+                        <button @onclick="() => MoveDown(script)" disabled="@(script.Order == _config.Scripts.Count - 1)">↓</button>
+                        <button @onclick="() => EditScript(script)"><i class="fa-solid fa-gear"></i></button>
+                    </div>
+                </div>
+                @if (!string.IsNullOrEmpty(script.Description))
+                {
+                    <div style="color: var(--text-muted); font-size: 12px; margin-top: 4px;">@script.Description</div>
+                }
+            </div>
+        }
+    </div>
+
+    <div>
+        @if (_editingScript != null)
+        {
+            <h4>Configure: @_editingScript.DisplayName</h4>
+            <div style="background: var(--bg-secondary); padding: 16px; border-radius: 4px;">
+                <div style="margin-bottom: 12px;">
+                    <label>Display Name:</label>
+                    <input @bind="_editingScript.DisplayName" @bind:after="SaveConfig" style="width: 100%; padding: 4px; margin-top: 4px;" />
+                </div>
+                <div style="margin-bottom: 12px;">
+                    <label>Description:</label>
+                    <textarea @bind="_editingScript.Description" @bind:after="SaveConfig" rows="2" style="width: 100%; padding: 4px; margin-top: 4px;"></textarea>
+                </div>
+                
+                <div style="margin-bottom: 12px;">
+                    <label>SQL Script:</label>
+                    <textarea @bind="_scriptContent" rows="15" style="width: 100%; padding: 8px; margin-top: 4px; font-family: 'Consolas', monospace; font-size: 12px;"></textarea>
+                    <button @onclick="SaveScript" class="btn-primary" style="margin-top: 4px;"><i class="fa-solid fa-floppy-disk"></i> Save Script</button>
+                </div>
+                
+                <h5>Parameters</h5>
+                <div style="background: var(--bg-primary); padding: 12px; margin-bottom: 12px; border-radius: 4px; font-size: 13px; color: var(--text-muted);">
+                    <strong><i class="fa-solid fa-lightbulb"></i> How to use parameters in SQL:</strong><br/>
+                    Declare at top: <code style="background: var(--border); padding: 2px 6px; border-radius: 3px;">DECLARE @@ParamName VARCHAR(25) = '{{@@ParamName}}';</code><br/>
+                    The {{@@ParamName}} placeholder will be replaced with the value you enter below.
+                </div>
+                @foreach (var param in _editingScript.Parameters)
+                {
+                    <div style="margin-bottom: 12px; padding: 8px; background: var(--border); border-radius: 4px;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+                            <div>
+                                <label style="font-size: 11px; color: var(--text-muted);">Parameter Name</label>
+                                <input @bind="param.Name" @bind:after="SaveConfig" style="width: 100%; padding: 4px;" placeholder="@@ParamName" />
+                            </div>
+                            <div>
+                                <label style="font-size: 11px; color: var(--text-muted);">SQL Type</label>
+                                <input @bind="param.Type" @bind:after="SaveConfig" style="width: 100%; padding: 4px;" placeholder="VARCHAR(100)" />
+                            </div>
+                        </div>
+                        <div style="margin-bottom: 8px;">
+                            <label style="font-size: 11px; color: var(--text-muted);">Display Label</label>
+                            <input @bind="param.DisplayName" @bind:after="SaveConfig" style="width: 100%; padding: 4px;" />
+                        </div>
+                        <div>
+                            <label style="font-size: 11px; color: var(--text-muted);">Value @(param.Required ? "*" : "(optional)")</label>
+                            <input @bind="param.Value" @bind:after="SaveConfig" style="width: 100%; padding: 4px;" placeholder="@param.DefaultValue" />
+                        </div>
+                        <button @onclick="() => RemoveParameter(param)" style="margin-top: 8px; background: var(--red); color: white; border: none; padding: 4px 8px; border-radius: 3px; cursor: pointer;"><i class="fa-solid fa-trash"></i> Remove</button>
+                    </div>
+                }
+                <button @onclick="AddParameter" class="btn-secondary">+ Add Parameter</button>
+            </div>
+        }
+    </div>
+</div>
+
+@if (_showExecutor)
+{
+    <div style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 1000; padding: 32px;">
+        <div style="background: var(--bg-primary); height: 100%; border-radius: 8px; display: flex; flex-direction: column;">
+            <div style="padding: 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between;">
+                <h4>Executing Scripts...</h4>
+                <button @onclick="CloseExecutor"><i class="fa-solid fa-xmark"></i> Close</button>
+            </div>
+            <div style="flex: 1; overflow-y: auto; padding: 16px; font-family: 'Consolas', monospace; font-size: 12px;">
+                @foreach (var msg in _executionMessages)
+                {
+                    <div style="color: @(msg.IsError ? "var(--red)" : msg.IsSuccess ? "var(--green)" : "var(--text-primary)"); margin-bottom: 4px;">@msg.Text</div>
+                }
+                @if (_currentResults != null && _currentResults.Rows.Count > 0)
+                {
+                    <table style="width: 100%; border-collapse: collapse; margin-top: 16px;">
+                        <thead>
+                            <tr style="background: var(--border);">
+                                @foreach (DataColumn col in _currentResults.Columns)
+                                {
+                                    <th style="padding: 8px; border: 1px solid var(--border);">@col.ColumnName</th>
+                                }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (DataRow row in _currentResults.Rows)
+                            {
+                                <tr>
+                                    @foreach (DataColumn col in _currentResults.Columns)
+                                    {
+                                        <td style="padding: 8px; border: 1px solid var(--border);">@row[col]</td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private BPScriptConfig _config = new();
+    private BPScript? _editingScript;
+    private string _scriptContent = "";
+    private bool _showExecutor;
+    private List<(string Text, bool IsError, bool IsSuccess)> _executionMessages = new();
+    private DataTable? _currentResults;
+
+    protected override void OnInitialized()
+    {
+        _config = BPService.GetConfig();
+    }
+
+    private void SyncScripts()
+    {
+        BPService.SyncScriptsFromFolder();
+        _config = BPService.GetConfig();
+    }
+
+    private void EditScript(BPScript script)
+    {
+        _editingScript = script;
+        _scriptContent = BPService.GetScriptContent(script.FileName);
+    }
+
+    private void SaveScript()
+    {
+        if (_editingScript == null) return;
+        BPService.SaveScriptContent(_editingScript.FileName, _scriptContent);
+    }
+
+    private void MoveUp(BPScript script)
+    {
+        var scripts = _config.Scripts.OrderBy(s => s.Order).ToList();
+        var index = scripts.IndexOf(script);
+        if (index > 0)
+        {
+            (scripts[index], scripts[index - 1]) = (scripts[index - 1], scripts[index]);
+            BPService.UpdateScriptOrder(scripts);
+            _config = BPService.GetConfig();
+        }
+    }
+
+    private void MoveDown(BPScript script)
+    {
+        var scripts = _config.Scripts.OrderBy(s => s.Order).ToList();
+        var index = scripts.IndexOf(script);
+        if (index < scripts.Count - 1)
+        {
+            (scripts[index], scripts[index + 1]) = (scripts[index + 1], scripts[index]);
+            BPService.UpdateScriptOrder(scripts);
+            _config = BPService.GetConfig();
+        }
+    }
+
+    private void AddParameter()
+    {
+        if (_editingScript == null) return;
+        _editingScript.Parameters.Add(new BPScriptParameter
+        {
+            Name = $"@Param{_editingScript.Parameters.Count + 1}",
+            DisplayName = $"Parameter {_editingScript.Parameters.Count + 1}",
+            Type = "VARCHAR(100)"
+        });
+        SaveConfig();
+    }
+
+    private void RemoveParameter(BPScriptParameter param)
+    {
+        if (_editingScript == null) return;
+        _editingScript.Parameters.Remove(param);
+        SaveConfig();
+    }
+
+    private void SaveConfig()
+    {
+        if (_editingScript != null)
+            BPService.UpdateScript(_editingScript);
+        _config = BPService.GetConfig();
+        StateHasChanged();
+    }
+
+    private async Task RunSelected()
+    {
+        _showExecutor = true;
+        _executionMessages.Clear();
+        _currentResults = null;
+
+        var scripts = _config.Scripts.Where(s => s.Enabled).OrderBy(s => s.Order).ToList();
+        _executionMessages.Add(($"Starting execution of {scripts.Count} script(s)...", false, false));
+
+        foreach (var script in scripts)
+        {
+            await ExecuteScript(script);
+        }
+
+        _executionMessages.Add(("All scripts completed.", false, true));
+    }
+
+    private async Task ExecuteScript(BPScript script)
+    {
+        _executionMessages.Add(($"\n▶ Executing: {script.DisplayName}", false, false));
+        StateHasChanged();
+
+        try
+        {
+            var sql = BPService.GetScriptContent(script.FileName);
+            foreach (var param in script.Parameters)
+            {
+                var placeholder = $"{{{{{param.Name}}}}}";
+                sql = sql.Replace(placeholder, param.Value);
+            }
+
+            var factory = ConnectionFactory as SqlServerConnectionFactory;
+            using var conn = (SqlConnection)factory!.CreateConnection("master");
+            conn.InfoMessage += (s, e) => { _executionMessages.Add((e.Message, false, false)); StateHasChanged(); };
+            await conn.OpenAsync();
+
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = sql;
+            cmd.CommandTimeout = 600;
+
+            using var reader = await cmd.ExecuteReaderAsync();
+            _currentResults = new DataTable();
+            _currentResults.Load(reader);
+
+            _executionMessages.Add(($"{script.DisplayName} completed - {_currentResults.Rows.Count} row(s)", false, true));
+        }
+        catch (Exception ex)
+        {
+            _executionMessages.Add(($"Error in {script.DisplayName}: {ex.Message}", true, false));
+        }
+
+        StateHasChanged();
+    }
+
+    private void CloseExecutor() => _showExecutor = false;
+}

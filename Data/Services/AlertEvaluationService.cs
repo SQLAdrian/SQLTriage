@@ -1,0 +1,931 @@
+/* In the name of God, the Merciful, the Compassionate */
+
+using System.Collections.Concurrent;
+using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using SQLTriage.Data;
+using SQLTriage.Data.Caching;
+using SQLTriage.Data.Models;
+using SQLTriage.Data.Scheduling;
+
+namespace SQLTriage.Data.Services
+{
+    /// <summary>
+    /// Timer-based engine that periodically evaluates alert definitions against all configured servers.
+    /// Runs each alert's T-SQL query, compares the result to thresholds, manages the state machine
+    /// (Active → Acknowledged → Resolved), and dispatches notifications via AlertingService.
+    /// </summary>
+    // BM:AlertEvaluationService.Class — timer-based alert engine
+    public class AlertEvaluationService : IDisposable
+    {
+        private readonly ILogger<AlertEvaluationService> _logger;
+        private readonly AlertDefinitionService _definitions;
+        private readonly AlertHistoryService _history;
+        private readonly AlertingService _alerting;
+        private readonly ServerConnectionManager _connections;
+        private readonly ToastService _toast;
+        private readonly NotificationChannelService _channels;
+        private readonly liveQueriesCacheStore _cache;
+        private readonly AlertBaselineService? _baseline;
+        private readonly ConnectionHealthService? _health;
+        private readonly IQueryOrchestrator _orchestrator;
+        private readonly SqlConnectionPoolService? _pool;
+        private readonly ServerCircuitBreakerService? _breaker;
+
+        // In-memory state: key = "alertId:serverName"
+        private readonly ConcurrentDictionary<string, AlertState> _activeStates = new(StringComparer.OrdinalIgnoreCase);
+
+        // Tracks last evaluation time per alert so we respect individual frequencies
+        private readonly ConcurrentDictionary<string, DateTime> _lastEvaluation = new(StringComparer.OrdinalIgnoreCase);
+
+        // Tracks last notification time per alert+server for cooldown
+        private readonly ConcurrentDictionary<string, DateTime> _lastNotified = new(StringComparer.OrdinalIgnoreCase);
+
+        // Tracks timestamps of each hit within the escalation window, keyed by "alertId:serverName"
+        private readonly ConcurrentDictionary<string, Queue<DateTime>> _hitTimes = new(StringComparer.OrdinalIgnoreCase);
+
+        private bool _isRunning;
+        private bool _dryRun;
+        private readonly int _baseTickSeconds;
+        private readonly SemaphoreSlim _evaluationLock = new(1, 1);
+        private readonly CancellationTokenSource _cts = new();
+        private Task? _loopTask;
+
+        public event Action? OnAlertsChanged;
+
+        /// <summary>
+        /// When true, alerts fire and appear in-memory but no notifications are dispatched and nothing is persisted.
+        /// Useful for testing alert rules without spamming notifications.
+        /// </summary>
+        public bool DryRun
+        {
+            get => _dryRun;
+            set
+            {
+                _dryRun = value;
+                _logger.LogInformation("Alert dry-run mode: {Mode}", value ? "ON" : "OFF");
+            }
+        }
+
+        /// <summary>
+        /// All currently active/acknowledged alert states (for UI binding).
+        /// </summary>
+        public IReadOnlyCollection<AlertState> ActiveAlerts =>
+            _activeStates.Values.Where(s => s.Status != AlertStatus.Resolved).OrderByDescending(s => s.LastTriggered).ToList();
+
+        public int ActiveCount => _activeStates.Values.Count(s => s.Status == AlertStatus.Active);
+
+        public bool IsRunning => _isRunning;
+
+        public AlertEvaluationService(
+            ILogger<AlertEvaluationService> logger,
+            AlertDefinitionService definitions,
+            AlertHistoryService history,
+            AlertingService alerting,
+            ServerConnectionManager connections,
+            ToastService toast,
+            NotificationChannelService channels,
+            liveQueriesCacheStore cache,
+            IQueryOrchestrator orchestrator,
+            AlertBaselineService? baseline = null,
+            ConnectionHealthService? health = null,
+            SqlConnectionPoolService? pool = null,
+            IConfiguration? configuration = null,
+            ServerCircuitBreakerService? breaker = null)
+        {
+            _logger = logger;
+            _definitions = definitions;
+            _history = history;
+            _alerting = alerting;
+            _connections = connections;
+            _toast = toast;
+            _channels = channels;
+            _cache = cache;
+            _orchestrator = orchestrator;
+            _baseline = baseline;
+            _breaker = breaker;
+            _health = health;
+            _pool = pool;
+
+            var baseTickSeconds = configuration?.GetValue<int>("AlertEvaluation:BaseTickSeconds", 30) ?? 30;
+            if (baseTickSeconds <= 0) baseTickSeconds = 30;
+            _baseTickSeconds = baseTickSeconds;
+        }
+
+        public void Start()
+        {
+            if (_isRunning) return;
+            _isRunning = true;
+            _loopTask = Task.Run(() => LoopAsync(_cts.Token));
+            _logger.LogInformation("Alert evaluation engine started ({IntervalS}s tick)", _baseTickSeconds);
+        }
+
+        public void Stop()
+        {
+            _isRunning = false;
+            _cts.Cancel();
+            _logger.LogInformation("Alert evaluation engine stopped");
+        }
+
+        private async Task LoopAsync(CancellationToken ct)
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(_baseTickSeconds));
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                var tickStart = DateTime.UtcNow;
+                try
+                {
+                    await EvaluateAllAsync(ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Alert evaluation cycle failed");
+                }
+                var elapsed = DateTime.UtcNow - tickStart;
+                if (elapsed.TotalSeconds > _baseTickSeconds)
+                    _logger.LogWarning("[ALERT] Evaluation tick overran interval ({ElapsedMs}ms > {IntervalS}s); next tick dropped",
+                        (int)elapsed.TotalMilliseconds, _baseTickSeconds);
+            }
+        }
+
+        /// <summary>
+        /// Run a single evaluation cycle across all enabled alerts and all enabled servers.
+        /// </summary>
+        public async Task EvaluateAllAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!await _evaluationLock.WaitAsync(0, cancellationToken)) return; // skip if already running
+
+            try
+            {
+                var globalDefaults = _definitions.GetGlobalDefaults();
+                if (!globalDefaults.Enabled) return;
+
+                var alerts = _definitions.GetEnabledAlerts();
+                var serverConnections = _connections.GetEnabledConnections();
+                if (alerts.Count == 0 || serverConnections.Count == 0) return;
+
+                var now = DateTime.UtcNow;
+
+                // Enforce retention policy from global defaults
+                _history.EnforceRetention(globalDefaults.RetentionDays);
+
+                // Auto-acknowledge stale alerts
+                var autoAcked = _history.AutoAcknowledge(globalDefaults.AutoAcknowledgeHours);
+                if (autoAcked > 0)
+                {
+                    _logger.LogInformation("Auto-acknowledged {Count} stale alerts", autoAcked);
+                    // Also update in-memory states
+                    foreach (var state in _activeStates.Values.Where(s => s.Status == AlertStatus.Active
+                        && (now - s.FirstTriggered).TotalHours >= globalDefaults.AutoAcknowledgeHours))
+                    {
+                        state.Status = AlertStatus.Acknowledged;
+                        state.AcknowledgedAt = now;
+                    }
+                }
+
+                // Check operational/maintenance windows once per cycle
+                var windows = _channels.GetAlertWindows();
+
+                // Evaluate each alert that is due
+                foreach (var alert in alerts)
+                {
+                    // Enforce minimum 300s for log-scan alert types (xp_readerrorlog is expensive)
+                    const int LogScanMinFrequencySeconds = 300;
+                    var effectiveFrequency = alert.Id is "error_log_severity" or "error_log_fatal" or "logon_failure"
+                        ? Math.Max(alert.FrequencySeconds, LogScanMinFrequencySeconds)
+                        : alert.FrequencySeconds;
+                    if (effectiveFrequency != alert.FrequencySeconds
+                        && !_lastEvaluation.ContainsKey($"__logwarn__{alert.Id}"))
+                    {
+                        _lastEvaluation[$"__logwarn__{alert.Id}"] = now; // sentinel — log once per run
+                        _logger.LogWarning("Alert '{AlertId}' FrequencySeconds ({Stored}s) is below log-scan minimum; effective frequency clamped to {Min}s",
+                            alert.Id, alert.FrequencySeconds, LogScanMinFrequencySeconds);
+                    }
+
+                    // Skip if not due yet based on frequency
+                    var evalKey = alert.Id;
+                    if (_lastEvaluation.TryGetValue(evalKey, out var lastEval)
+                        && (now - lastEval).TotalSeconds < effectiveFrequency)
+                    {
+                        continue;
+                    }
+
+                    // Suppress based on operational / maintenance windows
+                    if (!windows.ShouldFire(alert.AlwaysAlert))
+                    {
+                        _logger.LogDebug("Alert '{AlertId}' suppressed by window config (maintenance={M}, operational={O}, alwaysAlert={A})",
+                            alert.Id, windows.IsMaintenanceActive, windows.OperationalWindow.IsActive(), alert.AlwaysAlert);
+                        continue;
+                    }
+
+                    // Route special query modes to dedicated handlers
+                    if (!string.IsNullOrEmpty(alert.QueryMode) && alert.QueryMode != "standard")
+                    {
+                        _lastEvaluation[evalKey] = now;
+                        var specialTasks = new List<Task>();
+                        foreach (var conn in serverConnections)
+                        {
+                            foreach (var serverName in conn.GetServerList())
+                            {
+                                if (_breaker != null && !_breaker.ShouldAttempt(serverName))
+                                    continue;
+                                specialTasks.Add(ThrottledSpecialEvaluateAsync(alert, conn, serverName, globalDefaults, cancellationToken));
+                            }
+                        }
+                        await Task.WhenAll(specialTasks);
+                        continue;
+                    }
+
+                    _lastEvaluation[evalKey] = now;
+
+                    // Run against each server with bounded concurrency
+                    var tasks = new List<Task>();
+                    foreach (var conn in serverConnections)
+                    {
+                        foreach (var serverName in conn.GetServerList())
+                        {
+                            if (_breaker != null && !_breaker.ShouldAttempt(serverName))
+                                continue;
+                            tasks.Add(ThrottledEvaluateAsync(alert, conn, serverName, globalDefaults, cancellationToken));
+                        }
+                    }
+
+                    await Task.WhenAll(tasks);
+                }
+
+                // Resolve alerts that are no longer triggering
+                ResolveCleared();
+
+                OnAlertsChanged?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Alert evaluation cycle failed");
+            }
+            finally
+            {
+                _evaluationLock.Release();
+            }
+        }
+
+        private async Task ThrottledEvaluateAsync(
+            AlertDefinition alert,
+            ServerConnection connection,
+            string serverName,
+            AlertGlobalDefaults globalDefaults,
+            CancellationToken cancellationToken)
+        {
+            var result = await _orchestrator.EnqueueAsync(new QueryRequest
+            {
+                QueryId = $"alert:{alert.Id}:{serverName}",
+                Work = async _ => await EvaluateAlertOnServerAsync(alert, connection, serverName, globalDefaults),
+                CancellationToken = cancellationToken
+            }, QueryPriority.P1_Alert, cancellationToken);
+
+            if (!result.Success)
+            {
+                _breaker?.RecordFailure(serverName);
+                _logger.LogError(result.Exception, "Alert evaluation failed for {AlertId} on {Server}", alert.Id, serverName);
+            }
+            else
+            {
+                _breaker?.RecordSuccess(serverName);
+            }
+        }
+
+        private async Task ThrottledSpecialEvaluateAsync(
+            AlertDefinition alert,
+            ServerConnection connection,
+            string serverName,
+            AlertGlobalDefaults globalDefaults,
+            CancellationToken cancellationToken)
+        {
+            var result = await _orchestrator.EnqueueAsync(new QueryRequest
+            {
+                QueryId = $"alert:special:{alert.Id}:{serverName}",
+                Work = async _ => await EvaluateSpecialAlertAsync(alert, connection, serverName, globalDefaults),
+                CancellationToken = cancellationToken
+            }, QueryPriority.P1_Alert, cancellationToken);
+
+            if (!result.Success)
+            {
+                _breaker?.RecordFailure(serverName);
+                _logger.LogError(result.Exception, "Special alert evaluation failed for {AlertId} on {Server}", alert.Id, serverName);
+            }
+            else
+            {
+                _breaker?.RecordSuccess(serverName);
+            }
+        }
+
+        private async Task EvaluateSpecialAlertAsync(
+            AlertDefinition alert,
+            ServerConnection connection,
+            string serverName,
+            AlertGlobalDefaults globalDefaults)
+        {
+            var stateKey = $"{alert.Id}:{serverName}".ToLowerInvariant();
+
+            try
+            {
+                double? value = alert.QueryMode switch
+                {
+                    "connectivity_check" => await CheckConnectivityAsync(connection, serverName),
+                    "host_connectivity_check" => await CheckConnectivityAsync(connection, serverName),
+                    "error_log_scan" => await ScanErrorLogAsync(alert, connection, serverName),
+                    "io_error_check" => await CheckIoErrorsAsync(connection, serverName),
+                    "deadlock_count" => await CountDeadlocksAsync(connection, serverName),
+                    _ => null
+                };
+
+                if (value == null) return;
+
+                var isTriggered = IsThresholdBreached(value.Value, alert.Thresholds.Warning, alert.Operator)
+                    || (alert.Thresholds.Critical.HasValue && IsThresholdBreached(value.Value, alert.Thresholds.Critical, alert.Operator));
+
+                if (isTriggered)
+                {
+                    var isCritical = alert.Thresholds.Critical.HasValue
+                        && IsThresholdBreached(value.Value, alert.Thresholds.Critical, alert.Operator);
+                    var severity = isCritical ? "Critical" : "Warning";
+                    var thresholdUsed = isCritical ? alert.Thresholds.Critical!.Value : (alert.Thresholds.Warning ?? 1);
+
+                    if (!_activeStates.TryGetValue(stateKey, out var existing))
+                    {
+                        existing = new AlertState
+                        {
+                            AlertId = alert.Id,
+                            AlertName = alert.Name,
+                            ServerName = serverName,
+                            Severity = severity,
+                            Status = AlertStatus.Active,
+                            LastValue = value.Value,
+                            ThresholdValue = thresholdUsed,
+                            HitCount = 1,
+                            FirstTriggered = DateTime.UtcNow,
+                            LastTriggered = DateTime.UtcNow,
+                            Message = FormatMessage(alert, serverName, value.Value, thresholdUsed, severity)
+                        };
+                        _activeStates[stateKey] = existing;
+                        if (!_dryRun) _history.UpsertAlert(existing);
+                        if (!_dryRun) DispatchNotification(alert, existing);
+                        _lastNotified[stateKey] = DateTime.UtcNow;
+                    }
+                    else
+                    {
+                        existing.HitCount++;
+                        existing.LastValue = value.Value;
+                        existing.LastTriggered = DateTime.UtcNow;
+                        var cooldown = alert.NextAlertDelayMinutes.HasValue
+                            ? TimeSpan.FromMinutes(alert.NextAlertDelayMinutes.Value)
+                            : _definitions.GetCooldown(alert);
+                        if (!_lastNotified.TryGetValue(stateKey, out var lastNotify)
+                            || (DateTime.UtcNow - lastNotify) >= cooldown)
+                        {
+                            if (!_dryRun) DispatchNotification(alert, existing);
+                            _lastNotified[stateKey] = DateTime.UtcNow;
+                        }
+                        if (!_dryRun) _history.UpsertAlert(existing);
+                    }
+                }
+                else if (_activeStates.TryRemove(stateKey, out var cleared))
+                {
+                    cleared.Status = AlertStatus.Resolved;
+                    cleared.ResolvedAt = DateTime.UtcNow;
+                    if (!_dryRun) _history.ResolveAlert(alert.Id, serverName);
+                    _lastNotified.TryRemove(stateKey, out _);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Special alert {AlertId} ({Mode}) failed on {Server}",
+                    alert.Id, alert.QueryMode, LogAnon.S(serverName));
+            }
+        }
+
+        // Helper: get a connection — from pool if available, else direct.
+        // Caller must call ReturnOrDispose when done.
+        private async Task<(System.Data.IDbConnection Conn, bool Pooled)> RentConnectionAsync(string connStr, CancellationToken ct = default)
+        {
+            if (_pool != null)
+                return (await _pool.GetConnectionAsync(connStr, ct), true);
+            var c = new SqlConnection(connStr);
+            await c.OpenAsync(ct);
+            return (c, false);
+        }
+
+        private void ReturnOrDispose(System.Data.IDbConnection conn, string connStr, bool pooled)
+        {
+            if (pooled && _pool != null)
+                _pool.ReturnConnection(conn, connStr);
+            else
+                try { conn.Dispose(); } catch { /* best effort */ }
+        }
+
+        private async Task<double?> CheckConnectivityAsync(ServerConnection connection, string serverName)
+        {
+            try
+            {
+                var connStr = connection.GetConnectionString(serverName, "master");
+                var (sqlConn, pooled) = await RentConnectionAsync(connStr);
+                try
+                {
+                    using var cmd = new SqlCommand("SELECT 1", (SqlConnection)sqlConn) { CommandTimeout = 5 };
+                    await cmd.ExecuteScalarAsync();
+                    return 0; // 0 = reachable (below threshold of 1 = unreachable)
+                }
+                finally { ReturnOrDispose(sqlConn, connStr, pooled); }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Connectivity check failed for {Server} — treating as unreachable", LogAnon.S(serverName));
+                return 1; // 1 = unreachable
+            }
+        }
+
+        private async Task<double?> ScanErrorLogAsync(AlertDefinition alert, ServerConnection connection, string serverName)
+        {
+            try
+            {
+                var connStr = connection.GetConnectionString(serverName, "master");
+
+                // Count matching errors in xp_readerrorlog output from the last 5 minutes.
+                // xp_readerrorlog params 5 & 6 must be datetime variables, not inline expressions.
+                var sql = alert.Id switch
+                {
+                    "error_log_severity" => "DECLARE @f DATETIME = DATEADD(MINUTE,-5,GETDATE()), @t DATETIME = GETDATE(); DECLARE @r TABLE(LogDate DATETIME, ProcessInfo NVARCHAR(50), [Text] NVARCHAR(MAX)); INSERT INTO @r EXEC xp_readerrorlog 0, 1, NULL, NULL, @f, @t; SELECT COUNT(*) FROM @r WHERE [Text] NOT LIKE '%Backup%'",
+                    "error_log_fatal" => "DECLARE @f DATETIME = DATEADD(MINUTE,-5,GETDATE()), @t DATETIME = GETDATE(); DECLARE @r TABLE(LogDate DATETIME, ProcessInfo NVARCHAR(50), [Text] NVARCHAR(MAX)); INSERT INTO @r EXEC xp_readerrorlog 0, 1, NULL, NULL, @f, @t; SELECT COUNT(*) FROM @r WHERE [Text] LIKE '%Fatal%' OR [Text] LIKE '%severity 2[0-5]%'",
+                    "logon_failure" => "DECLARE @f DATETIME = DATEADD(MINUTE,-5,GETDATE()), @t DATETIME = GETDATE(); DECLARE @r TABLE(LogDate DATETIME, ProcessInfo NVARCHAR(50), [Text] NVARCHAR(MAX)); INSERT INTO @r EXEC xp_readerrorlog 0, 1, 'Login failed', NULL, @f, @t; SELECT COUNT(*) FROM @r",
+                    _ => null
+                };
+
+                if (sql == null) return null;
+
+                var (sqlConn, pooled) = await RentConnectionAsync(connStr);
+                try
+                {
+                    using var cmd = new SqlCommand(sql, (SqlConnection)sqlConn) { CommandTimeout = 15 };
+                    var result = await cmd.ExecuteScalarAsync();
+                    return result == null || result == DBNull.Value ? 0 : Convert.ToDouble(result);
+                }
+                finally { ReturnOrDispose(sqlConn, connStr, pooled); }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Error log scan failed for alert {AlertId} on {Server}: {Msg}", alert.Id, LogAnon.S(serverName), ex.Message);
+                return null;
+            }
+        }
+
+        private async Task<double?> CheckIoErrorsAsync(ServerConnection connection, string serverName)
+        {
+            try
+            {
+                var connStr = connection.GetConnectionString(serverName, "master");
+                var (sqlConn, pooled) = await RentConnectionAsync(connStr);
+                try
+                {
+                    using var cmd = new SqlCommand(
+                        "SELECT COUNT(*) FROM sys.dm_io_virtual_file_stats(NULL, NULL) WHERE io_stall_read_ms > 5000 OR io_stall_write_ms > 5000",
+                        (SqlConnection)sqlConn)
+                    { CommandTimeout = 10 };
+                    var result = await cmd.ExecuteScalarAsync();
+                    return result == null || result == DBNull.Value ? 0 : Convert.ToDouble(result);
+                }
+                finally { ReturnOrDispose(sqlConn, connStr, pooled); }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "I/O error check failed on {Server}", LogAnon.S(serverName));
+                return null;
+            }
+        }
+
+        private async Task<double?> CountDeadlocksAsync(ServerConnection connection, string serverName)
+        {
+            try
+            {
+                var connStr = connection.GetConnectionString(serverName, "master");
+                var (sqlConn, pooled) = await RentConnectionAsync(connStr);
+
+                // Count xml_deadlock_report events in the last 5 minutes from system_health ring buffer.
+                // Pre-check: if target_data contains no 'xml_deadlock_report' string at all,
+                // return 0 immediately without any XML parse — this is the fast path when there
+                // are no deadlocks (the common case). Only cast to XML when deadlocks exist.
+                const string sql = @"
+                    IF NOT EXISTS (
+                        SELECT 1 FROM sys.dm_xe_session_targets st WITH (NOLOCK)
+                        JOIN sys.dm_xe_sessions s WITH (NOLOCK)
+                          ON s.address = st.event_session_address
+                        WHERE s.name = N'system_health'
+                          AND st.target_name = N'ring_buffer'
+                          AND CAST(target_data AS NVARCHAR(MAX)) LIKE N'%xml_deadlock_report%'
+                    )
+                    BEGIN SELECT 0; RETURN; END;
+
+                    SELECT COUNT(*) FROM (
+                        SELECT TOP 200 xed.value('(@timestamp)[1]', 'varchar(50)') AS ts
+                        FROM (
+                            SELECT CAST(target_data AS XML) AS td
+                            FROM sys.dm_xe_session_targets st WITH (NOLOCK)
+                            JOIN sys.dm_xe_sessions s WITH (NOLOCK)
+                              ON s.address = st.event_session_address
+                            WHERE s.name = N'system_health'
+                              AND st.target_name = N'ring_buffer'
+                        ) rb
+                        CROSS APPLY rb.td.nodes(
+                            'RingBufferTarget/event[@name=''xml_deadlock_report'']') xe(xed)
+                    ) ev
+                    WHERE TRY_CAST(ts AS datetimeoffset)
+                          >= DATEADD(MINUTE, -5, SYSUTCDATETIME())";
+
+                try
+                {
+                    using var cmd = new SqlCommand(sql, (SqlConnection)sqlConn) { CommandTimeout = 30 };
+                    var result = await cmd.ExecuteScalarAsync();
+                    return result == null || result == DBNull.Value ? 0 : Convert.ToDouble(result);
+                }
+                finally { ReturnOrDispose(sqlConn, connStr, pooled); }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Deadlock count check failed on {Server}", LogAnon.S(serverName));
+                return null;
+            }
+        }
+
+        private async Task EvaluateAlertOnServerAsync(
+            AlertDefinition alert,
+            ServerConnection connection,
+            string serverName,
+            AlertGlobalDefaults globalDefaults)
+        {
+            var stateKey = $"{alert.Id}:{serverName}".ToLowerInvariant();
+
+            try
+            {
+                // Skip alerts tagged as unsupported on Azure SQL DB / Managed Instance
+                if (alert.RequiresOnPrem && _health != null && _health.IsAzureSql(serverName))
+                {
+                    _logger.LogDebug("Skipping alert {AlertId} on {Server} — not supported on Azure SQL", alert.Id, LogAnon.S(serverName));
+                    return;
+                }
+
+                var value = await ExecuteAlertQueryAsync(alert, connection, serverName);
+                if (value == null) return; // query returned no data
+
+                // Record sample for IQR baseline (fire-and-forget, no latency impact)
+                _baseline?.RecordSample(alert.Id, serverName, value.Value);
+
+                // Determine fixed-threshold breach
+                var isWarning = IsThresholdBreached(value.Value, alert.Thresholds.Warning, alert.Operator);
+                var isCritical = alert.Thresholds.Critical.HasValue
+                    && IsThresholdBreached(value.Value, alert.Thresholds.Critical, alert.Operator);
+
+                // IQR dynamic baseline thresholds (override fixed thresholds when baseline is ready)
+                if (!isWarning && !isCritical && _baseline != null && alert.CanBaseline)
+                {
+                    var (bWarn, bCrit) = _baseline.GetThresholds(alert.Id, serverName);
+                    if (bWarn.HasValue)
+                        isWarning = IsThresholdBreached(value.Value, bWarn, alert.Operator);
+                    if (bCrit.HasValue)
+                        isCritical = IsThresholdBreached(value.Value, bCrit, alert.Operator);
+                }
+
+                // Trend anomaly: rising/falling slope over rolling 72-hour window
+                if (!isWarning && !isCritical && _baseline != null && alert.CanBaseline)
+                {
+                    var (trendWarn, trendCrit) = _baseline.GetTrendSignal(alert.Id, serverName);
+                    if (trendCrit) isCritical = true;
+                    else if (trendWarn) isWarning = true;
+                }
+
+                // Legacy baseline deviation (kept for backwards compat with existing alert configs)
+                if (!isWarning && !isCritical
+                    && alert.BaselineDeviationPercent > 0
+                    && !string.IsNullOrEmpty(alert.BaselineQueryId))
+                {
+                    var baseline = await GetBaselineAverageAsync(alert.BaselineQueryId, serverName, alert.BaselineSeries);
+                    if (baseline.HasValue && baseline.Value > 0)
+                    {
+                        var deviationPct = ((value.Value - baseline.Value) / baseline.Value) * 100.0;
+                        if (deviationPct >= alert.BaselineDeviationPercent)
+                        {
+                            isWarning = true;
+                            _logger.LogDebug("Baseline deviation: {AlertId} on {Server} — current={V:N1}, baseline={B:N1}, deviation={D:N1}%",
+                                alert.Id, LogAnon.S(serverName), value.Value, baseline.Value, deviationPct);
+                        }
+                    }
+                }
+
+                // Track hit times for escalation window
+                var hits = _hitTimes.GetOrAdd(stateKey, _ => new Queue<DateTime>());
+
+                if (isWarning || isCritical)
+                {
+                    var severity = isCritical ? "Critical" : "Warning";
+                    var thresholdUsed = isCritical
+                        ? alert.Thresholds.Critical ?? 0
+                        : alert.Thresholds.Warning ?? 0;
+
+                    // Record this hit for escalation window tracking. Trim to the longest
+                    // escalation window we care about so the queue can't grow forever
+                    // while an alert stays firing. Default 60min cap is plenty.
+                    var trimWindow = alert.EscalationWindowMinutes > 0
+                        ? alert.EscalationWindowMinutes
+                        : 60;
+                    var trimCutoff = DateTime.UtcNow.AddMinutes(-trimWindow);
+                    lock (hits)
+                    {
+                        hits.Enqueue(DateTime.UtcNow);
+                        while (hits.Count > 0 && hits.Peek() < trimCutoff) hits.Dequeue();
+                    }
+
+                    if (_activeStates.TryGetValue(stateKey, out var existing))
+                    {
+                        // Already active — increment hit count, update value
+                        existing.HitCount++;
+                        existing.LastValue = value.Value;
+                        existing.LastTriggered = DateTime.UtcNow;
+                        existing.Severity = severity;
+                        existing.Message = FormatMessage(alert, serverName, value.Value, thresholdUsed, severity);
+
+                        // Per-alert next-alert-delay override
+                        var cooldown = alert.NextAlertDelayMinutes.HasValue
+                            ? TimeSpan.FromMinutes(alert.NextAlertDelayMinutes.Value)
+                            : _definitions.GetCooldown(alert);
+                        if (!_lastNotified.TryGetValue(stateKey, out var lastNotify)
+                            || (DateTime.UtcNow - lastNotify) >= cooldown)
+                        {
+                            if (!_dryRun) DispatchNotification(alert, existing);
+                            _lastNotified[stateKey] = DateTime.UtcNow;
+                        }
+
+                        if (!_dryRun) _history.UpsertAlert(existing);
+                    }
+                    else
+                    {
+                        // New alert
+                        var state = new AlertState
+                        {
+                            AlertId = alert.Id,
+                            AlertName = alert.Name,
+                            ServerName = serverName,
+                            Severity = severity,
+                            Status = AlertStatus.Active,
+                            LastValue = value.Value,
+                            ThresholdValue = thresholdUsed,
+                            HitCount = 1,
+                            FirstTriggered = DateTime.UtcNow,
+                            LastTriggered = DateTime.UtcNow,
+                            Message = FormatMessage(alert, serverName, value.Value, thresholdUsed, severity)
+                        };
+                        _activeStates[stateKey] = state;
+                        if (!_dryRun) _history.UpsertAlert(state);
+
+                        if (!_dryRun) DispatchNotification(alert, state);
+                        _lastNotified[stateKey] = DateTime.UtcNow;
+
+                        _logger.LogWarning("Alert fired: {AlertName} on {Server} ({Severity}) — value: {Value}{DryRun}",
+                            alert.Name, LogAnon.S(serverName), severity, value.Value,
+                            _dryRun ? " [DRY RUN]" : "");
+                    }
+
+                    // ── Escalation check ───────────────────────────────────
+                    if (alert.Escalate && !_dryRun
+                        && _activeStates.TryGetValue(stateKey, out var activeState)
+                        && !activeState.IsEscalated
+                        && activeState.Status != AlertStatus.Acknowledged)
+                    {
+                        bool shouldEscalate;
+                        if (alert.EscalationThresholdEvents > 0 && alert.EscalationWindowMinutes > 0)
+                        {
+                            // Event-count based: N events within M minutes
+                            var windowStart = DateTime.UtcNow.AddMinutes(-alert.EscalationWindowMinutes);
+                            int recentHits;
+                            lock (hits) { recentHits = hits.Count(t => t >= windowStart); }
+                            shouldEscalate = recentHits >= alert.EscalationThresholdEvents;
+                        }
+                        else
+                        {
+                            // Time-based: unacknowledged for X minutes
+                            shouldEscalate = (DateTime.UtcNow - activeState.FirstTriggered).TotalMinutes >= alert.EscalationAfterMinutes;
+                        }
+
+                        if (shouldEscalate)
+                        {
+                            activeState.EscalatedAt = DateTime.UtcNow;
+                            activeState.Severity = "Critical"; // escalate severity
+                            DispatchEscalation(alert, activeState);
+                            _logger.LogWarning("Alert escalated: {AlertName} on {Server}", alert.Name, LogAnon.S(serverName));
+                        }
+                    }
+                }
+                else
+                {
+                    // Condition cleared — mark as resolved if was active
+                    if (_activeStates.TryRemove(stateKey, out var cleared))
+                    {
+                        cleared.Status = AlertStatus.Resolved;
+                        cleared.ResolvedAt = DateTime.UtcNow;
+                        _history.ResolveAlert(alert.Id, serverName);
+                        _lastNotified.TryRemove(stateKey, out _);
+                        lock (hits) { hits.Clear(); }
+
+                        _logger.LogInformation("Alert resolved: {AlertName} on {Server}", alert.Name, LogAnon.S(serverName));
+                    }
+                }
+            }
+            catch (Microsoft.Data.SqlClient.SqlException sqlEx)
+            {
+                // Connection failures and SQL errors are expected (server offline, AG not configured, etc.)
+                // Log at Debug to avoid spamming the log on every evaluation cycle
+                _logger.LogDebug(sqlEx, "Alert query failed (SQL) {AlertId} on {Server}: {Msg}", alert.Id, LogAnon.S(serverName), sqlEx.Message);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to evaluate alert {AlertId} on {Server}", alert.Id, LogAnon.S(serverName));
+            }
+        }
+
+        /// <summary>
+        /// Returns the average value of a cached time-series metric over the last 7 days,
+        /// excluding the most recent hour (so today's spike doesn't inflate the baseline).
+        /// Returns null if insufficient data.
+        /// </summary>
+        private async Task<double?> GetBaselineAverageAsync(string queryId, string serverName, string? seriesFilter)
+        {
+            try
+            {
+                var to = DateTime.UtcNow.AddHours(-1);
+                var from = to.AddDays(-7);
+                var points = await _cache.GetTimeSeriesAsync(queryId, serverName, from, to);
+                if (points.Count < 10) return null; // not enough data for a meaningful baseline
+
+                var filtered = string.IsNullOrEmpty(seriesFilter)
+                    ? points
+                    : points.Where(p => p.Series.Equals(seriesFilter, StringComparison.OrdinalIgnoreCase)).ToList();
+
+                if (filtered.Count < 10) return null;
+                return filtered.Average(p => p.Value);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Baseline lookup failed for queryId={QueryId} server={Server}", queryId, LogAnon.S(serverName));
+                return null;
+            }
+        }
+
+        private async Task<double?> ExecuteAlertQueryAsync(
+            AlertDefinition alert,
+            ServerConnection connection,
+            string serverName)
+        {
+            var connString = connection.GetConnectionString(serverName, "master");
+            var (sqlConn, pooled) = await RentConnectionAsync(connString);
+            try
+            {
+                using var cmd = new SqlCommand(alert.Query, (SqlConnection)sqlConn)
+                {
+                    CommandTimeout = 15
+                };
+                var result = await cmd.ExecuteScalarAsync();
+                if (result == null || result == DBNull.Value) return null;
+                return Convert.ToDouble(result);
+            }
+            finally { ReturnOrDispose(sqlConn, connString, pooled); }
+        }
+
+        internal static bool IsThresholdBreached(double value, double? threshold, string op)
+        {
+            if (!threshold.HasValue) return false;
+            return op == "less_than"
+                ? value < threshold.Value
+                : value > threshold.Value;
+        }
+
+        private void DispatchNotification(AlertDefinition alert, AlertState state)
+        {
+            // Toast notification — uses alert channel so flood muting applies
+            _toast.ShowAlert($"{alert.Name} — {state.ServerName}",
+                state.Message, critical: state.Severity == "Critical", duration: 6000);
+
+            // Feed into existing AlertingService notification pipeline for email/Teams
+            var notification = new AlertNotification
+            {
+                AlertName = alert.Name,
+                Metric = alert.Id,
+                CurrentValue = state.LastValue,
+                ThresholdValue = state.ThresholdValue,
+                Severity = state.Severity.ToLowerInvariant(),
+                InstanceName = state.ServerName,
+                Message = state.Message,
+                TriggeredAt = state.LastTriggered,
+                SendEmail = alert.SendEmail
+            };
+
+            _ = _channels.DispatchAsync(notification);
+        }
+
+        private void DispatchEscalation(AlertDefinition alert, AlertState state)
+        {
+            var msg = $"ESCALATED — {alert.Name} on {state.ServerName} has been active for {(DateTime.UtcNow - state.FirstTriggered).TotalMinutes:N0} min without acknowledgement. {state.Message}";
+            _toast.ShowError($"ESCALATED: {alert.Name} — {state.ServerName}", msg, 10000);
+
+            var notification = new AlertNotification
+            {
+                AlertName = $"[ESCALATED] {alert.Name}",
+                Metric = alert.Id,
+                CurrentValue = state.LastValue,
+                ThresholdValue = state.ThresholdValue,
+                Severity = "critical",
+                InstanceName = state.ServerName,
+                Message = msg,
+                TriggeredAt = DateTime.UtcNow
+            };
+
+            _ = _channels.DispatchAsync(notification);
+        }
+
+        /// <summary>
+        /// Resolve any in-memory states that haven't been refreshed in 3x their frequency
+        /// (the alert condition has likely cleared but was never re-evaluated to confirm).
+        /// </summary>
+        private void ResolveCleared()
+        {
+            var now = DateTime.UtcNow;
+            foreach (var kvp in _activeStates)
+            {
+                var state = kvp.Value;
+                var alert = _definitions.GetAlert(state.AlertId);
+                if (alert == null) continue;
+
+                var staleCutoff = TimeSpan.FromSeconds(alert.FrequencySeconds * 3);
+                if ((now - state.LastTriggered) > staleCutoff && state.Status == AlertStatus.Active)
+                {
+                    state.Status = AlertStatus.Resolved;
+                    state.ResolvedAt = now;
+                    _activeStates.TryRemove(kvp.Key, out _);
+                    _history.ResolveAlert(state.AlertId, state.ServerName);
+                    _lastNotified.TryRemove(kvp.Key, out _);
+                }
+            }
+        }
+
+        public void AcknowledgeAlert(string alertId, string serverName)
+        {
+            var key = $"{alertId}:{serverName}".ToLowerInvariant();
+            if (_activeStates.TryGetValue(key, out var state))
+            {
+                state.Status = AlertStatus.Acknowledged;
+                state.AcknowledgedAt = DateTime.UtcNow;
+            }
+            _history.AcknowledgeAlert(alertId, serverName);
+            OnAlertsChanged?.Invoke();
+        }
+
+        public void AcknowledgeAll()
+        {
+            foreach (var state in _activeStates.Values.Where(s => s.Status == AlertStatus.Active))
+            {
+                state.Status = AlertStatus.Acknowledged;
+                state.AcknowledgedAt = DateTime.UtcNow;
+            }
+            _history.AcknowledgeAll();
+            OnAlertsChanged?.Invoke();
+        }
+
+        private static string FormatMessage(AlertDefinition alert, string server, double value, double threshold, string severity)
+        {
+            var direction = alert.Operator == "less_than" ? "below" : "above";
+            var unit = alert.Unit switch
+            {
+                "percent" => "%",
+                "seconds" => "s",
+                "milliseconds" => "ms",
+                "megabytes" => " MB",
+                "hours" => " hrs",
+                "minutes" => " min",
+                "count" => "",
+                "per_second" => "/s",
+                "per_minute" => "/min",
+                _ => ""
+            };
+            return $"{value:N1}{unit} ({direction} {threshold:N1}{unit} {severity.ToLower()} threshold)";
+        }
+
+        public void Dispose()
+        {
+            Stop();
+            try { _loopTask?.Wait(TimeSpan.FromSeconds(5)); } catch { /* best effort */ }
+            _cts?.Dispose();
+            _evaluationLock?.Dispose();
+        }
+    }
+}

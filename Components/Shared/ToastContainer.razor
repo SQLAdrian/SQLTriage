@@ -1,0 +1,161 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using Microsoft.AspNetCore.Components
+@using SQLTriage.Data
+@using SQLTriage.Data.Services
+@inject ToastService ToastService
+@inject UserSettingsService UserSettings
+@implements IDisposable
+
+<div class="toast-container">
+    @* Toast stack — renders bottom-up via flex-direction:column-reverse *@
+    @foreach (var toast in _toasts)
+    {
+        <div class="toast toast-@toast.Type.ToString().ToLower() @(toast.IsVisible ? "show" : "") @(toast.IsAlert ? "toast-alert-size" : "")"
+             @key="toast.Id">
+            <i class="toast-icon @GetIcon(toast.Type)"></i>
+            <div class="toast-content">
+                <div class="toast-title">@toast.Title</div>
+                @if (!string.IsNullOrEmpty(toast.Message))
+                {
+                    <div class="toast-message">@toast.Message</div>
+                }
+            </div>
+            <button class="toast-close" @onclick="() => RemoveToast(toast.Id)">&times;</button>
+        </div>
+    }
+</div>
+
+@* Discreet bottom-left status badges, same style family — clickable to unmute *@
+@if (_showMuteBanner)
+{
+    <button class="status-badge status-badge--mute"
+            @onclick="Unmute"
+            title="@($"Toasts muted: {_activeToastCount} alerts in last 5s — click to unmute")">
+        <i class="fa-solid fa-bell-slash"></i>
+        <span class="status-badge-count">@_activeToastCount</span>
+    </button>
+}
+
+@if (_showNoPantsWarning)
+{
+    <div class="status-badge status-badge--nopants" title="No-Pants Mode is active — dangerous server controls visible">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
+            <path d="M4 4h16v2l-2 14h-4l-1-8h-2l-1 8H6L4 6V4zm2 2v.5l1.8 12.5h2.4l1-8h1.6l1 8h2.4L18 6.5V6H6z"/>
+        </svg>
+    </div>
+}
+
+@code {
+    private List<ToastNotification> _toasts = new();
+    private bool _showMuteBanner = false;
+    private int _activeToastCount = 0;
+    private bool _showNoPantsWarning = false;
+    private System.Threading.Timer? _noPantsTimer;
+    private System.Threading.Timer? _muteBannerTimer;
+
+    // Flood detection: track how many alert toasts arrived in the last 5 seconds
+    private readonly System.Collections.Generic.Queue<DateTime> _recentAlerts = new();
+    private const int FloodThreshold = 5;
+    private const int FloodWindowSeconds = 5;
+
+    protected override void OnInitialized()
+    {
+        ToastService.OnShow += ShowToast;
+        StartNoPantsTimer();
+    }
+
+    private void StartNoPantsTimer()
+    {
+        _noPantsTimer = new System.Threading.Timer(_ =>
+        {
+            var noPants = UserSettings.GetNoPantsMode();
+            if (noPants != _showNoPantsWarning)
+            {
+                _showNoPantsWarning = noPants;
+                InvokeAsync(StateHasChanged);
+            }
+            else if (noPants)
+            {
+                // Pulse visibility briefly to draw attention
+                _showNoPantsWarning = true;
+                InvokeAsync(StateHasChanged);
+            }
+        }, null, 0, 5 * 60 * 1000); // check + pulse every 5 minutes
+    }
+
+    private void ShowToast(ToastNotification toast)
+    {
+        InvokeAsync(() =>
+        {
+            if (toast.IsAlert)
+            {
+                // Flood detection
+                var now = DateTime.UtcNow;
+                _recentAlerts.Enqueue(now);
+                while (_recentAlerts.Count > 0 && (now - _recentAlerts.Peek()).TotalSeconds > FloodWindowSeconds)
+                    _recentAlerts.Dequeue();
+
+                if (_recentAlerts.Count >= FloodThreshold && !ToastService.IsMuted)
+                {
+                    _activeToastCount = _recentAlerts.Count;
+                    ToastService.MuteFor(5);
+                    _showMuteBanner = true;
+                    // Auto-hide banner when mute expires
+                    _muteBannerTimer?.Dispose();
+                    _muteBannerTimer = new System.Threading.Timer(_ =>
+                        InvokeAsync(() => { _showMuteBanner = false; StateHasChanged(); }),
+                        null, 5 * 60 * 1000, System.Threading.Timeout.Infinite);
+                    StateHasChanged();
+                    return; // don't show this toast — already muted
+                }
+            }
+
+            _toasts.Add(toast);
+            toast.IsVisible = true;
+            StateHasChanged();
+
+            _ = Task.Delay(toast.Duration).ContinueWith(_ =>
+                InvokeAsync(() => RemoveToast(toast.Id)));
+        });
+    }
+
+    private void Unmute()
+    {
+        ToastService.Unmute();
+        _showMuteBanner = false;
+        _muteBannerTimer?.Dispose();
+        StateHasChanged();
+    }
+
+    private void RemoveToast(string id)
+    {
+        var toast = _toasts.FirstOrDefault(t => t.Id == id);
+        if (toast != null)
+        {
+            toast.IsVisible = false;
+            StateHasChanged();
+            _ = Task.Delay(300).ContinueWith(_ =>
+                InvokeAsync(() =>
+                {
+                    _toasts.Remove(toast);
+                    StateHasChanged();
+                }));
+        }
+    }
+
+    private static string GetIcon(ToastType type) => type switch
+    {
+        ToastType.Success => "fa-solid fa-check",
+        ToastType.Error   => "fa-solid fa-xmark",
+        ToastType.Warning => "fa-solid fa-triangle-exclamation",
+        ToastType.Info    => "fa-solid fa-circle-info",
+        _                 => "fa-solid fa-circle-info"
+    };
+
+    public void Dispose()
+    {
+        ToastService.OnShow -= ShowToast;
+        _noPantsTimer?.Dispose();
+        _muteBannerTimer?.Dispose();
+    }
+}

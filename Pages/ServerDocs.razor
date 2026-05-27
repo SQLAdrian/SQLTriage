@@ -1,0 +1,340 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/server-docs"
+@using System.Threading
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@using SQLTriage.Components.Shared
+@inject ServerConnectionManager ConnectionManager
+@inject ServerDocumentationService DocService
+@inject AppUserState UserState
+@inject RbacService Rbac
+@inject ToastService Toast
+
+<PageTitle>Server Documentation - SQLTriage</PageTitle>
+
+@if (!RbacService.HasPermission(UserState.Role, "manage_servers"))
+{
+    <div style="padding: 32px;">
+        <AccessDenied RequiredRole="Admin" Message="Server documentation is restricted to Admin users." />
+    </div>
+}
+else
+{
+<div class="srvdoc-page">
+    <div class="srvdoc-toolbar">
+        <h2 class="srvdoc-h2"><i class="fa-solid fa-file-lines"></i> Server Documentation</h2>
+
+        <div class="srvdoc-toolbar-controls">
+            <label class="srvdoc-toolbar-label">Server:</label>
+            <select class="srvdoc-select" value="@_selectedServer" @onchange="OnServerChanged">
+                <option value="__estate__">— Estate summary —</option>
+                @foreach (var srv in _allServers)
+                {
+                    <option value="@srv">@srv</option>
+                }
+            </select>
+
+            <button class="btn btn-primary" @onclick="CaptureCurrent" disabled="@_capturing">
+                @if (_capturing)
+                {
+                    <i class="fa-solid fa-spinner fa-spin"></i>
+                    @if (IsEstateView && _captureTotal > 0)
+                    {
+                        <span>Capturing… @_captureProgress / @_captureTotal</span>
+                    }
+                    else
+                    {
+                        <span>Capturing…</span>
+                    }
+                }
+                else
+                {
+                    <i class="fa-solid fa-camera"></i> <span>@(IsEstateView ? "Capture all servers" : "Capture now")</span>
+                }
+            </button>
+
+            @if (!IsEstateView && _current != null)
+            {
+                <button class="btn btn-secondary" @onclick="OpenAllSections">
+                    <i class="fa-solid fa-up-down"></i> @( _allOpen ? "Collapse all" : "Expand all")
+                </button>
+            }
+        </div>
+    </div>
+
+    @if (_loading)
+    {
+        <PageLoadingSpinner Message="Loading server documentation..." />
+    }
+    else if (IsEstateView)
+    {
+        @* ──── Estate summary ──── *@
+        @if (_estate.Count == 0)
+        {
+            <div class="srvdoc-empty">
+                <p>No snapshots yet. Pick a server above and click "Capture now",
+                   or "Capture all servers" to walk the estate.</p>
+            </div>
+        }
+        else
+        {
+            <table class="srvdoc-estate-table">
+                <thead>
+                    <tr>
+                        <th>Server</th>
+                        <th>Last captured</th>
+                        <th>Snapshots</th>
+                        <th>Sections</th>
+                        <th>Attention</th>
+                        <th>Changes vs prior</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var e in _estate)
+                    {
+                        <tr>
+                            <td><strong>@e.Server</strong></td>
+                            <td>@(e.LastCapturedAt?.ToString("yyyy-MM-dd HH:mm") ?? "—")</td>
+                            <td>@e.SnapshotCount</td>
+                            <td>@e.SectionCount</td>
+                            <td>
+                                @if (e.AttentionSections > 0)
+                                {
+                                    <span class="srvdoc-pill attention">@e.AttentionSections</span>
+                                }
+                                else
+                                {
+                                    <span class="srvdoc-muted">—</span>
+                                }
+                            </td>
+                            <td>
+                                @if (e.ChangeCount > 0)
+                                {
+                                    <span class="srvdoc-pill changed">@e.ChangeCount</span>
+                                }
+                                else
+                                {
+                                    <span class="srvdoc-muted">—</span>
+                                }
+                            </td>
+                            <td>
+                                <button class="btn-link" @onclick="() => SelectServer(e.Server)">
+                                    Open <i class="fa-solid fa-arrow-right"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    }
+    else if (_current == null)
+    {
+        <div class="srvdoc-empty">
+            <p>No snapshot yet for <strong>@_selectedServer</strong>.</p>
+            <p class="srvdoc-muted">Click "Capture now" to scrape this server's configuration via SMO.</p>
+        </div>
+    }
+    else
+    {
+        @* ──── Single-server detail ──── *@
+        <div class="srvdoc-meta">
+            <div><strong>@_current.Server</strong></div>
+            <div class="srvdoc-muted">
+                Captured @_current.CapturedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
+                · scrape took @_current.CaptureDurationMs ms
+                @if (_changes.Count > 0)
+                {
+                    <span> · <span class="srvdoc-pill changed">@_changes.Count change@(_changes.Count == 1 ? "" : "s")</span> vs prior snapshot</span>
+                }
+            </div>
+        </div>
+
+        @if (_current.CaptureWarnings.Count > 0)
+        {
+            <div class="srvdoc-warnings">
+                <strong>Capture warnings:</strong>
+                <ul>
+                    @foreach (var w in _current.CaptureWarnings)
+                    {
+                        <li>@w</li>
+                    }
+                </ul>
+            </div>
+        }
+
+        <div class="srvdoc-sections">
+            @foreach (var section in _current.Sections)
+            {
+                <ServerDocSection Section="section"
+                                  ChangedFieldSet="@ChangedFieldsFor(section.Id)"
+                                  InitiallyOpen="@_allOpen" />
+            }
+        </div>
+    }
+</div>
+}
+
+@code {
+    private const string EstateSentinel = "__estate__";
+
+    private List<string> _allServers = new();
+    private string _selectedServer = EstateSentinel;
+    private bool _loading;
+    private bool _capturing;
+    private bool _allOpen;
+    private int _captureProgress;
+    private int _captureTotal;
+
+    private ServerDocSnapshot? _current;
+    private List<ServerDocChange> _changes = new();
+    private List<EstateRow> _estate = new();
+
+    private bool IsEstateView => _selectedServer == EstateSentinel;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _allServers = ConnectionManager.GetConnections()
+            .SelectMany(c => c.GetServerList())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        await LoadCurrentViewAsync();
+    }
+
+    private async Task OnServerChanged(ChangeEventArgs e)
+    {
+        _selectedServer = e.Value?.ToString() ?? EstateSentinel;
+        await LoadCurrentViewAsync();
+    }
+
+    private async Task SelectServer(string server)
+    {
+        _selectedServer = server;
+        await LoadCurrentViewAsync();
+    }
+
+    private async Task LoadCurrentViewAsync()
+    {
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            if (IsEstateView)
+            {
+                _current = null;
+                _changes = new();
+                _estate = await BuildEstateAsync();
+            }
+            else
+            {
+                _current = await DocService.LoadLatestAsync(_selectedServer);
+                _changes = _current == null
+                    ? new()
+                    : await DocService.DiffLatestAsync(_selectedServer);
+            }
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task<List<EstateRow>> BuildEstateAsync()
+    {
+        var rows = new List<EstateRow>();
+        foreach (var srv in _allServers)
+        {
+            var snaps = DocService.ListSnapshotTimestamps(srv);
+            if (snaps.Count == 0)
+            {
+                rows.Add(new EstateRow { Server = srv });
+                continue;
+            }
+            var latest = await DocService.LoadLatestAsync(srv);
+            var diff = snaps.Count >= 2 ? await DocService.DiffLatestAsync(srv) : new List<ServerDocChange>();
+            rows.Add(new EstateRow
+            {
+                Server = srv,
+                SnapshotCount = snaps.Count,
+                LastCapturedAt = snaps[0].ToLocalTime(),
+                SectionCount = latest?.Sections.Count ?? 0,
+                AttentionSections = latest?.Sections.Count(s => s.Severity == DocSeverity.Attention) ?? 0,
+                ChangeCount = diff.Count,
+            });
+        }
+        return rows.OrderBy(r => r.Server, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private async Task CaptureCurrent()
+    {
+        _capturing = true;
+        _captureProgress = 0;
+        _captureTotal = 0;
+        StateHasChanged();
+        try
+        {
+            if (IsEstateView)
+            {
+                _captureTotal = _allServers.Count;
+                Toast.ShowInfo($"Capturing {_captureTotal} server(s) — 4 at a time…");
+                var warnings = 0;
+                var results = await DocService.CaptureManyAsync(
+                    _allServers,
+                    parallelism: 4,
+                    onCompleted: async (srv, snap) =>
+                    {
+                        Interlocked.Increment(ref _captureProgress);
+                        if (snap.CaptureWarnings.Any()) Interlocked.Increment(ref warnings);
+                        await InvokeAsync(StateHasChanged);
+                    });
+                if (warnings > 0)
+                    Toast.ShowWarning($"Captured {results.Count} server(s) — {warnings} had warnings.");
+                else
+                    Toast.ShowSuccess($"Captured {results.Count} server(s).");
+            }
+            else
+            {
+                Toast.ShowInfo($"Capturing {_selectedServer}…");
+                var snap = await DocService.CaptureAsync(_selectedServer);
+                if (snap.CaptureWarnings.Any())
+                    Toast.ShowWarning($"Captured with {snap.CaptureWarnings.Count} warning(s).");
+                else
+                    Toast.ShowSuccess($"Captured {_selectedServer} in {snap.CaptureDurationMs} ms.");
+            }
+            await LoadCurrentViewAsync();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Capture failed: {ex.Message}");
+        }
+        finally
+        {
+            _capturing = false;
+            _captureProgress = 0;
+            _captureTotal = 0;
+        }
+    }
+
+    private void OpenAllSections() => _allOpen = !_allOpen;
+
+    private HashSet<string> ChangedFieldsFor(string sectionId)
+    {
+        return _changes
+            .Where(c => string.Equals(c.SectionId, sectionId, StringComparison.OrdinalIgnoreCase))
+            .Select(c => c.Field)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private class EstateRow
+    {
+        public string Server { get; set; } = "";
+        public int SnapshotCount { get; set; }
+        public DateTime? LastCapturedAt { get; set; }
+        public int SectionCount { get; set; }
+        public int AttentionSections { get; set; }
+        public int ChangeCount { get; set; }
+    }
+}

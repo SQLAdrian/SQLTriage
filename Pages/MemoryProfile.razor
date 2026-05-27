@@ -1,0 +1,241 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/memory-profile"
+@using System.Diagnostics
+@using Microsoft.Extensions.Caching.Memory
+@using SQLTriage.Data
+@using SQLTriage.Data.Caching
+@using SQLTriage.Data.Services
+@implements IDisposable
+@inject MemoryMonitorService MemoryMonitor
+@inject ICacheHotTier HotTier
+@inject IMemoryCache MemoryCache
+@inject ServerConnectionManager Connections
+@inject PanelMetricsService PanelMetrics
+@inject RemediationWeightStore WeightStore
+@inject BuildCatalogueService BuildCatalogue
+@inject WaitStatsService WaitStats
+@inject ToastService Toast
+
+<PageTitle>Memory Profile - SQLTriage</PageTitle>
+
+<div class="memprof-page">
+    <div class="memprof-header">
+        <h2><i class="fa-solid fa-microchip"></i> Memory Profile</h2>
+        <div class="memprof-controls">
+            <button class="btn btn-secondary" @onclick="Refresh"><i class="fa-solid fa-rotate"></i> Refresh</button>
+            <button class="btn btn-secondary" @onclick="ForceGc" title="GC.Collect(2, Forced, true, true) — measures what's reclaimable">
+                <i class="fa-solid fa-broom"></i> Force GC
+            </button>
+            <button class="btn btn-secondary" @onclick="CompactHotTier" title="Drop 50% of CacheHotTier entries by LRU">
+                <i class="fa-solid fa-compress"></i> Compact cache 50%
+            </button>
+            <button class="btn btn-danger" @onclick="ClearHotTier" title="Drop ALL CacheHotTier entries">
+                <i class="fa-solid fa-trash"></i> Clear hot cache
+            </button>
+        </div>
+    </div>
+
+    <div class="memprof-grid">
+        <!-- Process-level -->
+        <div class="memprof-card">
+            <div class="memprof-card-title">Process</div>
+            <div class="memprof-row"><span>Working set</span><strong>@FormatBytes(_workingSet)</strong></div>
+            <div class="memprof-row"><span>Private bytes</span><strong>@FormatBytes(_privateBytes)</strong></div>
+            <div class="memprof-row"><span>Virtual size</span><strong>@FormatBytes(_virtualBytes)</strong></div>
+            <div class="memprof-row"><span>Threads</span><strong>@_threadCount</strong></div>
+            <div class="memprof-row"><span>Handles</span><strong>@_handleCount</strong></div>
+            <div class="memprof-row"><span>Uptime</span><strong>@_uptime</strong></div>
+        </div>
+
+        <!-- Managed heap -->
+        <div class="memprof-card">
+            <div class="memprof-card-title">Managed heap (GC)</div>
+            <div class="memprof-row"><span>Total committed</span><strong>@FormatBytes(_gcTotalCommitted)</strong></div>
+            <div class="memprof-row"><span>Heap size</span><strong>@FormatBytes(_gcHeapSize)</strong></div>
+            <div class="memprof-row"><span>Fragmented</span><strong>@FormatBytes(_gcFragmented)</strong></div>
+            <div class="memprof-row"><span>Promoted bytes</span><strong>@FormatBytes(_gcPromoted)</strong></div>
+            <div class="memprof-row"><span>Pause time (ms)</span><strong>@_gcPauseMs.ToString("F1")</strong></div>
+            <div class="memprof-row"><span>Gen 0 / 1 / 2 collections</span><strong>@_gen0 / @_gen1 / @_gen2</strong></div>
+        </div>
+
+        <!-- GC by generation -->
+        @if (_genInfo != null)
+        {
+            <div class="memprof-card memprof-card-wide">
+                <div class="memprof-card-title">GC heap by generation</div>
+                <table class="memprof-table">
+                    <thead><tr><th>Gen</th><th class="num">Size</th><th class="num">Fragmented</th><th class="num">% of heap</th></tr></thead>
+                    <tbody>
+                        @for (var i = 0; i < _genInfo.Length; i++)
+                        {
+                            var g = _genInfo[i];
+                            var pct = _gcHeapSize > 0 ? (g.SizeAfterBytes * 100.0 / _gcHeapSize) : 0;
+                            <tr>
+                                <td>@GenName(i)</td>
+                                <td class="num">@FormatBytes(g.SizeAfterBytes)</td>
+                                <td class="num">@FormatBytes(g.FragmentationAfterBytes)</td>
+                                <td class="num">@pct.ToString("F1")%</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <p class="memprof-hint">LOH (Large Object Heap) growth usually points at big data structures &mdash; check-result arrays, chart series, audit-log batches. POH (Pinned Object Heap) is mostly framework/native interop.</p>
+            </div>
+        }
+
+        <!-- Service-owned caches -->
+        <div class="memprof-card memprof-card-wide">
+            <div class="memprof-card-title">In-memory caches (item counts)</div>
+            <table class="memprof-table">
+                <thead><tr><th>Source</th><th class="num">Items</th><th>Notes</th></tr></thead>
+                <tbody>
+                    <tr>
+                        <td>IMemoryCache (CacheHotTier backing)</td>
+                        <td class="num">@(_hotTierCount?.ToString() ?? "?")</td>
+                        <td>Time-series + stat + DataGrid query results, 60s sliding expiry. Cleared on memory pressure.</td>
+                    </tr>
+                    <tr>
+                        <td>PanelMetricsService</td>
+                        <td class="num">@_panelMetricsCount</td>
+                        <td>p50/p95 per panel. ~120 bytes per entry.</td>
+                    </tr>
+                    <tr>
+                        <td>RemediationWeightStore</td>
+                        <td class="num">@_weightOverrides</td>
+                        <td>Per-check effort overrides. Negligible.</td>
+                    </tr>
+                    <tr>
+                        <td>BuildCatalogueService</td>
+                        <td class="num">@_buildCatalogueVersions</td>
+                        <td>Loaded once at startup, ~500 KB stable.</td>
+                    </tr>
+                    <tr>
+                        <td>ServerConnectionManager</td>
+                        <td class="num">@_serverCount</td>
+                        <td>Connection metadata only. Negligible.</td>
+                    </tr>
+                </tbody>
+            </table>
+            <p class="memprof-hint">JS-side memory (ApexCharts, Blazor WebView) is in the WebView2 V8 heap — not visible here. If managed heap is small but Working set is huge, the chart layer is the suspect.</p>
+        </div>
+
+        <!-- Last-action result -->
+        @if (!string.IsNullOrEmpty(_lastAction))
+        {
+            <div class="memprof-card memprof-card-wide memprof-action-result">
+                <div class="memprof-card-title">Last action</div>
+                <pre>@_lastAction</pre>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private long _workingSet, _privateBytes, _virtualBytes;
+    private int _threadCount, _handleCount;
+    private string _uptime = "";
+    private long _gcTotalCommitted, _gcHeapSize, _gcFragmented, _gcPromoted;
+    private double _gcPauseMs;
+    private int _gen0, _gen1, _gen2;
+    private GCGenerationInfo[]? _genInfo;
+    private int? _hotTierCount;
+    private int _panelMetricsCount;
+    private int _weightOverrides;
+    private int _buildCatalogueVersions;
+    private int _serverCount;
+    private string _lastAction = "";
+    private System.Threading.Timer? _refreshTimer;
+
+    protected override void OnInitialized()
+    {
+        Refresh();
+        _refreshTimer = new System.Threading.Timer(_ => InvokeAsync(() => { Refresh(); StateHasChanged(); }),
+            null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+    }
+
+    private void Refresh()
+    {
+        var p = Process.GetCurrentProcess();
+        _workingSet  = p.WorkingSet64;
+        _privateBytes = p.PrivateMemorySize64;
+        _virtualBytes = p.VirtualMemorySize64;
+        _threadCount = p.Threads.Count;
+        _handleCount = p.HandleCount;
+        _uptime = (DateTime.Now - p.StartTime).ToString(@"d\.hh\:mm\:ss");
+
+        var info = GC.GetGCMemoryInfo();
+        _gcTotalCommitted = info.TotalCommittedBytes;
+        _gcHeapSize       = info.HeapSizeBytes;
+        _gcFragmented     = info.FragmentedBytes;
+        _gcPromoted       = info.PromotedBytes;
+        _gcPauseMs        = info.PauseDurations.Length > 0 ? info.PauseDurations[0].TotalMilliseconds : 0;
+        _genInfo          = info.GenerationInfo.ToArray();
+        _gen0 = GC.CollectionCount(0);
+        _gen1 = GC.CollectionCount(1);
+        _gen2 = GC.CollectionCount(2);
+
+        _hotTierCount = MemoryCache is MemoryCache mc ? (int?)mc.Count : null;
+        _panelMetricsCount = PanelMetrics.GetAll().Count;
+        _weightOverrides = WeightStore.OverrideCount;
+        _buildCatalogueVersions = BuildCatalogue.IsAvailable ? 1 : 0; // service exposes IsAvailable not count
+        _serverCount = Connections.GetConnections().Count;
+    }
+
+    private void ForceGc()
+    {
+        var before = GC.GetTotalMemory(false);
+        GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
+        GC.WaitForPendingFinalizers();
+        GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
+        var after = GC.GetTotalMemory(true);
+        var reclaimed = before - after;
+        _lastAction = $"Force GC: {FormatBytes(before)} → {FormatBytes(after)}  (reclaimed {FormatBytes(reclaimed)})";
+        Toast.ShowSuccess("Forced GC", $"Reclaimed {FormatBytes(reclaimed)}");
+        Refresh();
+    }
+
+    private void CompactHotTier()
+    {
+        var before = _hotTierCount ?? 0;
+        HotTier.Compact(0.5);
+        Refresh();
+        var after = _hotTierCount ?? 0;
+        _lastAction = $"CacheHotTier compact 50%: {before} → {after} entries  (dropped {before - after})";
+        Toast.ShowSuccess("Cache compacted", $"Dropped {before - after} entries");
+    }
+
+    private void ClearHotTier()
+    {
+        var before = _hotTierCount ?? 0;
+        HotTier.InvalidateAll();
+        Refresh();
+        var after = _hotTierCount ?? 0;
+        _lastAction = $"CacheHotTier cleared: {before} → {after} entries";
+        Toast.ShowWarning("Hot cache cleared", $"Dropped all {before} entries");
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        double v = bytes;
+        string[] units = { "KB", "MB", "GB", "TB" };
+        var i = -1;
+        do { v /= 1024; i++; } while (v >= 1024 && i < units.Length - 1);
+        return $"{v:F1} {units[i]}";
+    }
+
+    private static string GenName(int i) => i switch
+    {
+        0 => "Gen 0",
+        1 => "Gen 1",
+        2 => "Gen 2",
+        3 => "LOH (Large Object Heap)",
+        4 => "POH (Pinned Object Heap)",
+        _ => $"Gen {i}",
+    };
+
+    public void Dispose()
+    {
+        _refreshTimer?.Dispose();
+    }
+}

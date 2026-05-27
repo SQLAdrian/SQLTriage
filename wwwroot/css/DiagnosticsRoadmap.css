@@ -1,0 +1,364 @@
+/* In the name of God, the Merciful, the Compassionate */
+/* ──────────────────────────────────────────────────────
+   Diagnostics Roadmap — Print / PDF styles
+   Toasts are suppressed during print via .printing-active
+   (added to body around the WebView2 PrintToPdfAsync call).
+   ────────────────────────────────────────────────────── */
+
+/* Slightly smaller font during print to fit more content per page */
+body.printing-active #roadmap-print-region {
+    font-size: 11px;
+}
+body.printing-active #roadmap-print-region .print-cat-card {
+    font-size: 10px;
+    padding: 6px 8px !important;
+}
+body.printing-active #roadmap-print-region .print-level-header {
+    font-size: 12px;
+    padding: 6px 10px !important;
+}
+/* Tighten level card margins, grid gaps, and detail padding */
+body.printing-active #roadmap-print-region .print-level-card {
+    margin-bottom: 6px !important;
+}
+body.printing-active #roadmap-print-region .level-detail {
+    padding: 6px 10px !important;
+}
+body.printing-active #roadmap-print-region .print-cat-grid {
+    gap: 6px !important;
+}
+/* Tighten the failed/passed divider and progress bar spacing */
+body.printing-active #roadmap-print-region .print-passed-section,
+body.printing-active #roadmap-print-region .print-info-section {
+    margin-top: 2px !important;
+    padding-top: 2px !important;
+    max-height: none !important;
+    overflow-y: visible !important;
+}
+/* Remove overflow clipping on failed/info checks list during print */
+body.printing-active #roadmap-print-region .print-cat-card > div[style*="max-height:80px"] {
+    max-height: none !important;
+    overflow-y: visible !important;
+}
+
+/* Suppress the global MainLayout print-header/footer — roadmap has its own
+ * DOM footer injected via PrintSinglePdfAsync (#pdf-footer-bar). The global
+ * .print-header and .print-footer would otherwise stack on every page. */
+body.printing-active .print-header,
+body.printing-active .print-footer,
+body.printing-active .roadmap-toolbar {
+    display: none !important;
+}
+
+/* Remove the body/layout padding that the global @media print rule
+ * reserves for the (now-hidden) header/footer. Without these resets the
+ * page content starts ~32pt below the page edge for no reason. */
+body.printing-active,
+body.printing-active .app-layout,
+body.printing-active .app-container,
+body.printing-active .app-content,
+body.printing-active .settings-page {
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+}
+
+/* Hide toast container while printing */
+body.printing-active .rz-notification,
+body.printing-active [class*="toast"],
+body.printing-active [class*="Toast"],
+body.printing-active .mud-snackbar-container,
+body.printing-active .notification-container {
+    display: none !important;
+}
+
+/* Hide the print-only executive summary on screen so it only appears in
+ * the generated PDF (PrintPrepareDomAsync flips display:block). */
+@media screen {
+    #roadmap-print-region .print-executive-summary { display: none; }
+}
+
+/* ── Page-break control for the level cards ────────────────────────
+ * Each level (Foundation / Hardened / Performant / Observable / Governed)
+ * starts on a new page. We deliberately allow page breaks BETWEEN the
+ * category cards inside a level (12+ cards never fit on one page), but
+ * never SPLIT an individual category card. The inline-style hooks added
+ * by PrintPrepareDomAsync provide the per-element nudge; these CSS rules
+ * back them up so removing the inline-style on restore doesn't strip
+ * intent for screen-only @media print previews.
+ * ──────────────────────────────────────────────────────────────── */
+@media print {
+    body.printing-active .print-cat-card,
+    body.printing-active .risk-row,
+    body.printing-active .compliance-card,
+    body.printing-active .print-cat-grid > * {
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+
+    /* ── Section-level page breaks ───────────────────────────────────
+     * Every level-section gets its own page. Risk Register and
+     * Compliance Mapping break before too — they're conceptually
+     * separate from the maturity ladder.
+     *
+     * Why every level (not just 2-5)? Each Foundation/Hardened/etc.
+     * panel has 6-12 sub-cards laid out on a 3- or 4-column grid;
+     * combined with the L# overall header + executive summary, even
+     * level 1 spills past one page when packed onto the same sheet
+     * as the cover/summary. Forcing every level onto its own page
+     * gives chromium a clean container to paginate within and stops
+     * the orphan-card-on-its-own-page artefact.
+     *
+     * page-break-* and break-* are both emitted: chromium honours
+     * break-*, older WebView2 builds may still want page-break-*. */
+    body.printing-active .level-section {
+        page-break-before: always;
+        break-before: page;
+    }
+    body.printing-active .risk-panel-wrapper,
+    body.printing-active .compliance-panel-wrapper,
+    body.printing-active .server-comparison-section {
+        page-break-before: always;
+        break-before: page;
+    }
+
+    /* Stop chromium breaking between the level header (Foundation/Hardened/
+     * etc.) and its category cards. Without this, page-break-before on
+     * .level-section sometimes places the header at the bottom of the
+     * pushed-to page and orphans the .level-detail to the next page —
+     * giving us an "empty" header page. break-after:avoid on the header
+     * pins the next sibling (the detail) to the same page if it fits,
+     * otherwise allows the natural break to happen further down. */
+    body.printing-active .print-level-header {
+        page-break-after: avoid;
+        break-after: avoid;
+    }
+
+    /* Allow chromium to break BETWEEN cards inside a level. Without this
+     * the level container inherits page-break-inside:avoid from some
+     * upstream rule and chromium tries to keep the entire level on one
+     * page, which then orphans cards onto the wrong side.
+     *
+     * overflow:hidden on .level-section is a screen-only flourish that
+     * clips the rounded inner header background. In print it creates a
+     * block formatting context that chromium silently refuses to break
+     * across — so page-break-before:always above does nothing without
+     * this override. Don't remove unless you confirm chromium honours
+     * page-break-before on overflow:hidden boxes (it doesn't, as of
+     * webview2 130). */
+    body.printing-active .level-section,
+    body.printing-active .level-detail,
+    body.printing-active .print-cat-grid {
+        page-break-inside: auto;
+        break-inside: auto;
+        overflow: visible !important;
+    }
+
+    /* Tighter card packing on print so we don't end up with half-empty
+     * trailing pages.
+     *
+     * grid-auto-rows:min-content — each row sizes to its tallest card
+     * only; short cards in adjacent columns no longer get inflated to
+     * match a 30-item neighbour.
+     *
+     * grid-auto-flow:dense — chromium pulls later, shorter cards back
+     * into earlier gaps left by taller cards. Slight reordering vs.
+     * the source order, but acceptable here because category cards
+     * have no implicit sequence the reader relies on.
+     *
+     * Both together collapse the trailing whitespace seen on Hardened
+     * pt2 / Observable pt2 / Governed pt2 in the v6 export, which fixes
+     * the "header on its own line, half-blank page" pattern without
+     * needing JS-based header repeats. */
+    body.printing-active .print-cat-grid {
+        grid-auto-rows: min-content !important;
+        grid-auto-flow: dense !important;
+    }
+
+    /* Cover page — full-bleed photo background reusing the live --ambient-bg
+     * token (set by parallaxBg.js on <html>). PrintPrepareDomAsync copies the
+     * computed value of --ambient-bg from <html> onto .pdf-cover-page as an
+     * inline custom property so this rule resolves correctly in the cover's
+     * own scope.
+     *
+     * @page :first margin:0 strips the default print margin on page 1 only,
+     * so the photo bleeds edge-to-edge. Pages 2+ keep their normal margins
+     * (inherited from the un-overridden @page rule below).
+     *
+     * The dim overlay (::before) sits absolute-inset and a darkening layer
+     * keeps the white cover text readable on any photo. Cover content is
+     * lifted above with z-index. */
+    @page :first { margin: 0; }
+
+    body.printing-active .pdf-cover-page {
+        page-break-after: always;
+        break-after: page;
+        width: 100vw !important;
+        height: 100vh !important;
+        margin: 0 !important;
+        padding: 60px 40px !important;
+        position: relative !important;
+        background-image: var(--ambient-bg, none) !important;
+        background-size: cover !important;
+        background-position: center center !important;
+        background-repeat: no-repeat !important;
+        background-color: var(--bg-primary, #1a1a2e) !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+
+    body.printing-active .pdf-cover-page::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.55);
+        z-index: 0;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+
+    body.printing-active .pdf-cover-page > * {
+        position: relative;
+        z-index: 1;
+    }
+
+    /* Cover text — flip the inline #222/#888/#444 dark-on-light colours to
+     * white-on-dim so the title and metadata stay readable on top of the
+     * photo+overlay. Maturity-coloured elements (L5 circle border/text,
+     * heart-pulse icon, progress check icons) are excluded by selector
+     * specificity — their colours come from inline style with a
+     * GetMaturityColor() value, which we leave alone. */
+    body.printing-active .pdf-cover-page,
+    body.printing-active .pdf-cover-page div,
+    body.printing-active .pdf-cover-page span {
+        color: #f5f5f5 !important;
+    }
+    /* Re-grant the accent-coloured fragments their inline colours by
+     * targeting elements that actually carry an inline color: declaration
+     * matching a hex pattern. CSS can't selector-match on inline values, so
+     * instead we exempt the FontAwesome icons (heart-pulse, L-circle dots)
+     * which have inline color set, and the L-circle text/label children. */
+    body.printing-active .pdf-cover-page i.fa-solid,
+    body.printing-active .pdf-cover-page i.fa-regular,
+    body.printing-active .pdf-cover-page [style*="border:5px solid"] > div {
+        color: revert !important;
+    }
+    /* Metadata card — was bg:#fafafa, border:#e0e0e0. On a dim photo that
+     * reads as a bright white slab. Translucent dark glass sits cleaner. */
+    body.printing-active .pdf-cover-page [style*="background:#fafafa"] {
+        background: rgba(0, 0, 0, 0.35) !important;
+        border-color: rgba(255, 255, 255, 0.18) !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+
+    /* Page X of Y — chromium's print engine increments counter(page) only
+     * inside @page margin-boxes. body::after with these tokens silently
+     * resolves to 0 because the body is laid out before pagination begins.
+     *
+     * @page @bottom-right is the spec-correct slot, well-supported by
+     * chromium (which is what WebView2.PrintToPdfAsync runs underneath).
+     *
+     * NB: this @page rule applies during print regardless of @media print
+     * being entered first; we leave it inside the @media print block for
+     * locality with the rest of the print rules. */
+    @page {
+        @bottom-right {
+            content: "Page " counter(page) " of " counter(pages);
+            font-family: 'Segoe UI', Arial, sans-serif;
+            font-size: 8pt;
+            color: #555;
+            margin-right: 14pt;
+            margin-bottom: 28pt;  /* lift above the DOM #pdf-footer-bar (22pt tall + 6pt gap) */
+        }
+    }
+
+    /* Compliance Mapping panel — keep the 3-column grid (ISO / SOC2 / NIST)
+     * side-by-side in the PDF, like the on-screen view. Without an explicit
+     * `minmax(0, 1fr)` chromium can let the column's min-content (longest
+     * card description) bully the grid into stacking single-column on a
+     * landscape A4 page. The min:0 prevents that pathological collapse. */
+    body.printing-active .compliance-panel-detail {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) !important;
+        gap: 12px !important;
+    }
+    body.printing-active .compliance-panel-detail > div {
+        min-width: 0 !important;
+    }
+
+    /* Preserve pill/badge backgrounds in the PDF. Chromium's print engine
+     * strips background-color by default ("economy mode") to save toner —
+     * which makes the Risk Register Critical/High/Medium pills and the
+     * Covered/Partial/Gap coverage badges render as plain coloured text
+     * with no fill, losing the visual hierarchy. The Likelihood/Impact
+     * pills, severity badges (8/11), and tag chips on the level cards
+     * have the same problem. print-color-adjust:exact tells chromium to
+     * keep the colours we authored. */
+    body.printing-active .risk-panel-detail span,
+    body.printing-active .compliance-panel-detail span,
+    body.printing-active .severity-badge,
+    body.printing-active #roadmap-print-region .print-cat-card span {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+
+    /* Tag chip colours — the small "Reliability" / "Configuration" /
+     * "Performance" labels next to each row inside category cards.
+     * On screen they use var(--bg-tertiary) which is a dark theme
+     * token (~#252540). Carrying that into the white-paged PDF gives
+     * a near-black pill with very faint text — present but unreadable.
+     * Override to print-appropriate light-grey/dark-grey here. The
+     * selector is intentionally narrow (small spans inside print-cat-
+     * card rows that use the row layout) so it doesn't catch the
+     * level header or pass-rate badges. */
+    body.printing-active #roadmap-print-region .print-cat-card span[style*="border-radius:8px"][style*="background:var(--bg-tertiary)"] {
+        background: #f0f0f0 !important;
+        color: #555 !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+}
+
+/* ── Status badges (added 2026-05-11 — were unstyled per skeletal-CSS sweep)
+ * Rendered inline in roadmap rows: `<span class="badge-pass">COMPLETE</span>`
+ * etc. Inline `style="padding:..."` in markup handles size; we own colour. */
+.badge-pass {
+    display: inline-block;
+    background: rgba(33, 201, 122, 0.15);
+    color: var(--green);
+    border: 1px solid rgba(33, 201, 122, 0.3);
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.badge-warn {
+    display: inline-block;
+    background: rgba(245, 158, 11, 0.15);
+    color: var(--orange);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.badge-fail {
+    display: inline-block;
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--red);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+/* Multi-server comparison block — scrollable container under the roadmap
+ * cards. Inline style handles max-height + overflow; we add the visual
+ * separator. */
+.server-comparison-scroll {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-sm);
+    padding: 0.5rem 0.75rem;
+}

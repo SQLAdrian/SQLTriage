@@ -1,0 +1,123 @@
+/* MemoryProfile page (/memory-profile) */
+
+.memprof-page {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 24px 24px 64px;
+}
+
+.memprof-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+}
+
+.memprof-header h2 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.memprof-controls {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.memprof-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+}
+
+.memprof-card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 18px;
+}
+
+.memprof-card-wide {
+    grid-column: 1 / -1;
+}
+
+.memprof-card-title {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 10px;
+}
+
+.memprof-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 5px 0;
+    font-size: 13px;
+}
+
+.memprof-row strong {
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+}
+
+.memprof-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.memprof-table th {
+    text-align: left;
+    padding: 6px 10px;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+}
+
+.memprof-table td {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+}
+
+.memprof-table td.num,
+.memprof-table th.num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.memprof-table tr:last-child td {
+    border-bottom: none;
+}
+
+.memprof-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 10px 0 0;
+    line-height: 1.45;
+}
+
+.memprof-action-result pre {
+    font-size: 12px;
+    color: var(--text-primary);
+    margin: 0;
+    padding: 8px 12px;
+    background: var(--bg-secondary);
+    border-radius: 4px;
+}
+
+@media (max-width: 760px) {
+    .memprof-grid { grid-template-columns: 1fr; }
+}

@@ -1,0 +1,236 @@
+.dashboard-tabs {
+    display: flex;
+    gap: 4px;
+    margin: 12px 0 16px 0;
+    padding: 0 4px;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    scrollbar-width: thin;
+}
+
+.dashboard-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color 120ms, border-color 120ms, background 120ms;
+    margin-bottom: -1px;
+}
+
+.dashboard-tab:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+
+.dashboard-tab--active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+    background: var(--bg-panel);
+}
+
+.dashboard-tab--active:hover {
+    background: var(--bg-panel);
+}
+
+.dashboard-tab i {
+    font-size: 12px;
+}
+
+.dashboard-tab-count {
+    display: inline-block;
+    padding: 1px 6px;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.dashboard-tab--active .dashboard-tab-count {
+    background: var(--accent);
+    color: var(--bg-primary);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Dashboard header strip — server-context, title, description, toolbar.
+   Themed to match the glass card aesthetic. Overrides earlier app.css
+   declarations because @import order puts this AFTER the inline rules
+   with equal specificity.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Server context strip (top: connected to / instance / database) ── */
+.server-context-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 18px;
+    margin: 0 0 14px 0;
+    background: rgba(45, 45, 48, 0.6);
+    backdrop-filter: blur(12px) saturate(140%);
+    -webkit-backdrop-filter: blur(12px) saturate(140%);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    font-size: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.server-context-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: rgba(0, 122, 204, 0.15);
+    color: var(--accent);
+    font-size: 13px;
+    flex-shrink: 0;
+}
+
+.server-context-label {
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.server-context-name {
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.server-context-db {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-style: italic;
+}
+
+/* Vertical separator pipes between segments — drawn via pseudo on labels
+ * that have a left margin (those are the "Instance:" / "Database:" ones). */
+.server-context-header .server-context-label[style*="margin-left"]::before {
+    content: "";
+    display: inline-block;
+    width: 1px;
+    height: 14px;
+    background: var(--border);
+    vertical-align: middle;
+    margin-right: 16px;
+    margin-left: -16px; /* pull through the existing 16px margin-left */
+}
+
+/* The instance/database <select>s */
+.server-context-header .toolbar-select {
+    background: rgba(15, 15, 20, 0.6);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: border-color 120ms, background 120ms;
+}
+.server-context-header .toolbar-select:hover {
+    border-color: var(--accent);
+    background: rgba(15, 15, 20, 0.8);
+}
+.server-context-header .toolbar-select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.25);
+}
+
+/* ── Dashboard title block (heading + db badge + edit button) ──────── */
+.dashboard-title-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 4px 4px 8px 4px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.dashboard-title-header h2 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 300;
+    letter-spacing: -0.01em;
+    color: var(--text-primary);
+    line-height: 1.1;
+    flex-shrink: 0;
+}
+
+/* Subtle accent bar to the left of the title */
+.dashboard-title-header h2::before {
+    content: "";
+    display: inline-block;
+    width: 3px;
+    height: 22px;
+    background: var(--accent);
+    border-radius: 2px;
+    margin-right: 12px;
+    vertical-align: middle;
+    transform: translateY(-2px);
+}
+
+.dashboard-db-context {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    background: rgba(0, 122, 204, 0.12);
+    color: var(--accent);
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    margin-left: auto; /* push to the right of the title */
+}
+
+.dashboard-title-header .btn-edit-page {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(0, 122, 204, 0.1);
+    color: var(--accent);
+    border: 1px solid rgba(0, 122, 204, 0.4);
+    padding: 5px 12px;
+    border-radius: 5px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 120ms, border-color 120ms, color 120ms;
+}
+.dashboard-title-header .btn-edit-page:hover {
+    background: rgba(0, 122, 204, 0.2);
+    border-color: var(--accent);
+}
+.dashboard-title-header .btn-edit-page--active {
+    background: var(--accent);
+    color: #fff;
+}
+.dashboard-title-header .btn-edit-page--active:hover {
+    background: rgba(0, 122, 204, 0.85);
+}
+
+/* ── Dashboard description (subtitle) ──────────────────────────────── */
+.dashboard-description {
+    padding: 8px 12px;
+    margin: 0 0 14px 0;
+    background: rgba(45, 45, 48, 0.4);
+    border-left: 2px solid rgba(0, 122, 204, 0.4);
+    border-radius: 0 4px 4px 0;
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-style: italic;
+    line-height: 1.5;
+}

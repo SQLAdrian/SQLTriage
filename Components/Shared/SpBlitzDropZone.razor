@@ -1,0 +1,260 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using SQLTriage.Data.Caching
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@using SQLTriage.Data.Services.Licensing
+@inject SpBlitzImportService ImportService
+@inject SpBlitzCache BlitzCache
+@inject IBundleAccessor Bundle
+@inject ServerConnectionManager ConnectionManager
+@inject SQLTriage.Data.ToastService Toast
+@inject IJSRuntime JSRuntime
+
+<div class="spblitz-dropzone-wrapper">
+    @if (!Bundle.Features.SpBlitzImport)
+    {
+        <div class="spblitz-disabled-banner">
+            sp_BLITZ CSV import is not enabled for your current license tier.
+        </div>
+    }
+    else
+    {
+        <div class="spblitz-dropzone-header">
+            <h3 class="spblitz-dropzone-title">Import sp_BLITZ CSV</h3>
+        </div>
+
+        <!-- Drop target -->
+        <div class="spblitz-drop-target @(_isDragOver ? "drag-over" : "")"
+             @ondragover="OnDragOver"
+             @ondragover:preventDefault="true"
+             @ondragleave="OnDragLeave"
+             @ondrop="OnDrop"
+             @ondrop:preventDefault="true"
+             @onclick="TriggerFilePicker">
+            <p class="spblitz-drop-hint">
+                Drag and drop an sp_BLITZ CSV here, or click to browse.
+                @if (!string.IsNullOrEmpty(_selectedFileName))
+                {
+                    <br />
+                    <strong>Selected: @_selectedFileName</strong>
+                }
+            </p>
+        </div>
+
+        <!-- Hidden file input -->
+        <InputFile id="spblitz-file-input" OnChange="OnFileSelected"
+                   accept=".csv,text/csv"
+                   style="display:none;" />
+
+        <!-- Server label + Import button -->
+        <div class="spblitz-import-row">
+            <label for="spblitz-server-label">Server label:</label>
+            <input id="spblitz-server-label"
+                   class="spblitz-server-input"
+                   type="text"
+                   placeholder="e.g. MYSERVER\SQLEXPRESS"
+                   @bind="_serverLabel" />
+            <button class="btn btn-primary btn-sm"
+                    @onclick="DoImport"
+                    disabled="@(_pendingStream == null || string.IsNullOrWhiteSpace(_serverLabel) || _importing)">
+                @(_importing ? "Importing..." : "Import")
+            </button>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_resultMessage))
+        {
+            <div class="spblitz-result-msg @(_resultIsError ? "error" : "success")">
+                @_resultMessage
+            </div>
+        }
+
+        <!-- Recent imports table -->
+        @if (_recentImports.Count > 0)
+        {
+            <div class="spblitz-imports-table-wrapper">
+                <table class="spblitz-imports-table">
+                    <thead>
+                        <tr>
+                            <th>Server</th>
+                            <th>Findings</th>
+                            <th>Imported (UTC)</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var grp in _recentImports)
+                        {
+                            <tr>
+                                <td>@grp.ServerLabel</td>
+                                <td>@grp.Count</td>
+                                <td>@grp.ImportedUtc.ToString("yyyy-MM-dd HH:mm")</td>
+                                <td>
+                                    <button class="spblitz-remove-btn"
+                                            @onclick="() => RemoveImport(grp.ImportId)">
+                                        Remove
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    // ── Parameters ────────────────────────────────────────────────────────────
+
+    /// <summary>Raised after a successful import so the parent can refresh its merged view.</summary>
+    [Parameter] public EventCallback OnImportCompleted { get; set; }
+
+    // ── State ─────────────────────────────────────────────────────────────────
+
+    private bool   _isDragOver;
+    private bool   _importing;
+    private string _serverLabel      = string.Empty;
+    private string _selectedFileName = string.Empty;
+    private string _resultMessage    = string.Empty;
+    private bool   _resultIsError;
+
+    // Stream held between file selection and the Import button click
+    private Stream? _pendingStream;
+
+    private sealed record ImportGroup(Guid ImportId, string ServerLabel, int Count, DateTime ImportedUtc);
+    private List<ImportGroup> _recentImports = new();
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
+
+    protected override async Task OnInitializedAsync()
+    {
+        _serverLabel = ConnectionManager.GetConnections().FirstOrDefault()?.ServerNames ?? string.Empty;
+        await RefreshRecentImports();
+    }
+
+    // ── Drag-and-drop handlers ────────────────────────────────────────────────
+
+    private void OnDragOver()  => _isDragOver = true;
+    private void OnDragLeave() => _isDragOver = false;
+
+    private async Task OnDrop(DragEventArgs e)
+    {
+        _isDragOver = false;
+        // JS interop required to read DataTransfer files — use file picker fallback
+        // for drop events because Blazor does not expose DragEventArgs.DataTransfer.Files.
+        // Notify user to use the file picker for now.
+        _resultMessage  = "Drop detected. Please use the file picker (click the drop zone) to select the CSV.";
+        _resultIsError  = false;
+        await Task.CompletedTask;
+    }
+
+    // ── File picker ───────────────────────────────────────────────────────────
+
+    private async Task TriggerFilePicker()
+        => await JSRuntime.InvokeVoidAsync("eval", "document.getElementById('spblitz-file-input')?.click()");
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        _pendingStream?.Dispose();
+        _pendingStream      = null;
+        _selectedFileName   = string.Empty;
+        _resultMessage      = string.Empty;
+
+        var file = e.File;
+        if (file == null) return;
+
+        // Copy to a MemoryStream so the browser file handle is released quickly
+        const long maxBytes = 10 * 1024 * 1024; // 10 MB guard
+        var ms = new MemoryStream();
+        try
+        {
+            await file.OpenReadStream(maxAllowedSize: maxBytes).CopyToAsync(ms);
+            ms.Position       = 0;
+            _pendingStream    = ms;
+            _selectedFileName = file.Name;
+        }
+        catch (Exception ex)
+        {
+            ms.Dispose();
+            _resultMessage  = $"Could not read file: {ex.Message}";
+            _resultIsError  = true;
+        }
+    }
+
+    // ── Import ────────────────────────────────────────────────────────────────
+
+    private async Task DoImport()
+    {
+        if (_pendingStream == null || string.IsNullOrWhiteSpace(_serverLabel)) return;
+
+        _importing     = true;
+        _resultMessage = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            _pendingStream.Position = 0;
+            var result = await ImportService.ImportAsync(_pendingStream, _serverLabel.Trim());
+
+            if (result.Error != null)
+            {
+                _resultMessage = result.Error;
+                _resultIsError = true;
+                Toast.ShowError($"sp_BLITZ import failed: {result.Error}");
+            }
+            else
+            {
+                var msg = $"Imported {result.InsertedCount} findings";
+                if (result.SkippedCount > 0)
+                    msg += $" ({result.SkippedCount} rows skipped)";
+                _resultMessage = msg;
+                _resultIsError = false;
+                Toast.ShowSuccess(msg);
+
+                _pendingStream.Dispose();
+                _pendingStream    = null;
+                _selectedFileName = string.Empty;
+
+                await RefreshRecentImports();
+                await OnImportCompleted.InvokeAsync();
+            }
+        }
+        finally
+        {
+            _importing = false;
+        }
+    }
+
+    // ── Remove import ─────────────────────────────────────────────────────────
+
+    private async Task RemoveImport(Guid importId)
+    {
+        await ImportService.DeleteImportAsync(importId);
+        Toast.ShowInfo("Import removed.");
+        await RefreshRecentImports();
+        await OnImportCompleted.InvokeAsync();
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private async Task RefreshRecentImports()
+    {
+        var all = await BlitzCache.LoadAllRecentAsync(500);
+
+        // Group by (ImportId, ServerLabel) — take the first row's ImportedUtc as representative
+        _recentImports = all
+            .GroupBy(f => f.ImportId)
+            .Select(g => new ImportGroup(
+                g.Key,
+                g.First().ServerLabel,
+                g.Count(),
+                g.First().ImportedUtc))
+            .OrderByDescending(g => g.ImportedUtc)
+            .ToList();
+    }
+
+    public void Dispose()
+    {
+        _pendingStream?.Dispose();
+    }
+}

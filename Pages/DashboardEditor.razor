@@ -1,0 +1,661 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/dashboard-editor"
+<PageTitle>SQLTriage - Dashboard Editor</PageTitle>
+@using System.Data
+@using System.IO
+@using System.Text.Json
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using Microsoft.Extensions.Logging
+@inject DashboardConfigService ConfigService
+@inject NavigationManager Navigation
+@inject IDbConnectionFactory ConnectionFactory
+@inject liveQueriesTableService liveQueriesTableService
+@inject ILogger<DashboardEditor> Logger
+@implements IDisposable
+
+<div class="dashboard-editor">
+    <div class="editor-header">
+        <h2>Dashboard Editor</h2>
+        <div class="header-actions">
+            <table>
+                <tr>
+                    <td><button class="btn btn-secondary" @onclick="Undo" disabled="@(!CanUndo)">↩ Undo</button></td>
+                    <td><button class="btn btn-secondary" @onclick="Redo" disabled="@(!CanRedo)"><i class="fa-solid fa-rotate-right"></i> Redo</button></td>
+                    <td><button class="btn btn-secondary" @onclick="ExportConfig"><i class="fa-solid fa-upload"></i> Export</button></td>
+                    <td><button class="btn btn-secondary" @onclick="ShowImportDialog"><i class="fa-solid fa-download"></i> Import</button></td>
+                    <td><button class="btn btn-secondary" @onclick="ResetConfigToDefault" title="Reset dashboard config to shipped defaults"><i class="fa-solid fa-rotate-left"></i> Reset to Default</button></td>
+                    <td><button class="btn btn-primary" @onclick="SaveAll"><i class="fa-solid fa-floppy-disk"></i> Save All</button></td>
+                    <td>
+                        @if (!string.IsNullOrEmpty(StatusMessage))
+                        {
+                            <span class="autosave-status @(IsSuccess ? "success" : "error")">
+                                @StatusMessage
+                            </span>
+                        }
+                    </td>
+                </tr>
+            </table>
+         
+        </div>
+    </div>
+
+    <div class="editor-content">
+        <!-- Dashboard List -->
+        <div class="dashboard-list-panel">
+            <div class="panel-header">
+                <h3>Dashboards</h3>
+                <button class="btn btn-sm" @onclick="AddDashboard">+ Add</button>
+            </div>
+            <div class="dashboard-list">
+                @foreach (var dashboard in EditedConfig.Dashboards)
+                {
+                    <div class="dashboard-item @(SelectedDashboard?.Id == dashboard.Id ? "selected" : "") @(dashboard == _dragOverDashboard ? "drag-over" : "")"
+                         draggable="true"
+                         @ondragstart="() => OnDashboardDragStart(dashboard)"
+                         @ondragover:preventDefault="true"
+                         @ondragover="() => OnDashboardDragOver(dashboard)"
+                         @ondragleave="() => OnDashboardDragLeave(dashboard)"
+                         @ondrop:preventDefault="true"
+                         @ondrop="() => OnDashboardDrop(dashboard)"
+                         @onclick="() => SelectDashboard(dashboard)">
+                        <div class="dashboard-reorder">
+                            <span class="drag-handle" title="Drag to reorder"><i class="fa-solid fa-bars"></i></span>
+                        </div>
+                        <div class="dashboard-info">
+                            <span class="dashboard-title">@dashboard.Title</span>
+                            <span class="dashboard-route">@dashboard.Route</span>
+                        </div>
+                        <div class="dashboard-actions">
+                            <button class="btn-icon" @onclick="() => EditDashboard(dashboard)" @onclick:stopPropagation title="Edit" aria-label="Edit dashboard @dashboard.Title"><i class="fa-solid fa-pencil"></i>️</button>
+                            <label class="toggle">
+                                <input type="checkbox" @bind="dashboard.Enabled" />
+                            </label>
+                            <button class="btn-icon" @onclick="() => DeleteDashboard(dashboard)" @onclick:stopPropagation title="Delete" aria-label="Delete dashboard @dashboard.Title"><i class="fa-solid fa-trash"></i></button>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Panel List -->
+        <div class="panel-list-panel">
+            @if (SelectedDashboard != null)
+            {
+                <div class="panel-header">
+                    <h3>Panels - @SelectedDashboard.Title</h3>
+                    <button class="btn btn-sm" @onclick="AddPanel">+ Add Panel</button>
+                </div>
+                
+                <div class="panel-list">
+                    @{
+                        var panelsByType = SelectedDashboard.Panels.GroupBy(p => p.PanelType).OrderBy(g => g.Key);
+                    }
+                    @foreach (var group in panelsByType)
+                    {
+                        <div class="panel-group-header">@group.Key</div>
+                        @foreach (var panel in group)
+                        {
+                            <div class="panel-item panel-type-@panel.PanelType.ToLower() @(SelectedPanel?.Id == panel.Id ? "selected" : "") @(panel == _dragOverPanel ? "drag-over" : "")" 
+                                 draggable="true"
+                                 @ondragstart="() => OnDragStart(panel)"
+                                 @ondragover:preventDefault="true"
+                                 @ondragover="() => OnDragOver(panel)"
+                                 @ondragleave="() => OnDragLeave(panel)"
+                                 @ondrop:preventDefault="true"
+                                 @ondrop="() => OnDrop(panel)"
+                                 @onclick="() => SelectPanel(panel)">
+                                <div class="panel-reorder">
+                                    <span class="drag-handle" title="Drag to reorder"><i class="fa-solid fa-bars"></i></span>
+                                </div>
+                                <div class="panel-info">
+                                    <span class="panel-title">@panel.Title</span>
+                                    <span class="panel-type">@panel.PanelType</span>
+                                </div>
+                                <div class="panel-actions">
+                                    <label class="toggle">
+                                        <input type="checkbox" @bind="panel.Enabled" />
+                                    </label>
+                                    <button class="btn-icon" @onclick="() => DuplicatePanel(panel)" @onclick:stopPropagation title="Duplicate" aria-label="Duplicate panel @panel.Title"><i class="fa-solid fa-copy"></i></button>
+                                    <button class="btn-icon" @onclick="() => DeletePanel(panel)" @onclick:stopPropagation title="Delete" aria-label="Delete panel @panel.Title"><i class="fa-solid fa-trash"></i></button>
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="empty-state">
+                    Select a dashboard to edit its panels
+                </div>
+            }
+        </div>
+
+        <div class="panel-editor-panel">
+            @if (SelectedPanel != null)
+            {
+                <div class="panel-header">
+                    <h3>Edit Panel</h3>
+                    <button class="btn btn-sm btn-primary" @onclick="PreviewPanel"><i class="fa-solid fa-eye"></i> Preview</button>
+                </div>
+
+                <div class="editor-form">
+                    <div class="form-section">
+                        <h4>Basic Properties</h4>
+                        <div class="form-group">
+                            <label>Panel ID</label>
+                            <input type="text" @bind="SelectedPanel.Id" @bind:event="oninput" placeholder="unique-panel-id" />
+                        </div>
+                        <div class="form-group">
+                            <label>Title</label>
+                            <input type="text" @bind="SelectedPanel.Title" @bind:event="oninput" placeholder="Panel Title" />
+                        </div>
+                        <div class="form-group">
+                            <label>Description</label>
+                            <textarea @bind="SelectedPanel.Description" @bind:event="oninput" rows="2" placeholder="Description shown below chart"></textarea>
+                        </div>
+                        <div class="form-row" style="align-items: flex-end;">
+                            <div class="form-group" style="flex: 1;">
+                                <label>Default Database</label>
+                                <input type="text" @bind="SelectedPanel.DefaultDatabase" @bind:event="oninput" @bind:after="TriggerAutoSave" placeholder="Leave empty to inherit from dashboard" />
+                                <small>Overrides dashboard default. Leave empty to inherit.</small>
+                            </div>
+                            <div class="form-group" style="flex: 0 0 auto; display: flex; align-items: center; gap: 6px; padding-bottom: 2px;">
+                                <input type="checkbox" @bind="SelectedPanel.Enabled" style="margin: 0;" />
+                                <label style="margin: 0;">Enabled</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h4>Display</h4>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Panel Type</label>
+                                <select @bind="SelectedPanel.PanelType">
+                                    <option value="TimeSeries">Time Series Chart</option>
+                                    <option value="StatCard">Stat Card</option>
+                                    <option value="DeltaStatCard">Delta Stat Card (per/sec)</option>
+                                    <option value="BarGauge">Bar Gauge</option>
+                                    <option value="DataGrid">Data Grid</option>
+                                    <option value="CheckStatus">Check Status</option>
+                                    <option value="TextCard">Text Card</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Chart Type</label>
+                                <select @bind="SelectedPanel.ChartType">
+                                    <option value="Line">Line</option>
+                                    <option value="Bar">Bar</option>
+                                    <option value="Area">Area</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Height (px)</label>
+                                <input type="number" @bind="SelectedPanel.Height" @bind:event="oninput" min="100" max="800" />
+                            </div>
+                            <div class="form-group">
+                                <label>Refresh (sec)</label>
+                                <input type="number" @bind="SelectedPanel.RefreshIntervalSeconds" @bind:event="oninput" min="5" max="3600" placeholder="Auto" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h4>Layout</h4>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Column</label>
+                                <select @bind="SelectedPanel.Layout.Column">
+                                    <option value="0">Special (Stats/Gauges)</option>
+                                    <option value="1">Left Column</option>
+                                    <option value="2">Right Column</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Order</label>
+                                <input type="number" @bind="SelectedPanel.Layout.Order" @bind:event="oninput" min="0" />
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" @bind="SelectedPanel.Layout.SpanColumns" />
+                                Span Full Width
+                            </label>
+                        </div>
+                    </div>
+
+                    @if (SelectedPanel.PanelType == "StatCard")
+                    {
+                        <div class="form-section">
+                            <h4>Stat Card Settings</h4>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Unit</label>
+                                    <input type="text" @bind="SelectedPanel.StatUnit" @bind:event="oninput" placeholder="%, MB, etc." />
+                                </div>
+                                <div class="form-group">
+                                    <label>Threshold Key</label>
+                                    <input type="text" @bind="SelectedPanel.StatThresholdKey" @bind:event="oninput" placeholder="cpu, memory, etc." />
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Value Format</label>
+                                <select @bind="SelectedPanel.ValueFormat">
+                                    <option value="">Default (no formatting)</option>
+                                    <option value="N0">Integer (1,234)</option>
+                                    <option value="N1">1 Decimal (1,234.5)</option>
+                                    <option value="N2">2 Decimals (1,234.56)</option>
+                                    <option value="N3">3 Decimals (1,234.567)</option>
+                                    <option value="P0">Percent 0 (100%)</option>
+                                    <option value="P1">Percent 1 (99.9%)</option>
+                                    <option value="P2">Percent 2 (99.99%)</option>
+                                    <option value="C0">Currency 0 ($1,234)</option>
+                                    <option value="C2">Currency 2 ($1,234.56)</option>
+                                    <option value="0 B">Bytes (1 KB)</option>
+                                    <option value="0.## B">Bytes Precise (1.23 KB)</option>
+                                    <option value="0.## GB">GB (1.23 GB)</option>
+                                    <option value="0.## MB">MB (1,234.56 MB)</option>
+                                    <option value="0.## TB">TB (1.23 TB)</option>
+                                    <option value="0.## ms">Milliseconds (123.45 ms)</option>
+                                    <option value="0.## s">Seconds (1.23 s)</option>
+                                    <option value="0.## 'ms/sec'">ms/sec (123.45 ms/sec)</option>
+                                    <option value="0.## 'requests/sec'">req/sec (123.45 req/sec)</option>
+                                </select>
+                                <small style="color: var(--text-muted); font-size: 11px;">
+                                    Standard .NET format strings: N# = number, P# = percent, C# = currency
+                                </small>
+                            </div>
+                        </div>
+                    }
+
+                    @if (SelectedPanel.PanelType == "BarGauge")
+                    {
+                        <div class="form-section">
+                            <h4>Bar Gauge Settings</h4>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Threshold Key</label>
+                                    <input type="text" @bind="SelectedPanel.BarGaugeThresholdKey" @bind:event="oninput" />
+                                </div>
+                                <div class="form-group">
+                                    <label>Unit Suffix</label>
+                                    <input type="text" @bind="SelectedPanel.BarGaugeUnitSuffix" @bind:event="oninput" placeholder="%" />
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Value Format</label>
+                                <select @bind="SelectedPanel.ValueFormat">
+                                    <option value="">Default (no formatting)</option>
+                                    <option value="N0">Integer (1,234)</option>
+                                    <option value="N1">1 Decimal (1,234.5)</option>
+                                    <option value="N2">2 Decimals (1,234.56)</option>
+                                    <option value="P0">Percent 0 (100%)</option>
+                                    <option value="P1">Percent 1 (99.9%)</option>
+                                    <option value="0.## GB">GB (1.23 GB)</option>
+                                    <option value="0.## MB">MB (1,234.56 MB)</option>
+                                </select>
+                            </div>
+                        </div>
+                    }
+
+                    @if (SelectedPanel.PanelType == "DataGrid")
+                    {
+                        <div class="form-section">
+                            <h4>Data Grid Settings</h4>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>
+                                        <input type="checkbox" @bind="SelectedPanel.DataGridIsClickable" />
+                                        Clickable Rows
+                                    </label>
+                                </div>
+                                <div class="form-group">
+                                    <label>Max Rows</label>
+                                    <input type="number" @bind="SelectedPanel.DataGridMaxRows" @bind:event="oninput" min="10" max="10000" />
+                                </div>
+                            </div>
+                        </div>
+                    }
+
+                    <div class="form-section">
+                        <h4>SQL Queries</h4>
+
+                        @* ── SQL Server Query ── *@
+                        <div class="form-group">
+                            <label>SQL Server Query</label>
+                            <textarea @bind="SelectedPanel.Query.SqlServer" @bind:event="oninput" rows="10" placeholder="SELECT..." style="font-family: monospace; font-size: 12px; resize: vertical;"></textarea>
+                            <div class="button-row">
+                                <button class="btn btn-sm" @onclick="TestSqlServerQuery" disabled="@IsQueryRunning"><i class="fa-solid fa-vial"></i> Test Query</button>
+                                <input type="datetime-local" @bind="TestTimeFrom" class="param-input" title="Time From" />
+                                <input type="datetime-local" @bind="TestTimeTo" class="param-input" title="Time To" />
+                                <input type="text" @bind="TestSqlInstance" class="param-input" placeholder="SqlInstance (comma-separated)" title="SQL Instance(s)" />
+                            </div>
+                        </div>
+
+                        @* ── Result message ── *@
+                        @if (!string.IsNullOrEmpty(QueryTestResult))
+                        {
+                            <div class="query-result @(QueryTestIsError ? "error" : "")">
+                                <strong>Result:</strong> @QueryTestResult
+                            </div>
+                        }
+
+                        @* ── DDL Preview ── *@
+                        @if (!string.IsNullOrEmpty(QueryDdlPreview))
+                        {
+                            <div class="query-ddl-preview">
+                                <strong>DDL:</strong>
+                                <pre>@QueryDdlPreview</pre>
+                            </div>
+                        }
+
+                        @* ── Data Grid Results ── *@
+                        @if (QueryResultTable != null && QueryResultTable.Rows.Count > 0)
+                        {
+                            <div class="query-result-grid">
+                                <div class="result-grid-header">
+                                    <strong>@QueryResultSource Results</strong>
+                                    <span class="result-row-count">@QueryResultTable.Rows.Count row(s)</span>
+                                </div>
+                                <div class="result-grid-scroll">
+                                    <table class="result-table">
+                                        <thead>
+                                            <tr>
+                                                @foreach (System.Data.DataColumn col in QueryResultTable.Columns)
+                                                {
+                                                    <th>@col.ColumnName</th>
+                                                }
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (System.Data.DataRow row in QueryResultTable.Rows)
+                                            {
+                                                <tr>
+                                                    @foreach (System.Data.DataColumn col in QueryResultTable.Columns)
+                                                    {
+                                                        <td>@row[col]</td>
+                                                    }
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="form-section">
+                        <div class="section-header">
+                            <h4>Color Thresholds</h4>
+                            <button class="btn btn-sm" @onclick="AddColorThreshold">+ Add Rule</button>
+                        </div>
+                        @foreach (var rule in SelectedPanel.ColorThresholds)
+                        {
+                            <div class="threshold-rule">
+                                <input type="text" @bind="rule.Label" @bind:event="oninput" placeholder="Label" />
+                                <select @bind="rule.Operator">
+                                    <option value=">=">>=</option>
+                                    <option value=">">></option>
+                                    <option value="&lt;=">&lt;=</option>
+                                    <option value="&lt;">&lt;</option>
+                                    <option value="==">==</option>
+                                </select>
+                                <input type="number" @bind="rule.Value" @bind:event="oninput" step="0.1" />
+                                <input type="text" @bind="rule.Color" @bind:event="oninput" placeholder="#color" style="width: 80px;" />
+                                <button class="btn-icon" @onclick="() => RemoveColorThreshold(rule)" title="Remove threshold" aria-label="Remove color threshold"><i class="fa-solid fa-trash"></i></button>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="empty-state">
+                    Select a panel to edit its properties
+                </div>
+            }
+        </div>
+
+        <!-- Preview Pane -->
+        <div class="preview-pane-panel">
+            @if (SelectedDashboard != null)
+            {
+                <div class="panel-header">
+                    <h3>Preview - @SelectedDashboard.Title</h3>
+                    <button class="btn btn-sm" @onclick="RefreshPreview"><i class="fa-solid fa-rotate"></i> Refresh</button>
+                </div>
+                <div class="preview-container">
+                    <!-- Stats/Gauges Section (Column 0) -->
+                    @{
+                        var statsGauges = SelectedDashboard.Panels.Where(p => p.Layout.Column == 0 && p.Enabled).OrderBy(p => p.Layout.Order).ToList();
+                    }
+                    @if (statsGauges.Any())
+                    {
+                        <div class="preview-stats-section">
+                            @foreach (var panel in statsGauges)
+                            {
+                                <div class="preview-stat-card @(SelectedPanel?.Id == panel.Id ? "selected" : "") @(panel == _dragOverPanel ? "drag-over" : "")"
+                                     draggable="true"
+                                     @ondragstart="() => OnDragStart(panel)"
+                                     @ondragover:preventDefault="true"
+                                     @ondragover="() => OnDragOver(panel)"
+                                     @ondragleave="() => OnDragLeave(panel)"
+                                     @ondrop:preventDefault="true"
+                                     @ondrop="() => OnDrop(panel)"
+                                     @onclick="() => SelectPanel(panel)">
+                                    <div class="preview-stat-label">@panel.Title</div>
+                                    <div class="preview-stat-type">@panel.PanelType</div>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    <!-- Two-Column Layout -->
+                    <div class="preview-columns">
+                        @{
+                            var leftColumn = SelectedDashboard.Panels.Where(p => p.Layout.Column == 1 && p.Enabled).OrderBy(p => p.Layout.Order).ToList();
+                            var rightColumn = SelectedDashboard.Panels.Where(p => p.Layout.Column == 2 && p.Enabled).OrderBy(p => p.Layout.Order).ToList();
+                            var fullWidth = SelectedDashboard.Panels.Where(p => p.Layout.SpanColumns && p.Layout.Column != 0 && p.Enabled).OrderBy(p => p.Layout.Order).ToList();
+                        }
+
+                        <!-- Left Column -->
+                        <div class="preview-column">
+                            @foreach (var panel in leftColumn)
+                            {
+                                <div class="preview-panel @(SelectedPanel?.Id == panel.Id ? "selected" : "") @(panel == _dragOverPanel ? "drag-over" : "")"
+                                     draggable="true"
+                                     @ondragstart="() => OnDragStart(panel)"
+                                     @ondragover:preventDefault="true"
+                                     @ondragover="() => OnDragOver(panel)"
+                                     @ondragleave="() => OnDragLeave(panel)"
+                                     @ondrop:preventDefault="true"
+                                     @ondrop="() => OnDrop(panel)"
+                                     @onclick="() => SelectPanel(panel)"
+                                     style="height: @(panel.Height)px;">
+                                    <div class="preview-panel-header">
+                                        <span class="preview-panel-title">@panel.Title</span>
+                                        <span class="preview-panel-type">@panel.PanelType</span>
+                                    </div>
+                                    <div class="preview-panel-body">
+                                        <div class="preview-placeholder">@panel.PanelType</div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+
+                        <!-- Right Column -->
+                        <div class="preview-column">
+                            @foreach (var panel in rightColumn)
+                            {
+                                <div class="preview-panel @(SelectedPanel?.Id == panel.Id ? "selected" : "") @(panel == _dragOverPanel ? "drag-over" : "")"
+                                     draggable="true"
+                                     @ondragstart="() => OnDragStart(panel)"
+                                     @ondragover:preventDefault="true"
+                                     @ondragover="() => OnDragOver(panel)"
+                                     @ondragleave="() => OnDragLeave(panel)"
+                                     @ondrop:preventDefault="true"
+                                     @ondrop="() => OnDrop(panel)"
+                                     @onclick="() => SelectPanel(panel)"
+                                     style="height: @(panel.Height)px;">
+                                    <div class="preview-panel-header">
+                                        <span class="preview-panel-title">@panel.Title</span>
+                                        <span class="preview-panel-type">@panel.PanelType</span>
+                                    </div>
+                                    <div class="preview-panel-body">
+                                        <div class="preview-placeholder">@panel.PanelType</div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    <!-- Full Width Panels -->
+                    @foreach (var panel in fullWidth)
+                    {
+                        <div class="preview-panel preview-panel-full @(SelectedPanel?.Id == panel.Id ? "selected" : "") @(panel == _dragOverPanel ? "drag-over" : "")"
+                             draggable="true"
+                             @ondragstart="() => OnDragStart(panel)"
+                             @ondragover:preventDefault="true"
+                             @ondragover="() => OnDragOver(panel)"
+                             @ondragleave="() => OnDragLeave(panel)"
+                             @ondrop:preventDefault="true"
+                             @ondrop="() => OnDrop(panel)"
+                             @onclick="() => SelectPanel(panel)"
+                             style="height: @(panel.Height)px;">
+                            <div class="preview-panel-header">
+                                <span class="preview-panel-title">@panel.Title</span>
+                                <span class="preview-panel-type">@panel.PanelType</span>
+                            </div>
+                            <div class="preview-panel-body">
+                                <div class="preview-placeholder">@panel.PanelType</div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="empty-state">
+                    Select a dashboard to preview
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Preview Modal -->
+    @if (ShowPreview)
+    {
+        <div class="modal-overlay" @onclick="ClosePreview">
+            <div class="modal preview-modal" @onclick:stopPropagation>
+                <div class="modal-header">
+                    <h3>Preview: @(SelectedPanel?.Title)</h3>
+                    <button class="close-btn" @onclick="ClosePreview">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="preview-info">
+                        <span>Type: @SelectedPanel?.PanelType</span>
+                        <span>Chart: @SelectedPanel?.ChartType</span>
+                        <span>Height: @SelectedPanel?.Height px</span>
+                    </div>
+                    <div class="preview-placeholder">
+                        [Live preview would render here with actual data]
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Import Modal -->
+    @if (ShowImport)
+    {
+        <div class="modal-overlay" @onclick="CloseImportDialog">
+            <div class="modal import-modal" @onclick:stopPropagation>
+                <div class="modal-header">
+                    <h3>Import Dashboard Configuration</h3>
+                    <button class="close-btn" @onclick="CloseImportDialog">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Paste JSON configuration:</label>
+                        <textarea class="@(_importValidation.valid ? "" : "json-invalid")"
+                                  value="@ImportJson" @oninput="OnImportJsonChanged"
+                                  rows="10" placeholder='{"dashboards": [...]}'></textarea>
+                        @if (!_importValidation.valid)
+                        {
+                            <div style="color:var(--red); font-size:12px; padding:4px 0;">
+                                @_importValidation.error
+                            </div>
+                        }
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" @onclick="CloseImportDialog">Cancel</button>
+                    <button class="btn btn-primary" @onclick="ImportConfig" disabled="@(!_importValidation.valid && !string.IsNullOrWhiteSpace(ImportJson))">Import</button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@if (ShowAddDashboardDialog)
+{
+    <div class="modal-overlay" @onclick="CancelAddDashboard">
+        <div class="modal" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Add New Dashboard</h3>
+                <button class="close-btn" @onclick="CancelAddDashboard">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="dashboardTitle">Dashboard Name</label>
+                    <input id="dashboardTitle" type="text" @bind="NewDashboardTitle" placeholder="e.g., My Custom Dashboard" />
+                </div>
+                <div class="form-group">
+                    <label for="dashboardRoute">Page Name (Route)</label>
+                    <input id="dashboardRoute" type="text" @bind="NewDashboardRoute" placeholder="e.g., /my-dashboard" />
+                    <small>The URL path for this dashboard (must start with /)</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CancelAddDashboard">Cancel</button>
+                <button class="btn btn-primary" @onclick="ConfirmAddDashboard">Add Dashboard</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (ShowEditDashboardDialog)
+{
+    <div class="modal-overlay" @onclick="CancelEditDashboard">
+        <div class="modal" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Edit Dashboard</h3>
+                <button class="close-btn" @onclick="CancelEditDashboard">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="editDashboardTitle">Dashboard Name</label>
+                    <input id="editDashboardTitle" type="text" @bind="EditDashboardTitle" placeholder="e.g., My Custom Dashboard" />
+                </div>
+                <div class="form-group">
+                    <label for="editDashboardRoute">Page Name (Route)</label>
+                    <input id="editDashboardRoute" type="text" @bind="EditDashboardRoute" placeholder="e.g., /my-dashboard" />
+                    <small>The URL path for this dashboard (must start with /)</small>
+                </div>
+                <div class="form-group">
+                    <label for="editDashboardDefaultDatabase">Default Database</label>
+                    <input id="editDashboardDefaultDatabase" type="text" @bind="EditDashboardDefaultDatabase" placeholder="e.g., SQLWATCH" />
+                    <small>Default database for panels in this dashboard (panels can override this)</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CancelEditDashboard">Cancel</button>
+                <button class="btn btn-primary" @onclick="ConfirmEditDashboard">Save Changes</button>
+            </div>
+        </div>
+    </div>
+}

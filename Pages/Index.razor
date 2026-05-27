@@ -1,0 +1,27 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/"
+<PageTitle>SQLTriage</PageTitle>
+@using SQLTriage.Components.Dashboards
+@using SQLTriage.Data
+@inject NavigationManager Navigation
+@inject ServerConnectionManager ConnectionManager
+
+@code {
+    protected override void OnInitialized()
+    {
+        // Check if any servers are configured
+        var connections = ConnectionManager.GetConnections();
+        if (connections.Count == 0)
+        {
+            // No servers configured - redirect to guide page (recommended starting point)
+            Navigation.NavigateTo("/guide", replace: true);
+            return;
+        }
+
+        // Default landing page is now the Guide page for first-time users
+        // Guide page provides navigation to all major features
+        Navigation.NavigateTo("/guide", replace: true);
+    }
+}
+
+<RepositoryDashboard />

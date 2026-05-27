@@ -1,0 +1,813 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/sessions"
+@page "/dashboard/sessions"
+<PageTitle>SQLTriage - Sessions</PageTitle>
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using Serilog
+@inject SessionDataService SessionService
+@inject ServerConnectionManager ConnectionManager
+@inject IDbConnectionFactory ConnectionFactory
+@inject GlobalInstanceSelector InstanceSelector
+@inject SQLTriage.Data.Services.PrintService PrintSvc
+@inject SQLTriage.Data.ToastService Toast
+@inject IJSRuntime JSRuntime
+@inject SQLTriage.Data.UserSettingsService UserSettings
+@inject SQLTriage.Data.Services.AppUserState UserState
+@implements IDisposable
+
+<!-- Charts Modal -->
+@if (_showCharts)
+{
+    <div class="panel-maximize-overlay" @onclick="HideCharts">
+        <div class="query-plan-modal-content" style="max-width:800px;" @onclick:stopPropagation>
+            <div class="panel-maximize-header">
+                <span class="panel-maximize-title">Session Performance Charts</span>
+                <button class="panel-maximize-close" @onclick="HideCharts" title="Close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="panel-maximize-body">
+                <canvas id="cpuChart" width="400" height="200"></canvas>
+                <canvas id="memoryChart" width="400" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+}
+
+<PdfExportModal @ref="_pdfModal"
+    Title="Export Sessions to PDF"
+    DefaultLandscape="true"
+    DefaultBackgrounds="true"
+    OnConfirm="OnPdfConfirmed" />
+
+<div class="sessions-page">
+
+    @* Server context header *@
+    @if (ConnectionManager.CurrentServer != null)
+    {
+        <div class="server-context-header">
+            <span class="server-context-icon"><i class="fa-solid fa-circle"></i></span>
+            <span class="server-context-label">Live Sessions on:</span>
+            <span class="server-context-name">@ConnectionManager.CurrentServer.ServerNames</span>
+            <span class="server-context-db">(@ConnectionManager.CurrentServer.Database)</span>
+            <span class="server-context-label" style="margin-left: 16px;">Instance:</span>
+            <select class="toolbar-select" style="margin-left: 4px;" @onchange="OnInstanceChanged">
+                @foreach (var instance in Instances)
+                {
+                    <option value="@instance" selected="@(SelectedInstance == instance)">@instance</option>
+                }
+            </select>
+        </div>
+    }
+
+     @* Toolbar *@
+     <div class="sessions-toolbar">
+         <div class="toolbar-group">
+             <label class="toolbar-label">Refresh:</label>
+             <select class="toolbar-select" value="@RefreshIntervalSeconds" @onchange="OnRefreshIntervalChanged">
+                 <option value="2">2 sec</option>
+                 <option value="5">5 sec</option>
+                 <option value="10">10 sec</option>
+                 <option value="15">15 sec</option>
+                 <option value="30">30 sec</option>
+             </select>
+         </div>
+
+         <div class="toolbar-group">
+             <button class="toolbar-btn @(AutoRefresh ? "active" : "")" @onclick="ToggleAutoRefresh">
+                 @(AutoRefresh ? "⏸ Pause" : "▶ Auto-Refresh")
+             </button>
+             <button class="toolbar-btn" @onclick="ManualRefresh" title="Refresh now">
+                 <i class="fa-solid fa-rotate"></i> Refresh
+             </button>
+             <button class="toolbar-btn" @onclick="ExportToCsv" title="Export sessions to CSV">
+                 <i class="fa-solid fa-file-csv"></i> CSV
+             </button>
+             <button class="toolbar-btn @(_pdfExporting ? "active" : "")" @onclick="OpenPdfModal" disabled="@_pdfExporting" title="Export sessions to PDF">
+                 @if (_pdfExporting)
+                 {
+                     <i class="fa-solid fa-spinner fa-spin"></i>
+                 }
+                 else
+                 {
+                     <i class="fa-solid fa-file-pdf"></i>
+                 }
+                 @(_pdfExporting ? " Saving..." : " PDF")
+             </button>
+             <button class="toolbar-btn" @onclick="ShowCharts" title="Show Performance Charts">
+                 <i class="fa-solid fa-chart-bar"></i> Charts
+             </button>
+         </div>
+
+         <div class="toolbar-group" style="margin-left: 16px;">
+             <input type="text" class="toolbar-search" placeholder="Search sessions..." value="@SearchText" @onchange="OnSearchChanged" title="Search by login, host, program, database" />
+             
+             <button class="sessions-filter-btn @(HideSleeping ? "active" : "")" @onclick="ToggleHideSleeping" title="Hide sleeping sessions">
+                 @if (HideSleeping)
+                 {
+                     <span><i class="fa-solid fa-eye"></i> Show Sleeping</span>
+                 }
+                 else
+                 {
+                     <span><i class="fa-solid fa-eye-slash"></i> Hide Sleeping</span>
+                 }
+             </button>
+             <button class="sessions-filter-btn @(ShowOnlyBlocked ? "active" : "")" @onclick="ToggleShowOnlyBlocked" title="Show only blocked/blocking sessions">
+                 @if (ShowOnlyBlocked)
+                 {
+                     <span><i class="fa-solid fa-lock-open"></i> Show All</span>
+                 }
+                 else
+                 {
+                     <span><i class="fa-solid fa-lock"></i> Only Blocked</span>
+                 }
+             </button>
+             <button class="sessions-filter-btn @(HideLowIO ? "active" : "")" @onclick="ToggleHideLowIO" title="Hide low IO activity sessions">
+                 @if (HideLowIO)
+                 {
+                     <span><i class="fa-solid fa-chart-simple"></i> Show All IO</span>
+                 }
+                 else
+                 {
+                     <span><i class="fa-solid fa-chart-simple"></i> Hide Low IO</span>
+                 }
+             </button>
+         </div>
+
+         <div class="toolbar-group" style="margin-left: auto;">
+             <label class="toolbar-label">Max Display:</label>
+             <select class="toolbar-select" value="@MaxDisplayCount" @onchange="OnMaxDisplayChanged">
+                 <option value="100">100</option>
+                 <option value="200">200</option>
+                 <option value="500">500</option>
+                 <option value="1000">1000</option>
+                 <option value="2000">2000</option>
+             </select>
+         </div>
+
+          <div class="toolbar-status">
+              <span style="font-size: 11px; color: var(--text-muted);">
+                  @FilteredSessions.Count sessions displayed
+                  @if (AllSessions.Count != FilteredSessions.Count)
+                  {
+                      <span>(@AllSessions.Count total)</span>
+                  }
+                  @if (!string.IsNullOrEmpty(LastRefreshTime))
+                  {
+                      <span>&nbsp;| Last: @LastRefreshTime</span>
+                      @if (_refreshing)
+                      {
+                          <i class="fa-solid fa-spinner fa-spin" style="font-size:11px;color:var(--text-secondary);margin-left:4px;"></i>
+                      }
+                  }
+              </span>
+          </div>
+     </div>
+
+    @* Error display *@
+    @if (!string.IsNullOrEmpty(ErrorMessage))
+    {
+        <div class="chart-empty" style="color: var(--red); background: var(--bg-secondary); border: 1px solid var(--red); padding: 12px; margin: 8px; border-radius: 4px;">
+            @ErrorMessage
+        </div>
+    }
+
+    @* Loading indicator *@
+    @if (IsLoading && AllSessions.Count == 0)
+    {
+        <PageLoadingSpinner Message="Loading sessions..." />
+    }
+
+    @* Main content area *@
+    <div class="sessions-content">
+        <div class="sessions-main-row">
+            @* Bubble view *@
+            <div class="sessions-bubble-area">
+                <SessionBubbleView Sessions="@FilteredSessions"
+                                   OnSessionClicked="OnSessionClicked"
+                                   SelectedSpid="@SelectedSession?.SPID"
+                                   ThresholdExceededSpids="@GetThresholdExceededSpids()" />
+                <div class="sessions-bubble-footer">
+                    <button class="sessions-filter-btn" @onclick="() => ShowLegend = true">
+                        <i class="fa-solid fa-book"></i> Show Legend
+                    </button>
+                </div>
+            </div>
+
+             @* Detail panel *@
+             <div class="sessions-detail-container @((SelectedSession != null) ? "visible" : "hidden")">
+                 @if (SelectedSession != null)
+                 {
+                     <SessionDetailPanel Session="@SelectedSession"
+                                        OnClose="CloseDetail"
+                                        OnViewPlanRequested="OnViewPlanRequested"
+                                        OnKillSession="KillSelectedSession" />
+                 }
+             </div>
+        </div>
+    </div>
+</div>
+
+@* Legend modal overlay *@
+@if (ShowLegend)
+{
+    <div class="session-legend-overlay" @onclick="() => ShowLegend = false">
+        <div @onclick:stopPropagation="true">
+            <SessionLegend OnClose="() => ShowLegend = false" />
+        </div>
+    </div>
+}
+
+@* Query plan modal — shown when "View Plan" is clicked on an active session *@
+<QueryPlanModal @ref="_planModal"
+    ConnectionId="@ConnectionManager.CurrentServer?.Id"
+    DatabaseName="@ConnectionManager.CurrentServer?.Database" />
+
+@if (_showInstanceModal)
+{
+    <div class="instance-modal-overlay" @onclick="() => _showInstanceModal = false">
+        <div class="instance-modal-content" @onclick:stopPropagation>
+            <h3 style="margin-top: 0; color: var(--text-primary);">Select Instance</h3>
+            @foreach (var instance in Instances)
+            {
+                <button class="settings-btn" style="width: 100%; margin: 5px 0; text-align: left;" @onclick="() => SelectInstance(instance)">
+                    @instance
+                </button>
+            }
+            <button class="settings-btn" style="width: 100%; margin-top: 10px;" @onclick="() => _showInstanceModal = false">Cancel</button>
+        </div>
+    </div>
+}
+
+@code {
+    // ENHANCEMENT: Added search, memory, row count, settings persistence, kill, CSV export, improved timer
+
+    private List<SessionInfo> AllSessions = new();
+    private List<SessionInfo> _backgroundSessions = new();
+    private SessionInfo? SelectedSession;
+    private bool IsLoading = false;
+    private bool _refreshing = false;
+    private string? ErrorMessage;
+    private string? LastRefreshTime;
+
+    private string SelectedInstance = "";
+    private string[] Instances = Array.Empty<string>();
+
+    private bool HideSleeping = false;
+    private bool ShowOnlyBlocked = false;
+    private bool HideLowIO = false;
+    private bool ShowLegend = false;
+    private bool _showInstanceModal = false;
+
+    // Search text
+    private string SearchText = "";
+
+    // Auto-refresh settings
+    private bool AutoRefresh = true;
+    private int RefreshIntervalSeconds = 5;
+
+    // Display limit (optional safety cap)
+    private int MaxDisplayCount = 500;
+
+    private QueryPlanModal? _planModal;
+    private PdfExportModal _pdfModal = default!;
+    private bool _pdfExporting = false;
+     private bool _showCharts = false;
+
+     // ENHANCEMENT: Timer cancellation
+     private CancellationTokenSource? _timerCts;
+
+     // ENHANCEMENT: Concurrency guard
+     private readonly SemaphoreSlim _loadLock = new(1, 1);
+
+    // ENHANCEMENT: Blocking chain data
+    private HashSet<int> _blockingChainSPIDs = new();
+    private Dictionary<int, List<int>> _blockedByMap = new(); // child -> parent
+
+    private List<SessionInfo> FilteredSessions
+    {
+        get
+        {
+            IEnumerable<SessionInfo> result = AllSessions;
+
+            // Apply HideSleeping filter
+            if (HideSleeping)
+                result = result.Where(s => !s.IsSleeping || s.IsActive);
+
+            // ENHANCEMENT: ShowOnlyBlocked now includes any session in a blocking chain
+            if (ShowOnlyBlocked)
+            {
+                result = result.Where(s => _blockingChainSPIDs.Contains(s.SPID));
+            }
+
+            // Apply HideLowIO (percentile-based)
+            if (HideLowIO && AllSessions.Count > 0)
+            {
+                var ioValues = AllSessions.Select(s => s.LogicalReads + s.Writes).OrderBy(v => v).ToList();
+                var p20Index = (int)Math.Floor(ioValues.Count * 0.2);
+                var threshold = ioValues[Math.Min(p20Index, ioValues.Count - 1)];
+                result = result.Where(s =>
+                    (s.LogicalReads + s.Writes) > threshold ||
+                    _blockingChainSPIDs.Contains(s.SPID));
+            }
+
+            // Apply search text
+            if (!string.IsNullOrWhiteSpace(SearchText))
+            {
+                var search = SearchText.ToLower();
+                result = result.Where(s =>
+                    (s.LoginName != null && s.LoginName.ToLower().Contains(search)) ||
+                    (s.HostName != null && s.HostName.ToLower().Contains(search)) ||
+                    (s.ProgramName != null && s.ProgramName.ToLower().Contains(search)) ||
+                    (s.DatabaseName != null && s.DatabaseName.ToLower().Contains(search)));
+            }
+
+            // Sort by activity (CPU + IO) descending
+            result = result.OrderByDescending(s => s.CpuTime + s.LogicalReads + s.Writes);
+
+            // Apply display limit for performance
+            return result.Take(MaxDisplayCount).ToList();
+        }
+    }
+
+    private void ToggleHideLowIO() => HideLowIO = !HideLowIO;
+
+    /// <summary>
+    /// Returns the set of SPIDs that exceed at least one enabled threshold.
+    /// Returns an empty set when ThresholdsEnabled is false (zero overhead).
+    /// </summary>
+    private HashSet<int> GetThresholdExceededSpids()
+    {
+        if (!UserSettings.GetThresholdsEnabled())
+            return [];
+
+        var cpuMs      = UserSettings.GetThresholdCpuMs();
+        var waitMs     = UserSettings.GetThresholdWaitTimeMs();
+        var memMb      = UserSettings.GetThresholdMemoryMb();
+        var readsKb    = UserSettings.GetThresholdReadsKb();
+        var writesKb   = UserSettings.GetThresholdWritesKb();
+        var durationMs = UserSettings.GetThresholdDurationMs();
+
+        var result = new HashSet<int>();
+        foreach (var s in FilteredSessions)
+        {
+            bool exceeded =
+                (cpuMs      > 0 && s.CpuTime >= cpuMs)      ||
+                (waitMs     > 0 && s.WaitTime >= waitMs)     ||
+                (memMb      > 0 && s.MemoryUsageKB / 1024 >= memMb) ||
+                (readsKb    > 0 && s.LogicalReads >= readsKb) ||
+                (writesKb   > 0 && s.Writes >= writesKb)     ||
+                (durationMs > 0 && s.TotalElapsedTime >= durationMs);
+
+            if (exceeded)
+                result.Add(s.SPID);
+        }
+        return result;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        InstanceSelector.OnInstanceChanged += OnGlobalInstanceChanged;
+
+        // ENHANCEMENT: Load persisted settings
+        await LoadSettingsAsync();
+
+        var connections = ConnectionManager.GetConnections();
+        var availableInstances = connections.SelectMany(c => c.GetServerList()).Distinct().ToList();
+        Instances = availableInstances.ToArray();
+        SelectedInstance = InstanceSelector.SelectedInstance ?? (availableInstances.Any() ? availableInstances[0] : "");
+
+        await LoadSessions(true);
+        StartTimer();
+    }
+
+    // ENHANCEMENT: PeriodicTimer-based refresh loop with cancellation
+    private void StartTimer()
+    {
+        _timerCts?.Cancel();
+        _timerCts = new CancellationTokenSource();
+
+        _ = RunRefreshLoopAsync(_timerCts.Token);
+    }
+
+    private async Task RunRefreshLoopAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            if (AutoRefresh)
+            {
+                try
+                {
+                    await LoadSessions(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    // Ignore - shutting down
+                }
+                catch (Exception ex)
+                {
+                    ErrorMessage = $"Refresh error: {ex.Message}";
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(RefreshIntervalSeconds), cancellationToken);
+            }
+            catch (TaskCanceledException) { }
+        }
+    }
+
+    // ENHANCEMENT: Load settings from UserSettingsService
+    private Task LoadSettingsAsync()
+    {
+        try
+        {
+            AutoRefresh = UserSettings.GetSessionsAutoRefresh();
+            RefreshIntervalSeconds = UserSettings.GetSessionsRefreshInterval();
+            HideSleeping = UserSettings.GetSessionsHideSleeping();
+            ShowOnlyBlocked = UserSettings.GetSessionsShowOnlyBlocked();
+            HideLowIO = UserSettings.GetSessionsHideLowIO();
+            SearchText = UserSettings.GetSessionsSearchText();
+            MaxDisplayCount = UserSettings.GetSessionsMaxDisplay();
+        }
+        catch { /* non-critical */ }
+        return Task.CompletedTask;
+    }
+
+    // ENHANCEMENT: Save settings (call after changes)
+    private void SaveSettingsAsync()
+    {
+        try
+        {
+            UserSettings.SetSessionsAutoRefresh(AutoRefresh);
+            UserSettings.SetSessionsRefreshInterval(RefreshIntervalSeconds);
+            UserSettings.SetSessionsHideSleeping(HideSleeping);
+            UserSettings.SetSessionsShowOnlyBlocked(ShowOnlyBlocked);
+            UserSettings.SetSessionsHideLowIO(HideLowIO);
+            UserSettings.SetSessionsSearchText(SearchText);
+            UserSettings.SetSessionsMaxDisplay(MaxDisplayCount);
+        }
+        catch { /* non-critical */ }
+    }
+
+     private async Task LoadSessions(bool forceRender)
+     {
+         // ENHANCEMENT: Concurrency guard - skip if already loading
+         if (!_loadLock.Wait(0))
+             return;
+
+         try
+         {
+             _refreshing = true;
+             if (AllSessions.Count == 0) IsLoading = true;
+             ErrorMessage = null;
+
+             // Fetch all sessions with current filters (server-side) into background variable
+             var newSessions = await SessionService.GetLiveSessionsAsync(
+                 topCount: MaxDisplayCount, // safety cap
+                 hideSleeping: HideSleeping,
+                 onlyBlocked: ShowOnlyBlocked,
+                 hideLowIO: HideLowIO,
+                 searchText: SearchText);
+
+             // Only after fetch completes: update the displayed sessions
+             AllSessions = newSessions;
+             LastRefreshTime = DateTime.Now.ToString("HH:mm:ss");
+
+             // ENHANCEMENT: Update blocking chain lookup for line drawing
+             await UpdateBlockingChainAsync();
+
+             // If selected session no longer exists, deselect
+             if (SelectedSession != null && !newSessions.Any(s => s.SPID == SelectedSession.SPID))
+             {
+                 SelectedSession = null;
+             }
+             else if (SelectedSession != null)
+             {
+                 // Update selected session with latest data
+                 SelectedSession = newSessions.FirstOrDefault(s => s.SPID == SelectedSession.SPID);
+             }
+         }
+         catch (Exception ex)
+         {
+             ErrorMessage = $"Failed to load sessions: {ex.Message}";
+         }
+         finally
+         {
+             _refreshing = false;
+             IsLoading = false;
+             _loadLock.Release();
+         }
+     }
+
+    // ENHANCEMENT: Build blocking chain set for visualization
+    private async Task UpdateBlockingChainAsync()
+    {
+        try
+        {
+            var blockingInfos = await SessionService.GetBlockingChainAsync(SelectedInstance);
+            _blockingChainSPIDs = new HashSet<int>(blockingInfos.SelectMany(b => new[] { b.BlockingSPID, b.BlockedSPID }));
+            _blockedByMap = blockingInfos.GroupBy(b => b.BlockedSPID)
+                                         .ToDictionary(g => g.Key, g => g.Select(b => b.BlockingSPID).ToList());
+        }
+        catch { /* non-critical */ }
+    }
+
+    private void OnSessionClicked(SessionInfo session)
+    {
+        SelectedSession = SelectedSession?.SPID == session.SPID ? null : session;
+    }
+
+    private void CloseDetail()
+    {
+        SelectedSession = null;
+    }
+
+    private async Task OnViewPlanRequested(int spid)
+    {
+        try
+        {
+            var xml = await SessionService.GetQueryPlanAsync(spid);
+            if (xml != null && _planModal != null)
+                await _planModal.ShowAsync(xml, SelectedSession?.QueryText);
+            else
+                ErrorMessage = "No active query plan is available for this session (session may be sleeping or plan handle is not yet set).";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Failed to fetch query plan: {ex.Message}";
+        }
+        StateHasChanged();
+    }
+
+     private async Task ToggleHideSleeping()
+     {
+         HideSleeping = !HideSleeping;
+         SaveSettingsAsync();
+         await LoadSessions(true);
+     }
+
+     private async Task ToggleShowOnlyBlocked()
+     {
+         ShowOnlyBlocked = !ShowOnlyBlocked;
+         SaveSettingsAsync();
+         await LoadSessions(true);
+     }
+
+     private async Task ToggleAutoRefresh()
+     {
+         AutoRefresh = !AutoRefresh;
+         SaveSettingsAsync();
+         // Timer loop checks AutoRefresh each iteration, no action needed
+     }
+
+    private void OpenPdfModal()
+    {
+        var stem = $"LiveSessions_{DateTime.Now:yyyyMMdd_HHmmss}";
+        _pdfModal.Show(stem);
+    }
+
+    private async Task OnPdfConfirmed(PdfExportSettings settings)
+    {
+        await Task.Delay(350);
+        _pdfExporting = true;
+        StateHasChanged();
+        try
+        {
+            if (!PrintSvc.IsAvailable)
+            {
+                await PrintSvc.PrintViaBrowserAsync(JSRuntime);
+                Toast.ShowInfo("Browser print dialog opened — use 'Save as PDF' to export.");
+                return;
+            }
+
+            var orientation = settings.LandscapeOrientation
+                ? Microsoft.Web.WebView2.Core.CoreWebView2PrintOrientation.Landscape
+                : Microsoft.Web.WebView2.Core.CoreWebView2PrintOrientation.Portrait;
+
+            // Watermark: apply when the current server is non-production or unset.
+            var applyWatermark = ServerEnvironment.RequiresWatermark(
+                new[] { ConnectionManager.CurrentServer?.Environment });
+            if (applyWatermark)
+                await JSRuntime.InvokeVoidAsync("eval", "document.body.classList.add('has-draft-watermark');");
+
+            var (success, path, error) = await PrintSvc.PrintToPdfAsync(settings.FileName,
+                printBackgrounds: settings.PrintBackgrounds,
+                orientation: orientation);
+
+            if (applyWatermark)
+                await JSRuntime.InvokeVoidAsync("eval", "document.body.classList.remove('has-draft-watermark');");
+
+            if (success) Toast.ShowSuccess($"PDF saved: {System.IO.Path.GetFileName(path)}");
+            else         Toast.ShowError($"PDF export failed: {error}");
+        }
+        finally
+        {
+            _pdfExporting = false;
+            StateHasChanged();
+        }
+    }
+
+     private async Task OnRefreshIntervalChanged(ChangeEventArgs e)
+     {
+         if (int.TryParse(e.Value?.ToString(), out var seconds))
+         {
+             RefreshIntervalSeconds = Math.Clamp(seconds, 2, 60);
+             SaveSettingsAsync();
+         }
+     }
+
+     private async Task OnMaxDisplayChanged(ChangeEventArgs e)
+     {
+         if (int.TryParse(e.Value?.ToString(), out var count))
+         {
+             MaxDisplayCount = Math.Clamp(count, 25, 2000);
+             SaveSettingsAsync();
+                    await LoadSessions(false);
+         }
+     }
+
+     private async Task OnSearchChanged(ChangeEventArgs e)
+     {
+         SearchText = e.Value?.ToString() ?? "";
+         SaveSettingsAsync();
+         await LoadSessions(true);
+     }
+
+    private async Task ManualRefresh()
+    {
+        await LoadSessions(true);
+    }
+
+    private void ShowCharts()
+    {
+        _showCharts = true;
+        StateHasChanged();
+        // Render charts with Chart.js
+        _ = Task.Run(async () => await RenderCharts());
+    }
+
+    private void HideCharts()
+    {
+        _showCharts = false;
+    }
+
+    private async Task RenderCharts()
+    {
+        await Task.Delay(100); // Allow DOM render
+        var cpuData = AllSessions.OrderByDescending(s => s.CpuTime).Take(10).Select(s => new { label = $"SPID {s.SPID}", value = s.CpuTime }).ToList();
+        var memoryData = AllSessions.OrderByDescending(s => s.LogicalReads).Take(10).Select(s => new { label = $"SPID {s.SPID}", value = s.LogicalReads }).ToList();
+
+        await JSRuntime.InvokeVoidAsync("renderSessionCharts", cpuData, memoryData);
+    }
+
+    private async void OnGlobalInstanceChanged(string instanceName)
+    {
+        try
+        {
+            SelectedInstance = instanceName;
+            await InvokeAsync(async () =>
+            {
+                await LoadSessions(true);
+                StateHasChanged();
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "OnGlobalInstanceChanged failed in Sessions");
+        }
+    }
+
+    private async Task OnInstanceChanged(ChangeEventArgs e)
+    {
+        var instance = e.Value?.ToString() ?? "";
+        SelectedInstance = instance;
+        InstanceSelector.SetSelectedInstance(instance);
+        await LoadSessions(true);
+    }
+
+    // ENHANCEMENT: Export CSV
+    private async Task ExportToCsv()
+    {
+        if (FilteredSessions.Count == 0)
+        {
+            Toast.ShowWarning("No sessions to export.");
+            return;
+        }
+
+        var csv = new System.Text.StringBuilder();
+        csv.AppendLine("SPID,LoginName,HostName,Database,Status,CpuTime,LogicalReads,Writes,OpenTransactions,RequestStatus,Command,WaitType,WaitTime,BlockingSPID,ElapsedTime,ProgramName,MemoryKB,RowCount,IsActive,IsBlocked,IsIdleInTx");
+
+        foreach (var s in FilteredSessions)
+        {
+            var line = string.Join(",",
+                s.SPID,
+                EscapeCsv(s.LoginName),
+                EscapeCsv(s.HostName),
+                EscapeCsv(s.DatabaseName),
+                EscapeCsv(s.SessionStatus),
+                s.CpuTime,
+                s.LogicalReads,
+                s.Writes,
+                s.OpenTransactionCount,
+                EscapeCsv(s.RequestStatus),
+                EscapeCsv(s.Command),
+                EscapeCsv(s.WaitType),
+                s.WaitTime,
+                s.BlockingSessionId,
+                s.TotalElapsedTime,
+                EscapeCsv(s.ProgramName),
+                s.MemoryUsageKB,
+                s.RowCount ?? 0,
+                s.IsActive,
+                s.IsBlocked,
+                s.IsIdleInTransaction);
+            csv.AppendLine(line);
+        }
+
+        var csvString = csv.ToString();
+        var encodedUri = "data:text/csv;charset=utf-8," + Uri.EscapeDataString(csvString);
+        await JSRuntime.InvokeVoidAsync("open", encodedUri);
+        Toast.ShowSuccess($"CSV prepared ({FilteredSessions.Count} sessions). Use browser to save.");
+    }
+
+    private string EscapeCsv(string? value)
+    {
+        if (value == null) return "";
+        return "\"" + value.Replace("\"", "\"\"") + "\"";
+    }
+
+    // ENHANCEMENT: Kill session
+    private async Task KillSelectedSession(int spid)
+    {
+        if (!RbacService.HasPermission(UserState.Role, "run_scripts"))
+        {
+            Toast.ShowWarning("Insufficient permissions to kill sessions. Operator role required.");
+            return;
+        }
+        // Use spid (from child) to ensure we kill the correct session
+        if (SelectedSession == null || SelectedSession.SPID != spid)
+        {
+            // Session changed or mismatch; refresh selection
+            var target = AllSessions.FirstOrDefault(s => s.SPID == spid);
+            if (target == null)
+            {
+                Toast.ShowWarning($"Session {spid} no longer exists.");
+                return;
+            }
+            SelectedSession = target;
+        }
+
+        var confirmResult = await JSRuntime.InvokeAsync<object>("confirm", $"Kill session {spid}? This will terminate the session immediately.");
+        bool confirmed = confirmResult is bool b && b;
+        if (!confirmed) return;
+
+        try
+        {
+            await SessionService.KillSessionAsync(spid);
+            Toast.ShowSuccess($"Session {spid} killed.");
+            await LoadSessions(true);
+            if (SelectedSession?.SPID == spid)
+                SelectedSession = null;
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to kill session: {ex.Message}");
+        }
+    }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.CtrlKey && !e.AltKey && !e.ShiftKey)
+        {
+            if (e.Key == "r" || e.Key == "R")
+            {
+                await ManualRefresh();
+            }
+            else if (e.Key == "k" || e.Key == "K")
+            {
+                if (SelectedSession != null)
+                {
+                    await KillSelectedSession(SelectedSession.SPID);
+                }
+            }
+        }
+    }
+
+    private async Task SelectInstance(string instance)
+    {
+        SelectedInstance = instance;
+        InstanceSelector.SetSelectedInstance(instance);
+        _showInstanceModal = false;
+        await LoadSessions(true);
+    }
+
+    public void Dispose()
+    {
+        _timerCts?.Cancel();
+        _timerCts?.Dispose();
+        _loadLock?.Dispose();
+        InstanceSelector.OnInstanceChanged -= OnGlobalInstanceChanged;
+    }
+}

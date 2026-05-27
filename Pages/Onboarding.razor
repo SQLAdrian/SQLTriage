@@ -1,0 +1,301 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/onboarding"
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@inject ServerConnectionManager ConnectionManager
+@inject IQuickCheckRunner QuickCheckRunner
+@inject NavigationManager Navigation
+@inject ToastService Toast
+@inject RbacService RbacService
+@inject UserSettingsService UserSettings
+
+<PageTitle>Welcome - SQLTriage</PageTitle>
+
+<div class="onboarding-container">
+    <div class="onboarding-card">
+        <div class="onboarding-header">
+            <h1>Welcome to SQLTriage</h1>
+            <p>Get a health snapshot of your SQL Server in under 60 seconds.</p>
+        </div>
+
+        @* ── Step 0: Create Admin (first run only) ── *@
+        @if (_step == 0)
+        {
+            <div class="onboarding-step">
+                <h2>Step 1: Create Admin Account</h2>
+                <p>Set up the administrator account for this installation.</p>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" class="form-control" @bind="_adminEmail" placeholder="admin@example.com" />
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" class="form-control" @bind="_adminPassword" placeholder="Minimum 12 characters" />
+                </div>
+                <div class="form-group">
+                    <label>Confirm Password</label>
+                    <input type="password" class="form-control" @bind="_adminPasswordConfirm" placeholder="Re-enter password" />
+                </div>
+                @if (!string.IsNullOrEmpty(_adminError))
+                {
+                    <div class="alert alert-error" style="margin-top: 8px;">@_adminError</div>
+                }
+                <div class="actions">
+                    <button class="btn btn-primary" @onclick="CreateAdmin" disabled="@_creatingAdmin">
+                        @(_creatingAdmin ? "Creating..." : "Create Admin & Continue")
+                    </button>
+                </div>
+            </div>
+        }
+
+        @* ── Step 1: Detect SQL Servers ── *@
+        else if (_step == 1)
+        {
+            <div class="onboarding-step">
+                <h2>Step 2: Detect SQL Servers</h2>
+                <p>We can auto-detect SQL Server instances on your network.</p>
+                <button class="btn btn-primary" @onclick="DetectInstances" disabled="@_detecting">
+                    @(_detecting ? "Detecting..." : "Detect Local Instances")
+                </button>
+
+                @if (_detectedInstances.Any())
+                {
+                    <div class="instance-list">
+                        <p>Select an instance to connect:</p>
+                        @foreach (var inst in _detectedInstances)
+                        {
+                            <div class="instance-item" @onclick="() => SelectInstance(inst)">
+                                <i class="fa-solid fa-server"></i> @inst
+                            </div>
+                        }
+                    </div>
+                }
+
+                <div class="or-divider">or</div>
+                <button class="btn btn-secondary" @onclick="() => _step = 2">Add Server Manually</button>
+            </div>
+        }
+
+        @* ── Step 2: Server Details + Credentials ── *@
+        else if (_step == 2)
+        {
+            <div class="onboarding-step">
+                <h2>Step 3: Server Connection</h2>
+                <div class="form-group">
+                    <label>Server Instance</label>
+                    <input type="text" class="form-control" @bind="_selectedInstance" placeholder="localhost\SQLEXPRESS or 192.168.1.10" />
+                </div>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" @bind="_useWindowsAuth" /> Use Windows Authentication
+                    </label>
+                </div>
+                @if (!_useWindowsAuth)
+                {
+                    <div class="form-group">
+                        <label>Username</label>
+                        <input type="text" class="form-control" @bind="_sqlUsername" placeholder="sa" />
+                    </div>
+                    <div class="form-group">
+                        <label>Password</label>
+                        <input type="password" class="form-control" @bind="_sqlPassword" placeholder="SQL password" />
+                    </div>
+                }
+                <label class="checkbox-label">
+                    <input type="checkbox" @bind="_runQuickCheck" /> Run Quick Check immediately after connecting
+                </label>
+                <div class="actions">
+                    <button class="btn btn-secondary" @onclick="() => _step = 1">Back</button>
+                    <button class="btn btn-primary" @onclick="ConfirmAndConnect">Connect</button>
+                </div>
+            </div>
+        }
+
+        @* ── Step 3: Quick Check Progress ── *@
+        else if (_step == 3)
+        {
+            <div class="onboarding-step">
+                <h2>Running Quick Check...</h2>
+                <div class="progress-bar-container">
+                    <div class="progress-bar" style="width:@(_progressPercent)%"></div>
+                </div>
+                <p>@(_progressText)</p>
+                <button class="btn btn-secondary btn-sm" @onclick="CancelCheck">Cancel</button>
+            </div>
+        }
+
+        @* ── Skip option always visible ── *@
+        @if (_step < 3)
+        {
+            <div style="text-align: center; margin-top: 16px;">
+                <button class="btn btn-link" style="font-size: 12px; color: var(--text-muted);"
+                        @onclick="SkipOnboarding">
+                    Skip onboarding → go to dashboard
+                </button>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private int _step = 0; // Start at 0 (admin creation)
+    private bool _detecting = false;
+    private List<string> _detectedInstances = new();
+    private string _selectedInstance = "";
+    private bool _runQuickCheck = true;
+    private bool _useWindowsAuth = true;
+    private string _sqlUsername = "";
+    private string _sqlPassword = "";
+    private double _progressPercent = 0;
+    private string _progressText = "Starting...";
+    private CancellationTokenSource? _cts;
+
+    // Admin creation
+    private string _adminEmail = "";
+    private string _adminPassword = "";
+    private string _adminPasswordConfirm = "";
+    private string _adminError = "";
+    private bool _creatingAdmin = false;
+
+    protected override void OnInitialized()
+    {
+        // If users already exist, skip admin creation
+        if (RbacService.GetUsers().Count > 0)
+        {
+            _step = 1;
+        }
+    }
+
+    private void CreateAdmin()
+    {
+        _adminError = "";
+
+        if (string.IsNullOrWhiteSpace(_adminEmail) || !_adminEmail.Contains("@"))
+        {
+            _adminError = "Please enter a valid email address.";
+            return;
+        }
+        if (_adminPassword.Length < 12)
+        {
+            _adminError = "Password must be at least 12 characters.";
+            return;
+        }
+        if (_adminPassword != _adminPasswordConfirm)
+        {
+            _adminError = "Passwords do not match.";
+            return;
+        }
+
+        _creatingAdmin = true;
+        try
+        {
+            var admin = new RbacUser
+            {
+                Email = _adminEmail.Trim(),
+                DisplayName = _adminEmail.Trim(),
+                Provider = "local",
+                Role = AppRoles.Admin,
+                CreatedAt = DateTime.UtcNow,
+                Enabled = true
+            };
+            RbacService.AddUser(admin);
+            RbacService.SetPassword(admin.Id, _adminPassword);
+            Toast.ShowSuccess("Admin created", $"Account {_adminEmail} is ready.");
+            _step = 1;
+        }
+        catch (Exception ex)
+        {
+            _adminError = $"Failed to create admin: {ex.Message}";
+        }
+        finally
+        {
+            _creatingAdmin = false;
+        }
+    }
+
+    private async Task DetectInstances()
+    {
+        _detecting = true;
+        await Task.Yield();
+        _detectedInstances = await Task.Run(() => SQLTriage.Data.Services.QuickCheckRunner.DetectLocalInstances());
+        _detecting = false;
+        if (!_detectedInstances.Any())
+        {
+            Toast.ShowInfo("No local SQL instances detected", "Add one manually.");
+            _step = 2;
+        }
+    }
+
+    private void SelectInstance(string instance)
+    {
+        _selectedInstance = instance;
+        _step = 2;
+    }
+
+    private async Task ConfirmAndConnect()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedInstance))
+        {
+            Toast.ShowWarning("Missing server", "Please select or enter a server instance.");
+            return;
+        }
+
+        var conn = new ServerConnection
+        {
+            ServerNames = _selectedInstance,
+            UseWindowsAuthentication = _useWindowsAuth,
+            IsEnabled = true
+        };
+        if (!_useWindowsAuth)
+        {
+            conn.Username = _sqlUsername;
+            conn.Password = _sqlPassword;
+        }
+        ConnectionManager.AddConnection(conn);
+
+        UserSettings.SetOnboardingComplete(true);
+
+        if (_runQuickCheck)
+        {
+            _step = 3;
+            _cts = new CancellationTokenSource();
+            var progress = new Progress<QuickCheckProgress>(p =>
+            {
+                _progressPercent = p.Percent;
+                _progressText = $"{p.Completed} of {p.Total} checks — {p.CurrentCheckName}";
+                StateHasChanged();
+            });
+
+            try
+            {
+                var result = await QuickCheckRunner.RunAsync(conn, _selectedInstance, progress, _cts.Token);
+                Toast.ShowSuccess("Quick Check complete", $"{result.Summary.Passed}/{result.Summary.TotalChecks} passed");
+                Navigation.NavigateTo(RouteConstants.GovernanceIndicative);
+            }
+            catch (OperationCanceledException)
+            {
+                Toast.ShowInfo("Quick Check cancelled", "");
+            }
+            catch (Exception ex)
+            {
+                Toast.ShowError("Quick Check failed", ex.Message);
+            }
+        }
+        else
+        {
+            Navigation.NavigateTo("/");
+        }
+    }
+
+    private void SkipOnboarding()
+    {
+        UserSettings.SetOnboardingComplete(true);
+        Navigation.NavigateTo("/");
+    }
+
+    private void CancelCheck()
+    {
+        _cts?.Cancel();
+    }
+}

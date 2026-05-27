@@ -1,0 +1,59 @@
+/* In the name of God, the Merciful, the Compassionate */
+
+.free-state-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    border-radius: 6px;
+    border: 1px solid var(--yellow);
+    background: rgba(0, 0, 0, 0.08);
+    color: var(--text-primary);
+    font-size: 13px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+
+.free-state-banner-icon {
+    color: var(--yellow);
+    font-size: 15px;
+    flex-shrink: 0;
+}
+
+.free-state-banner-text {
+    flex: 1;
+    min-width: 200px;
+    color: var(--text-secondary);
+}
+
+.free-state-banner-link {
+    color: var(--yellow);
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 13px;
+}
+
+.free-state-banner-link:hover {
+    text-decoration: underline;
+}
+
+/* Not-activated variant — orange + stronger emphasis; surfaces a boot failure
+   (neither Full nor Free bundle decrypted). Distinct from the yellow free-tier
+   nag because this state means most pages will be empty until fixed. */
+.free-state-banner--not-activated {
+    border-color: var(--orange);
+    background: rgba(0, 0, 0, 0.12);
+}
+
+.free-state-banner--not-activated .free-state-banner-icon {
+    color: var(--orange);
+}
+
+.free-state-banner--not-activated .free-state-banner-link {
+    color: var(--orange);
+}

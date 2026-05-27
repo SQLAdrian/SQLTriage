@@ -1,0 +1,422 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/reports"
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@using System.IO
+@using Microsoft.Extensions.Logging
+@inject ReportBundleService ReportBundleSvc
+@inject ServerConnectionManager ConnectionManager
+@inject PrintService PrintSvc
+@inject ILogger<ReportBundles> Logger
+<PageTitle>Report Bundles - SQLTriage</PageTitle>
+
+<div class="report-bundles-container">
+    <div class="report-bundles-header">
+        <h1><i class="fa-solid fa-file-export" style="margin-right:8px;color:var(--accent)"></i>Diagnostic Report Bundles</h1>
+    </div>
+
+    <div class="rb-server-row">
+        <label>Server</label>
+        @* Shared ServerSelector (name mode) — consistent with VA/FullAudit/etc. *@
+        <ServerSelector Servers="_serverNames"
+                        Selected="@_selectedServer"
+                        SelectedChanged="@(v => { _selectedServer = v; StateHasChanged(); })" />
+    </div>
+
+    @if (!string.IsNullOrEmpty(_selectedServer) && _selectedServerRequiresWatermark)
+    {
+        <div class="rb-watermark-notice" role="note">
+            <i class="fa-solid fa-triangle-exclamation" style="color:var(--orange);margin-right:6px;"></i>
+            This report will be marked <strong>DRAFT</strong> because the selected server is tagged non-Production or unset.
+        </div>
+    }
+
+    <div class="rb-cards">
+
+        @* ── Executive Summary ──────────────────────────────────────────── *@
+        <div class="rb-card">
+            <div class="rb-card-icon"><i class="fa-solid fa-chart-pie"></i></div>
+            <div class="rb-card-title">Executive Summary</div>
+            <div class="rb-card-desc">
+                1-page snapshot for non-technical stakeholders: health score, top 5 risks, and 30-day context.
+                Suitable for board reports and management briefings.
+            </div>
+            <div class="rb-card-meta">
+                @if (ReportBundleSvc.GetLastGenerated(_selectedServer ?? "", "ExecutiveSummary") is DateTime dt1)
+                {
+                    <span>Last generated: @dt1.ToString("yyyy-MM-dd HH:mm")</span>
+                }
+            </div>
+            @if (_results.TryGetValue("ExecutiveSummary", out var r1))
+            {
+                <div class="rb-card-result @(r1.Success ? "rb-success" : "rb-error")">
+                    @if (r1.Success)
+                    {
+                        <span class="rb-path">@r1.Path</span>
+                        <button class="rb-open-btn" @onclick="() => OpenInExplorer(r1.Path!)">
+                            <i class="fa-solid fa-folder-open"></i> Open
+                        </button>
+                    }
+                    else
+                    {
+                        <span style="color:var(--red)"><i class="fa-solid fa-circle-exclamation"></i> @r1.Error</span>
+                    }
+                </div>
+            }
+            <div class="rb-btn-group">
+                <button class="rb-gen-btn" disabled="@(_generating || string.IsNullOrEmpty(_selectedServer))"
+                        @onclick='() => GenerateAsync("ExecutiveSummary")'>
+                    @if (_generating && _generatingType == "ExecutiveSummary")
+                    {
+                        <i class="fa-solid fa-spinner rb-spinning"></i>
+                        <span>Generating…</span>
+                    }
+                    else
+                    {
+                        <i class="fa-solid fa-file-code"></i>
+                        <span>Save as HTML</span>
+                    }
+                </button>
+                <button class="rb-gen-btn rb-pdf-btn" disabled="@(_generating || string.IsNullOrEmpty(_selectedServer) || !PrintSvc.IsAvailable)"
+                        title="@PdfBtnTitle"
+                        @onclick='() => GeneratePdfAsync("ExecutiveSummary")'>
+                    @if (_generating && _generatingType == "ExecutiveSummary_pdf")
+                    {
+                        <i class="fa-solid fa-spinner rb-spinning"></i>
+                        <span>Exporting…</span>
+                    }
+                    else
+                    {
+                        <i class="fa-solid fa-file-pdf"></i>
+                        <span>Save as PDF</span>
+                    }
+                </button>
+            </div>
+        </div>
+
+        @* ── DBA Handoff Package ────────────────────────────────────────── *@
+        <div class="rb-card">
+            <div class="rb-card-icon"><i class="fa-solid fa-screwdriver-wrench"></i></div>
+            <div class="rb-card-title">DBA Handoff Package</div>
+            <div class="rb-card-desc">
+                Multi-page PDF: server inventory, all VA findings, known issues, and failed checks.
+                For the incoming DBA or support handoff.
+            </div>
+            <div class="rb-card-meta">
+                @if (ReportBundleSvc.GetLastGenerated(_selectedServer ?? "", "DbaHandoff") is DateTime dt2)
+                {
+                    <span>Last generated: @dt2.ToString("yyyy-MM-dd HH:mm")</span>
+                }
+            </div>
+            @if (_results.TryGetValue("DbaHandoff", out var r2))
+            {
+                <div class="rb-card-result @(r2.Success ? "rb-success" : "rb-error")">
+                    @if (r2.Success)
+                    {
+                        <span class="rb-path">@r2.Path</span>
+                        <button class="rb-open-btn" @onclick="() => OpenInExplorer(r2.Path!)">
+                            <i class="fa-solid fa-folder-open"></i> Open
+                        </button>
+                    }
+                    else
+                    {
+                        <span style="color:var(--red)"><i class="fa-solid fa-circle-exclamation"></i> @r2.Error</span>
+                    }
+                </div>
+            }
+            <div class="rb-btn-group">
+                <button class="rb-gen-btn" disabled="@(_generating || string.IsNullOrEmpty(_selectedServer))"
+                        @onclick='() => GenerateAsync("DbaHandoff")'>
+                    @if (_generating && _generatingType == "DbaHandoff")
+                    {
+                        <i class="fa-solid fa-spinner rb-spinning"></i>
+                        <span>Generating…</span>
+                    }
+                    else
+                    {
+                        <i class="fa-solid fa-file-code"></i>
+                        <span>Save as HTML</span>
+                    }
+                </button>
+                <button class="rb-gen-btn rb-pdf-btn" disabled="@(_generating || string.IsNullOrEmpty(_selectedServer) || !PrintSvc.IsAvailable)"
+                        title="@PdfBtnTitle"
+                        @onclick='() => GeneratePdfAsync("DbaHandoff")'>
+                    @if (_generating && _generatingType == "DbaHandoff_pdf")
+                    {
+                        <i class="fa-solid fa-spinner rb-spinning"></i>
+                        <span>Exporting…</span>
+                    }
+                    else
+                    {
+                        <i class="fa-solid fa-file-pdf"></i>
+                        <span>Save as PDF</span>
+                    }
+                </button>
+            </div>
+        </div>
+
+        @* ── Audit Evidence ─────────────────────────────────────────────── *@
+        <div class="rb-card">
+            <div class="rb-card-icon"><i class="fa-solid fa-scale-balanced"></i></div>
+            <div class="rb-card-title">Audit Evidence</div>
+            <div class="rb-card-desc">
+                Compliance-ready PDF: VA findings with framework tags, audit log summary,
+                HMAC chain status, and SHA-256 integrity hash.
+            </div>
+            <div class="rb-card-meta">
+                @if (ReportBundleSvc.GetLastGenerated(_selectedServer ?? "", "AuditEvidence") is DateTime dt3)
+                {
+                    <span>Last generated: @dt3.ToString("yyyy-MM-dd HH:mm")</span>
+                }
+            </div>
+            @if (_results.TryGetValue("AuditEvidence", out var r3))
+            {
+                <div class="rb-card-result @(r3.Success ? "rb-success" : "rb-error")">
+                    @if (r3.Success)
+                    {
+                        <span class="rb-path">@r3.Path</span>
+                        <button class="rb-open-btn" @onclick="() => OpenInExplorer(r3.Path!)">
+                            <i class="fa-solid fa-folder-open"></i> Open
+                        </button>
+                    }
+                    else
+                    {
+                        <span style="color:var(--red)"><i class="fa-solid fa-circle-exclamation"></i> @r3.Error</span>
+                    }
+                </div>
+            }
+            <div class="rb-btn-group">
+                <button class="rb-gen-btn" disabled="@(_generating || string.IsNullOrEmpty(_selectedServer))"
+                        @onclick='() => GenerateAsync("AuditEvidence")'>
+                    @if (_generating && _generatingType == "AuditEvidence")
+                    {
+                        <i class="fa-solid fa-spinner rb-spinning"></i>
+                        <span>Generating…</span>
+                    }
+                    else
+                    {
+                        <i class="fa-solid fa-file-code"></i>
+                        <span>Save as HTML</span>
+                    }
+                </button>
+                <button class="rb-gen-btn rb-pdf-btn" disabled="@(_generating || string.IsNullOrEmpty(_selectedServer) || !PrintSvc.IsAvailable)"
+                        title="@PdfBtnTitle"
+                        @onclick='() => GeneratePdfAsync("AuditEvidence")'>
+                    @if (_generating && _generatingType == "AuditEvidence_pdf")
+                    {
+                        <i class="fa-solid fa-spinner rb-spinning"></i>
+                        <span>Exporting…</span>
+                    }
+                    else
+                    {
+                        <i class="fa-solid fa-file-pdf"></i>
+                        <span>Save as PDF</span>
+                    }
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <p style="margin-top:24px;font-size:11px;color:var(--text-muted)">
+        <strong>Save as PDF</strong> produces a print-ready PDF directly in your Downloads folder (requires desktop mode).
+        <strong>Save as HTML</strong> saves a portable file you can open in any browser and print manually.
+        Scheduled generation and email delivery are deferred to v2.
+    </p>
+</div>
+
+@code {
+    private string? _selectedServer;
+    private List<string> _serverNames = new();
+    private bool _generating;
+    private string? _generatingType;
+
+    // Key: bundleType → result record
+    private readonly Dictionary<string, (bool Success, string? Path, string? Error)> _results = new();
+
+    private string PdfBtnTitle => PrintSvc.IsAvailable
+        ? "Save as PDF"
+        : "PDF export requires desktop (WebView2) mode";
+
+    /// <summary>True when the selected server is non-production or unset (watermark will be applied).</summary>
+    private bool _selectedServerRequiresWatermark =>
+        !string.IsNullOrEmpty(_selectedServer) &&
+        ServerEnvironment.RequiresWatermark(
+            ConnectionManager.GetConnections()
+                .Where(c => c.GetServerList().Any(n =>
+                    string.Equals(n, _selectedServer, StringComparison.OrdinalIgnoreCase)))
+                .Select(c => c.Environment));
+
+    protected override void OnInitialized()
+    {
+        _serverNames = ConnectionManager.GetEnabledServerNames().ToList();
+        if (_serverNames.Count == 1)
+            _selectedServer = _serverNames[0];
+    }
+
+    private async Task GenerateAsync(string bundleType)
+    {
+        var server = _selectedServer;
+        if (string.IsNullOrEmpty(server) || _generating) return;
+
+        _generating = true;
+        _generatingType = bundleType;
+        _results.Remove(bundleType);
+        StateHasChanged();
+
+        try
+        {
+            string html = bundleType switch
+            {
+                "ExecutiveSummary" => await ReportBundleSvc.PrepareExecutiveSummaryHtmlAsync(server),
+                "DbaHandoff"       => await ReportBundleSvc.PrepareDbaHandoffHtmlAsync(server),
+                "AuditEvidence"    => await ReportBundleSvc.PrepareAuditEvidenceHtmlAsync(server),
+                _                  => throw new InvalidOperationException($"Unknown bundle type: {bundleType}")
+            };
+
+            var outputPath = GetOutputPath(server, bundleType);
+            Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+            await File.WriteAllTextAsync(outputPath, html);
+
+            ReportBundleSvc.RecordSuccess(server, bundleType, outputPath);
+            _results[bundleType] = (true, outputPath, null);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Report bundle generation failed for {BundleType}/{Server}", bundleType, server);
+            ReportBundleSvc.RecordFailure(server, bundleType, ex.Message);
+            _results[bundleType] = (false, null, ex.Message);
+        }
+        finally
+        {
+            _generating = false;
+            _generatingType = null;
+            StateHasChanged();
+        }
+    }
+
+    private async Task GeneratePdfAsync(string bundleType)
+    {
+        var server = _selectedServer;
+        if (string.IsNullOrEmpty(server) || _generating) return;
+
+        var pdfKey = $"{bundleType}_pdf";
+        _generating = true;
+        _generatingType = pdfKey;
+        _results.Remove(bundleType);
+        StateHasChanged();
+
+        try
+        {
+            string html = bundleType switch
+            {
+                "ExecutiveSummary" => await ReportBundleSvc.PrepareExecutiveSummaryHtmlAsync(server),
+                "DbaHandoff"       => await ReportBundleSvc.PrepareDbaHandoffHtmlAsync(server),
+                "AuditEvidence"    => await ReportBundleSvc.PrepareAuditEvidenceHtmlAsync(server),
+                _                  => throw new InvalidOperationException($"Unknown bundle type: {bundleType}")
+            };
+
+            // Watermark: inject class + CSS into the self-contained HTML when server is non-production/unset.
+            if (_selectedServerRequiresWatermark)
+                html = InjectWatermarkIntoHtml(html);
+
+            var outputPath = GetOutputPath(server, bundleType, ".pdf");
+            Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+
+            var (success, path, error) = await PrintSvc.PrintHtmlToPdfAsync(
+                html,
+                outputPath,
+                printBackgrounds: true,
+                headerTitle: null);
+
+            if (success && path != null)
+            {
+                ReportBundleSvc.RecordSuccess(server, bundleType, path);
+                _results[bundleType] = (true, path, null);
+            }
+            else
+            {
+                var msg = error ?? "PDF export failed";
+                Logger.LogError("PDF bundle generation failed for {BundleType}/{Server}: {Error}", bundleType, server, msg);
+                ReportBundleSvc.RecordFailure(server, bundleType, msg);
+                _results[bundleType] = (false, null, msg);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "PDF report bundle generation failed for {BundleType}/{Server}", bundleType, server);
+            ReportBundleSvc.RecordFailure(server, bundleType, ex.Message);
+            _results[bundleType] = (false, null, ex.Message);
+        }
+        finally
+        {
+            _generating = false;
+            _generatingType = null;
+            StateHasChanged();
+        }
+    }
+
+    private static string GetOutputPath(string serverName, string bundleType, string extension = ".html")
+    {
+        var downloads = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var downloadsDir = Path.Combine(downloads, "Downloads");
+        var safeName = serverName.Replace("\\", "_").Replace("/", "_").Replace(":", "_");
+        var timestamp = DateTime.Now.ToString("yyyy-MM-dd-HHmmss");
+        return Path.Combine(downloadsDir, $"{safeName}_{bundleType}_{timestamp}{extension}");
+    }
+
+    /// <summary>
+    /// Injects the DRAFT watermark CSS rule and body class into a self-contained HTML string.
+    /// Called when the target server is non-production or unset.
+    /// The CSS uses a literal colour (#c00) rather than var(--red) because the HTML is
+    /// rendered standalone (no app.css) — the intent matches the main watermark styling.
+    /// </summary>
+    private static string InjectWatermarkIntoHtml(string html)
+    {
+        // Verbatim (@"") not a raw ("""...""") string: the Razor source
+        // generator HTML-parses <style>/</style> inside a raw literal in
+        // @code and desyncs (RZ9981/RZ1000/CS8999). Verbatim strings are
+        // tokenised reliably. Internal " is doubled; \2014 stays literal
+        // (CSS escape for the em-dash) since verbatim does not process \.
+        const string watermarkCss =
+            @"<style id=""draft-watermark-css"">
+            body.has-draft-watermark::before {
+                content: ""DRAFT \2014 non-production data"";
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%) rotate(-30deg);
+                opacity: 0.10;
+                font-size: 100pt;
+                font-weight: 800;
+                color: #c00;
+                pointer-events: none;
+                z-index: 9999;
+                white-space: nowrap;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            @media print { body.has-draft-watermark::before { opacity: 0.14; } }
+            </style>";
+
+        // Insert CSS before </head>, add class to <body> tag.
+        html = html.Replace("</head>", watermarkCss + "</head>", StringComparison.OrdinalIgnoreCase);
+        html = html.Replace("<body>", "<body class=\"has-draft-watermark\">", StringComparison.OrdinalIgnoreCase);
+        return html;
+    }
+
+    private Task OpenInExplorer(string filePath)
+    {
+        try
+        {
+            _ = Task.Run(() =>
+                System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{filePath}\""));
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "OpenInExplorer failed for {Path}", filePath);
+        }
+        return Task.CompletedTask;
+    }
+}

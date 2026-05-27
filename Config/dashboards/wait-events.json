@@ -1,0 +1,84 @@
+{
+  "id": "wait-events",
+  "title": "Wait Events",
+  "description": "Analyze SQL Server wait statistics and performance bottlenecks",
+  "navTitle": "Wait Events",
+  "navIcon": "fa-solid fa-clock-four",
+  "navCategory": "Dashboards",
+  "navOrder": 3,
+  "route": "/waitevents",
+  "enabled": true,
+  "source": "sqlwatch",
+  "defaultDatabase": "SQLWATCH",
+  "showAllOption": true,
+  "panels": [
+    {
+      "id": "waits.timeseries_category",
+      "title": "Wait Events by Category",
+      "description": "Wait time trends by category (CPU, I/O, Memory, Lock, Network) showing shifting performance bottlenecks over time.",
+      "enabled": true,
+      "source": "",
+      "panelType": "TimeSeries",
+      "chartType": "Area",
+      "height": 250,
+      "refreshIntervalSeconds": null,
+      "layout": {
+        "column": 1,
+        "order": 1,
+        "spanColumns": true
+      },
+      "query": {
+        "source": "sqlwatch",
+        "sqlServer": "\r\nSELECT\r\n    h.report_time AS [Time],\r\n    ISNULL(ws.wait_category, 'Other') AS [Series],\r\n    SUM(d.wait_time_ms_delta) AS [Value]\r\nFROM dbo.sqlwatch_logger_perf_os_wait_stats d WITH (NOLOCK)\r\nINNER JOIN dbo.sqlwatch_logger_snapshot_header h WITH (NOLOCK)\r\n    ON h.snapshot_time = d.snapshot_time\r\n    AND h.snapshot_type_id = d.snapshot_type_id\n    AND h.sql_instance = d.sql_instance\nLEFT JOIN dbo.vw_sqlwatch_meta_wait_stats_category ws WITH (NOLOCK)\n    ON ws.sql_instance = d.sql_instance\n    AND ws.wait_type_id = d.wait_type_id\nWHERE h.report_time BETWEEN @TimeFrom AND @TimeTo\n    AND d.sql_instance IN (SELECT value FROM STRING_SPLIT(@SqlInstance, ','))\nGROUP BY h.report_time, ISNULL(ws.wait_category, 'Other')\nHAVING SUM(d.wait_time_ms_delta) > 0\nORDER BY h.report_time"
+      },
+      "defaultDatabase": "master",
+      "statUnit": "",
+      "statThresholdKey": null,
+      "barGaugeThresholdKey": null,
+      "barGaugeUnitSuffix": "%",
+      "valueFormat": "",
+      "colorThresholds": [],
+      "dataGridIsClickable": false,
+      "dataGridMaxRows": 500,
+      "dataGridTopRows": 0,
+      "actionColumn": null,
+      "actionColumnMode": null,
+      "dataGridColumns": null,
+      "dataGridColumnColors": null
+    },
+    {
+      "id": "waits.details",
+      "title": "Wait Event Details",
+      "description": "Detailed wait statistics by wait type showing wait time, wait count, and percentage of total waits from SQLWATCH snapshots.",
+      "enabled": true,
+      "source": "",
+      "panelType": "DataGrid",
+      "chartType": "Line",
+      "height": 300,
+      "refreshIntervalSeconds": null,
+      "layout": {
+        "column": 1,
+        "order": 2,
+        "spanColumns": true
+      },
+      "query": {
+        "source": "sqlwatch",
+        "sqlServer": "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; \nSELECT TOP 250\n    h.report_time AS [Time],\n    ISNULL(ws.wait_category, 'Other') AS [Category],\n    mw.wait_type AS [Wait Type],\n    SUM(d.wait_time_ms_delta) AS [Wait Time (ms)],\n    SUM(d.waiting_tasks_count_delta) AS [Waiting Tasks],\n    d.sql_instance\nFROM dbo.sqlwatch_logger_perf_os_wait_stats d WITH (NOLOCK)\nINNER JOIN dbo.sqlwatch_logger_snapshot_header h WITH (NOLOCK)\n    ON h.snapshot_time = d.snapshot_time\n    AND h.snapshot_type_id = d.snapshot_type_id\n    AND h.sql_instance = d.sql_instance\nLEFT JOIN dbo.vw_sqlwatch_meta_wait_stats_category ws WITH (NOLOCK)\n    ON ws.sql_instance = d.sql_instance\n    AND ws.wait_type_id = d.wait_type_id\nLEFT JOIN dbo.sqlwatch_meta_wait_stats mw WITH (NOLOCK)\n    ON mw.sql_instance = d.sql_instance\n    AND mw.wait_type_id = d.wait_type_id\nWHERE h.report_time BETWEEN @TimeFrom AND @TimeTo\n    AND d.sql_instance IN (SELECT value FROM STRING_SPLIT(@SqlInstance, ','))\n    AND d.wait_time_ms_delta > 0\nGROUP BY h.report_time, ISNULL(ws.wait_category, 'Other'), mw.wait_type, d.sql_instance\nORDER BY h.report_time DESC, [Wait Time (ms)] DESC"
+      },
+      "defaultDatabase": "master",
+      "statUnit": "",
+      "statThresholdKey": null,
+      "barGaugeThresholdKey": null,
+      "barGaugeUnitSuffix": "%",
+      "valueFormat": "",
+      "colorThresholds": [],
+      "dataGridIsClickable": false,
+      "dataGridMaxRows": 500,
+      "dataGridTopRows": 0,
+      "actionColumn": null,
+      "actionColumnMode": null,
+      "dataGridColumns": null,
+      "dataGridColumnColors": null
+    }
+  ]
+}

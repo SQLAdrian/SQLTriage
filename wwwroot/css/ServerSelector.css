@@ -1,0 +1,76 @@
+/* In the name of God, the Merciful, the Compassionate */
+
+/* ── ServerSelector component ─────────────────────────────────────────────── */
+
+.ss-empty {
+    font-size: 13px;
+    color: var(--text-secondary);
+    padding: 8px 0;
+}
+
+.ss-empty a {
+    color: var(--accent);
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+/* Chip grid is ALWAYS rendered (THE MODE: one pattern). At 30 servers it
+   wraps to many rows, so the grid scrolls vertically rather than switching to
+   a dropdown or pushing the page down. ~5 rows visible before scroll. */
+.ss-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    max-height: 210px;
+    overflow-y: auto;
+    /* keep the scrollbar off the chips + room for the selected check overlay */
+    padding: 2px 8px 2px 2px;
+}
+
+/* Individual server chip — visually matches existing .server-btn in app.css */
+.ss-btn {
+    padding: 8px 16px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.ss-btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent);
+}
+
+.ss-btn.selected {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+}
+
+/* "All servers" chip — louder first chip when AllowAllScope is true */
+.ss-btn-all {
+    font-weight: 600;
+}
+
+.ss-btn-all.selected {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+}
+
+/* Dropdown fallback (>DropdownFallbackThreshold servers) */
+.ss-select {
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    min-width: 220px;
+}

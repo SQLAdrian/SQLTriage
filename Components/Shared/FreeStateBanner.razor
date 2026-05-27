@@ -1,0 +1,79 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using SQLTriage.Data
+@using SQLTriage.Data.Services.Licensing
+@using Microsoft.AspNetCore.Components
+@inject IBundleAccessor Bundle
+@inject CheckRepositoryService CheckRepo
+@inject NavigationManager Nav
+@implements IDisposable
+
+@if (!Bundle.IsUnlocked)
+{
+    <div class="free-state-banner free-state-banner--not-activated" role="alert" aria-live="assertive">
+        <span class="free-state-banner-icon">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+        </span>
+        <span class="free-state-banner-text">
+            <strong>Bundle not loaded.</strong>
+            SQLTriage couldn't decrypt either the Full or Free bundle on startup —
+            pages that need check definitions, framework mappings, or governance
+            weights will appear blank. Check the app log for the underlying error,
+            then re-install or re-paste your license in Settings.
+        </span>
+        <button class="free-state-banner-link" @onclick="GoToSettings" title="Open Settings">
+            Settings &rarr;
+        </button>
+    </div>
+}
+else if (Bundle.Tier == Tier.Free)
+{
+    <div class="free-state-banner" role="status" aria-live="polite">
+        <span class="free-state-banner-icon">
+            <i class="fa-solid fa-circle-info"></i>
+        </span>
+        <span class="free-state-banner-text">
+            You're on the Free tier (@FreeCheckCountLabel audit-first checks + sp_BLITZ import).
+            Activate Full Audit in Settings to unlock the complete corpus.
+        </span>
+        <button class="free-state-banner-link" @onclick="GoToSettings" title="Go to Settings to activate Full Audit">
+            Settings &rarr;
+        </button>
+    </div>
+}
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        Bundle.BundleStateChanged += OnBundleStateChanged;
+
+        // The banner can render before any page has loaded the check catalog.
+        // Load it once (idempotent — skipped if already populated) so the
+        // free-tier check count is accurate wherever the banner appears.
+        if (CheckRepo.Checks.Count == 0)
+        {
+            await CheckRepo.LoadChecksAsync();
+            StateHasChanged();
+        }
+    }
+
+    // Live count of the loaded free-tier checks. Falls back to a generic label
+    // if the catalog hasn't loaded yet, so the copy never shows a stale number.
+    private string FreeCheckCountLabel
+    {
+        get
+        {
+            var n = CheckRepo.GetEnabledChecks().Count;
+            return n > 0 ? n.ToString() : "the included";
+        }
+    }
+
+    private void GoToSettings() => Nav.NavigateTo("/settings");
+
+    private void OnBundleStateChanged(object? sender, EventArgs e)
+        => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Bundle.BundleStateChanged -= OnBundleStateChanged;
+    }
+}

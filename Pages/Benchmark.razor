@@ -1,0 +1,280 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/benchmark"
+<PageTitle>SQLTriage - Benchmark</PageTitle>
+@inject ServerConnectionManager ConnectionManager
+@inject SQLTriage.Data.Services.BenchmarkService BenchmarkService
+@inject IJSRuntime JS
+@inject SQLTriage.Data.ToastService Toast
+@using SQLTriage.Data.Services
+
+<div class="benchmark-page">
+    <div class="page-header">
+        <h1>SQL Server Performance Benchmark</h1>
+        <p>Run CPU and latency benchmarks across your SQL Server instances to identify hardware bottlenecks and hypervisor contention.</p>
+    </div>
+
+    @if (_isRunning)
+    {
+        <div class="benchmark-progress">
+            <div class="progress-bar">
+                <div class="progress-fill" style="width: @(_progressPercent)%"></div>
+            </div>
+            <span class="progress-text">@_currentOperation</span>
+        </div>
+    }
+
+    @if (_benchmarkResults.Count > 0)
+    {
+        <div class="benchmark-results">
+            <h2>Benchmark Results</h2>
+            <div class="results-table-container">
+                <table class="benchmark-table">
+                    <thead>
+                        <tr>
+                            <th>Server</th>
+                            <th>CPU Integer<br/>(&lt; 100ms = Fast)</th>
+                            <th>String Ops<br/>(&lt; 200ms = Fast)</th>
+                            <th>Memory Access<br/>(Latency)</th>
+                            <th>Signal Wait %<br/>(&lt; 25% = Good)</th>
+                            <th>CPU Scheduler<br/>Delay (ms)</th>
+                            <th>Overall Rating</th>
+                            <th>Run Time</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var result in _benchmarkResults.OrderByDescending(r => r.Timestamp))
+                        {
+                            <tr>
+                                <td>@result.ServerName</td>
+                                <td class="@GetRatingClass(result.CpuRating)">
+                                    @result.CpuIntegerBenchmarkMs.ToString("F1")ms
+                                    <br/><small>@result.CpuRating</small>
+                                </td>
+                                <td class="@GetRatingClass(result.StringOpsRating)">
+                                    @result.StringOpsBenchmarkMs.ToString("F1")ms
+                                    <br/><small>@result.StringOpsRating</small>
+                                </td>
+                                <td>@result.MemoryAccessBenchmarkMs.ToString("F1")ms</td>
+                                <td class="@GetRatingClass(result.SignalWaitPercentage < 25 ? "Good" : "Poor")">
+                                    @result.SignalWaitPercentage.ToString("F1")%
+                                    <br/><small>@result.HypervisorRating</small>
+                                </td>
+                                <td>@result.CpuSchedulerDelayMs.ToString("F2")ms</td>
+                                <td class="@GetOverallRatingClass(result)">
+                                    @GetOverallRating(result)
+                                </td>
+                                <td>@result.Timestamp.ToLocalTime().ToString("HH:mm:ss")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+
+    <div class="benchmark-controls">
+        <h2>Run Benchmarks</h2>
+        <div class="server-selection">
+            @foreach (var conn in _enabledConnections)
+            {
+                <div class="server-benchmark-item">
+                    <div class="server-info">
+                        <strong>@conn.ServerNames</strong>
+                        <br/><small>@conn.Database</small>
+                    </div>
+                    <button class="btn btn-primary @(_runningServers.Contains(conn.Id) ? "active" : "")"
+                            @onclick="() => RunBenchmarkForServer(conn)"
+                            disabled="@_isRunning">
+                        @if (_runningServers.Contains(conn.Id))
+                        {
+                            <i class="fa-solid fa-spinner fa-spin">Running...</i>
+                        }
+                        else
+                        {
+                            <i class="fa-solid fa-gauge-high">Run Benchmark</i>
+                        }
+                    </button>
+                </div>
+            }
+        </div>
+
+        @if (_enabledConnections.Count > 1)
+        {
+            <div class="bulk-actions">
+                <button class="btn btn-success" @onclick="RunAllBenchmarks" disabled="@_isRunning">
+                    <i class="fa-solid fa-play"></i> Run All Benchmarks
+                </button>
+            </div>
+        }
+    </div>
+
+    <div class="benchmark-info">
+        <h3>About These Benchmarks</h3>
+        <div class="info-grid">
+            <div class="info-item">
+                <h4>CPU Integer Arithmetic</h4>
+                <p>Measures raw CPU performance through mathematical calculations. Slow results may indicate CPU contention or over-subscription.</p>
+            </div>
+            <div class="info-item">
+                <h4>String Operations</h4>
+                <p>Tests string processing performance. Affected by CPU cores, memory bandwidth, and SQL Server's string handling.</p>
+            </div>
+            <div class="info-item">
+                <h4>Signal Wait Percentage</h4>
+                <p>Indicates CPU scheduling delays. High values (>25%) suggest hypervisor contention in virtualized environments.</p>
+            </div>
+            <div class="info-item">
+                <h4>Memory Access</h4>
+                <p>Simulated memory latency through DMV queries. Helps identify NUMA issues or memory contention.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<ServerConnection> _enabledConnections = new();
+    private List<BenchmarkResult> _benchmarkResults = new();
+    private bool _isRunning = false;
+    private double _progressPercent = 0;
+    private string _currentOperation = "";
+    private HashSet<string> _runningServers = new();
+
+    protected override void OnInitialized()
+    {
+        LoadConnections();
+        LoadExistingResults();
+    }
+
+    private void LoadConnections()
+    {
+        _enabledConnections = ConnectionManager.GetConnections()
+            .Where(c => c.IsEnabled)
+            .ToList();
+    }
+
+    private void LoadExistingResults()
+    {
+        // In a real implementation, you'd load historical results from cache
+        // For now, just clear the list
+        _benchmarkResults.Clear();
+    }
+
+    private async Task RunBenchmarkForServer(ServerConnection conn)
+    {
+        if (_isRunning) return;
+
+        _runningServers.Add(conn.Id);
+        _isRunning = true;
+        _progressPercent = 0;
+        _currentOperation = $"Benchmarking {conn.ServerNames}...";
+
+        try
+        {
+            StateHasChanged();
+
+            // Simulate progress updates
+            _progressPercent = 10;
+            _currentOperation = "Running CPU integer benchmark...";
+            StateHasChanged();
+            await Task.Delay(100);
+
+            _progressPercent = 30;
+            _currentOperation = "Running string operations benchmark...";
+            StateHasChanged();
+            await Task.Delay(100);
+
+            _progressPercent = 50;
+            _currentOperation = "Running memory access benchmark...";
+            StateHasChanged();
+            await Task.Delay(100);
+
+            _progressPercent = 70;
+            _currentOperation = "Analyzing signal wait patterns...";
+            StateHasChanged();
+            await Task.Delay(100);
+
+            _progressPercent = 90;
+            _currentOperation = "Analyzing CPU scheduler delays...";
+            StateHasChanged();
+            await Task.Delay(100);
+
+            // Run the actual benchmark
+            var result = await BenchmarkService.RunBenchmarkAsync(conn.ServerNames, conn.Database);
+
+            if (result.Success)
+            {
+                _benchmarkResults.Add(result);
+                _progressPercent = 100;
+                _currentOperation = $"Benchmark completed for {conn.ServerNames}";
+                Toast.ShowSuccess($"Benchmark completed for {conn.ServerNames}");
+            }
+            else
+            {
+                Toast.ShowError($"Benchmark failed for {conn.ServerNames}: {result.ErrorMessage}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Benchmark failed for {conn.ServerNames}: {ex.Message}");
+        }
+        finally
+        {
+            _runningServers.Remove(conn.Id);
+            _isRunning = false;
+            _progressPercent = 0;
+            _currentOperation = "";
+            StateHasChanged();
+        }
+    }
+
+    private async Task RunAllBenchmarks()
+    {
+        if (_isRunning) return;
+
+        foreach (var conn in _enabledConnections)
+        {
+            await RunBenchmarkForServer(conn);
+            // Small delay between servers
+            await Task.Delay(500);
+        }
+    }
+
+    private string GetRatingClass(string rating)
+    {
+        return rating.ToLower() switch
+        {
+            "fast" => "rating-fast",
+            "normal" => "rating-normal",
+            "good" => "rating-good",
+            "poor" => "rating-poor",
+            "high contention" => "rating-poor",
+            "moderate contention" => "rating-normal",
+            "low contention" => "rating-good",
+            _ => "rating-degraded"
+        };
+    }
+
+    private string GetOverallRatingClass(BenchmarkResult result)
+    {
+        var ratings = new[] { result.CpuRating, result.StringOpsRating, result.HypervisorRating };
+        var goodCount = ratings.Count(r => r.Contains("Fast") || r.Contains("Good") || r.Contains("Low"));
+        var poorCount = ratings.Count(r => r.Contains("Degraded") || r.Contains("Poor") || r.Contains("High"));
+
+        if (goodCount >= 2) return "rating-good";
+        if (poorCount >= 2) return "rating-poor";
+        return "rating-normal";
+    }
+
+    private string GetOverallRating(BenchmarkResult result)
+    {
+        var ratingClass = GetOverallRatingClass(result);
+        return ratingClass switch
+        {
+            "rating-good" => "Good",
+            "rating-poor" => "Needs Attention",
+            _ => "Average"
+        };
+    }
+}
+
+<!-- Styles extracted to wwwroot/css/Benchmark.css 2026-05-11 (CLAUDE.md convention). -->

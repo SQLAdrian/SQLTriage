@@ -1,0 +1,84 @@
+{
+  "id": "performance-monitor",
+  "title": "Performance Monitor",
+  "description": "Windows Performance Monitor counters and system-level metrics",
+  "navTitle": "Performance Monitor",
+  "navIcon": "fa-solid fa-gauge-high",
+  "navCategory": "Performance Monitor",
+  "navOrder": 99,
+  "route": "/performance-monitor",
+  "enabled": true,
+  "source": "sqlwatch",
+  "defaultDatabase": "SQLWATCH",
+  "showAllOption": true,
+  "panels": [
+    {
+      "id": "pm.cpu",
+      "title": "CPU Usage %",
+      "description": "Processor utilization from Windows Performance Counters",
+      "enabled": true,
+      "source": "",
+      "panelType": "TimeSeries",
+      "chartType": "Line",
+      "height": 250,
+      "refreshIntervalSeconds": null,
+      "layout": {
+        "column": 0,
+        "order": 0,
+        "spanColumns": false
+      },
+      "query": {
+        "source": "sqlwatch",
+        "sqlServer": "SELECT\n    h.report_time AS [Time],\n    m.counter_name AS [Series],\n    AVG(d.cntr_value_calculated) AS [Value]\nFROM dbo.sqlwatch_logger_perf_os_performance_counters d WITH (NOLOCK)\nINNER JOIN dbo.sqlwatch_logger_snapshot_header h WITH (NOLOCK)\n    ON h.snapshot_time = d.snapshot_time\n    AND h.snapshot_type_id = d.snapshot_type_id\n    AND h.sql_instance = d.sql_instance\nINNER JOIN dbo.sqlwatch_meta_performance_counter m WITH (NOLOCK)\n    ON m.sql_instance = d.sql_instance\n    AND m.performance_counter_id = d.performance_counter_id\nWHERE h.report_time BETWEEN @TimeFrom AND @TimeTo\n    AND d.sql_instance IN (SELECT value FROM STRING_SPLIT(@SqlInstance, ','))\n    AND m.counter_name LIKE '%Processor Time%'\n    AND m.cntr_type <> 1073939712\nGROUP BY h.report_time, m.counter_name\nORDER BY h.report_time"
+      },
+      "defaultDatabase": "SQLWATCH",
+      "statUnit": "%",
+      "statThresholdKey": null,
+      "barGaugeThresholdKey": null,
+      "barGaugeUnitSuffix": "%",
+      "valueFormat": "",
+      "colorThresholds": [],
+      "dataGridIsClickable": false,
+      "dataGridMaxRows": 500,
+      "dataGridTopRows": 0,
+      "actionColumn": null,
+      "actionColumnMode": null,
+      "dataGridColumns": null,
+      "dataGridColumnColors": null
+    },
+    {
+      "id": "pm.memory",
+      "title": "Memory Usage",
+      "description": "Memory utilization and pressure indicators",
+      "enabled": true,
+      "source": "",
+      "panelType": "TimeSeries",
+      "chartType": "Area",
+      "height": 250,
+      "refreshIntervalSeconds": null,
+      "layout": {
+        "column": 1,
+        "order": 0,
+        "spanColumns": false
+      },
+      "query": {
+        "source": "sqlwatch",
+        "sqlServer": "SELECT\n    h.report_time AS [Time],\n    'Available Memory (MB)' AS [Series],\n    AVG(d.available_physical_memory_kb) / 1024 AS [Value]\nFROM dbo.sqlwatch_logger_perf_os_memory d WITH (NOLOCK)\nINNER JOIN dbo.sqlwatch_logger_snapshot_header h WITH (NOLOCK)\n    ON h.snapshot_time = d.snapshot_time\n    AND h.snapshot_type_id = d.snapshot_type_id\n    AND h.sql_instance = d.sql_instance\nWHERE h.report_time BETWEEN @TimeFrom AND @TimeTo\n    AND d.sql_instance IN (SELECT value FROM STRING_SPLIT(@SqlInstance, ','))\nGROUP BY h.report_time\n\nUNION ALL\n\nSELECT\n    h.report_time,\n    'Total Memory (MB)',\n    AVG(d.total_physical_memory_kb) / 1024\nFROM dbo.sqlwatch_logger_perf_os_memory d WITH (NOLOCK)\nINNER JOIN dbo.sqlwatch_logger_snapshot_header h WITH (NOLOCK)\n    ON h.snapshot_time = d.snapshot_time\n    AND h.snapshot_type_id = d.snapshot_type_id\n    AND h.sql_instance = d.sql_instance\nWHERE h.report_time BETWEEN @TimeFrom AND @TimeTo\n    AND d.sql_instance IN (SELECT value FROM STRING_SPLIT(@SqlInstance, ','))\nGROUP BY h.report_time"
+      },
+      "defaultDatabase": "SQLWATCH",
+      "statUnit": "MB",
+      "statThresholdKey": null,
+      "barGaugeThresholdKey": null,
+      "barGaugeUnitSuffix": "MB",
+      "valueFormat": "",
+      "colorThresholds": [],
+      "dataGridIsClickable": false,
+      "dataGridMaxRows": 500,
+      "dataGridTopRows": 0,
+      "actionColumn": null,
+      "actionColumnMode": null,
+      "dataGridColumns": null,
+      "dataGridColumnColors": null
+    }
+  ]
+}
