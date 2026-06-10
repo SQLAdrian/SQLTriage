@@ -23,7 +23,7 @@ A board-ready governance score (Bronze → Silver → Gold → Platinum), a 5-ca
 | ![Diagnostics Maturity Roadmap — L1 Foundation breakdown with Availability, Configuration, Backup, Performance category cards](docs/screenshots/v090/02-compliance-roadmap.png) | ![Audit Assessment grid showing 195 BLITZ findings with priority badges and category tags](docs/screenshots/v090/03-audit-assessment.png) |
 | Maturity roadmap mapping every finding to the framework controls auditors care about. Per-server progress tracking + multi-server comparison strip. | 195 sp_BLITZ findings imported and grouped in a single grid with priority/category badges. Free tier — no key, no signup. |
 
-**Free tier** ships ~111 audit-first checks + the full sp_BLITZ integration. Use it indefinitely.
+**Free tier** ships 473 audit-first checks + first-class sp_BLITZ CSV import. Use it indefinitely.
 
 **Full tier** unlocks the complete ~700-check audit corpus, the maturity roadmap with per-framework gap analysis, governance scoring, build catalogue, and SQL licensing-cost estimator. [Activation guide →](https://sqladrian.github.io/SQLTriage/ACTIVATION)
 
@@ -77,7 +77,7 @@ Audit Assessment · Compliance Roadmap · CIO Dashboard · Compliance Map · Cod
 
 ## Quick start (60 seconds)
 
-1. **[Download `SQLTriage-Setup.exe`](https://github.com/SQLAdrian/SQLTriage/releases)** — single installer, no admin required for per-user install
+1. **[Download the latest release](https://github.com/SQLAdrian/SQLTriage/releases/latest)** — `Setup.exe` (installer, no admin needed for per-user install) or the portable `win-x64.zip` (unzip anywhere, run `SQLTriage.exe`)
 2. Launch — Free tier active immediately
 3. **Settings → Add Server** — pick a SQL instance, Windows auth or SQL login
 4. **Audit Assessment → Run Audit** — 60-second run on a typical instance
@@ -92,7 +92,7 @@ Want the Full tier (700+ checks, maturity roadmap, framework gap analysis)? [Act
 - **Agentless** — every check is a SELECT against DMVs. No software on the SQL Server. No schema changes.
 - **Read-only by default** — explicit safety gates on the few write paths (No-Pants mode for dangerous ops, Experimental Mode for previews).
 - **Audit-grade** — every finding cites its authoritative source. The report your auditor reads is the same report your DBA reads.
-- **Single self-contained EXE** — .NET 8 + WebView2 bundled. No "install runtime first" friction.
+- **Single self-contained EXE** — .NET 10 + WebView2 bundled. No "install runtime first" friction.
 - **Local-only by default** — no telemetry, no phone-home, no cloud dependency. Optional Azure Blob export if you want offsite audit trails.
 - **Windows Service mode** — headless 24/7 for continuous monitoring, dashboards via Kestrel HTTPS.
 - **DPAPI-wrapped credentials** — SQL passwords encrypted at rest with `CredentialProtector` (AES-256-GCM + DPAPI). [Security whitepaper →](https://sqladrian.github.io/SQLTriage/security)
@@ -114,9 +114,19 @@ Want the Full tier (700+ checks, maturity roadmap, framework gap analysis)? [Act
 
 ---
 
+## DevBridge (the self-driving demo)
+
+If you saw SQLTriage driving itself in a demo video, that's **DevBridge** — a local automation bridge used to script the UI for development, testing, and demo recording.
+
+- **Debug builds only.** Release builds (everything on the Releases page) do not contain it.
+- **Off by default** even in debug builds — it only starts with the explicit `--devbridge` flag.
+- **Loopback only.** It binds to `127.0.0.1` and is never reachable from another machine.
+
+---
+
 ## Built with
 
-.NET 8 · Blazor Hybrid (WPF + WebView2) · SQLite · Serilog · ApexCharts · QuestPDF · Azure SDK · BIP39
+.NET 10 · Blazor Hybrid (WPF + WebView2) · SQLite · Serilog · ApexCharts · QuestPDF · Azure SDK · BIP39
 
 Standing on the shoulders of: **sp_BLITZ** (Brent Ozar) · **SQLWATCH** (Marcin Gminski) · **sp_triage** (sqldba.org) · **PerformanceMonitor** (Erik Darling) · **MadeiraToolbox** (Eitan Blumin) · **TigerToolbox** (Pedro Lopes) · **Ola Hallengren Maintenance Solution**.
 
