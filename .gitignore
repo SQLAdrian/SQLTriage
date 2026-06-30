@@ -1,0 +1,30 @@
+# SQLTriage — public repo .gitignore
+# (The development repo uses a larger internal ignore file; publish-public.ps1
+# swaps this one in, the same way README.public.md replaces README.md.)
+
+# Build outputs
+bin/
+obj/
+publish/
+release/
+*.user
+
+# IDE / tooling
+.vs/
+.vscode/
+*.suo
+node_modules/
+
+# Runtime artifacts the app writes next to itself
+logs/
+*.db
+*.db-wal
+*.db-shm
+Config/dashboard-config.json.bak
+Config/user-settings.json
+
+# Local bundles and large data (ship via GitHub Releases, not the repo)
+Config/free-bundle.dat
+*.aesgcm
+rag.db
+Resources/bip39-english.txt

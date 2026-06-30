@@ -1,0 +1,1320 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/fullaudit"
+
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using System.IO
+@using System.Text
+@using Microsoft.Extensions.Logging
+@using System.Diagnostics
+@using System.Text.Json
+@inject DiagnosticScriptRunner ScriptRunner
+@inject ServerConnectionManager ConnectionManager
+@inject FullAuditStateService AuditState
+@inject IJSRuntime JSRuntime
+@inject ILogger<FullAudit> Logger
+@inject SQLTriage.Data.ToastService Toast
+@inject SQLTriage.Data.Services.ReportPageConfigService ReportPageCfg
+@inject UserSettingsService UserSettings
+@inject SQLTriage.Data.Services.PrintService PrintSvc
+@inject AuditLogService AuditLog
+@implements IDisposable
+<PageTitle>Raw Diagnostics - SQLTriage</PageTitle>
+
+<SQLTriage.Components.Shared.PdfExportModal @ref="_pdfModal"
+    Title="Export Raw Diagnostics to PDF"
+    DefaultLandscape="true"
+    DefaultBackgrounds="true"
+    OnConfirm="OnPdfConfirmed" />
+
+<SQLTriage.Components.Shared.SectionEditorModal IsVisible="_faEditingSection != null"
+    Section="_faEditingSection"
+    NativeKeys="_faAvailableNativeKeys"
+    AvailableFields="_faFields"
+    OnSave="FaHandleSectionSaved"
+    OnCancel="() => _faEditingSection = null" />
+
+<SQLTriage.Components.Shared.AddSectionModal IsVisible="_faShowAddSection"
+    NativeKeys="_faAvailableNativeKeys"
+    OnAdd="FaHandleSectionAdded"
+    OnCancel="() => _faShowAddSection = false" />
+
+<div class="full-audit-container">
+    <SQLTriage.Components.Shared.EditPageToolbar EditMode="_faEditMode"
+        PageTitle="Raw Diagnostics"
+        HasUnsavedChanges="false"
+        OnAddSection="() => _faShowAddSection = true"
+        OnDone="() => _faEditMode = false"
+        OnReset="FaResetSections" />
+
+    <h1>Raw Diagnostics</h1>
+    <p class="description">Run diagnostic scripts on SQL servers and export results to CSV</p>
+
+    @if (_isLoading)
+    {
+        <SQLTriage.Components.Shared.PageLoadingSpinner Message="Loading scripts..." />
+    }
+    else
+    {
+        <!-- Server Connection Section -->
+        <SQLTriage.Components.Shared.ReportSectionWrapper Section="@FaGetSection("server-selection")" EditMode="_faEditMode"
+            IsFirst="@FaIsFirst("server-selection")" IsLast="@FaIsLast("server-selection")"
+            OnMoveUp="s => FaMoveSection(s, -1)" OnMoveDown="s => FaMoveSection(s, 1)"
+            OnEdit="s => _faEditingSection = s" OnDelete="s => FaDeleteSection(s)"
+            OnToggle="s => FaToggleSection(s)">
+        <div class="connection-section">
+            <div class="section-header">
+                <h2>Target Servers</h2>
+                <div class="header-actions">
+                    <a href="@RouteConstants.Servers" class="btn btn-secondary"
+                       title="Add, edit, test or remove server connections">
+                        <i class="fa-solid fa-server" style="margin-right:4px;"></i> Manage Servers
+                    </a>
+                </div>
+            </div>
+            @* Connection add/edit/delete/test moved to the dedicated /servers page.
+               This page is now "pick a target (or All) + run" — selection happens via
+               the ServerSelector below. *@
+
+        <!-- Server Selector -->
+        @if (AllSuccessfulServers.Count > 0)
+        {
+            <div class="server-selector">
+                <h3>Select Target Server</h3>
+                @* Shared ServerSelector (id-mode) with All scope. Id = "{connId}|{server}"
+                   composite so the connection+server pair resolves back atomically;
+                   null/empty SelectedId == "All servers" scope (AllowAllScope contract).
+                   Connection management lives on the dedicated /servers page. *@
+                <ServerSelector Items="FaServerItems"
+                                SelectedId="@FaSelectedServerId"
+                                SelectedIdChanged="OnFaServerSelectorChanged"
+                                AllowAllScope="true"
+                                Placeholder="All servers" />
+            </div>
+        }
+        else
+        {
+            <div class="no-connections">
+                <p>No connected servers. Add and connect servers on the
+                   <a href="@RouteConstants.Servers">Servers</a> page, then return here to run diagnostics.</p>
+            </div>
+        }
+        </div>
+        </SQLTriage.Components.Shared.ReportSectionWrapper>
+
+        <!-- Scripts + Progress Section -->
+        @if (_scriptsPanelVisible)
+        {
+            <SQLTriage.Components.Shared.ReportSectionWrapper Section="@FaGetSection("progress")" EditMode="_faEditMode"
+                IsFirst="@FaIsFirst("progress")" IsLast="@FaIsLast("progress")"
+                OnMoveUp="s => FaMoveSection(s, -1)" OnMoveDown="s => FaMoveSection(s, 1)"
+                OnEdit="s => _faEditingSection = s" OnDelete="s => FaDeleteSection(s)"
+                OnToggle="s => FaToggleSection(s)">
+            <div class="scripts-section">
+                <div class="section-header">
+                    <h2>Diagnostic Scripts - @(_allScopeActive ? "All servers" : (string.IsNullOrWhiteSpace(SelectedServer) || SelectedServer == "." ? "(local)" : SelectedServer))</h2>
+                    <div class="script-actions">
+                        @if (AllSuccessfulServers.Count > 0)
+                        {
+                            <div class="run-all-group">
+                                <div class="run-mode-toggle">
+                                    <button class="run-mode-btn @(_parallelMode ? "" : "active")"
+                                            @onclick="() => _parallelMode = false" disabled="@_isRunning"
+                                            title="Run each server one at a time">
+                                        <i class="fa-solid fa-list-ol"></i> Sequential
+                                    </button>
+                                    <button class="run-mode-btn @(_parallelMode ? "active" : "")"
+                                            @onclick="() => _parallelMode = true" disabled="@_isRunning"
+                                            title="Start all servers concurrently, staggered by delay">
+                                        <i class="fa-solid fa-bolt"></i> Parallel
+                                    </button>
+                                </div>
+                                @if (_parallelMode)
+                                {
+                                    <div class="delay-input-group" title="Seconds to wait before starting each subsequent server">
+                                        <i class="fa-solid fa-stopwatch" style="color:var(--text-secondary);font-size:12px;"></i>
+                                        <input type="number" min="0" max="300" step="1"
+                                               @bind="_parallelDelaySeconds"
+                                               style="width:52px;padding:3px 6px;border-radius:4px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);font-size:12px;"
+                                               disabled="@_isRunning" />
+                                        <span style="font-size:11px;color:var(--text-muted);">s delay</span>
+                                    </div>
+                                }
+                                <button class="btn btn-warning" @onclick="RequestRunAllServers" disabled="@_isRunning">
+                                    @if (_isRunning)
+                                    {
+                                        <span>Running...</span>
+                                    }
+                                    else if (_parallelMode)
+                                    {
+                                        <i class="fa-solid fa-bolt" style="margin-right:4px;"></i><span>Run all (@AllSuccessfulServers.Count) — Parallel</span>
+                                    }
+                                    else
+                                    {
+                                        <i class="fa-solid fa-list-ol" style="margin-right:4px;"></i><span>Run all (@AllSuccessfulServers.Count) — Sequential</span>
+                                    }
+                                </button>
+                            </div>
+                        }
+                        @if (!_allScopeActive)
+                        {
+                            <button class="btn btn-primary" @onclick="RunSelectedScripts" disabled="@(_isRunning || _selectedScriptIds.Count == 0)">
+                                @(_isRunning ? "Running..." : "Run Selected (" + _selectedScriptIds.Count + ")")
+                            </button>
+                        }
+                        @if (_isRunning)
+                        {
+                            <button class="btn btn-danger" @onclick="StopRun" title="Stop the running assessment">
+                                <i class="fa-solid fa-stop"></i> Stop
+                            </button>
+                        }
+                        <a href="@RouteConstants.EditAuditScripts" class="btn btn-secondary" title="Edit script configurations">
+                            <i class="fa-solid fa-file-pen" style="margin-right: 4px;"></i> Edit Scripts
+                        </a>
+                    </div>
+                </div>
+
+                @if (_isRunning)
+                {
+                    <div class="progress-container">
+                        <div class="progress-info">
+                            <span>Server: @CurrentServerName</span>
+                            <span>Script: @CurrentScriptName</span>
+                            <span>@ProgressPercent.ToString("F0")%</span>
+                            @if (ElapsedTime.TotalSeconds > 0)
+                            {
+                                <span>Elapsed: @ElapsedTime.ToString(@"mm\:ss")</span>
+                            }
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: @ProgressPercent%"></div>
+                        </div>
+                        <div class="progress-detail">
+                            Server @CurrentServerIndex of @TotalServers | Script @CurrentScriptIndex of @TotalScripts
+                        </div>
+                    </div>
+                }
+
+                <div class="script-select-bar" style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
+                    <label style="display:flex; align-items:center; gap:4px; cursor:pointer;">
+                        <input type="checkbox" checked="@(_selectedScriptIds.Count == _scripts.Count)"
+                               @onchange="ToggleSelectAll" />
+                        Select All
+                    </label>
+                    <span class="text-muted" style="font-size:0.85em;">@_selectedScriptIds.Count of @_scripts.Count selected</span>
+                </div>
+                <div class="script-list">
+                    @foreach (var script in _scripts)
+                    {
+                        var sid = script.Id;
+                        <div class="script-card @(_selectedScriptIds.Contains(sid) ? "enabled" : "disabled")">
+                            <div class="script-header">
+                                <div class="script-info" style="display:flex; align-items:flex-start; gap:8px;">
+                                    <input type="checkbox" checked="@(_selectedScriptIds.Contains(sid))"
+                                           @onchange="() => ToggleScriptSelection(sid)"
+                                           style="margin-top:4px; cursor:pointer;" />
+                                    <div>
+                                        <h3>@script.Name</h3>
+                                        <p>@script.Description</p>
+                                    </div>
+                                </div>
+                                <div class="script-actions">
+                                    @if (!_allScopeActive)
+                                    {
+                                        <button class="btn btn-sm" @onclick="() => RunScript(script)" disabled="@_isRunning">
+                                            @(_isRunning ? "Running..." : "Run")
+                                        </button>
+                                    }
+                                    <!--
+                                        @if (GetResultForScript(script.Name) != null)
+                                    {
+                                        <button class="btn btn-sm btn-secondary" @onclick="() => ExportScriptToCsv(GetResultForScript(script.Name)!)">
+                                            Export CSV
+                                        </button>
+                                    }-->
+                                </div>
+                            </div>
+                            
+                            @if (GetResultForScript(script.Name) != null)
+                            {
+                                var result = GetResultForScript(script.Name)!;
+                                <div class="script-result @(result.Success ? "success" : "error")">
+                                    <div class="result-header">
+                                        <span class="status">@(result.Success ? (result.StatusMessage ?? "Success") : "Error")</span>
+                                        <span class="execution-time">@result.ExecutionTime.TotalSeconds.ToString("F2")s</span>
+                                        <span class="rows">@result.RowsAffected rows</span>
+                                    </div>
+                                    @if (!string.IsNullOrEmpty(result.ErrorMessage))
+                                    {
+                                        <p class="error-details">@result.ErrorMessage</p>
+                                    }
+                                    @if (result.Results != null && result.Results.Count > 0)
+                                    {
+                                        <div class="result-preview">
+                                            <h4>Preview (first 5 rows):</h4>
+                                            <table class="preview-table">
+                                                <thead>
+                                                    <tr>
+                                                        @foreach (var key in result.Results.First().Keys)
+                                                        {
+                                                            <th>@key</th>
+                                                        }
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    @foreach (var row in result.Results.Take(5))
+                                                    {
+                                                        <tr>
+                                                            @foreach (var value in row.Values)
+                                                            {
+                                                                <td>@(value?.ToString() ?? "NULL")</td>
+                                                            }
+                                                        </tr>
+                                                    }
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+            </SQLTriage.Components.Shared.ReportSectionWrapper>
+
+            <!-- Summary / Results Section -->
+            @if (_executionResults.Count > 0)
+            {
+                <SQLTriage.Components.Shared.ReportSectionWrapper Section="@FaGetSection("results")" EditMode="_faEditMode"
+                    IsFirst="@FaIsFirst("results")" IsLast="@FaIsLast("results")"
+                    OnMoveUp="s => FaMoveSection(s, -1)" OnMoveDown="s => FaMoveSection(s, 1)"
+                    OnEdit="s => _faEditingSection = s" OnDelete="s => FaDeleteSection(s)"
+                    OnToggle="s => FaToggleSection(s)">
+                <div class="summary-section">
+                    <div class="summary-header">
+                        <button class="btn btn-sm btn-secondary"@onclick="() => openfolder()">
+                            Open output folder
+                        </button>
+                        <button class="btn btn-sm btn-secondary" @onclick="ExportSummaryCsvAsync">
+                            <i class="fa-solid fa-file-csv"></i> Export CSV
+                        </button>
+                        <button class="btn btn-sm btn-secondary @(_pdfExporting ? "active" : "")" @onclick="OpenPdfModal" disabled="@_pdfExporting">
+                            <i class="fa-solid fa-file-pdf"></i> @(_pdfExporting ? "Saving..." : "Export PDF")
+                        </button>
+                        <button class="btn btn-sm btn-danger" @onclick="ClearResults">
+                            Clear Results
+                        </button>
+                    </div>
+                    <h2>Execution Summary</h2>
+                    <table class="summary-table">
+                        <thead>
+                            <tr>
+                                <th>Server</th>
+                                <th>Script</th>
+                                <th>Status</th>
+                                <th>Execution Time</th>
+                                <th>Rows</th>
+                                <th>Result</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var result in _executionResults)
+                            {
+                                <tr>
+                                    <td>@result.ServerName</td>
+                                    <td>@result.ScriptName</td>
+                                    <td>@(result.Success ? (result.StatusMessage ?? "Success") : "Error")</td>
+                                    <td>@result.ExecutionTime.TotalSeconds.ToString("F2")s</td>
+                                    <td>@result.RowsAffected</td>
+                                    <td>
+                                        @if (result.Success && result.Results != null)
+                                        {
+                                                <a>Exported to CSV</a>
+                                        }
+                                    </td>
+
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                </SQLTriage.Components.Shared.ReportSectionWrapper>
+            }
+        }
+        else if (SelectedConnection != null)
+        {
+            <div class="no-selection">
+                <p>No connected servers. Click "Test All" to test server connections, or edit the connection to add/remove servers.</p>
+            </div>
+        }
+    }
+
+    <!-- Parallel Execution Confirm Modal -->
+    @if (_showParallelModal)
+    {
+        <div class="fa-modal-backdrop" @onclick="CancelParallelModal">
+            <div class="fa-modal" @onclick:stopPropagation>
+                <div class="fa-modal-header">
+                    <i class="fa-solid @(_parallelMode ? "fa-bolt" : "fa-list-ol")"
+                       style="color:@(_parallelMode ? "var(--yellow)" : "var(--accent)");font-size:20px;"></i>
+                    <h3 style="margin:0;">@(_parallelMode ? "Parallel" : "Sequential") Server Execution</h3>
+                </div>
+                <div class="fa-modal-body">
+                    @if (_parallelMode)
+                    {
+                        <p style="margin:0 0 12px;">
+                            Running audit scripts across all <strong>@AllSuccessfulServers.Count servers</strong> simultaneously
+                            may <strong>improve overall completion time</strong> but will place concurrent load on each server and on this host.
+                        </p>
+                        <p style="color:var(--yellow);font-size:13px;margin:0;">
+                            <i class="fa-solid fa-triangle-exclamation" style="margin-right:6px;"></i>
+                            This may impact the underlying infrastructure's performance in large environments.
+                        </p>
+                    }
+                    else
+                    {
+                        <p style="margin:0;">
+                            Run audit scripts across all <strong>@AllSuccessfulServers.Count servers</strong> one at a time,
+                            in order. Each server completes before the next begins.
+                        </p>
+                    }
+                </div>
+                <div class="fa-modal-footer">
+                    <button class="btn btn-secondary" @onclick="CancelParallelModal">Cancel</button>
+                    <button class="btn @(_parallelMode ? "btn-warning" : "btn-primary")" @onclick="ConfirmRun">
+                        @if (_parallelMode)
+                        {
+                            <i class="fa-solid fa-bolt" style="margin-right:5px;"></i>
+                            <span>Run Parallel</span>
+                        }
+                        else
+                        {
+                            <i class="fa-solid fa-list-ol" style="margin-right:5px;"></i>
+                            <span>Run Sequential</span>
+                        }
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (_showPostRunModal && _postRunIssues.Count > 0)
+    {
+        <div class="fa-modal-backdrop" @onclick="DismissPostRunModal">
+            <div class="fa-modal" @onclick:stopPropagation style="max-width:760px;max-height:80vh;overflow:auto;">
+                <div class="fa-modal-header">
+                    <i class="fa-solid fa-triangle-exclamation" style="color:var(--yellow);font-size:20px;"></i>
+                    <h3 style="margin:0;">
+                        Raw Diagnostics — @_postRunIssues.Count issue@(_postRunIssues.Count == 1 ? "" : "s") to review
+                    </h3>
+                </div>
+                <div class="fa-modal-body">
+                    <p style="margin:0 0 12px;font-size:13px;color:var(--text-muted);">
+                        The run completed but the items below need attention. Copy the details below to send back for review.
+                    </p>
+                    @foreach (var issue in _postRunIssues)
+                    {
+                        var sev = issue.Severity.ToLowerInvariant();
+                        var col = sev == "error" ? "var(--red)" : sev == "warning" ? "var(--yellow)" : "var(--accent)";
+                        <div style="border:1px solid var(--border);border-left:3px solid @col;padding:10px 12px;margin-bottom:8px;border-radius:4px;background:var(--bg-surface);">
+                            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;">
+                                <div style="font-weight:600;font-size:13px;">
+                                    <span style="color:@col;">[@issue.Severity]</span>
+                                    <span style="margin-left:6px;">@issue.Server</span>
+                                    <span style="color:var(--text-muted);margin:0 4px;">::</span>
+                                    <span>@issue.Script</span>
+                                </div>
+                                <button class="btn btn-secondary" style="padding:2px 8px;font-size:12px;"
+                                        @onclick="() => CopyOneIssueAsync(issue)" title="Copy this issue">
+                                    <i class="fa-solid fa-copy"></i>
+                                </button>
+                            </div>
+                            <div style="font-family:monospace;font-size:12px;white-space:pre-wrap;word-break:break-word;color:var(--text);">@issue.Detail</div>
+                        </div>
+                    }
+                </div>
+                <div class="fa-modal-footer">
+                    <button class="btn btn-secondary" @onclick="CopyAllIssuesAsync">
+                        <i class="fa-solid fa-copy" style="margin-right:5px;"></i><span>Copy all</span>
+                    </button>
+                    <button class="btn btn-primary" @onclick="DismissPostRunModal">Dismiss</button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<ServerConnection> _connections = new();
+    private List<ScriptConfiguration> _scripts = new();
+    private HashSet<string> _selectedScriptIds = new();
+    private ServerConnection? SelectedConnection { get; set; }
+    private string? SelectedServer { get; set; }
+    private bool _isLoading = true;
+
+    // ── Parallel execution modal ──────────────────────────────────────────
+    private bool _showParallelModal;
+    private bool _showPostRunModal;
+    private List<PostRunIssue> _postRunIssues = new();
+
+    private sealed record PostRunIssue(string Server, string Script, string Severity, string Detail);
+    private bool _parallelMode = false;
+    private int  _parallelDelaySeconds = 5;
+
+    // ── Report Page Editor ────────────────────────────────────────────────
+    private bool                  _faEditMode;
+    private List<ReportSection>   _faSections        = new();
+    private ReportSection?        _faEditingSection;
+    private bool                  _faShowAddSection;
+    private ReportPageDefinition? _faPageDef;
+
+    private static readonly List<string> FaAllNativeKeys =
+        new() { "server-selection", "progress", "results" };
+
+    private static readonly List<ReportFieldInfo> _faFields = new()
+    {
+        new() { Name = "CheckId",            Type = "string",   Description = "Unique check identifier",                             IsKey = true  },
+        new() { Name = "DisplayName",        Type = "string",   Description = "Human-readable check name",                          IsKey = false },
+        new() { Name = "Category",           Type = "string",   Description = "Check category (Security, Performance, etc.)",        IsKey = false },
+        new() { Name = "Severity",           Type = "string",   Description = "Finding severity: Critical, Warning, Info, Pass",     IsKey = false },
+        new() { Name = "Result",             Type = "string",   Description = "Raw result or finding text",                          IsKey = false },
+        new() { Name = "Details",            Type = "string",   Description = "Extended description or recommendation",              IsKey = false },
+        new() { Name = "ServerName",         Type = "string",   Description = "SQL Server instance name",                            IsKey = true  },
+        new() { Name = "Database",           Type = "string",   Description = "Target database (if applicable)",                     IsKey = false },
+        new() { Name = "RunDateUtc",         Type = "datetime", Description = "UTC time the assessment was run",                     IsKey = false },
+        new() { Name = "IsPass",             Type = "bit",      Description = "1 if the check passed, 0 if it raised a finding",     IsKey = false },
+        new() { Name = "ImplementationType", Type = "string",   Description = "Fix method: Script, Config, Manual, etc.",            IsKey = false },
+        new() { Name = "SqlQuery",           Type = "string",   Description = "Suggested remediation SQL",                           IsKey = false },
+    };
+
+    private List<string> _faAvailableNativeKeys =>
+        FaAllNativeKeys.Where(k => !_faSections.Any(s => s.NativeKey == k && s.SectionType == "native")).ToList();
+
+    private ReportSection FaGetSection(string nativeKey)
+    {
+        var s = _faSections.FirstOrDefault(x => x.NativeKey == nativeKey && x.SectionType == "native");
+        return s ?? new ReportSection { NativeKey = nativeKey, Title = nativeKey, SectionType = "native", Enabled = true };
+    }
+
+    private bool FaIsFirst(string nativeKey)
+    {
+        var ordered = _faSections.OrderBy(s => s.Order).ToList();
+        return ordered.FindIndex(s => s.NativeKey == nativeKey && s.SectionType == "native") <= 0;
+    }
+
+    private bool FaIsLast(string nativeKey)
+    {
+        var ordered = _faSections.OrderBy(s => s.Order).ToList();
+        var idx = ordered.FindIndex(s => s.NativeKey == nativeKey && s.SectionType == "native");
+        return idx < 0 || idx == ordered.Count - 1;
+    }
+
+    private void FaLoadSections()
+    {
+        _faPageDef  = ReportPageCfg.GetPage("/fullaudit");
+        _faSections = _faPageDef != null
+            ? _faPageDef.Sections.OrderBy(s => s.Order).ToList()
+            : FaAllNativeKeys.Select((k, i) => new ReportSection { NativeKey = k, Title = k, SectionType = "native", Order = i, Enabled = true }).ToList();
+    }
+
+    private void FaMoveSection(ReportSection s, int dir)  { if (_faPageDef != null) { ReportPageCfg.MoveSection(_faPageDef.Id, s.Id, dir); FaLoadSections(); StateHasChanged(); } }
+    private void FaDeleteSection(ReportSection s)         { if (_faPageDef != null) { ReportPageCfg.DeleteSection(_faPageDef.Id, s.Id); FaLoadSections(); StateHasChanged(); } }
+    private void FaToggleSection(ReportSection s)         { if (_faPageDef != null) { s.Enabled = !s.Enabled; ReportPageCfg.UpsertSection(_faPageDef.Id, s); FaLoadSections(); StateHasChanged(); } }
+
+    private void FaHandleSectionSaved(ReportSection s)
+    {
+        if (_faPageDef == null) return;
+        ReportPageCfg.UpsertSection(_faPageDef.Id, s);
+        FaLoadSections();
+        _faEditingSection = null;
+        StateHasChanged();
+    }
+
+    private void FaHandleSectionAdded(ReportSection s)
+    {
+        if (_faPageDef == null) return;
+        s.Order = _faSections.Count;
+        ReportPageCfg.UpsertSection(_faPageDef.Id, s);
+        FaLoadSections();
+        _faShowAddSection = false;
+        StateHasChanged();
+    }
+
+    private void FaResetSections()
+    {
+        if (_faPageDef == null) return;
+        foreach (var s in _faSections.ToList()) ReportPageCfg.DeleteSection(_faPageDef.Id, s.Id);
+        int i = 0;
+        foreach (var key in FaAllNativeKeys)
+            ReportPageCfg.UpsertSection(_faPageDef.Id, new ReportSection
+            {
+                Id = Guid.NewGuid().ToString("N")[..8],
+                Title = key, NativeKey = key, SectionType = "native", Enabled = true, Order = i++
+            });
+        FaLoadSections();
+        StateHasChanged();
+    }
+    
+    // Progress tracking - now uses state service
+    private double ProgressPercent => AuditState.ProgressPercent;
+    private int TotalServers => AuditState.TotalServers;
+    private int CurrentServerIndex => AuditState.CurrentServerIndex;
+    private string CurrentServerName => AuditState.CurrentServerName;
+    private int TotalScripts => AuditState.TotalScripts;
+    private int CurrentScriptIndex => AuditState.CurrentScriptIndex;
+    private string CurrentScriptName => AuditState.CurrentScriptName;
+    private TimeSpan ElapsedTime => AuditState.ElapsedTime;
+    
+    // Property to get all successful servers from all connections
+    private List<(ServerConnection Connection, string ServerName)> AllSuccessfulServers
+    {
+        get
+        {
+            var result = new List<(ServerConnection, string)>();
+            foreach (var conn in _connections)
+            {
+                foreach (var server in conn.SuccessfulServers)
+                {
+                    result.Add((conn, server));
+                }
+            }
+            return result;
+        }
+    }
+    private string StatusMessage = string.Empty;
+    private string StatusMessageClass = string.Empty;
+    private string FiletimeStamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+
+    // Properties that use the state service for persistence
+    private List<ScriptExecutionResult> _executionResults 
+    { 
+        get => AuditState.GetAllExecutionResults();
+    }
+    private bool _isRunning 
+    { 
+        get => AuditState.IsRunning;
+        set => AuditState.IsRunning = value;
+    }
+    private bool _isTesting 
+    { 
+        get => AuditState.IsTesting;
+        set => AuditState.IsTesting = value;
+    }
+
+    // Drives a 1s UI tick so the "Elapsed" display advances continuously during a
+    // run. ElapsedTime is computed live (DateTime.Now - start), but the UI only
+    // re-reads it on StateHasChanged — which otherwise fires only on per-check
+    // events, making the clock freeze then jump. This ticker re-renders while a
+    // run is in progress.
+    private CancellationTokenSource? _uiTickCts;
+    private CancellationTokenSource? _runCts;
+
+    private void StopRun() => _runCts?.Cancel();
+
+    protected override void OnInitialized()
+    {
+        FaLoadSections();
+        LoadConnections();
+        RestoreState();
+        ScriptRunner.OnBlobUploadResult += OnBlobUploadResult;
+        StartUiTicker();
+    }
+
+    private void StartUiTicker()
+    {
+        _uiTickCts = new CancellationTokenSource();
+        var token = _uiTickCts.Token;
+        _ = Task.Run(async () =>
+        {
+            var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+            try
+            {
+                while (await timer.WaitForNextTickAsync(token))
+                {
+                    if (AuditState.IsRunning)
+                        await InvokeAsync(StateHasChanged);
+                }
+            }
+            catch (OperationCanceledException) { /* page disposed */ }
+            finally { timer.Dispose(); }
+        });
+    }
+
+    private void OnBlobUploadResult(string fileName, bool success, string message)
+    {
+        InvokeAsync(() =>
+        {
+            if (success)
+                Toast.ShowSuccess($"Azure upload: {fileName}");
+            else
+                Toast.ShowError($"Azure upload failed: {fileName} — {message}");
+        });
+    }
+
+    public void Dispose()
+    {
+        ScriptRunner.OnBlobUploadResult -= OnBlobUploadResult;
+        _uiTickCts?.Cancel();
+        _uiTickCts?.Dispose();
+    }
+
+    private void RestoreState()
+    {
+        // Restore selected connection and server from state
+        if (!string.IsNullOrEmpty(AuditState.SelectedConnectionId))
+        {
+            var conn = _connections.FirstOrDefault(c => c.Id == AuditState.SelectedConnectionId);
+            if (conn != null)
+            {
+                SelectedConnection = conn;
+                if (!string.IsNullOrEmpty(AuditState.SelectedServer))
+                {
+                    SelectedServer = AuditState.SelectedServer;
+                }
+            }
+        }
+    }
+
+    private void SaveState()
+    {
+        AuditState.SelectedConnectionId = SelectedConnection?.Id;
+        AuditState.SelectedServer = SelectedServer;
+    }
+
+    private void openfolder()
+    {
+        var outputFolder = Path.Combine(AppContext.BaseDirectory, "output");
+        Process.Start("explorer.exe", outputFolder);
+        //Process.Start(@".\output");
+    }
+
+    private void ClearResults()
+    {
+        AuditState.ClearExecutionResults();
+    }
+
+    private void LoadConnections()
+    {
+        _connections = ConnectionManager.GetConnections();
+
+        if (SelectedConnection == null && _connections.Count > 0)
+        {
+            SelectedConnection = _connections.First();
+            if (SelectedConnection.SuccessfulServers.Count > 0)
+            {
+                SelectedServer = SelectedConnection.SuccessfulServers.First();
+            }
+        }
+
+        LoadScripts();
+    }
+
+    private void LoadScripts()
+    {
+        try
+        {
+            _scripts = ScriptRunner.LoadScriptConfigurations();
+            _selectedScriptIds = new HashSet<string>(_scripts.Where(s => s.Enabled).Select(s => s.Id));
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading script configurations");
+        }
+        _isLoading = false;
+    }
+
+    private void SelectServer(ServerConnection connection, string server)
+    {
+        SelectedConnection = connection;
+        SelectedServer = server;
+        AuditState.ClearExecutionResults();
+        SaveState();
+    }
+
+    // ── Shared ServerSelector (id-mode) adapter ───────────────────────────────
+    // Composite Id "{connId}|{server}" so the (connection, server) pair that
+    // SelectServer needs is recoverable from a single string.
+    private IReadOnlyList<(string Id, string Label)> FaServerItems
+        => AllSuccessfulServers
+            .Select(x => (x.Connection.Id + "|" + x.ServerName, x.ServerName))
+            .ToList();
+
+    private string? FaSelectedServerId
+        => (SelectedConnection != null && SelectedServer != null)
+            ? SelectedConnection.Id + "|" + SelectedServer
+            : null;   // null == "All servers" scope (AllowAllScope contract)
+
+    // True when the picker is on "All servers" scope (no single target chosen) and
+    // there is at least one connected server to run against. Drives the
+    // scripts/progress panel render gate so the panel (and its live Elapsed clock)
+    // shows for All-scope runs, not just single-server selections.
+    private bool _allScopeActive
+        => FaSelectedServerId == null && AllSuccessfulServers.Count > 0;
+
+    // The panel renders for a concrete single-server selection OR All scope.
+    private bool _scriptsPanelVisible
+        => (SelectedConnection != null && SelectedServer != null) || _allScopeActive;
+
+    private void OnFaServerSelectorChanged(string? id)
+    {
+        if (string.IsNullOrEmpty(id))
+        {
+            // All-servers scope: clear the single-target selection.
+            SelectedConnection = null;
+            SelectedServer = null;
+            AuditState.ClearExecutionResults();
+            SaveState();
+            return;
+        }
+        var sep = id.IndexOf('|');
+        if (sep < 0) return;
+        var connId = id.Substring(0, sep);
+        var server = id.Substring(sep + 1);
+        var match = AllSuccessfulServers
+            .FirstOrDefault(x => x.Connection.Id == connId && x.ServerName == server);
+        if (match.Connection != null)
+            SelectServer(match.Connection, match.ServerName);
+    }
+
+    private void ToggleScriptSelection(string scriptId)
+    {
+        if (!_selectedScriptIds.Remove(scriptId))
+            _selectedScriptIds.Add(scriptId);
+    }
+
+    private void ToggleSelectAll()
+    {
+        if (_selectedScriptIds.Count == _scripts.Count)
+            _selectedScriptIds.Clear();
+        else
+            _selectedScriptIds = new HashSet<string>(_scripts.Select(s => s.Id));
+    }
+
+    private List<ScriptConfiguration> GetSelectedScripts() =>
+        _scripts.Where(s => _selectedScriptIds.Contains(s.Id)).OrderBy(s => s.ExecutionOrder).ToList();
+
+    private async Task RunSelectedScripts()
+    {
+        if (SelectedServer == null || SelectedConnection == null) return;
+        var selected = GetSelectedScripts();
+        if (selected.Count == 0) return;
+
+        AuditState.StartExecution(1, selected.Count, false);
+        AuditState.UpdateProgress(1, SelectedServer, 0, "Running...");
+        AuditState.ClearExecutionResults();
+        
+        _runCts?.Dispose();
+        _runCts = new CancellationTokenSource();
+        var ct = _runCts.Token;
+        StateHasChanged();
+
+        try
+        {
+            var results = new List<ScriptExecutionResult>();
+            int idx = 0;
+            foreach (var script in selected)
+            {
+                if (ct.IsCancellationRequested) break;
+                idx++;
+                AuditState.UpdateProgress(1, SelectedServer, idx, script.Name);
+                StateHasChanged();
+                var result = await ScriptRunner.ExecuteScriptAsync(script, SelectedConnection, SelectedServer, ct);
+                results.Add(result);
+                AuditState.AddExecutionResult(result);
+            }
+            
+            if (ct.IsCancellationRequested)
+            {
+                Toast.ShowWarning("Run cancelled by user.");
+            }
+            else
+            {
+                AuditState.UpdateProgress(1, SelectedServer, selected.Count, "Complete");
+                Toast.ShowSuccess("Raw Diagnostics complete: " + SelectedServer + " — " + results.Count + " script(s) run");
+            }
+            
+            await AutoExportAuditResults(results, SelectedServer);
+            MaybeShowPostRunModal(results);
+        }
+        finally
+        {
+            AuditState.IsRunning = false;
+        }
+    }
+
+    private void RequestRunAllServers()
+    {
+        if (GetSelectedScripts().Count == 0) return;
+        _showParallelModal = true;
+    }
+
+    private void CancelParallelModal() => _showParallelModal = false;
+
+    private void DismissPostRunModal() => _showPostRunModal = false;
+
+    /// <summary>
+    /// Surface anything the user should know about after a run: hard errors,
+    /// scripts that returned no rows when CSV was expected, blocked scripts,
+    /// warnings on ExecutionParameters. Auto-opens a modal so problems can't
+    /// hide in per-card error text the user might miss (esp. for the
+    /// sp_triage no-CSV case where Success=true + Results==null today).
+    /// </summary>
+    private void MaybeShowPostRunModal(IEnumerable<ScriptExecutionResult> results)
+    {
+        var issues = new List<PostRunIssue>();
+        foreach (var r in results)
+        {
+            if (r is null) continue;
+            if (!r.Success)
+            {
+                issues.Add(new PostRunIssue(r.ServerName, r.ScriptName, "Error",
+                    string.IsNullOrWhiteSpace(r.ErrorMessage) ? "Script failed (no error message captured)." : r.ErrorMessage!));
+                continue;
+            }
+            if (!string.IsNullOrWhiteSpace(r.ErrorMessage))
+            {
+                issues.Add(new PostRunIssue(r.ServerName, r.ScriptName, "Warning",
+                    r.ErrorMessage!));
+                continue;
+            }
+            
+            // For multi-server runs, the ScriptName is prefixed with "[ServerName] " to ensure unique dictionary keys.
+            var bareScriptName = r.ScriptName;
+            if (bareScriptName.StartsWith("[") && bareScriptName.Contains("] "))
+            {
+                bareScriptName = bareScriptName.Substring(bareScriptName.IndexOf("] ") + 2);
+            }
+            
+            var cfg = _scripts.FirstOrDefault(s => s.Name == bareScriptName);
+            if (cfg != null && cfg.ExportToCsv && r.RowsAffected == 0)
+            {
+                issues.Add(new PostRunIssue(r.ServerName, r.ScriptName, "No-Rows",
+                    "Script reported success but returned 0 rows for the CSV export query. " +
+                    "The CSV file may be empty or missing. Check SqlQueryForOutput and the script's " +
+                    "expected output."));
+            }
+        }
+        _postRunIssues = issues;
+        _showPostRunModal = issues.Count > 0;
+    }
+
+    /// <summary>Plain-text dump suitable for clipboard copy / email body.</summary>
+    private string PostRunIssuesAsText()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"SQLTriage Raw Diagnostics — {_postRunIssues.Count} issue(s)");
+        sb.AppendLine($"Captured: {DateTime.Now:yyyy-MM-dd HH:mm}");
+        sb.AppendLine($"App version: {GetType().Assembly.GetName().Version}");
+        sb.AppendLine();
+        foreach (var i in _postRunIssues)
+        {
+            sb.AppendLine($"[{i.Severity}] {i.Server}  ::  {i.Script}");
+            sb.AppendLine(i.Detail);
+            sb.AppendLine();
+        }
+        return sb.ToString();
+    }
+
+    private async Task CopyAllIssuesAsync()
+    {
+        try { await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", PostRunIssuesAsText()); }
+        catch (Exception ex) { Toast.ShowError("Copy failed: " + ex.Message); return; }
+        Toast.ShowSuccess("Copied " + _postRunIssues.Count + " issue(s) to clipboard");
+    }
+
+    private async Task CopyOneIssueAsync(PostRunIssue issue)
+    {
+        var text = $"[{issue.Severity}] {issue.Server} :: {issue.Script}\n{issue.Detail}";
+        try { await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", text); }
+        catch (Exception ex) { Toast.ShowError("Copy failed: " + ex.Message); return; }
+        Toast.ShowSuccess("Copied 1 issue to clipboard");
+    }
+
+    private async Task ConfirmRun()
+    {
+        _showParallelModal = false;
+        if (_parallelMode)
+            await RunAgainstAllServersParallel();
+        else
+            await RunAgainstAllServers();
+    }
+
+    /// <summary>
+    /// Starts each server's audit concurrently, staggered by _parallelDelaySeconds.
+    /// Each server executes its scripts serially in order; results stream back as they complete.
+    /// </summary>
+    private async Task RunAgainstAllServersParallel()
+    {
+        var allServers = AllSuccessfulServers;
+        if (allServers.Count == 0) return;
+        var selected = GetSelectedScripts();
+        if (selected.Count == 0) return;
+
+        // Clear BEFORE start (see RunAgainstAllServers): clearing after StartExecution
+        // resets _executionStartTime, hiding the Elapsed clock. Order matters.
+        AuditState.ClearExecutionResults();
+        AuditState.StartExecution(allServers.Count, selected.Count, true);
+
+        _runCts?.Dispose();
+        _runCts = new CancellationTokenSource();
+        var ct = _runCts.Token;
+
+        try
+        {
+            var tasks = new List<Task>();
+            int serverIndex = 0;
+
+            foreach (var (conn, server) in allServers)
+            {
+                serverIndex++;
+                var capturedIndex  = serverIndex;
+                var capturedConn   = conn;
+                var capturedServer = server;
+
+                // Stagger start: each server waits delay × (index-1) before beginning
+                var startDelay = TimeSpan.FromSeconds(_parallelDelaySeconds * (capturedIndex - 1));
+
+                tasks.Add(Task.Run(async () =>
+                {
+                    if (startDelay > TimeSpan.Zero)
+                        await Task.Delay(startDelay, ct);
+
+                    await InvokeAsync(() =>
+                    {
+                        AuditState.UpdateProgress(capturedIndex, capturedServer, 0, "");
+                        StateHasChanged();
+                    });
+
+                    var results = new List<ScriptExecutionResult>();
+                    int scriptIndex = 0;
+
+                    foreach (var script in selected)
+                    {
+                        if (ct.IsCancellationRequested) break;
+                        scriptIndex++;
+                        await InvokeAsync(() =>
+                        {
+                            AuditState.UpdateProgress(capturedIndex, capturedServer, scriptIndex, script.Name);
+                            StateHasChanged();
+                        });
+
+                        var result = await ScriptRunner.ExecuteScriptAsync(script, capturedConn, capturedServer, ct);
+                        result.ScriptName = "[" + capturedServer + "] " + result.ScriptName;
+                        results.Add(result);
+
+                        await InvokeAsync(() =>
+                        {
+                            AuditState.AddExecutionResult(result);
+                            StateHasChanged();
+                        });
+                    }
+
+                    if (!ct.IsCancellationRequested)
+                    {
+                        await InvokeAsync(() =>
+                        {
+                            Toast.ShowInfo("Raw Diagnostics: " + capturedServer + " complete (" + results.Count + " scripts, " + capturedIndex + "/" + allServers.Count + ")");
+                            StateHasChanged();
+                        });
+                    }
+
+                    await AutoExportAuditResults(results, capturedServer);
+                }, ct));
+            }
+
+            try { await Task.WhenAll(tasks); } catch (OperationCanceledException) { }
+            
+            if (ct.IsCancellationRequested) Toast.ShowWarning("Run cancelled by user.");
+            else MaybeShowPostRunModal(AuditState.GetAllExecutionResults());
+        }
+        finally
+        {
+            AuditState.IsRunning = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task RunAgainstAllServers()
+    {
+        var allServers = AllSuccessfulServers;
+        if (allServers.Count == 0) return;
+        var selected = GetSelectedScripts();
+        if (selected.Count == 0) return;
+
+        // Clear BEFORE start: ClearExecutionResults() calls ResetProgress() which
+        // nulls _executionStartTime. Clearing after StartExecution wiped the start
+        // time, so ElapsedTime read 0 and the "Elapsed" clock never showed on
+        // all-servers runs. Order matters.
+        AuditState.ClearExecutionResults();
+        AuditState.StartExecution(allServers.Count, selected.Count, true);
+
+        _runCts?.Dispose();
+        _runCts = new CancellationTokenSource();
+        var ct = _runCts.Token;
+
+        try
+        {
+            var groupedByConnection = allServers.GroupBy(s => s.Connection.Id);
+            int serverIndex = 0;
+
+            foreach (var group in groupedByConnection)
+            {
+                if (ct.IsCancellationRequested) break;
+                var connection = group.First().Connection;
+                foreach (var (conn, server) in group)
+                {
+                    if (ct.IsCancellationRequested) break;
+                    serverIndex++;
+                    AuditState.UpdateProgress(serverIndex, server, 0, "");
+
+                    var results = new List<ScriptExecutionResult>();
+                    int scriptIndex = 0;
+                    foreach (var script in selected)
+                    {
+                        if (ct.IsCancellationRequested) break;
+                        scriptIndex++;
+                        AuditState.UpdateProgress(serverIndex, server, scriptIndex, script.Name);
+                        StateHasChanged();
+                        var result = await ScriptRunner.ExecuteScriptAsync(script, conn, server, ct);
+                        result.ScriptName = "[" + server + "] " + result.ScriptName;
+                        results.Add(result);
+                        AuditState.AddExecutionResult(result);
+                    }
+                    if (!ct.IsCancellationRequested)
+                    {
+                        Toast.ShowInfo("Raw Diagnostics: " + server + " complete (" + results.Count + " scripts, " + serverIndex + "/" + allServers.Count + ")");
+                    }
+                    await AutoExportAuditResults(results, server);
+                }
+            }
+            if (ct.IsCancellationRequested) Toast.ShowWarning("Run cancelled by user.");
+            else MaybeShowPostRunModal(AuditState.GetAllExecutionResults());
+        }
+        finally
+        {
+            AuditState.IsRunning = false;
+        }
+    }
+
+    private async Task RunScript(ScriptConfiguration script)
+    {
+        if (SelectedServer == null || SelectedConnection == null) return;
+
+        AuditState.StartExecution(1, 1, false);
+        AuditState.UpdateProgress(1, SelectedServer, 0, script.Name);
+
+        _runCts?.Dispose();
+        _runCts = new CancellationTokenSource();
+        var ct = _runCts.Token;
+
+        try
+        {
+            var result = await ScriptRunner.ExecuteScriptAsync(script, SelectedConnection, SelectedServer, ct);
+            AuditState.RemoveExecutionResult(script.Name);
+            AuditState.AddExecutionResult(result);
+            if (ct.IsCancellationRequested) Toast.ShowWarning("Run cancelled by user.");
+        }
+        finally
+        {
+            AuditState.IsRunning = false;
+        }
+    }
+
+    private ScriptExecutionResult? GetResultForScript(string scriptName)
+    {
+        return _executionResults.FirstOrDefault(r => r.ScriptName == scriptName);
+    }
+
+    private async Task AutoExportAuditResults(List<ScriptExecutionResult> results, string serverName)
+    {
+        try
+        {
+            var settings = UserSettings.GetSettings();
+            if (!settings.AutoExportAuditCsv && !settings.AutoExportAuditJson) return;
+
+            var outputDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "output");
+            Directory.CreateDirectory(outputDir);
+            var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            var safeServer = serverName.Replace(@"\", "_").Replace("/", "_").Replace(":", "_");
+
+            if (settings.AutoExportAuditCsv)
+            {
+                var csv = new StringBuilder();
+                csv.AppendLine("Server,Script,Success,RowsAffected,ExecutionTime,ErrorMessage");
+                foreach (var r in results)
+                {
+                    var error = (r.ErrorMessage ?? "").Replace("\"", "\"\"");
+                    var execSec = r.ExecutionTime.TotalSeconds.ToString("F1");
+                    csv.AppendLine("\"" + safeServer + "\",\"" + r.ScriptName + "\"," + r.Success + "," + r.RowsAffected + "," + execSec + ",\"" + error + "\"");
+
+                    if (r.Success && r.Results != null && r.Results.Count > 0)
+                    {
+                        var scriptCsv = new StringBuilder();
+                        var headers = r.Results[0].Keys.ToList();
+                        scriptCsv.AppendLine(string.Join(",", headers.Select(h => "\"" + h + "\"")));
+                        foreach (var row in r.Results)
+                        {
+                            var vals = headers.Select(h =>
+                            {
+                                var v = row.TryGetValue(h, out var val) ? val?.ToString() ?? "" : "";
+                                return "\"" + v.Replace("\"", "\"\"") + "\"";
+                            });
+                            scriptCsv.AppendLine(string.Join(",", vals));
+                        }
+                        var scriptFileName = "FullAudit_" + safeServer + "_" + r.ScriptName.Replace(" ", "_") + "_" + timestamp + ".csv";
+                        await File.WriteAllTextAsync(Path.Combine(outputDir, scriptFileName), scriptCsv.ToString());
+                    }
+                }
+                var summaryFile = "FullAudit_" + safeServer + "_Summary_" + timestamp + ".csv";
+                await File.WriteAllTextAsync(Path.Combine(outputDir, summaryFile), csv.ToString());
+                Toast.ShowInfo("Audit CSV exported: " + safeServer);
+            }
+
+            if (settings.AutoExportAuditJson)
+            {
+                var jsonFile = "FullAudit_" + safeServer + "_" + timestamp + ".json";
+                var jsonOpts = new JsonSerializerOptions { WriteIndented = true };
+                var json = JsonSerializer.Serialize(results, jsonOpts);
+                await File.WriteAllTextAsync(Path.Combine(outputDir, jsonFile), json);
+                Toast.ShowInfo("Audit JSON exported: " + safeServer);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Auto-export failed for server: " + serverName);
+        }
+    }
+
+    private async void DownloadFile(string content, string fileName)
+    {
+        try
+        {
+            var bytes = Encoding.UTF8.GetBytes(content);
+            var base64 = Convert.ToBase64String(bytes);
+
+            await JSRuntime.InvokeVoidAsync("downloadFile", fileName, base64);
+            Logger.LogInformation("Download triggered for {FileName}", fileName);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error triggering download for {FileName}", fileName);
+        }
+    }
+
+    // ── Manual CSV/PDF export ────────────────────────────────────────────────
+
+    private static string CsvQuote(string? v)
+    {
+        if (string.IsNullOrEmpty(v)) return "";
+        if (v.IndexOfAny(new[] { ',', '"', '\n', '\r' }) < 0) return v;
+        return "\"" + v.Replace("\"", "\"\"") + "\"";
+    }
+
+    private void ExportSummaryCsvAsync()
+    {
+        try
+        {
+            var results = _executionResults;
+            var sb = new StringBuilder();
+            sb.AppendLine("ServerName,ScriptName,Success,RowsAffected,ExecutionTimeSec,StatusMessage,ErrorMessage");
+            foreach (var r in results)
+            {
+                sb.AppendLine(string.Join(",",
+                    CsvQuote(r.ServerName),
+                    CsvQuote(r.ScriptName),
+                    r.Success.ToString(),
+                    r.RowsAffected.ToString(),
+                    r.ExecutionTime.TotalSeconds.ToString("F2"),
+                    CsvQuote(r.StatusMessage),
+                    CsvQuote(r.ErrorMessage)));
+            }
+
+            var downloadsDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var exportDir = Path.Combine(downloadsDir, "Downloads");
+            if (!Directory.Exists(exportDir)) exportDir = AppDomain.CurrentDomain.BaseDirectory;
+
+            var fileName = $"FullAudit_{DateTime.Now:yyyyMMdd_HHmmss}.csv";
+            var filePath = Path.Combine(exportDir, fileName);
+            File.WriteAllText(filePath, sb.ToString(), Encoding.UTF8);
+
+            AuditLog.LogExportOperation("CSV", "FullAudit", true);
+            Toast.ShowSuccess($"CSV exported ({results.Count} rows): {fileName}");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "CSV export failed");
+            AuditLog.LogExportOperation("CSV", "FullAudit", false, ex.Message);
+            Toast.ShowError($"CSV export failed: {ex.Message}");
+        }
+    }
+
+    private SQLTriage.Components.Shared.PdfExportModal _pdfModal = default!;
+    private bool _pdfExporting;
+
+    private void OpenPdfModal()
+    {
+        var stem = $"FullAudit_{DateTime.Now:yyyyMMdd_HHmmss}";
+        _pdfModal.Show(stem);
+    }
+
+    private async Task OnPdfConfirmed(SQLTriage.Data.Models.PdfExportSettings settings)
+    {
+        await Task.Delay(350);
+        _pdfExporting = true;
+        StateHasChanged();
+        try
+        {
+            if (!PrintSvc.IsAvailable)
+            {
+                await PrintSvc.PrintViaBrowserAsync(JSRuntime);
+                Toast.ShowInfo("Browser print dialog opened — use 'Save as PDF' to export.");
+                return;
+            }
+
+            var orientation = settings.LandscapeOrientation
+                ? Microsoft.Web.WebView2.Core.CoreWebView2PrintOrientation.Landscape
+                : Microsoft.Web.WebView2.Core.CoreWebView2PrintOrientation.Portrait;
+
+            // Watermark: apply when the selected connection is non-production or unset,
+            // unless the user toggled Release mode in the export modal.
+            var applyWatermark = !settings.SuppressWatermark &&
+                ServerEnvironment.RequiresWatermark(
+                    new[] { SelectedConnection?.Environment });
+            if (applyWatermark)
+                await JSRuntime.InvokeVoidAsync("eval", "document.body.classList.add('has-draft-watermark');");
+
+            var (success, path, error) = await PrintSvc.PrintToPdfAsync(settings.FileName,
+                printBackgrounds: settings.PrintBackgrounds,
+                orientation: orientation);
+
+            if (applyWatermark)
+                await JSRuntime.InvokeVoidAsync("eval", "document.body.classList.remove('has-draft-watermark');");
+
+            if (success)
+            {
+                AuditLog.LogExportOperation("PDF", "FullAudit", true);
+                Toast.ShowSuccess($"PDF saved: {System.IO.Path.GetFileName(path)}");
+            }
+            else
+            {
+                AuditLog.LogExportOperation("PDF", "FullAudit", false, error);
+                Toast.ShowError($"PDF export failed: {error}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "PDF export failed");
+            AuditLog.LogExportOperation("PDF", "FullAudit", false, ex.Message);
+            Toast.ShowError($"PDF export failed: {ex.Message}");
+        }
+        finally
+        {
+            _pdfExporting = false;
+            StateHasChanged();
+        }
+    }
+}
+
+<!-- Styles extracted to wwwroot/css/FullAudit.css 2026-05-11 (CLAUDE.md convention).
+     Imported via app.css @import "FullAudit.css". -->

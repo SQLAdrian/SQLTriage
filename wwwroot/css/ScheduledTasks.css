@@ -1,0 +1,68 @@
+/* Styles extracted to wwwroot/css/ScheduledTasks.css 2026-05-11 (CLAUDE.md convention). */
+.sched-tab {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    padding: 8px 16px;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    font-size: 14px;
+    transition: all 0.2s;
+}
+.sched-tab:hover { color: var(--text-primary); }
+.sched-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+.edit-grid {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 10px 16px;
+    align-items: start;
+}
+.edit-grid label {
+    font-size: 13px;
+    color: var(--text-secondary);
+    padding-top: 6px;
+    text-align: right;
+}
+.edit-grid textarea.sql-editor {
+    grid-column: 2;
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    min-height: 120px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    padding: 8px;
+    border-radius: 4px;
+    width: 100%;
+    resize: vertical;
+    font-size: 12px;
+}
+.output-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    background: var(--accent);
+    color: #fff;
+    margin-right: 3px;
+}
+.status-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+}
+.status-success { background: rgba(33, 201, 122, 0.2); color: var(--green); }
+.status-failed  { background: rgba(239, 68, 68, 0.2); color: var(--red); }
+.status-running { background: rgba(45, 212, 191, 0.2); color: var(--accent); }
+.toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    font-size: 13px;
+}

@@ -1,0 +1,1014 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using Microsoft.AspNetCore.Components.Routing
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@inject AutoUpdateService UpdateService
+@inject DatabaseAvailabilityService DbAvailability
+@inject DashboardConfigService DashboardConfig
+@inject ServerConnectionManager ConnectionManager
+@inject UserSettingsService UserSettings
+@inject ToastService ToastService
+@inject AuditLogService AuditLog
+@inject IJSRuntime JS
+@inject SQLTriage.Data.Services.ConnectionHealthService ConnectionHealth
+@inject SQLTriage.Data.Services.AppUserState UserState
+@inject GlobalInstanceSelector InstanceSelector
+@inject SQLTriage.Data.Services.PanelMetricsService PanelMetrics
+@inject SQLTriage.Data.Services.Licensing.IBundleAccessor Bundle
+@inject SQLTriage.Data.Services.Capacity.IConsolidationModelProvider ConsolidationModel
+@inject SQLTriage.Data.Services.IFeatureGate FeatureGate
+@inject QuickCheckStateService QuickCheckState
+@inject FullAuditStateService FullAuditState
+@inject VulnerabilityAssessmentStateService VaState
+@implements IAsyncDisposable
+
+<div class="nav-menu split-layout @(_collapsed ? "collapsed" : "")">
+    <!-- Slim Bar (Icons Only) -->
+    <div class="nav-slim-bar">
+        <div class="nav-brand-icon-container" title="@($"SQLTriage — {SQLTriage.Data.BuildMode.Current} build")">
+            <i class="fa-solid fa-shield-halved nav-brand-icon"></i>
+            @* Build-mode dot: grey=community, blue=full, red=devbridge. The uncolourable
+               WPF title can't carry this, so the identity tell lives here in-content. *@
+            <span aria-hidden="true"
+                  style="position:absolute; bottom:2px; right:2px; width:8px; height:8px; border-radius:50%; border:1.5px solid var(--bg-primary,#1a1a2e); background:@SQLTriage.Data.BuildMode.AccentHex;"></span>
+        </div>
+
+        <div class="nav-main-category nc-governance @(_activeCategory == "Governance" ? "active" : "")" @onclick="@(() => SetCategory("Governance"))" title="Governance">
+            <i class="fa-solid fa-gavel"></i>
+        </div>
+        <div class="nav-main-category nc-operations @(_activeCategory == "Operations" ? "active" : "")" @onclick="@(() => SetCategory("Operations"))" title="Operations — command center">
+            <i class="fa-solid fa-gauge-high"></i>
+        </div>
+        <div class="nav-main-category nc-diagnostics @(_activeCategory == "Diagnostics" ? "active" : "")" @onclick="@(() => SetCategory("Diagnostics"))" title="Diagnostics">
+            <i class="fa-solid fa-magnifying-glass"></i>
+        </div>
+        @if (BuildModules.Premium)
+        {
+            <div class="nav-main-category nc-premium @(_activeCategory == "Premium" ? "active" : "")" @onclick="@(() => SetCategory("Premium"))" title="Premium">
+                <i class="fa-solid fa-gem"></i>
+            </div>
+        }
+        <div class="nav-main-category nc-intelligence @(_activeCategory == "Intelligence" ? "active" : "")" @onclick="@(() => SetCategory("Intelligence"))" title="Intelligence">
+            <i class="fa-solid fa-brain"></i>
+        </div>
+        @if (UserState != null && UserState.Role != AppRoles.Viewer)
+        {
+            <div class="nav-main-category nc-config @(_activeCategory == "Config" ? "active" : "")" @onclick="@(() => SetCategory("Config"))" title="Configuration">
+                <i class="fa-solid fa-gear"></i>
+            </div>
+            <div class="nav-main-category nc-apply @(_activeCategory == "Apply" ? "active" : "")" @onclick="@(() => SetCategory("Apply"))" title="Apply — server-modifying actions">
+                <i class="fa-solid fa-screwdriver-wrench"></i>
+            </div>
+        }
+
+        <div style="flex-grow:1"></div>
+
+
+        @* Feedback consolidated into the bottom status bar (StatusBar.razor). *@
+
+        <div class="nav-main-category" title="Toggle Sidebar" @onclick="ToggleCollapse">
+            <i class="fa-solid @(_collapsed ? "fa-angles-right" : "fa-angles-left")"></i>
+        </div>
+    </div>
+
+    <!-- Expanded Pane -->
+    @if (!_collapsed)
+    {
+        <div class="nav-expanded-pane nav-cat--@(_activeCategory.ToLowerInvariant())">
+            <div class="nav-expanded-header">
+                <span class="nav-brand-text" style="font-size:16px; font-weight:700;">@(_activeCategory == "Operations" ? "Command Center" : _activeCategory)</span>
+                <span class="nav-tier-badge nav-tier-badge--@(_badgeClass)"
+                      @onclick="GoToTierSettings"
+                      title="@(_badgeTitle)" style="margin-left:auto; cursor:pointer;">
+                    @_badgeText
+                </span>
+            </div>
+
+            <nav class="nav-scrollable-area">
+                @if (_activeCategory == "Governance")
+                {
+                    <div class="nav-section-label">Audits & Reports</div>
+                    <NavLink href="@RouteConstants.QuickCheck" class="nav-link" title="Ctrl+0">
+                        <span class="nav-icon"><i class="fa-solid fa-stethoscope"></i></span><span class="nav-link-text"> Run audit assessment</span>
+                        @if (QuickCheckState.IsRunning) { <span class="nav-spinner"><i class="fa-solid fa-circle-notch fa-spin"></i></span> }
+                    </NavLink>
+                    <NavLink href="@RouteConstants.FullAudit" class="nav-link" title="Ctrl+4">
+                        <span class="nav-icon"><i class="fa-solid fa-bolt-lightning"></i></span><span class="nav-link-text"> Full Diagnostics</span>
+                        @if (FullAuditState.IsRunning) { <span class="nav-spinner"><i class="fa-solid fa-circle-notch fa-spin"></i></span> }
+                    </NavLink>
+                    <NavLink href="@RouteConstants.VulnerabilityAssessment" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-shield-halved"></i></span><span class="nav-link-text"> Microsoft Assessment</span>
+                        @if (VaState.IsRunning) { <span class="nav-spinner"><i class="fa-solid fa-circle-notch fa-spin"></i></span> }
+                    </NavLink>
+                    <NavLink href="@RouteConstants.CioDashboard" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-chart-line"></i></span><span class="nav-link-text"> CIO Dashboard</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.BlitzDashboard" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-gauge-high"></i></span><span class="nav-link-text"> sp_Blitz Dashboard</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.Governance" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-gavel"></i></span><span class="nav-link-text"> SQL Server Governance</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.DiagnosticsRoadmap" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-map-location-dot"></i></span><span class="nav-link-text"> Diagnostics Roadmap</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.AuditLogViewer" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-clipboard-list"></i></span><span class="nav-link-text"> Audit Log</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.ReportBundles" class="nav-link" title="Diagnostic report bundles — PDF & HTML">
+                        <span class="nav-icon"><i class="fa-solid fa-file-pdf"></i></span><span class="nav-link-text"> Report Bundles</span>
+                    </NavLink>
+
+                    @if (BuildModules.LiveMonitoring && FeatureGate.IsEnabled(FeatureRegistrar.DynamicDashboards) && DashboardConfig.Config.Dashboards.Any(d => d.Enabled && d.NavCategory == "Audits"))
+                    {
+                        <div class="nav-section-label" style="margin-top:16px;">Audit Dashboards</div>
+                        @foreach (var dashboard in DashboardConfig.Config.Dashboards
+                            .Where(d => d.Enabled && d.NavCategory == "Audits")
+                            .OrderBy(d => d.NavOrder))
+                        {
+                            <NavLink href="@dashboard.Route" class="nav-link">
+                                @NavIcon(dashboard.NavIcon) <span class="nav-link-text">@dashboard.NavTitle</span>
+                            </NavLink>
+                        }
+                    }
+                    @if (BuildModules.Premium)
+                    {
+                        <div class="nav-section-label" style="margin-top:16px;">Get a Pro DBA</div>
+                        <NavLink href="@RouteConstants.AdvancedReporting" class="nav-link">
+                            <span class="nav-icon"><i class="fa-solid fa-file-contract"></i></span><span class="nav-link-text"> Advanced Reporting</span>
+                        </NavLink>
+                    }
+                    <div class="nav-section-label" style="margin-top:16px;">Reference</div>
+                    <NavLink href="@RouteConstants.ComplianceMap" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-diagram-project"></i></span><span class="nav-link-text"> Compliance Map</span>
+                    </NavLink>
+                    <NavLink href="/compliance-board" class="nav-link" title="Preview — check families wired to frameworks (PCB view)">
+                        <span class="nav-icon"><i class="fa-solid fa-microchip"></i></span><span class="nav-link-text"> Compliance Board</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.Playbooks" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-book-medical"></i></span><span class="nav-link-text"> Remediation Playbooks</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.Guide" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-map"></i></span><span class="nav-link-text"> Guide</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.About" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-info-circle"></i></span><span class="nav-link-text"> About</span>
+                    </NavLink>
+                }
+                else if (_activeCategory == "Operations")
+                {
+                    @if (BuildModules.Operations)
+                    {
+                        <div class="nav-section-label">Command Center</div>
+                        <NavLink href="@RouteConstants.Environment" class="nav-link">
+                            <span class="nav-icon"><i class="fa-solid fa-gauge-high"></i></span><span class="nav-link-text"> Operations Hub</span>
+                        </NavLink>
+                        <NavLink href="@RouteConstants.AlertsNoc" class="nav-link">
+                            <span class="nav-icon"><i class="fa-solid fa-tower-broadcast"></i></span><span class="nav-link-text"> NOC Board</span>
+                        </NavLink>
+                        <NavLink href="@RouteConstants.Alerts" class="nav-link">
+                            <span class="nav-icon"><i class="fa-solid fa-bell"></i></span><span class="nav-link-text"> Alerting</span>
+                        </NavLink>
+                        <NavLink href="/agent-timeline" class="nav-link">
+                            <span class="nav-icon"><i class="fa-solid fa-clock-rotate-left"></i></span><span class="nav-link-text"> Agent Jobs Timeline</span>
+                        </NavLink>
+                    }
+
+                    <div class="nav-section-label" style="margin-top:16px;">Servers &amp; Control</div>
+                    <NavLink href="@RouteConstants.Servers" class="nav-link" title="Ctrl+8">
+                        <span class="nav-icon"><i class="fa-solid fa-server"></i></span><span class="nav-link-text"> Manage Servers</span>
+                    </NavLink>
+                    @if (BuildModules.Operations)
+                    {
+                        <NavLink href="/replication-map" class="nav-link" title="Preview — transactional replication topology &amp; health (read-only)">
+                            <span class="nav-icon"><i class="fa-solid fa-diagram-next"></i></span><span class="nav-link-text"> Replication Map</span>
+                        </NavLink>
+                    }
+
+                }
+                else if (_activeCategory == "Diagnostics")
+                {
+                    @* PARKED 2026-06-18: Risk Assessment nav links removed (page /riskreport
+                       + service stay wired, URL-reachable). Resume plan: sqltriage-meta.
+                       Was: a "Consultant Reports" section with the /riskreport link here. *@
+                    <div class="nav-section-label">Deep Dive</div>
+                    <NavLink href="@RouteConstants.ServerConfigDiff" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-code-compare"></i></span><span class="nav-link-text"> Snapshot Diff (History)</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.Compare" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-not-equal"></i></span><span class="nav-link-text"> Compare Servers</span>
+                    </NavLink>
+
+                    <div class="nav-section-label" style="margin-top:16px;">Analysis</div>
+                    @if (BuildModules.LiveMonitoring)
+                    {
+                        <NavLink href="@RouteConstants.PerformanceTrends" class="nav-link">
+                            <span class="nav-icon"><i class="fa-solid fa-chart-area"></i></span><span class="nav-link-text"> Performance Trends</span>
+                        </NavLink>
+                    }
+                    <NavLink href="@RouteConstants.IndexAnalysis" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-table-list"></i></span><span class="nav-link-text"> Index Analysis</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.BlockingForensics" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-link-slash"></i></span><span class="nav-link-text"> Blocking Forensics</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.CodeHotspots" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-fire"></i></span><span class="nav-link-text"> Code Hotspots</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.DiskIo" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-hard-drive"></i></span><span class="nav-link-text"> Disk I/O</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.MaintenanceRecommendations" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-broom"></i></span><span class="nav-link-text"> Maintenance Recs</span>
+                    </NavLink>
+
+                    @if (BuildModules.LiveMonitoring && FeatureGate.IsEnabled(FeatureRegistrar.DynamicDashboards))
+                    {
+                        <div class="nav-section-label" style="margin-top:16px;">Live Dashboards</div>
+                        @foreach (var dashboard in DashboardConfig.Config.Dashboards
+                            .Where(d => d.Enabled && d.NavCategory == "Dashboards" && d.DefaultDatabase == "master"
+                                        && (!d.ExperimentalOnly || _experimentalMode)
+                                        && (!d.FullTierOnly || Bundle.Tier == SQLTriage.Data.Services.Licensing.Tier.Full || SQLTriage.Data.BuildMode.DevBridgeActive))
+                            .OrderBy(d => d.NavOrder))
+                        {
+                            var loadInfo = GetDashboardLoadInfo(dashboard);
+                            <NavLink href="@dashboard.Route" class="nav-link">
+                                @NavIcon(dashboard.NavIcon) <span class="nav-link-text">@dashboard.NavTitle</span>
+                                @if (loadInfo != null)
+                                {
+                                    <span class="nav-load-badge nav-load-badge--@loadInfo.Value.Tier" title="@loadInfo.Value.Tooltip"></span>
+                                }
+                            </NavLink>
+                        }
+                    }
+
+                    @if (BuildModules.LiveMonitoring && FeatureGate.IsEnabled(FeatureRegistrar.DynamicDashboards) && _SQLWATCHExists && DashboardConfig.Config.Dashboards.Any(d => d.Enabled && d.DefaultDatabase == "SQLWATCH"))
+                    {
+                        <div class="nav-section-label" style="margin-top:16px;">SQLWATCH</div>
+                        @foreach (var dashboard in DashboardConfig.Config.Dashboards
+                            .Where(d => d.Enabled && d.DefaultDatabase == "SQLWATCH")
+                            .OrderBy(d => d.NavOrder))
+                        {
+                            var loadInfo = GetDashboardLoadInfo(dashboard);
+                            <NavLink href="@($"/dashboard/{dashboard.Id}")" class="nav-link">
+                                @NavIcon(dashboard.NavIcon) <span class="nav-link-text">@dashboard.NavTitle</span>
+                                @if (loadInfo != null)
+                                {
+                                    <span class="nav-load-badge nav-load-badge--@loadInfo.Value.Tier" title="@loadInfo.Value.Tooltip"></span>
+                                }
+                            </NavLink>
+                        }
+                    }
+
+                    @if (BuildModules.LiveMonitoring && FeatureGate.IsEnabled(FeatureRegistrar.DynamicDashboards) && _performanceMonitorExists && DashboardConfig.Config.Dashboards.Any(d => d.Enabled && d.DefaultDatabase == "PerformanceMonitor"))
+                    {
+                        <div class="nav-section-label" style="margin-top:16px;">Performance Monitor</div>
+                        @foreach (var dashboard in DashboardConfig.Config.Dashboards
+                            .Where(d => d.Enabled && d.DefaultDatabase == "PerformanceMonitor")
+                            .OrderBy(d => d.NavOrder))
+                        {
+                            var loadInfo = GetDashboardLoadInfo(dashboard);
+                            <NavLink href="@($"/dashboard/{dashboard.Id}")" class="nav-link">
+                                @NavIcon(dashboard.NavIcon) <span class="nav-link-text">@dashboard.NavTitle</span>
+                                @if (loadInfo != null)
+                                {
+                                    <span class="nav-load-badge nav-load-badge--@loadInfo.Value.Tier" title="@loadInfo.Value.Tooltip"></span>
+                                }
+                            </NavLink>
+                        }
+                    }
+                }
+                else if (_activeCategory == "Intelligence")
+                {
+                    <div class="nav-section-label">Knowledge Base</div>
+                    <NavLink href="@RouteConstants.ServerDocs" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-file-lines"></i></span><span class="nav-link-text"> Server Docs</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.Documentation" class="nav-link" title="v2 preview — Server Documentation Generator">
+                        <span class="nav-icon"><i class="fa-solid fa-book"></i></span><span class="nav-link-text"> Doc Generator</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.InstallationHelper" class="nav-link" title="v2 preview — Installation Hardening Checklist">
+                        <span class="nav-icon"><i class="fa-solid fa-list-check"></i></span><span class="nav-link-text"> Hardening Checklist</span>
+                    </NavLink>
+
+
+
+                    @if (BuildModules.DevTools)
+                    {
+                        @* const-only outer if so the whole branch (incl. route literal) is pruned in community *@
+                        @if (_noPantsMode && FeatureGate.IsEnabled(FeatureRegistrar.DevTools))
+                        {
+                            <div class="nav-section-label" style="margin-top:16px;">Advanced</div>
+                            <NavLink href="@RouteConstants.CheckValidator" class="nav-link">
+                                <span class="nav-icon"><i class="fa-solid fa-vial"></i></span><span class="nav-link-text"> Check Validator</span>
+                            </NavLink>
+                        }
+                    }
+                }
+                else if (_activeCategory == "Premium")
+                {
+                    @* Category icon is BuildModules.Premium-gated; this inner guard ensures the pane's
+                       route literals are pruned from a community assembly too (const-false branch). *@
+                    @if (BuildModules.Premium)
+                    {
+                        <NavLink href="@RouteConstants.Premium" class="nav-link" title="S-Tier correlations and the complete Full Audit deliverable">
+                            <span class="nav-icon"><i class="fa-solid fa-gem"></i></span><span class="nav-link-text"> What's in Premium</span>
+                        </NavLink>
+
+                        <div class="nav-section-label" style="margin-top:16px;">Capacity &amp; Cost</div>
+                        @* Pattern 2: teaser shows whenever soft-enabled; the lock icon (HARD gate) signals the page is gated. *@
+                        @if (FeatureGate.IsSoftEnabled(FeatureRegistrar.Consolidation))
+                        {
+                            <NavLink href="@RouteConstants.Consolidation" class="nav-link" title="Estate consolidation &amp; SQL licensing optimisation">
+                                <span class="nav-icon"><i class="fa-solid fa-layer-group"></i></span><span class="nav-link-text"> Consolidation
+                                    @if (!_consolidationUnlocked)
+                                    {
+                                        <i class="fa-solid fa-lock" style="font-size:9px; margin-left:4px; opacity:0.6;"></i>
+                                    }
+                                </span>
+                            </NavLink>
+                        }
+                        <NavLink href="@RouteConstants.Capacity" class="nav-link" title="Disk &amp; CPU growth forecasts">
+                            <span class="nav-icon"><i class="fa-solid fa-chart-line"></i></span><span class="nav-link-text"> Capacity Planning</span>
+                        </NavLink>
+                    }
+                }
+                else if (_activeCategory == "Config")
+                {
+                    <div class="nav-section-label">General</div>
+                    @if (BuildModules.Operations)
+                    {
+                        <NavLink href="@RouteConstants.ServiceManagement" class="nav-link">
+                            <span class="nav-icon"><i class="fa-solid fa-microchip"></i></span><span class="nav-link-text"> Service &amp; Updates</span>
+                        </NavLink>
+                        <NavLink href="@RouteConstants.Services" class="nav-link" title="All services &amp; collectors — where each runs and its state">
+                            <span class="nav-icon"><i class="fa-solid fa-diagram-project"></i></span><span class="nav-link-text"> Services</span>
+                        </NavLink>
+                    }
+                    @if (BuildModules.DevTools)
+                    {
+                        @if (FeatureGate.IsEnabled(FeatureRegistrar.DevTools))
+                        {
+                            <NavLink href="@RouteConstants.BuildProfile" class="nav-link" title="Dev builds only — author which modules reach the community build">
+                                <span class="nav-icon"><i class="fa-solid fa-sliders"></i></span><span class="nav-link-text"> Build Profile</span>
+                            </NavLink>
+                            @* PARKED 2026-06-18: Risk Assessment link removed (page + service
+                               stay wired at /riskreport). Resume plan: sqltriage-meta. *@
+                        }
+                    }
+                    <NavLink href="@RouteConstants.MemoryProfile" class="nav-link" title="In-app memory breakdown">
+                        <span class="nav-icon"><i class="fa-solid fa-microchip"></i></span><span class="nav-link-text"> Memory Profile</span>
+                    </NavLink>
+                    @if (BuildModules.DevTools)
+                    {
+                        @if (UserSettings.GetEnablePerfInspector() && FeatureGate.IsEnabled(FeatureRegistrar.DevTools))
+                        {
+                            <NavLink href="@RouteConstants.PerfInspector" class="nav-link">
+                                <span class="nav-icon"><i class="fa-solid fa-chart-line"></i></span><span class="nav-link-text"> Perf Inspector</span>
+                            </NavLink>
+                        }
+                    }
+                    <NavLink href="@RouteConstants.DbaTools" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-toolbox"></i></span><span class="nav-link-text"> DBA Tools</span>
+                    </NavLink>
+                    @if (BuildModules.Operations)
+                    {
+                        @if (_noPantsMode)
+                        {
+                            <NavLink href="@RouteConstants.ScheduledTasks" class="nav-link">
+                                <span class="nav-icon"><i class="fa-solid fa-clock"></i></span><span class="nav-link-text"> Scheduled Tasks</span>
+                            </NavLink>
+                        }
+                    }
+
+                    @if (_experimentalMode)
+                    {
+                        @if (BuildModules.LiveMonitoring || BuildModules.Operations)
+                        {
+                            <div class="nav-section-label" style="margin-top:16px;">Experimental</div>
+                        }
+                        @if (BuildModules.Operations)
+                        {
+                            <NavLink href="@RouteConstants.AlertingConfig" class="nav-link">
+                                <span class="nav-icon"><i class="fa-solid fa-envelope"></i></span><span class="nav-link-text"> Notifications</span>
+                            </NavLink>
+                        }
+                    }
+                }
+                else if (_activeCategory == "Apply")
+                {
+                    @if (BuildModules.Premium)
+                    {
+                        <div class="nav-section-label">Server Configuration</div>
+                        <NavLink href="@RouteConstants.ServerConfiguration" class="nav-link" title="Apply the SQLDBA baseline: sp_configure, hardening, trace flags, alerts/operators/jobs (preview or apply)">
+                            <span class="nav-icon"><i class="fa-solid fa-screwdriver-wrench"></i></span><span class="nav-link-text"> Server Config &amp; Hardening</span>
+                        </NavLink>
+                    }
+                    @if (FeatureGate.IsEnabled(FeatureRegistrar.Remediation))
+                    {
+                        <NavLink href="@RouteConstants.Remediation" class="nav-link" title="Gated remediation — preview, approve, apply, verify (write capability)">
+                            <span class="nav-icon"><i class="fa-solid fa-screwdriver-wrench"></i></span><span class="nav-link-text"> Remediation</span>
+                        </NavLink>
+                    }
+
+                    @if (BuildModules.Premium || BuildModules.Operations)
+                    {
+                        <div class="nav-section-label" style="margin-top:16px;">Deploy</div>
+                    }
+                    @if (BuildModules.Premium)
+                    {
+                        @* Best Practice Scripts deploy — full-edition only, absent from community. *@
+                        <NavLink href="@RouteConstants.BestPractice" class="nav-link">
+                            <span class="nav-icon"><i class="fa-solid fa-check-double"></i></span><span class="nav-link-text"> Best Practices</span>
+                        </NavLink>
+                    }
+                    @if (BuildModules.Operations)
+                    {
+                        <NavLink href="@RouteConstants.DeploySqlWatch" class="nav-link">
+                            <span class="nav-icon"><i class="fa-solid fa-cloud-arrow-up"></i></span><span class="nav-link-text"> Deploy SQLWATCH</span>
+                        </NavLink>
+                        <NavLink href="@RouteConstants.DeployDarlingPm" class="nav-link">
+                            <span class="nav-icon"><i class="fa-solid fa-cloud-arrow-up"></i></span><span class="nav-link-text"> Deploy Darling PM</span>
+                        </NavLink>
+                    }
+
+                    @if (BuildModules.DevTools)
+                    {
+                        @if (FeatureGate.IsEnabled(FeatureRegistrar.DevTools))
+                        {
+                            <div class="nav-section-label" style="margin-top:16px;">Dev / Lab</div>
+                            <NavLink href="/remediation-tuner" class="nav-link" title="Remediation cost tuner — dev builds only.">
+                                <span class="nav-icon"><i class="fa-solid fa-money-bill-wave"></i></span><span class="nav-link-text"> Remediation Tuner</span>
+                            </NavLink>
+                            <NavLink href="/remediation-lab" class="nav-link" title="Gated remediation lane — live MAXDOP loop (dev builds only).">
+                                <span class="nav-icon"><i class="fa-solid fa-flask"></i></span><span class="nav-link-text"> Remediation Lab</span>
+                            </NavLink>
+                        }
+                    }
+                }
+            </nav>
+
+            <div class="nav-bottom-toggles" style="border-top:1px solid var(--border); padding-top: 8px;">
+                @* ── Executive Health Badge — aggregate 0-100 across all connected servers ── *@
+                @{
+                    var healthAll    = ConnectionHealth.AllStatuses;
+                    var healthOnline  = ConnectionHealth.OnlineCount;
+                    var healthOffline = ConnectionHealth.OfflineCount;
+                }
+                @if (healthAll.Count > 0)
+                {
+                    <div class="nav-link-text" style="padding:8px 12px 4px; display:flex; gap:6px; flex-wrap:wrap;">
+                        <SQLTriage.Components.Shared.HealthBadge />
+                        <SQLTriage.Components.Shared.RateLimitBadge />
+                    </div>
+                }
+                @* ── Per-server health strip ── *@
+                @if (healthAll.Count > 0)
+                {
+                    <div class="nav-health-strip" style="padding:6px 12px 4px; border-bottom:1px solid var(--border);">
+                        <div class="nav-link-text" style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+                            <span style="font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-muted);">Server Health</span>
+                            <span style="font-size:10px; color:var(--text-muted);">
+                                @if (healthOffline > 0)
+                                {
+                                    <span style="color:var(--red); font-weight:700;">@healthOffline offline</span>
+                                    @if (healthOnline > 0) { <span> · </span> }
+                                }
+                                @if (healthOnline > 0)
+                                {
+                                    <span style="color:var(--green);">@healthOnline online</span>
+                                }
+                            </span>
+                        </div>
+                        @foreach (var kvp in healthAll)
+                        {
+                            var dot = kvp.Value.Status switch
+                            {
+                                SQLTriage.Data.Services.ConnectionHealthService.ServerStatus.Online  => "var(--green)",
+                                SQLTriage.Data.Services.ConnectionHealthService.ServerStatus.Offline => "var(--red)",
+                                _ => "var(--text-muted)"
+                            };
+                            var tip = kvp.Value.Status == SQLTriage.Data.Services.ConnectionHealthService.ServerStatus.Offline && kvp.Value.Error != null
+                                ? kvp.Value.Error
+                                : kvp.Value.Status.ToString();
+                            <div style="display:flex; align-items:center; gap:5px; padding:1px 0;" title="@tip">
+                                <span style="width:7px; height:7px; border-radius:50%; background:@dot; flex-shrink:0; @(kvp.Value.Status == SQLTriage.Data.Services.ConnectionHealthService.ServerStatus.Offline ? "box-shadow:0 0 4px var(--red); opacity:0.4;" : "")"></span>
+                                <span class="nav-link-text" style="font-size:10px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">@(string.IsNullOrWhiteSpace(kvp.Key) || kvp.Key == "." ? "(local)" : kvp.Key)</span>
+                            </div>
+                        }
+                    </div>
+                }
+
+                <div class="nav-toggle-row" title="Color-Blind Mode: swap red/green to a colorblind-safe palette">
+                    <span class="colorblind-icon @(_colorBlindMode ? "colorblind-active" : "")" aria-hidden="true"><i class="fa-solid fa-eye" style="font-size:13px;"></i></span>
+                    <span class="nav-toggle-label nav-link-text">Color-Blind</span>
+                    <div class="nav-toggle-spacer nav-link-text"></div>
+                    <ToggleSwitch Value="@_colorBlindMode" ValueChanged="ToggleColorBlindMode" />
+                </div>
+                <div class="nav-toggle-row" title="Narration: a senior-DBA plain-language read of your estate on the dashboard">
+                    <span class="colorblind-icon @(_narrationMode ? "colorblind-active" : "")" aria-hidden="true"><i class="fa-solid fa-comment-dots" style="font-size:13px;"></i></span>
+                    <span class="nav-toggle-label nav-link-text">Narration</span>
+                    <div class="nav-toggle-spacer nav-link-text"></div>
+                    <ToggleSwitch Value="@_narrationMode" ValueChanged="ToggleNarrationMode" />
+                </div>
+                <div class="nav-toggle-row" title="Notifications: show or silence toast pop-ups">
+                    <span class="colorblind-icon @(_notificationsEnabled ? "colorblind-active" : "")" aria-hidden="true"><i class="fa-solid @(_notificationsEnabled ? "fa-bell" : "fa-bell-slash")" style="font-size:13px;"></i></span>
+                    <span class="nav-toggle-label nav-link-text">Notifications</span>
+                    <div class="nav-toggle-spacer nav-link-text"></div>
+                    <ToggleSwitch Value="@_notificationsEnabled" ValueChanged="ToggleNotifications" />
+                </div>
+                @if (RbacService.HasPermission(UserState.Role, "run_scripts"))
+                {
+                    <div class="nav-toggle-row" title="No-Pants Mode: show dangerous server controls">
+                        <span class="no-pants-icon @(_noPantsMode ? "no-pants-active" : "")">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M4 4h16v2l-2 14h-4l-1-8h-2l-1 8H6L4 6V4zm2 2v.5l1.8 12.5h2.4l1-8h1.6l1 8h2.4L18 6.5V6H6z"/></svg>
+                        </span>
+                        <span class="nav-toggle-label nav-link-text">No Pants</span>
+                        <div class="nav-toggle-spacer nav-link-text"></div>
+                        <ToggleSwitch Value="@_noPantsMode" ValueChanged="ToggleNoPantsMode" ActiveColor="#dc2626" />
+                    </div>
+                }
+                <div class="nav-toggle-row" title="Experimental Mode: show preview features">
+                    <span class="experimental-icon @(_experimentalMode ? "experimental-active" : "")"><i class="fa-solid fa-flask" style="font-size:13px;"></i></span>
+                    <span class="nav-toggle-label nav-link-text">Experimental</span>
+                    <div class="nav-toggle-spacer nav-link-text"></div>
+                    <ToggleSwitch Value="@_experimentalMode" ValueChanged="ToggleExperimentalMode" ActiveColor="#f59e0b" />
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@if (_showNoPantsModal)
+{
+    <div class="panel-maximize-overlay" style="z-index:9999;">
+        <div class="query-plan-modal-content" style="max-width:560px;" @onclick:stopPropagation>
+            <div class="panel-maximize-header" style="background:linear-gradient(135deg, var(--red) 0%, #b91c1c 100%);">
+                <span class="panel-maximize-title">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor" style="display:inline;vertical-align:middle;margin-right:6px;">
+                        <path d="M4 4h16v2l-2 14h-4l-1-8h-2l-1 8H6L4 6V4zm2 2v.5l1.8 12.5h2.4l1-8h1.6l1 8h2.4L18 6.5V6H6z"/>
+                    </svg>
+                    No-Pants Mode
+                </span>
+                <button class="panel-maximize-close" @onclick="CancelNoPantsModal" title="Cancel"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div style="padding:20px;color:var(--text-primary);line-height:1.6;">
+                <p style="font-size:14px;margin-bottom:12px;">
+                    <strong style="color:var(--orange);">&#9888; You are about to enable No-Pants Mode.</strong>
+                </p>
+                <p style="font-size:13px;margin-bottom:12px;">
+                    This will reveal controls that allow you to make <strong style="color:var(--red);">direct modifications to your SQL Server instances</strong> —
+                    including killing sessions, forcing failovers, rebuilding indexes, updating configurations, and other operations
+                    that can impact production workloads.
+                </p>
+                <p style="font-size:13px;margin-bottom:12px;">
+                    These actions are <em>irreversible</em> once executed. There is no undo button. There is no safety net.
+                    Just you, your SQL Servers, and whatever courage (or recklessness) brought you here.
+                </p>
+                <p style="font-size:13px;margin-bottom:12px;padding:10px;border-radius:6px;background:rgba(220,38,38,0.08);border:1px solid rgba(220,38,38,0.25);">
+                    <strong style="color:var(--red);">&#128274; SQL safety checks will be disabled.</strong>
+                    The Check Validator will allow execution of INSERT, UPDATE, DELETE, DROP, TRUNCATE, EXEC, and other
+                    potentially destructive queries against your servers. Use with extreme caution.
+                </p>
+                <p style="font-size:13px;margin-bottom:16px;padding:10px;border-radius:6px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);">
+                    I either know what I'm doing, or I'm brave enough to find out. Who even needs pants when you're a DBA?
+                    Show me the controls that let me make changes to my servers. I accept full responsibility for any and all
+                    actions I take while in No-Pants Mode, and I understand that no one else is to blame if something goes sideways.
+                </p>
+                <div style="display:flex;gap:10px;justify-content:flex-end;">
+                    <button class="btn-secondary" style="padding:8px 16px;border-radius:6px;cursor:pointer;" @onclick="CancelNoPantsModal">
+                        Keep My Pants On
+                    </button>
+                    <button style="padding:8px 20px;border-radius:6px;cursor:pointer;background:var(--red);color:white;border:1px solid #b91c1c;font-weight:600;"
+                            @onclick="AcceptNoPantsDisclaimer">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="display:inline;vertical-align:middle;margin-right:4px;">
+                            <path d="M4 4h16v2l-2 14h-4l-1-8h-2l-1 8H6L4 6V4zm2 2v.5l1.8 12.5h2.4l1-8h1.6l1 8h2.4L18 6.5V6H6z"/>
+                        </svg>
+                        Who Needs Pants
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+/* Scoped styles for the new Split-Screen Navigation Layout */
+.nav-menu.split-layout {
+    display: flex;
+    flex-direction: row;
+    height: 100vh;
+    padding: 0;
+}
+.nav-menu.split-layout.collapsed {
+    width: 60px; /* Slim rail only */
+}
+.nav-slim-bar {
+    width: 60px;
+    background-color: var(--bg-panel-darker, #0d141a);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    border-right: 1px solid var(--border);
+    padding: 16px 0;
+    z-index: 10;
+}
+.nav-brand-icon-container {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 24px;
+    color: var(--accent);
+    font-size: 20px;
+    position: relative;   /* anchors the build-mode dot */
+}
+.nav-main-category {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    color: var(--text-muted);
+    font-size: 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.nav-main-category:hover {
+    color: var(--text-primary);
+    background-color: var(--bg-hover);
+}
+.nav-main-category.active {
+    color: var(--accent);
+    background-color: rgba(45, 212, 191, 0.1);
+    box-shadow: inset 2px 0 0 var(--accent);
+}
+.nav-expanded-pane {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--bg-panel);
+    width: 260px;
+    box-sizing: border-box;
+    overflow-x: hidden;
+}
+.nav-expanded-header {
+    padding: 24px 16px 16px;
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+}
+.nav-scrollable-area {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding-top: 12px;
+}
+
+/* ── Per-category accent colours ──────────────────────────────────────────
+   Colour is REDUNDANT coding here (every category also has its own icon +
+   text label), so it never carries meaning alone — inherently colour-blind
+   friendly. Under colour-blind mode the palette swaps to Wong (2011). */
+:root {
+    --cat-governance:   #6366f1; /* indigo */
+    --cat-operations:   #2dd4bf; /* teal   */
+    --cat-diagnostics:  #f59e0b; /* amber  */
+    --cat-premium:      #c084fc; /* purple */
+    --cat-intelligence: #22d3ee; /* cyan   */
+    --cat-config:       #94a3b8; /* slate  */
+    --cat-apply:        #ef4444; /* red — write/modify actions */
+}
+body.colorblind-mode {
+    --cat-governance:   #0072B2; /* blue          */
+    --cat-operations:   #009E73; /* bluish green   */
+    --cat-diagnostics:  #E69F00; /* orange         */
+    --cat-premium:      #CC79A7; /* reddish purple */
+    --cat-intelligence: #56B4E9; /* sky blue       */
+    --cat-config:       #999999; /* grey           */
+    --cat-apply:        #D55E00; /* vermillion     */
+}
+/* slim-bar icons, tinted per category */
+.nav-main-category.nc-governance   { color: var(--cat-governance); }
+.nav-main-category.nc-operations   { color: var(--cat-operations); }
+.nav-main-category.nc-diagnostics  { color: var(--cat-diagnostics); }
+.nav-main-category.nc-premium      { color: var(--cat-premium); }
+.nav-main-category.nc-intelligence { color: var(--cat-intelligence); }
+.nav-main-category.nc-config       { color: var(--cat-config); }
+.nav-main-category.nc-apply        { color: var(--cat-apply); }
+/* active slim-bar icon: keep the category colour for marker + glow */
+.nav-main-category.active.nc-governance   { color: var(--cat-governance);   background-color: rgba(255,255,255,0.06); box-shadow: inset 2px 0 0 var(--cat-governance); }
+.nav-main-category.active.nc-operations   { color: var(--cat-operations);   background-color: rgba(255,255,255,0.06); box-shadow: inset 2px 0 0 var(--cat-operations); }
+.nav-main-category.active.nc-diagnostics  { color: var(--cat-diagnostics);  background-color: rgba(255,255,255,0.06); box-shadow: inset 2px 0 0 var(--cat-diagnostics); }
+.nav-main-category.active.nc-premium      { color: var(--cat-premium);      background-color: rgba(255,255,255,0.06); box-shadow: inset 2px 0 0 var(--cat-premium); }
+.nav-main-category.active.nc-intelligence { color: var(--cat-intelligence); background-color: rgba(255,255,255,0.06); box-shadow: inset 2px 0 0 var(--cat-intelligence); }
+.nav-main-category.active.nc-config       { color: var(--cat-config);       background-color: rgba(255,255,255,0.06); box-shadow: inset 2px 0 0 var(--cat-config); }
+.nav-main-category.active.nc-apply        { color: var(--cat-apply);        background-color: rgba(255,255,255,0.06); box-shadow: inset 2px 0 0 var(--cat-apply); }
+/* expanded pane: category title + section-label headings in the category colour */
+.nav-cat--governance   .nav-brand-text, .nav-cat--governance   .nav-section-label { color: var(--cat-governance); }
+.nav-cat--operations   .nav-brand-text, .nav-cat--operations   .nav-section-label { color: var(--cat-operations); }
+.nav-cat--diagnostics  .nav-brand-text, .nav-cat--diagnostics  .nav-section-label { color: var(--cat-diagnostics); }
+.nav-cat--premium      .nav-brand-text, .nav-cat--premium      .nav-section-label { color: var(--cat-premium); }
+.nav-cat--intelligence .nav-brand-text, .nav-cat--intelligence .nav-section-label { color: var(--cat-intelligence); }
+.nav-cat--config       .nav-brand-text, .nav-cat--config       .nav-section-label { color: var(--cat-config); }
+.nav-cat--apply        .nav-brand-text, .nav-cat--apply        .nav-section-label { color: var(--cat-apply); }
+</style>
+
+@code {
+    private string _activeCategory = "Governance";
+
+    private void SetCategory(string category)
+    {
+        _activeCategory = category;
+        if (_collapsed) _collapsed = false; // Auto-expand when picking a category
+    }
+
+    private bool _performanceMonitorExists = false;
+    private bool _SQLWATCHExists = false;
+
+    // ── Bundle tier badge ────────────────────────────────────────────────
+    private SQLTriage.Data.Services.Licensing.Tier _bundleTier = SQLTriage.Data.Services.Licensing.Tier.Free;
+    private bool _bundleUnlocked = false;
+    private bool _consolidationUnlocked = false;
+
+    private string _badgeClass =>
+        !_bundleUnlocked                                                           ? "not-activated"
+        : _bundleTier == SQLTriage.Data.Services.Licensing.Tier.Full              ? "full"
+        :                                                                            "free";
+
+    private string _badgeText =>
+        !_bundleUnlocked                                                           ? "Not Activated"
+        : _bundleTier == SQLTriage.Data.Services.Licensing.Tier.Full              ? "Full"
+        :                                                                            "Free";
+
+    private string _badgeTitle =>
+        !_bundleUnlocked
+            ? "Bundle failed to load — check app log. Click for Settings."
+            : _bundleTier == SQLTriage.Data.Services.Licensing.Tier.Full
+                ? "Full Audit active — click to manage"
+                : "Free tier — click for Settings";
+
+    private void GoToTierSettings() => Navigation.NavigateTo("/settings");
+
+    [Inject] private NavigationManager Navigation { get; set; } = default!;
+
+    // ── Sidebar collapse ─────────────────────────────────────────────────
+    private bool _collapsed = false;
+    private bool _showAdvanced = false;
+    private bool _showConfigure = false;
+    private void ToggleCollapse() => _collapsed = !_collapsed;
+
+    // Dev-tools visibility is build-time now (BuildModules.DevTools) — the old
+    // MachineName=="MSI"/UserName=="afsul" gate is replaced by build-absence:
+    // community builds compile those pages out entirely (buildprofile.targets).
+
+    // ── No-Pants Mode ────────────────────────────────────────────────────
+    private bool _noPantsMode = false;
+    private bool _showNoPantsModal = false;
+
+    private void ToggleNoPantsMode(bool v)
+    {
+        _noPantsMode = v;
+        if (!RbacService.HasPermission(UserState.Role, "run_scripts"))
+            return;
+
+        if (_noPantsMode)
+        {
+            if (!UserSettings.GetNoPantsDisclaimerAccepted())
+            {
+                _showNoPantsModal = true;
+                return;
+            }
+            _noPantsMode = true;
+            UserSettings.SetNoPantsMode(true);
+            AuditLog.LogSecurityEvent(
+                $"No-Pants Mode ENABLED by {Environment.UserName}",
+                AuditSeverity.Warning,
+                new Dictionary<string, string> { ["User"] = Environment.UserName, ["Action"] = "Enabled" });
+        }
+        else
+        {
+            _noPantsMode = false;
+            UserSettings.SetNoPantsMode(false);
+            AuditLog.LogSecurityEvent(
+                $"No-Pants Mode DISABLED by {Environment.UserName}",
+                AuditSeverity.Info,
+                new Dictionary<string, string> { ["User"] = Environment.UserName, ["Action"] = "Disabled" });
+        }
+    }
+
+    private void AcceptNoPantsDisclaimer()
+    {
+        _showNoPantsModal = false;
+        _noPantsMode = true;
+        UserSettings.SetNoPantsDisclaimerAccepted(true);
+        UserSettings.SetNoPantsMode(true);
+        AuditLog.LogSecurityEvent(
+            $"No-Pants Mode disclaimer ACCEPTED and ENABLED by {Environment.UserName}",
+            AuditSeverity.Warning,
+            new Dictionary<string, string> { ["User"] = Environment.UserName, ["Action"] = "DisclaimerAccepted" });
+    }
+
+    private void CancelNoPantsModal()
+    {
+        _showNoPantsModal = false;
+    }
+
+    // ── Report / Feedback popover ────────────────────────────────────────
+    // Feedback moved to the bottom status bar (StatusBar.razor).
+
+    // ── Experimental Mode ─────────────────────────────────────────────────
+    private bool _experimentalMode = false;
+    private bool _showMaturityRoadmap = false;
+
+    private void ToggleExperimentalMode(bool v)
+    {
+        _experimentalMode = v;
+        UserSettings.SetExperimentalMode(_experimentalMode);
+    }
+
+    // ── Color-Blind Mode ──────────────────────────────────────────────────
+    private bool _colorBlindMode = false;
+
+    private async Task ToggleColorBlindMode(bool v)
+    {
+        _colorBlindMode = v;
+        UserSettings.SetColorBlindMode(_colorBlindMode);
+        await ApplyColorBlindBodyClass();
+    }
+
+    private async Task ApplyColorBlindBodyClass()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("document.body.classList.toggle", "colorblind-mode", _colorBlindMode);
+        }
+        catch { /* JS not ready on first navigation — harmless */ }
+    }
+
+    // ── Narration (progressive disclosure: opinionated estate read on demand) ──
+    private bool _narrationMode = false;
+
+    private void ToggleNarrationMode(bool v)
+    {
+        _narrationMode = v;
+        UserSettings.SetNarrationMode(_narrationMode);
+    }
+
+    // ── Notifications ─────────────────────────────────────────────────────
+    private bool _notificationsEnabled = true;
+
+    private void ToggleNotifications(bool v)
+    {
+        _notificationsEnabled = v;
+        UserSettings.SetNotificationsEnabled(_notificationsEnabled);
+        ToastService.Enabled = _notificationsEnabled;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await UserState.InitAsync();
+        
+        _noPantsMode         = UserSettings.GetNoPantsMode();
+        _experimentalMode    = UserSettings.GetExperimentalMode();
+        _showMaturityRoadmap = UserSettings.GetShowMaturityRoadmap();
+        _colorBlindMode      = UserSettings.GetColorBlindMode();
+        _narrationMode       = UserSettings.GetNarrationMode();
+        _notificationsEnabled = UserSettings.GetNotificationsEnabled();
+        ToastService.Enabled  = _notificationsEnabled;   // sync service to persisted setting on startup
+        _bundleTier          = Bundle.Tier;
+        _bundleUnlocked      = Bundle.IsUnlocked;
+        _consolidationUnlocked = ConsolidationModel.IsUnlocked;
+        Bundle.BundleStateChanged                      += OnBundleStateChanged;
+        FeatureGate.Changed                            += OnFeatureGateChanged;
+        ConnectionManager.OnConnectionChanged          += OnServerChanged;
+        ConnectionHealth.OnStatusChanged               += OnHealthChanged;
+        UserSettings.OnShowMaturityRoadmapChanged      += OnMaturityRoadmapChanged;
+        InstanceSelector.OnInstanceChanged             += OnInstanceChanged;
+        
+        QuickCheckState.StateChanged                   += OnStateChanged;
+        FullAuditState.StateChanged                    += OnStateChanged;
+        VaState.StateChanged                           += OnStateChanged;
+
+        await RefreshDbFlags();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && _colorBlindMode)
+        {
+            await ApplyColorBlindBodyClass();
+        }
+    }
+
+    private void OnMaturityRoadmapChanged(bool enabled)
+    {
+        _showMaturityRoadmap = enabled;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnHealthChanged() => InvokeAsync(StateHasChanged);
+
+    private void OnStateChanged() => InvokeAsync(StateHasChanged);
+
+    private void OnFeatureGateChanged(object? sender, EventArgs e) => InvokeAsync(StateHasChanged);
+
+    private void OnBundleStateChanged(object? sender, EventArgs e)
+    {
+        _bundleTier     = Bundle.Tier;
+        _bundleUnlocked = Bundle.IsUnlocked;
+        _consolidationUnlocked = ConsolidationModel.IsUnlocked;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnServerChanged()
+    {
+        DbAvailability.InvalidateCache();
+        _ = InvokeAsync(async () =>
+        {
+            await RefreshDbFlags();
+            StateHasChanged();
+        });
+    }
+
+    private void OnInstanceChanged(string instanceName)
+    {
+        DbAvailability.InvalidateCache();
+        _ = InvokeAsync(async () =>
+        {
+            await RefreshDbFlags();
+            StateHasChanged();
+        });
+    }
+
+    private async Task RefreshDbFlags()
+    {
+        var pmTask = DbAvailability.DatabaseExistsAsync("PerformanceMonitor");
+        var swTask = DbAvailability.DatabaseExistsAsync("SQLWATCH");
+        await Task.WhenAll(pmTask, swTask);
+        _performanceMonitorExists = pmTask.Result;
+        _SQLWATCHExists = swTask.Result;
+    }
+
+    private RenderFragment NavIcon(string? icon) => builder =>
+    {
+        builder.OpenElement(0, "span");
+        builder.AddAttribute(1, "class", "nav-icon");
+        if (icon?.StartsWith("fa-") == true)
+        {
+            builder.OpenElement(2, "i");
+            builder.AddAttribute(3, "class", icon);
+            builder.CloseElement();
+        }
+        else
+        {
+            builder.AddContent(2, icon);
+        }
+        builder.CloseElement();
+    };
+
+    private (string Tier, string Tooltip)? GetDashboardLoadInfo(DashboardDefinition dash)
+    {
+        var panels = dash.Tabs != null && dash.Tabs.Count > 0
+            ? dash.Tabs[0].Panels
+            : dash.Panels;
+        if (panels == null || panels.Count == 0) return null;
+
+        double maxMs = 0;
+        foreach (var panel in panels)
+        {
+            var m = PanelMetrics.GetMetric(panel.Id);
+            if (m != null && m.P95Ms > 0)
+            {
+                if (m.P95Ms > maxMs) maxMs = m.P95Ms;
+            }
+            else if (panel.ExpectedLoadMs is double exp && exp > 0)
+            {
+                if (exp > maxMs) maxMs = exp;
+            }
+        }
+        if (maxMs <= 0) return null;
+
+        var label = maxMs < 1000 ? $"~{maxMs:F0}ms" : $"~{maxMs / 1000.0:F1}s";
+        var tier = maxMs < 500 ? "fast" : (maxMs < 1000 ? "med" : "slow");
+        return (tier, $"Expected load (p95): {label}");
+    }
+
+    async ValueTask IAsyncDisposable.DisposeAsync()
+    {
+        Bundle.BundleStateChanged                  -= OnBundleStateChanged;
+        FeatureGate.Changed                        -= OnFeatureGateChanged;
+        ConnectionManager.OnConnectionChanged      -= OnServerChanged;
+        ConnectionHealth.OnStatusChanged           -= OnHealthChanged;
+        UserSettings.OnShowMaturityRoadmapChanged  -= OnMaturityRoadmapChanged;
+        InstanceSelector.OnInstanceChanged         -= OnInstanceChanged;
+        
+        QuickCheckState.StateChanged               -= OnStateChanged;
+        FullAuditState.StateChanged                -= OnStateChanged;
+        VaState.StateChanged                       -= OnStateChanged;
+
+        await ValueTask.CompletedTask;
+    }
+}

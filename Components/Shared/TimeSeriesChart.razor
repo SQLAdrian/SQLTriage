@@ -1,0 +1,290 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using ApexCharts
+
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@using System.Linq
+@using System.Collections.Generic
+@inject IChartThemeService ChartTheme
+@implements IDisposable
+
+<div class="chart-panel chart-panel--timeseries"
+     role="img"
+     aria-label="@(!string.IsNullOrEmpty(Title) ? $"Time series chart showing {Title}" : "Time series chart")">
+    @if (!string.IsNullOrEmpty(Title))
+    {
+        <div class="chart-title">@Title</div>
+    }
+
+    @if (_seriesDataCache != null && _distinctSeries != null)
+    {
+        <ApexChart TItem="TimeSeriesPoint"
+                   @key="_chartKey"
+                   Height="@Height"
+                   Options="@GetChartOptions()">
+
+            @foreach (var series in _distinctSeries)
+            {
+                var seriesData = _seriesDataCache.TryGetValue(series, out var sd) ? sd : new List<TimeSeriesPoint>();
+                <ApexPointSeries TItem="TimeSeriesPoint"
+                                 Items="@seriesData"
+                                 Name="@series"
+                                 SeriesType="@ChartSeriesType"
+                                 XValue="@(p => p.Time)"
+                                 YValue="@(p => (decimal)p.Value)" />
+            }
+        </ApexChart>
+    }
+    else
+    {
+        <div class="chart-empty">No data available</div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public List<TimeSeriesPoint>? Data { get; set; }
+    [Parameter] public string YAxisUnit { get; set; } = "";
+    [Parameter] public int Height { get; set; } = 250;
+    [Parameter] public SeriesType ChartSeriesType { get; set; } = SeriesType.Line;
+    [Parameter] public int MaxDataPoints { get; set; } = 1000;
+
+    // Timezone offset in hours from UTC (e.g., 13 for UTC+13 like Pacific/Auckland)
+    [Parameter] public double TimezoneOffsetHours { get; set; } = 0;
+
+    /// <summary>Baseline data from 7 days ago, timestamps already shifted to align with current range.</summary>
+    [Parameter] public List<TimeSeriesPoint>? BaselineData { get; set; }
+
+    /// <summary>
+    /// Optional 25th-percentile value from IQR-based baseline statistics.
+    /// When set together with BaselineP75, renders a dashed horizontal "typical range"
+    /// band on the chart so users can see at-a-glance whether the current value
+    /// is within historical norms.
+    /// </summary>
+    [Parameter] public double? BaselineP25 { get; set; }
+
+    /// <summary>75th-percentile companion to <see cref="BaselineP25"/>.</summary>
+    [Parameter] public double? BaselineP75 { get; set; }
+
+    // Cached values for performance
+    private List<string>? _distinctSeries;
+    private Dictionary<string, List<TimeSeriesPoint>>? _seriesDataCache;
+    private ApexChartOptions<TimeSeriesPoint>? _cachedOptions;
+    private List<TimeSeriesPoint>? _adjustedDataCache;
+    private int _lastOffset;
+    private string _chartKey = Guid.NewGuid().ToString();
+    private string _lastSeriesKey = "";
+
+    // Get data with timezone adjustment applied and throttled to max points
+    private List<TimeSeriesPoint> GetAdjustedData()
+    {
+        if (Data == null) return new List<TimeSeriesPoint>();
+        
+        int offsetMinutes = (int)(TimezoneOffsetHours * 60);
+        
+        // Reset cache if offset changed
+        if (_lastOffset != offsetMinutes || _adjustedDataCache == null)
+        {
+            _lastOffset = offsetMinutes;
+            var adjusted = Data.Select(p => new TimeSeriesPoint
+            {
+                Time = p.Time == DateTime.MinValue
+                    ? DateTime.MinValue
+                    : DateTime.SpecifyKind(p.Time.AddMinutes(offsetMinutes), DateTimeKind.Utc),
+                Value = p.Value,
+                Series = p.Series
+            }).ToList();
+
+            // Throttle data points if exceeds limit
+            if (adjusted.Count > MaxDataPoints)
+            {
+                var step = adjusted.Count / MaxDataPoints;
+                _adjustedDataCache = adjusted.Where((_, i) => i % step == 0).Take(MaxDataPoints).ToList();
+            }
+            else
+            {
+                _adjustedDataCache = adjusted;
+            }
+        }
+        
+        return _adjustedDataCache ?? new List<TimeSeriesPoint>();
+    }
+
+    // Memoized chart options
+    private ApexChartOptions<TimeSeriesPoint> GetChartOptions()
+    {
+        return _cachedOptions ??= BuildChartOptions();
+    }
+
+    private ApexChartOptions<TimeSeriesPoint> BuildChartOptions()
+    {
+        // Shared styling (palette, dark theme, transparent background, grid,
+        // tooltip, datetime x-axis, value formatter, bottom legend) now comes from
+        // the central ChartThemeService so every chart stays consistent and
+        // restyling happens in one place. The visible title is rendered as the
+        // .chart-title HTML block above, so we pass "" to suppress ApexCharts'
+        // built-in title and keep it out of the chart's height budget.
+        var opts = ChartTheme.GetLineOptions<TimeSeriesPoint>("", YAxisUnit);
+
+        // Time-series-specific: allow zoom/pan on the plot.
+        opts.Chart.Zoom = new Zoom { Enabled = true };
+
+        // Data-dependent stroke: solid 2px for current series, dashed 1.5px for the
+        // 7-day baseline overlay (one entry per rendered series).
+        opts.Stroke.Width = GetStrokeWidths();
+        opts.Stroke.DashArray = GetDashArrays();
+
+        // With many series, bound the legend to a fixed height so ApexCharts
+        // reserves a predictable amount of space (the plot keeps its height) and
+        // the legend scrolls instead of squeezing the plot. The CSS rule on
+        // .chart-panel--timeseries .apexcharts-legend handles the scroll styling.
+        if (_distinctSeries != null && _distinctSeries.Count > 6)
+        {
+            opts.Legend.Height = 104;
+        }
+
+        // Add a "typical range" overlay using the IQR-based baseline P25/P75
+        // when the caller supplies them. Rendered as two dashed yAxis
+        // annotation lines bracketing the historical interquartile range so
+        // a user can spot at-a-glance when current values fall outside the
+        // normal band. Uses ApexCharts' built-in YAxisAnnotations rather
+        // than a synthetic series — annotations don't show in the legend
+        // and don't affect autoscale calculations against null gaps.
+        if (BaselineP25.HasValue && BaselineP75.HasValue)
+        {
+            opts.Annotations = new Annotations
+            {
+                Yaxis = new List<AnnotationsYAxis>
+                {
+                    new AnnotationsYAxis
+                    {
+                        Y = BaselineP25.Value,
+                        Y2 = BaselineP75.Value,
+                        FillColor = "#3b82f6",
+                        Opacity = 0.08d,
+                        BorderColor = "#3b82f6",
+                        Label = new Label
+                        {
+                            Text = $"Typical {BaselineP25.Value:0.##}–{BaselineP75.Value:0.##}",
+                            Position = LabelPosition.Left,
+                            OffsetX = 8,
+                            Style = new Style
+                            {
+                                Color = "#93c5fd",
+                                Background = "transparent",
+                                FontSize = "10px"
+                            }
+                        }
+                    }
+                }
+            };
+        }
+
+        return opts;
+    }
+
+    // Rebuild caches whenever data or timezone offset changes
+    protected override void OnParametersSet()
+    {
+        _cachedOptions = null;
+        _adjustedDataCache = null; // Force recompute with current offset
+
+        if (Data != null && Data.Any())
+        {
+            // Build caches from timezone-adjusted data so the chart always
+            // reflects the selected timezone without a data re-fetch.
+            var adjustedData = GetAdjustedData();
+
+            // Force chart re-creation when series composition changes (prevents line accumulation).
+            // Key is finalised after baseline merge below — computed here as a base, then extended.
+            var newSeriesKey = string.Join(",", adjustedData.Select(d => d.Series).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(s => s));
+
+            _distinctSeries = adjustedData
+                .Select(d => d.Series)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            _seriesDataCache = _distinctSeries
+                .ToDictionary(
+                    series => series,
+                    series => adjustedData
+                        .Where(d => string.Equals(d.Series, series, StringComparison.OrdinalIgnoreCase))
+                        .ToList(),
+                    StringComparer.OrdinalIgnoreCase);
+
+            // Merge baseline series (7d ago) — dashed overlay with "(7d ago)" suffix
+            if (BaselineData != null && BaselineData.Any())
+            {
+                int bOffsetMinutes = (int)(TimezoneOffsetHours * 60);
+                var baselineAdjusted = BaselineData.Select(p => new TimeSeriesPoint
+                {
+                    Time = DateTime.SpecifyKind(p.Time.AddMinutes(bOffsetMinutes), DateTimeKind.Utc),
+                    Value = p.Value,
+                    Series = p.Series + " (7d ago)"
+                }).ToList();
+
+                var baselineSeries = baselineAdjusted
+                    .Select(d => d.Series)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                foreach (var bs in baselineSeries)
+                {
+                    _distinctSeries.Add(bs);
+                    _seriesDataCache[bs] = baselineAdjusted
+                        .Where(d => string.Equals(d.Series, bs, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                }
+
+                // Include baseline in the key so toggling baseline also forces re-creation
+                newSeriesKey += "|baseline:" + string.Join(",", baselineSeries.OrderBy(s => s));
+            }
+
+            if (_lastSeriesKey != newSeriesKey)
+            {
+                _lastSeriesKey = newSeriesKey;
+                _chartKey = Guid.NewGuid().ToString();
+            }
+        }
+        else
+        {
+            _distinctSeries = null;
+            _seriesDataCache = null;
+            _lastSeriesKey = ""; // reset so next data arrival forces re-creation
+        }
+    }
+
+    /// <summary>Returns per-series stroke widths: 2 for current, 1.5 for baseline.</summary>
+    private List<double> GetStrokeWidths()
+    {
+        if (_distinctSeries == null) return new List<double> { 2 };
+        return _distinctSeries.Select(s => s.Contains("(7d ago)") ? 1.5 : 2.0).ToList();
+    }
+
+    /// <summary>Returns per-series dash arrays: 0 (solid) for current, 5 (dashed) for baseline.</summary>
+    private List<double> GetDashArrays()
+    {
+        if (_distinctSeries == null) return new List<double> { 0 };
+        return _distinctSeries.Select(s => s.Contains("(7d ago)") ? 5.0 : 0.0).ToList();
+    }
+
+    protected override void OnInitialized()
+    {
+        ChartTheme.OnChartThemeChanged += HandleThemeChanged;
+    }
+
+    // Rebuild options and force a full chart re-create with the new palette when
+    // the user switches theme.
+    private void HandleThemeChanged()
+    {
+        _cachedOptions = null;
+        _chartKey = Guid.NewGuid().ToString();
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        ChartTheme.OnChartThemeChanged -= HandleThemeChanged;
+    }
+
+}

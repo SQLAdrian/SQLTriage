@@ -1,0 +1,1338 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/audit"
+
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using System.IO
+@using Markdig
+@inject CheckRepositoryService CheckRepo
+@inject CheckExecutionService CheckExecutor
+@inject ServerConnectionManager ConnectionManager
+@inject UserSettingsService UserSettings
+@inject QuickCheckStateService State
+@inject SQLTriage.Data.Services.PrintService PrintSvc
+@inject SQLTriage.Data.Services.ReportPageConfigService ReportPageCfg
+@inject SQLTriage.Data.ToastService Toast
+@inject SQLTriage.Data.Services.KeyboardShortcutService ShortcutSvc
+@inject IJSRuntime JSRuntime
+@inject SQLTriage.Data.Services.AppUserState UserState
+@inject AuditLogService AuditLog
+@inject SQLTriage.Data.Services.Licensing.IDemoRunLedger DemoLedger
+@implements IDisposable
+
+<PdfExportModal @ref="_pdfModal"
+    Title="Export Results to PDF"
+    DefaultLandscape="false"
+    DefaultBackgrounds="false"
+    OnConfirm="OnPdfConfirmed" />
+
+<SectionEditorModal IsVisible="_editingSection != null"
+    Section="_editingSection"
+    NativeKeys="_availableNativeKeys"
+    AvailableFields="_qcFields"
+    OnSave="HandleSectionSaved"
+    OnCancel="() => _editingSection = null" />
+
+<AddSectionModal IsVisible="_showAddSection"
+    NativeKeys="_availableNativeKeys"
+    OnAdd="HandleSectionAdded"
+    OnCancel="() => _showAddSection = false" />
+
+@using SQLTriage.Components.Shared
+
+@if (!_initialized)
+{
+    <PageLoadingSpinner Message="Loading Audit Assessment..." />
+}
+else
+{
+<div class="quickcheck-page">
+    @* FreeStateBanner is now rendered once at MainLayout level *@
+    @if (!string.IsNullOrEmpty(CheckRepo.LoadError))
+    {
+        <div class="qc-loaderror-banner" role="alert">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            <span><strong>Check catalog failed to load.</strong> @CheckRepo.LoadError
+            Results shown may be stale — no fresh checks can run until this is resolved.</span>
+        </div>
+    }
+    <div class="page-header">
+        <div>
+            <h2>Audit Assessment</h2>
+            <p class="page-description">
+                Run SQL health checks from sql-checks.json against configured servers.
+            </p>
+        </div>
+        <div class="header-actions">
+            <div class="header-stats">
+                <span class="stat-pill">@EnabledChecksCount enabled checks</span>
+                <span class="stat-pill">@EnabledServersCount enabled servers</span>
+            </div>
+            <button class="btn btn-sm btn-toggle-diag @(ShowDiagnosticPane ? "active" : "")"
+                    @onclick="ToggleDiagnosticPane" title="Toggle diagnostic output">
+                Diagnostics @(ShowDiagnosticPane ? "ON" : "OFF")
+            </button>
+        </div>
+    </div>
+
+    <div class="qc-layout @(ShowDiagnosticPane ? "with-diag" : "")">
+        <!-- Main Content -->
+        <div class="qc-main">
+            <!-- Server Selection -->
+            <ReportSectionWrapper Section="@GetSection("server-selection")" EditMode="_editMode"
+                IsFirst="@IsFirstSection("server-selection")" IsLast="@IsLastSection("server-selection")"
+                OnMoveUp="s => MoveSection(s, -1)" OnMoveDown="s => MoveSection(s, 1)"
+                OnEdit="s => _editingSection = s" OnDelete="s => DeleteSection(s)"
+                OnToggle="s => ToggleSection(s)">
+            <div class="server-selection card-glass" style="padding: 16px; margin-bottom: 24px;">
+                <div class="server-selection-header" style="margin-bottom: 12px; font-weight: 600;">
+                    <label>Target Servers:</label>
+                </div>
+
+                @if (Connections.Count == 0)
+                {
+                    <div class="qc-no-servers card-glass" style="margin-top: 16px;">
+                        <i class="fa-solid fa-server qc-no-servers-icon"></i>
+                        <div class="qc-no-servers-msg">No server connections configured.</div>
+                        <a href="/servers" class="qc-add-server-link">
+                            <i class="fa-solid fa-plus"></i> Add Server
+                        </a>
+                    </div>
+                }
+                else
+                {
+                    <ServerSelector AllowAllScope="true"
+                        Items="@ConnectionItems"
+                        SelectedId="@(State.RunAllServers ? null : State.SelectedConnectionId)"
+                        SelectedIdChanged="@OnConnectionSelected" />
+                }
+
+                @* Corpus DEMO allocation banner — shown only on a metered (community/demo) bundle.
+                   Full bundle / DevBridge = unlimited → no banner. *@
+                @if (!_demoUnlimited && _demoStatus is not null)
+                {
+                    <div class="demo-allocation-banner">
+                        <i class="fa-solid fa-flask"></i>
+                        <span>@DemoBannerText</span>
+                        @if (!_demoMultiAllowed)
+                        {
+                            <span class="demo-allocation-note">Single instance per run on the community version.</span>
+                        }
+                    </div>
+                }
+
+                @* Run-mode control — only meaningful for multi-server (All scope) runs.
+                   Mirrors Raw Diagnostics: sequential vs parallel + per-server stagger.
+                   Parallel runs stay under the shared pool cap (routed through it). *@
+                @if (State.RunAllServers && EnabledConnections.Count > 1)
+                {
+                    <div class="run-all-group">
+                        <div class="run-mode-toggle">
+                            <button class="run-mode-btn @(_parallelMode ? "" : "active")"
+                                    @onclick="() => _parallelMode = false" disabled="@State.IsRunning"
+                                    title="Run each server one at a time">
+                                <i class="fa-solid fa-list-ol"></i> Sequential
+                            </button>
+                            <button class="run-mode-btn @(_parallelMode ? "active" : "")"
+                                    @onclick="() => _parallelMode = true" disabled="@State.IsRunning"
+                                    title="Start all servers concurrently, staggered by delay">
+                                <i class="fa-solid fa-bolt"></i> Parallel
+                            </button>
+                        </div>
+                        @if (_parallelMode)
+                        {
+                            <div class="delay-input-group" title="Seconds to wait before starting each subsequent server">
+                                <i class="fa-solid fa-stopwatch" style="color:var(--text-secondary);font-size:12px;"></i>
+                                <input type="number" min="0" max="300" step="1"
+                                       @bind="_parallelDelaySeconds"
+                                       style="width:52px;padding:3px 6px;border-radius:4px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);font-size:12px;"
+                                       disabled="@State.IsRunning" />
+                                <span style="font-size:11px;color:var(--text-muted);">s delay</span>
+                            </div>
+                        }
+                    </div>
+                }
+
+                <div class="action-row">
+                    <button class="btn btn-primary btn-run" @onclick="RunChecks"
+                            disabled="@(State.IsRunning || (!State.RunAllServers && string.IsNullOrEmpty(State.SelectedConnectionId)) || (State.RunAllServers && EnabledConnections.Count == 0))">
+                        @if (State.IsRunning)
+                        {
+                            <span>Running...</span>
+                        }
+                        else
+                        {
+                            <span><i class="fa-solid fa-magnifying-glass"></i> Run Audit Assessment</span>
+                        }
+                    </button>
+
+                    @if (State.IsRunning)
+                    {
+                        <button class="btn btn-danger" @onclick="StopRun" title="Stop the running assessment">
+                            <i class="fa-solid fa-stop"></i> Stop
+                        </button>
+                    }
+
+                    @if (State.Results.Count > 0)
+                    {
+                        <button class="btn btn-secondary" @onclick="ClearResults">Clear Results</button>
+                        <button class="btn btn-secondary" @onclick="ExportQuestPdf"><i class="fa-solid fa-file-pdf"></i> Export PDF</button>
+                        <button class="btn btn-secondary" @onclick="ExportExecutiveBriefing" title="Microsoft-style 5-focus-area executive briefing"><i class="fa-solid fa-file-lines"></i> Briefing</button>
+                    }
+
+                    <label class="qc-force-fresh" title="Reload the check catalog from sql-checks.json before running. Use after a corpus regeneration to pick up new/recategorised checks without restarting the app.">
+                        <input type="checkbox" @bind="_forceFresh" disabled="@State.IsRunning" />
+                        <span>Force fresh (reload catalog)</span>
+                    </label>
+
+                </div>
+            </div>
+            </ReportSectionWrapper>
+
+            @if (State.IsRunning)
+            {
+                <div class="progress-section">
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: @State.Progress%"></div>
+                    </div>
+                    <span class="progress-text">
+                        @State.ProgressMessage (@State.Progress%)
+                    </span>
+                </div>
+            }
+
+            @if (State.Results.Count > 0)
+            {
+                <ReportSectionWrapper Section="@GetSection("summary-cards")" EditMode="_editMode"
+                    IsFirst="@IsFirstSection("summary-cards")" IsLast="@IsLastSection("summary-cards")"
+                    OnMoveUp="s => MoveSection(s, -1)" OnMoveDown="s => MoveSection(s, 1)"
+                    OnEdit="s => _editingSection = s" OnDelete="s => DeleteSection(s)"
+                    OnToggle="s => ToggleSection(s)">
+                <!-- Execution Info -->
+                <div class="execution-info">
+                    <span>Executed at @State.ExecutionTime.ToString("HH:mm:ss") | Duration: @State.ExecutionDuration</span>
+                    <span>@State.ServersTested server(s) tested</span>
+                </div>
+
+                <!-- Per-Server Summary -->
+                @if (State.ServerSummaries.Count > 0)
+                {
+                    <div class="server-summaries">
+                        @foreach (var summary in State.ServerSummaries)
+                        {
+                            <div class="server-summary-card @(summary.Failed > 0 ? "has-failures" : summary.Errors > 0 ? "has-errors" : "all-passed")">
+                                <div class="server-summary-name">@summary.InstanceName</div>
+                                <div class="server-summary-stats">
+                                    @if (summary.Passed > 0)
+                                    {
+                                        <span class="ss-passed" title="Passed"><i class="fa-solid fa-check"></i> @summary.Passed</span>
+                                    }
+                                    <span class="ss-failed" title="Findings"><i class="fa-solid fa-xmark"></i> @summary.Failed</span>
+                                    <span class="ss-errors" title="Errors"><i class="fa-solid fa-triangle-exclamation"></i> @summary.Errors</span>
+                                    <span class="ss-duration" title="Duration">@summary.Duration.TotalSeconds.ToString("F1")s</span>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+
+                <!-- Clickable Overall Summary Cards -->
+                <div class="results-summary">
+                    @* Audit-first model: results are FINDINGS (things to flag); checks that
+                       pass don't emit a row, so on finding-only tiers PassedCount is ~0. Show the
+                       Passed card only when there's something to show, and label flagged items
+                       "Findings" not "Failed" — honest + on-message, and not a false alarm. *@
+                    @if (PassedCount > 0)
+                    {
+                        <div class="summary-card passed @(State.SelectedFilter == "passed" ? "active-filter" : "")"
+                             @onclick='() => SetFilterFromCard("passed")'>
+                            <span class="summary-icon"><i class="fa-solid fa-check"></i></span>
+                            <span class="summary-count">@PassedCount</span>
+                            <span class="summary-label">Passed</span>
+                        </div>
+                    }
+                    <div class="summary-card failed @(State.SelectedFilter == "failed" ? "active-filter" : "")"
+                         @onclick='() => SetFilterFromCard("failed")'>
+                        <span class="summary-icon"><i class="fa-solid fa-xmark"></i></span>
+                        <span class="summary-count">@FailedCount</span>
+                        <span class="summary-label">Findings</span>
+                    </div>
+                    <div class="summary-card errors @(State.SelectedFilter == "errors" ? "active-filter" : "")"
+                         @onclick='() => SetFilterFromCard("errors")'>
+                        <span class="summary-icon"><i class="fa-solid fa-triangle-exclamation"></i></span>
+                        <span class="summary-count">@ErrorCount</span>
+                        <span class="summary-label">Errors</span>
+                    </div>
+                    @if (SkippedCount > 0)
+                    {
+                        <div class="summary-card skipped @(State.SelectedFilter == "skipped" ? "active-filter" : "")"
+                             @onclick='() => SetFilterFromCard("skipped")'>
+                            <span class="summary-icon"><i class="fa-solid fa-forward"></i></span>
+                            <span class="summary-count">@SkippedCount</span>
+                            <span class="summary-label">Skipped</span>
+                        </div>
+                    }
+                    <div class="summary-card total @(State.SelectedFilter == "all" ? "active-filter" : "")"
+                         @onclick='() => SetFilterFromCard("all")'>
+                        <span class="summary-icon"><i class="fa-solid fa-clipboard-list"></i></span>
+                        <span class="summary-count">@State.Results.Count</span>
+                        <span class="summary-label">Total</span>
+                    </div>
+                </div>
+                </ReportSectionWrapper>
+
+                <ReportSectionWrapper Section="@GetSection("results-grid")" EditMode="_editMode"
+                    IsFirst="@IsFirstSection("results-grid")" IsLast="@IsLastSection("results-grid")"
+                    OnMoveUp="s => MoveSection(s, -1)" OnMoveDown="s => MoveSection(s, 1)"
+                    OnEdit="s => _editingSection = s" OnDelete="s => DeleteSection(s)"
+                    OnToggle="s => ToggleSection(s)">
+                <!-- Results Filter -->
+                <div class="results-filter">
+                    <label>Status:</label>
+                    <select @bind="State.SelectedFilter" class="filter-select">
+                        <option value="all">All (@State.Results.Count)</option>
+                        <option value="passed">Passed (@PassedCount)</option>
+                        <option value="failed">Findings (@FailedCount)</option>
+                        <option value="errors">Errors (@ErrorCount)</option>
+                        @if (SkippedCount > 0)
+                        {
+                            <option value="skipped">Skipped (@SkippedCount)</option>
+                        }
+                    </select>
+                    <label>Severity:</label>
+                    <select @bind="State.SelectedSeverity" class="filter-select">
+                        <option value="">All Severities</option>
+                        <option value="Critical">Critical</option>
+                        <option value="Warning">Warning</option>
+                        <option value="Info">Info</option>
+                    </select>
+                    <label>Category:</label>
+                    <select @bind="State.SelectedCategory" class="filter-select">
+                        <option value="">All Categories</option>
+                        @foreach (var cat in State.Categories)
+                        {
+                            <option value="@cat">@cat</option>
+                        }
+                    </select>
+                    <label>Server:</label>
+                    <select @bind="State.SelectedServer" class="filter-select">
+                        <option value="">All Servers</option>
+                        @foreach (var srv in ServersInResults)
+                        {
+                            <option value="@srv">@srv</option>
+                        }
+                    </select>
+                    <span class="filter-count">@FilteredResults.Count() results</span>
+                </div>
+
+                <!-- Results Grid -->
+                <div class="results-grid">
+                    <table class="results-table">
+                        <thead>
+                            <tr>
+                                <th>Status</th>
+                                <th>Server</th>
+                                <th>Check</th>
+                                <th>Category</th>
+                                <th>Severity</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var result in FilteredResults)
+                            {
+                                var isExpanded = _expandedResults.Contains(result.CheckId + result.InstanceName);
+                                var hasError   = !string.IsNullOrEmpty(result.ErrorMessage);
+                                var hasMsg     = !string.IsNullOrEmpty(result.Message);
+                                var hasRec     = !string.IsNullOrEmpty(result.RecommendedAction);
+                                var hasDesc    = !string.IsNullOrEmpty(result.Description);
+                                var anyDetail  = hasError || hasMsg || hasRec || hasDesc;
+                                <tr class="@GetRowClass(result)" @onclick="() => ToggleExpandResult(result.CheckId + result.InstanceName)">
+                                    <td class="status-cell">
+                                        @if (result.IsCorrupted)
+                                        {
+                                            <span class="status-badge corrupted" title="@result.ErrorMessage"><i class="fa-solid fa-shield-halved"></i> Corrupted</span>
+                                        }
+                                        else if (!string.IsNullOrEmpty(result.ErrorMessage))
+                                        {
+                                            <span class="status-badge error"><i class="fa-solid fa-triangle-exclamation"></i> Error</span>
+                                        }
+                                        else if (IsSkipped(result))
+                                        {
+                                            <span class="status-badge skipped" title="@result.Message"><i class="fa-solid fa-forward"></i> Skip</span>
+                                        }
+                                        else if (result.Passed)
+                                        {
+                                            <span class="status-badge passed"><i class="fa-solid fa-check"></i> Pass</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="status-badge failed"><i class="fa-solid fa-xmark"></i> Fail</span>
+                                        }
+                                    </td>
+                                    <td class="server-cell">@result.InstanceName</td>
+                                    <td class="check-name">
+                                        <strong>@result.CheckName</strong>
+                                        <br />
+                                        <small class="check-id">@result.CheckId</small>
+                                    </td>
+                                    <td><span class="category-badge">@result.Category</span></td>
+                                    <td>
+                                        <span class="severity-badge @GetSeverityClass(result.Severity)">
+                                            @result.Severity
+                                        </span>
+                                    </td>
+                                    <td class="description-cell">@((MarkupString)Markdown.ToHtml(result.Description ?? ""))</td>
+                                </tr>
+                                @if (isExpanded && anyDetail)
+                                {
+                                    <tr class="expanded-row">
+                                        <td colspan="8">
+                                            <div class="expanded-detail">
+                                                @if (hasError)
+                                                {
+                                                    @* Surface the underlying SqlException so operators don't have to grep app-.log. *@
+                                                    <div class="detail-section detail-section--error">
+                                                        <strong>Error:</strong>
+                                                        <pre class="detail-error-text">@result.ErrorMessage</pre>
+                                                    </div>
+                                                }
+                                                @if (hasMsg && !hasError)
+                                                {
+                                                    <div class="detail-section">
+                                                        <strong>Message:</strong> @result.Message
+                                                    </div>
+                                                }
+                                                @if (hasDesc)
+                                                {
+                                                    <div class="detail-section">
+                                                        <strong>Description:</strong> 
+                                                        <div class="markdown-content">@((MarkupString)Markdown.ToHtml(result.Description ?? ""))</div>
+                                                    </div>
+                                                }
+                                                @if (hasRec)
+                                                {
+                                                    <div class="detail-section">
+                                                        <strong>Recommended Action:</strong> 
+                                                        <div class="markdown-content">@((MarkupString)Markdown.ToHtml(result.RecommendedAction ?? ""))</div>
+                                                    </div>
+                                                }
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                </ReportSectionWrapper>
+            }
+            else if (!State.IsRunning && State.HasRun)
+            {
+                <div class="no-checks">
+                    <p>No checks were executed. Make sure sql-checks.json is loaded with enabled checks.</p>
+                </div>
+            }
+
+            @if (!string.IsNullOrEmpty(State.StatusMessage))
+            {
+                <div class="status-message @State.StatusClass" role="status">
+                    @State.StatusMessage
+                </div>
+            }
+        </div>
+
+        <!-- Diagnostic Output Pane -->
+        @if (ShowDiagnosticPane)
+        {
+            <div class="qc-diag-pane">
+                <div class="diag-header">
+                    <span>Diagnostic Output</span>
+                    <div class="diag-header-actions">
+                        <button class="btn btn-sm" @onclick="() => State.ClearDiagLog()" title="Clear log">Clear</button>
+                        <button class="btn btn-sm" @onclick="ToggleDiagnosticPane" title="Close pane">X</button>
+                    </div>
+                </div>
+                <div class="diag-scroll" @ref="_diagScrollRef">
+                    @foreach (var entry in State.DiagLog)
+                    {
+                        <div class="diag-entry @entry.Level">
+                            <span class="diag-time">@entry.Timestamp.ToString("HH:mm:ss.fff")</span>
+                            <span class="diag-msg">@entry.Message</span>
+                        </div>
+                    }
+                    @if (State.DiagLog.Count == 0)
+                    {
+                        <div class="diag-empty">Run a check to see diagnostic output here.</div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+</div>
+}
+
+@code {
+    // Page-local UI only — not worth persisting across navigation
+    private PdfExportModal   _pdfModal       = default!;
+    private ElementReference _diagScrollRef;
+    private HashSet<string>  _expandedResults = new();
+    private bool             ShowDiagnosticPane;
+    private bool             _disposed;
+    private bool             _initialized;
+
+    // ── Report Page Editor ────────────────────────────────────────────────
+    private const bool        _editMode = false;
+    private List<ReportSection> _sections          = new();
+    private ReportSection?    _editingSection;
+    private bool              _showAddSection;
+    private ReportPageDefinition? _pageDef;
+
+    private static readonly List<string> AllNativeKeys =
+        new() { "server-selection", "summary-cards", "results-grid", "diagnostics" };
+
+    private static readonly List<ReportFieldInfo> _qcFields = new()
+    {
+        new() { Name = "CheckId",          Type = "string",   Description = "Unique identifier for the check",                     IsKey = true  },
+        new() { Name = "DisplayName",      Type = "string",   Description = "Human-readable check name",                          IsKey = false },
+        new() { Name = "Category",         Type = "string",   Description = "Check category (e.g. Security, Performance)",         IsKey = false },
+        new() { Name = "Severity",         Type = "string",   Description = "Finding severity: Critical, Warning, Info, Pass",     IsKey = false },
+        new() { Name = "Result",           Type = "string",   Description = "Raw result value or finding text",                    IsKey = false },
+        new() { Name = "Details",          Type = "string",   Description = "Extended description or recommendation",              IsKey = false },
+        new() { Name = "ServerName",       Type = "string",   Description = "SQL Server instance that produced this result",       IsKey = true  },
+        new() { Name = "RunDateUtc",       Type = "datetime", Description = "UTC timestamp when the check was executed",           IsKey = false },
+        new() { Name = "IsPass",           Type = "bit",      Description = "1 if the check passed, 0 if it raised a finding",     IsKey = false },
+        new() { Name = "ImplementationType", Type = "string", Description = "How the fix should be applied (e.g. Script, Config)", IsKey = false },
+        new() { Name = "SqlQuery",         Type = "string",   Description = "Suggested remediation SQL, if available",             IsKey = false },
+    };
+
+    private List<string> _availableNativeKeys =>
+        AllNativeKeys.Where(k => !_sections.Any(s => s.NativeKey == k && s.SectionType == "native")).ToList();
+
+    private ReportSection GetSection(string nativeKey)
+    {
+        var s = _sections.FirstOrDefault(x => x.NativeKey == nativeKey && x.SectionType == "native");
+        return s ?? new ReportSection { NativeKey = nativeKey, Title = nativeKey, SectionType = "native", Enabled = true };
+    }
+
+    private bool IsFirstSection(string nativeKey)
+    {
+        var ordered = _sections.OrderBy(s => s.Order).ToList();
+        var idx = ordered.FindIndex(s => s.NativeKey == nativeKey && s.SectionType == "native");
+        return idx <= 0;
+    }
+
+    private bool IsLastSection(string nativeKey)
+    {
+        var ordered = _sections.OrderBy(s => s.Order).ToList();
+        var idx = ordered.FindIndex(s => s.NativeKey == nativeKey && s.SectionType == "native");
+        return idx < 0 || idx == ordered.Count - 1;
+    }
+
+    private void LoadSections()
+    {
+        _pageDef = ReportPageCfg.GetPage("/audit");
+        _sections = _pageDef != null
+            ? _pageDef.Sections.OrderBy(s => s.Order).ToList()
+            : AllNativeKeys.Select((k, i) => new ReportSection { NativeKey = k, Title = k, SectionType = "native", Order = i, Enabled = true }).ToList();
+    }
+
+    private void MoveSection(ReportSection section, int direction)
+    {
+        if (_pageDef == null) return;
+        ReportPageCfg.MoveSection(_pageDef.Id, section.Id, direction);
+        LoadSections();
+        StateHasChanged();
+    }
+
+    private void DeleteSection(ReportSection section)
+    {
+        if (_pageDef == null) return;
+        ReportPageCfg.DeleteSection(_pageDef.Id, section.Id);
+        LoadSections();
+        StateHasChanged();
+    }
+
+    private void ToggleSection(ReportSection section)
+    {
+        if (_pageDef == null) return;
+        section.Enabled = !section.Enabled;
+        ReportPageCfg.UpsertSection(_pageDef.Id, section);
+        LoadSections();
+        StateHasChanged();
+    }
+
+    private void HandleSectionSaved(ReportSection section)
+    {
+        if (_pageDef == null) return;
+        ReportPageCfg.UpsertSection(_pageDef.Id, section);
+        LoadSections();
+        _editingSection = null;
+        StateHasChanged();
+    }
+
+    private void HandleSectionAdded(ReportSection section)
+    {
+        if (_pageDef == null) return;
+        section.Order = _sections.Count;
+        ReportPageCfg.UpsertSection(_pageDef.Id, section);
+        LoadSections();
+        _showAddSection = false;
+        StateHasChanged();
+    }
+
+    private void ResetSections()
+    {
+        // Remove all sections and let the service regenerate defaults
+        if (_pageDef == null) return;
+        foreach (var s in _sections.ToList())
+            ReportPageCfg.DeleteSection(_pageDef.Id, s.Id);
+        // Re-seed native keys
+        int i = 0;
+        foreach (var key in AllNativeKeys)
+            ReportPageCfg.UpsertSection(_pageDef.Id, new ReportSection
+            {
+                Id = Guid.NewGuid().ToString("N")[..8],
+                Title = key, NativeKey = key, SectionType = "native", Enabled = true, Order = i++
+            });
+        LoadSections();
+        StateHasChanged();
+    }
+
+    private List<ServerConnection> Connections => ConnectionManager.GetConnections();
+    private List<ServerConnection> EnabledConnections => ConnectionManager.GetEnabledConnections();
+    private int EnabledChecksCount => CheckRepo.GetEnabledChecks().Count;
+    private int EnabledServersCount => EnabledConnections.SelectMany(c => c.GetServerList()).Count();
+
+    /// <summary>Id/Label pairs fed to ServerSelector in id-keyed mode.
+    /// Shows all connections (including disabled) — same set as the old &lt;select&gt;.</summary>
+    private IReadOnlyList<(string Id, string Label)> ConnectionItems =>
+        Connections
+            .Select(conn =>
+            {
+                var label = conn.ServerNames + " (" + conn.AuthenticationDisplay + ")"
+                    + (conn.Environment != null ? $" [{conn.Environment}]" : "")
+                    + (!conn.IsEnabled ? " [DISABLED]" : "");
+                return (conn.Id, label);
+            })
+            .ToList();
+
+    /// <summary>Called by ServerSelector when the user picks a chip or "All servers".
+    /// Maps to the same RunAllServers / SelectedConnectionId / OnServerSelected pattern.</summary>
+    private void OnConnectionSelected(string? id)
+    {
+        if (string.IsNullOrEmpty(id))
+        {
+            State.RunAllServers        = true;
+            State.SelectedConnectionId = string.Empty;
+        }
+        else
+        {
+            State.RunAllServers        = false;
+            State.SelectedConnectionId = id;
+        }
+        OnServerSelected();
+    }
+
+    // SKIP semantics: CheckExecutionService maps permission-denied SqlExceptions to
+    // Passed=true with Message starting "SKIP — ...". The verdict-tier model also
+    // emits "SKIP" verdicts from the check SQL itself. Both flow through this helper.
+    private static bool IsSkipped(SQLTriage.Data.Models.CheckResult r) =>
+        !string.IsNullOrEmpty(r.Message)
+        && r.Message.TrimStart().StartsWith("SKIP", StringComparison.OrdinalIgnoreCase);
+
+    private int PassedCount  => State.Results.Count(r => r.Passed && !IsSkipped(r) && string.IsNullOrEmpty(r.ErrorMessage));
+    private int FailedCount  => State.Results.Count(r => !r.Passed && string.IsNullOrEmpty(r.ErrorMessage));
+    private int ErrorCount   => State.Results.Count(r => !string.IsNullOrEmpty(r.ErrorMessage));
+    private int SkippedCount => State.Results.Count(IsSkipped);
+
+    private List<string> ServersInResults =>
+        State.Results.Select(r => r.InstanceName).Distinct().OrderBy(s => s).ToList();
+
+    private IEnumerable<CheckResult> FilteredResults
+    {
+        get
+        {
+            var filtered = State.Results.AsEnumerable();
+
+            filtered = State.SelectedFilter switch
+            {
+                "passed"  => filtered.Where(r => r.Passed && !IsSkipped(r) && string.IsNullOrEmpty(r.ErrorMessage)),
+                "failed"  => filtered.Where(r => !r.Passed && string.IsNullOrEmpty(r.ErrorMessage)),
+                "errors"  => filtered.Where(r => !string.IsNullOrEmpty(r.ErrorMessage)),
+                "skipped" => filtered.Where(IsSkipped),
+                _        => filtered
+            };
+
+            if (!string.IsNullOrEmpty(State.SelectedCategory))
+                filtered = filtered.Where(r => r.Category.Equals(State.SelectedCategory, StringComparison.OrdinalIgnoreCase));
+
+            if (!string.IsNullOrEmpty(State.SelectedServer))
+                filtered = filtered.Where(r => r.InstanceName.Equals(State.SelectedServer, StringComparison.OrdinalIgnoreCase));
+
+            if (!string.IsNullOrEmpty(State.SelectedSeverity))
+                filtered = filtered.Where(r => r.Severity.Equals(State.SelectedSeverity, StringComparison.OrdinalIgnoreCase));
+
+            return filtered;
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (UserSettings.GetFastAppLoad()) await Task.Yield();
+        LoadSections();
+        ShowDiagnosticPane = UserSettings.GetShowDiagnosticPane();
+        await CheckRepo.LoadChecksAsync();
+
+        // Re-attach to state change notifications each time the page mounts
+        State.StateChanged += OnStateChanged;
+
+        // Keyboard shortcuts
+        ShortcutSvc.OnRunRequested       += OnShortcutRun;
+        ShortcutSvc.OnExportPdfRequested += OnShortcutPdf;
+
+        // Ensure categories are populated (may have been loaded on a prior visit)
+        if (State.Categories.Count == 0)
+            State.Categories = CheckRepo.GetEnabledChecks()
+                .Select(c => c.Category).Distinct().OrderBy(c => c).ToList();
+
+        RefreshDemoStatus();
+        _initialized = true;
+    }
+
+    // Multi-server run mode (All scope). Mirrors Raw Diagnostics.
+    private bool _parallelMode;
+    private int _parallelDelaySeconds = 2;
+
+    public void Dispose()
+    {
+        _disposed = true;
+        State.StateChanged -= OnStateChanged;
+        ShortcutSvc.OnRunRequested       -= OnShortcutRun;
+        ShortcutSvc.OnExportPdfRequested -= OnShortcutPdf;
+    }
+
+    private async Task OnShortcutRun() => await InvokeAsync(RunChecks);
+    private Task OnShortcutPdf()       { InvokeAsync(ExportQuestPdf); return Task.CompletedTask; }
+
+    private void OnStateChanged()
+    {
+        if (!_disposed)
+            InvokeAsync(StateHasChanged);
+    }
+
+    private void OnServerSelected() => StateHasChanged();
+
+    private void SetFilterFromCard(string filter)
+    {
+        State.SelectedFilter = State.SelectedFilter == filter ? "all" : filter;
+        StateHasChanged();
+    }
+
+    private void ToggleDiagnosticPane()
+    {
+        ShowDiagnosticPane = !ShowDiagnosticPane;
+        UserSettings.SetShowDiagnosticPane(ShowDiagnosticPane);
+    }
+
+    private async Task AutoExportQuickCheckResults()
+    {
+        var settings = UserSettings.GetSettings();
+        if (!settings.AutoExportQuickCheckCsv && !settings.AutoExportQuickCheckPdf) return;
+        if (State.Results.Count == 0) return;
+
+        var outputDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "output");
+        Directory.CreateDirectory(outputDir);
+        var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+
+        if (settings.AutoExportQuickCheckCsv)
+        {
+            try
+            {
+                var csv = new System.Text.StringBuilder();
+                csv.AppendLine("Instance,CheckId,CheckName,Category,Severity,Passed,ActualValue,ExpectedValue,Message,DurationMs,ExecutedAt");
+                foreach (var r in State.Results)
+                {
+                    var msg = (r.Message ?? "").Replace("\"", "\"\"");
+                    csv.AppendLine($"\"{r.InstanceName}\",\"{r.CheckId}\",\"{r.CheckName}\",\"{r.Category}\",\"{r.Severity}\",{r.Passed},{r.ActualValue},{r.ExpectedValue},\"{msg}\",{r.DurationMs},\"{r.ExecutedAt:o}\"");
+                }
+                var fileName = $"QuickCheck_{timestamp}.csv";
+                await File.WriteAllTextAsync(Path.Combine(outputDir, fileName), csv.ToString());
+                Toast.ShowInfo($"Audit Assessment CSV exported: {fileName}");
+            }
+            catch (Exception ex)
+            {
+                Toast.ShowError($"CSV export failed: {ex.Message}");
+            }
+        }
+
+        if (settings.AutoExportQuickCheckPdf)
+        {
+            try
+            {
+                await Task.Delay(500); // let UI render final state
+                if (!PrintSvc.IsAvailable)
+                {
+                    await PrintSvc.PrintViaBrowserAsync(JSRuntime);
+                    Toast.ShowInfo("Browser print dialog opened for PDF export.");
+                }
+                else
+                {
+                    var fileName = $"QuickCheck_{timestamp}.pdf";
+                    var qkEnv = ConnectionManager.GetConnection(State.SelectedConnectionId)?.Environment;
+                    var qkWatermark = ServerEnvironment.RequiresWatermark(new[] { qkEnv });
+                    if (qkWatermark)
+                        await JSRuntime.InvokeVoidAsync("eval", "document.body.classList.add('has-draft-watermark');");
+                    var (success, path, error) = await PrintSvc.PrintToPdfAsync(
+                        fileName,
+                        printBackgrounds: false,
+                        orientation: Microsoft.Web.WebView2.Core.CoreWebView2PrintOrientation.Portrait);
+                    if (qkWatermark)
+                        await JSRuntime.InvokeVoidAsync("eval", "document.body.classList.remove('has-draft-watermark');");
+                    if (success)
+                        Toast.ShowInfo($"Audit Assessment PDF exported: {fileName}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Toast.ShowError($"PDF export failed: {ex.Message}");
+            }
+        }
+    }
+
+    // QuestPDF export of the audit (corpus) findings — deterministic, server-side; replaces the
+    // browser-print path. Saves to .\output next to the exe.
+    private async Task ExportQuestPdf()
+    {
+        try
+        {
+            if (State.Results.Count == 0) { Toast.ShowInfo("No results to export — run an assessment first."); return; }
+
+            var cb      = UserSettings.GetColorBlindMode();
+            var servers = State.Results.Select(r => r.InstanceName).Where(s => !string.IsNullOrEmpty(s))
+                                       .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(s => s).ToList();
+            var runId   = Guid.NewGuid().ToString("N")[..8];
+            var nowUtc  = DateTime.UtcNow;
+            var tz      = TimeZoneInfo.Local.StandardName;
+            var scope   = servers.Count == 1 ? servers[0] : $"{servers.Count} servers";
+
+            var serverSet = servers.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var envs = ConnectionManager.GetConnections()
+                .Where(c => c.GetServerList().Any(n => serverSet.Contains(n))).Select(c => c.Environment).ToList();
+            var watermark = UserSettings.GetReportDraftWatermark()
+                            && SQLTriage.Data.Models.ServerEnvironment.RequiresWatermark(envs);
+
+            var report = new SQLTriage.Data.Services.FindingsReport
+            {
+                Meta = new SQLTriage.Data.Services.AssessmentMeta
+                {
+                    Title        = "Audit Assessment",
+                    Company      = UserSettings.GetReportCompanyName(),
+                    Subtitle     = servers.Count == 1 ? servers[0] : $"{servers.Count} servers · {string.Join(", ", servers.Take(6))}",
+                    Engine       = "Corpus audit checks",
+                    GeneratedUtc = nowUtc.ToString("yyyy-MM-ddTHH:mmZ"),
+                    TimezoneId   = tz,
+                    RunId        = runId,
+                    ColorBlind   = cb,
+                    Watermark    = watermark,
+                    FooterMeta   = $"SQLTriage — Audit Assessment — {scope} — {nowUtc:yyyy-MM-ddTHH:mmZ} ({tz}) — Run {runId}",
+                },
+                Stats =
+                {
+                    new() { Label = "PASSED",   Value = PassedCount.ToString(),       Color = SQLTriage.Data.Services.AssessmentPdf.Pass(cb) },
+                    new() { Label = "FINDINGS", Value = FailedCount.ToString(),       Color = SQLTriage.Data.Services.AssessmentPdf.Fail(cb) },
+                    new() { Label = "ERRORS",   Value = ErrorCount.ToString(),        Color = SQLTriage.Data.Services.AssessmentPdf.Fail(cb) },
+                    new() { Label = "SERVERS",  Value = State.ServersTested.ToString(), Color = "#2563eb" },
+                },
+            };
+
+            foreach (var r in State.Results)
+            {
+                var st = (r.IsCorrupted || !string.IsNullOrEmpty(r.ErrorMessage)) ? SQLTriage.Data.Services.FindingState.Error
+                       : IsSkipped(r)                                              ? SQLTriage.Data.Services.FindingState.Skipped
+                       : r.Passed                                                  ? SQLTriage.Data.Services.FindingState.Pass
+                       :                                                             SQLTriage.Data.Services.FindingState.Fail;
+                var detail = !string.IsNullOrEmpty(r.ErrorMessage) ? r.ErrorMessage
+                           : !string.IsNullOrEmpty(r.Message)      ? r.Message
+                           :                                          (r.Description ?? "");
+                report.Findings.Add(new SQLTriage.Data.Services.FindingRow
+                {
+                    State = st, Name = r.CheckName, Category = r.Category, Severity = r.Severity,
+                    Server = r.InstanceName, Detail = detail,
+                });
+            }
+
+            var bytes = await Task.Run(() => SQLTriage.Data.Services.AssessmentPdf.BuildFindingsReport(report));
+            var dir   = System.IO.Path.Combine(AppContext.BaseDirectory, "output");
+            System.IO.Directory.CreateDirectory(dir);
+            var label = (servers.Count == 1 ? servers[0] : $"{servers.Count}servers").Replace("\\", "_").Replace("/", "_");
+            var path  = System.IO.Path.Combine(dir, $"AuditAssessment_{label}_{nowUtc:yyyyMMdd_HHmmssZ}_{runId}.pdf");
+            await System.IO.File.WriteAllBytesAsync(path, bytes);
+            Toast.ShowSuccess("PDF exported", System.IO.Path.GetFileName(path));
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("PDF export failed", ex.Message);
+        }
+    }
+
+    // Microsoft-style executive briefing: dark cover → narrative summary → one page per
+    // focus area. Reuses the same data as ExportQuestPdf but wires the real recommendation
+    // text (RecommendedAction) through to the briefing's plain-English recommendations.
+    private async Task ExportExecutiveBriefing()
+    {
+        try
+        {
+            if (State.Results.Count == 0) { Toast.ShowInfo("No results to export — run an assessment first."); return; }
+
+            var cb      = UserSettings.GetColorBlindMode();
+            var servers = State.Results.Select(r => r.InstanceName).Where(s => !string.IsNullOrEmpty(s))
+                                       .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(s => s).ToList();
+            var runId   = Guid.NewGuid().ToString("N")[..8];
+            var nowUtc  = DateTime.UtcNow;
+            var tz      = TimeZoneInfo.Local.StandardName;
+            var scope   = servers.Count == 1 ? servers[0] : $"{servers.Count} servers";
+
+            var serverSet = servers.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var envs = ConnectionManager.GetConnections()
+                .Where(c => c.GetServerList().Any(n => serverSet.Contains(n))).Select(c => c.Environment).ToList();
+            var watermark = UserSettings.GetReportDraftWatermark()
+                            && SQLTriage.Data.Models.ServerEnvironment.RequiresWatermark(envs);
+
+            var briefing = new SQLTriage.Data.Services.BriefingReport
+            {
+                Meta = new SQLTriage.Data.Services.AssessmentMeta
+                {
+                    Title        = "Audit Assessment",
+                    Company      = UserSettings.GetReportCompanyName(),
+                    Subtitle     = servers.Count == 1 ? servers[0] : $"{servers.Count} servers · {string.Join(", ", servers.Take(6))}",
+                    Engine       = "Corpus audit checks",
+                    GeneratedUtc = nowUtc.ToString("yyyy-MM-ddTHH:mmZ"),
+                    TimezoneId   = tz,
+                    RunId        = runId,
+                    ColorBlind   = cb,
+                    Watermark    = watermark,
+                    FooterMeta   = $"SQLTriage — Executive Briefing — {scope} — {nowUtc:yyyy-MM-ddTHH:mmZ} ({tz}) — Run {runId}",
+                },
+            };
+
+            foreach (var r in State.Results)
+            {
+                var st = (r.IsCorrupted || !string.IsNullOrEmpty(r.ErrorMessage)) ? SQLTriage.Data.Services.FindingState.Error
+                       : IsSkipped(r)                                              ? SQLTriage.Data.Services.FindingState.Skipped
+                       : r.Passed                                                  ? SQLTriage.Data.Services.FindingState.Pass
+                       :                                                             SQLTriage.Data.Services.FindingState.Fail;
+                briefing.Findings.Add(new SQLTriage.Data.Services.FindingRow
+                {
+                    State          = st,
+                    Name           = r.CheckName,
+                    Category       = r.Category,
+                    Severity       = r.Severity,
+                    Server         = r.InstanceName,
+                    Detail         = r.Message,
+                    Recommendation = !string.IsNullOrWhiteSpace(r.RecommendedAction) ? r.RecommendedAction! : (r.Description ?? ""),
+                });
+            }
+
+            var bytes = await Task.Run(() => SQLTriage.Data.Services.AssessmentPdf.BuildExecutiveBriefing(briefing));
+            var dir   = System.IO.Path.Combine(AppContext.BaseDirectory, "output");
+            System.IO.Directory.CreateDirectory(dir);
+            var label = (servers.Count == 1 ? servers[0] : $"{servers.Count}servers").Replace("\\", "_").Replace("/", "_");
+            var path  = System.IO.Path.Combine(dir, $"ExecutiveBriefing_{label}_{nowUtc:yyyyMMdd_HHmmssZ}_{runId}.pdf");
+            await System.IO.File.WriteAllBytesAsync(path, bytes);
+            Toast.ShowSuccess("Briefing exported", System.IO.Path.GetFileName(path));
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("Briefing export failed", ex.Message);
+        }
+    }
+
+    private async Task OnPdfConfirmed(PdfExportSettings settings)
+    {
+        await Task.Delay(350);
+        try
+        {
+            if (!PrintSvc.IsAvailable)
+            {
+                // Server mode — use browser's native print dialog
+                await PrintSvc.PrintViaBrowserAsync(JSRuntime);
+                Toast.ShowInfo("Browser print dialog opened — use 'Save as PDF' to export.");
+                return;
+            }
+
+            var orientation = settings.LandscapeOrientation
+                ? Microsoft.Web.WebView2.Core.CoreWebView2PrintOrientation.Landscape
+                : Microsoft.Web.WebView2.Core.CoreWebView2PrintOrientation.Portrait;
+            var qcEnv2 = ConnectionManager.GetConnection(State.SelectedConnectionId)?.Environment;
+            var qcWatermark2 = !settings.SuppressWatermark &&
+                ServerEnvironment.RequiresWatermark(new[] { qcEnv2 });
+            if (qcWatermark2)
+                await JSRuntime.InvokeVoidAsync("eval", "document.body.classList.add('has-draft-watermark');");
+            var (success, path, error) = await PrintSvc.PrintToPdfAsync(
+                settings.FileName,
+                printBackgrounds: settings.PrintBackgrounds,
+                orientation: orientation);
+            if (qcWatermark2)
+                await JSRuntime.InvokeVoidAsync("eval", "document.body.classList.remove('has-draft-watermark');");
+            if (success && path != null)
+                Toast.ShowSuccess($"PDF saved: {System.IO.Path.GetFileName(path)}");
+            else
+                Toast.ShowError($"PDF export failed: {error ?? "WebView not ready."}");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"PDF export error: {ex.Message}");
+        }
+    }
+
+    private void ClearResults()
+    {
+        State.ClearResults();
+        _expandedResults.Clear();
+        StateHasChanged();
+    }
+
+    private void ToggleExpandResult(string key)
+    {
+        if (!_expandedResults.Remove(key))
+            _expandedResults.Add(key);
+    }
+
+    // When true, the next run reloads the check catalog from sql-checks.json
+    // first — picks up a corpus regeneration without an app restart (the
+    // catalog is otherwise read once at startup by CheckRepositoryService).
+    private bool _forceFresh;
+
+    // Cancellation source for the in-flight run. Cancelled by the Stop button;
+    // the executor checks the token between checks and aborts SQL reads cleanly.
+    private CancellationTokenSource? _runCts;
+
+    private void StopRun() => _runCts?.Cancel();
+
+    // ── Corpus DEMO allocation (signed in the bundle; metered by DemoRunLedger) ──
+    // Snapshot shown on the page so the operator sees their community allowance.
+    private SQLTriage.Data.Services.Licensing.DemoRunDecision? _demoStatus;
+    private bool _demoUnlimited = true;          // true on a full bundle / DevBridge → no banner
+    private bool _demoMultiAllowed = true;       // false when N==1 → "Run all servers" is gated
+
+    private void RefreshDemoStatus()
+    {
+        _demoStatus       = DemoLedger.Status();
+        _demoUnlimited    = _demoStatus.Unlimited;
+        _demoMultiAllowed = _demoStatus.Unlimited || _demoStatus.Allowance > 1;
+    }
+
+    // Pre-computed banner copy (no inline formatting in markup — RZ1006 discipline).
+    private string DemoBannerText
+    {
+        get
+        {
+            var s = _demoStatus;
+            if (s is null || s.Unlimited) return string.Empty;
+            var noun = s.Allowance == 1 ? "1 SQL instance" : $"{s.Allowance} SQL instances";
+            var remaining = Math.Max(0, s.Allowance - s.InstancesUsed);
+            if (remaining > 0)
+                return $"Community version: corpus assessment covers {noun} per 24h — {remaining} remaining in this window. " +
+                       "Raw Diagnostics and Vulnerability Assessment are unlimited.";
+            if (s.UnlocksUtc is { } u)
+            {
+                var ts = u - DateTime.UtcNow;
+                var when = ts.TotalHours >= 1 ? $"{(int)ts.TotalHours}h {ts.Minutes}m" : $"{Math.Max(1, ts.Minutes)}m";
+                return $"Community version: corpus allowance ({noun}/24h) used. Next unlocks in {when}, " +
+                       "or get in touch with Adrian for a larger allocation.";
+            }
+            return $"Community version: corpus assessment covers {noun} per 24h.";
+        }
+    }
+
+    // Decide whether the requested corpus run is admissible against the demo allowance.
+    // Returns false + a human reason when blocked. Diagnostics/VA never call this.
+    private bool TryAdmitDemoRun(IReadOnlyList<string> instances, out string blockReason)
+    {
+        blockReason = string.Empty;
+        var status = DemoLedger.Status();
+        if (status.Unlimited) return true;
+
+        // Multi-instance corpus run requested but the allowance is a single instance.
+        if (instances.Count > status.Allowance)
+        {
+            blockReason =
+                $"Community version: the corpus assessment covers {status.Allowance} instance(s) per 24h — " +
+                $"you selected {instances.Count}. Run one instance at a time, or get in touch with Adrian " +
+                "for a larger allocation. (Raw Diagnostics and Vulnerability Assessment have no such limit.)";
+            return false;
+        }
+
+        // Single (or within-allowance) request — each must be admissible by the ledger.
+        foreach (var inst in instances)
+        {
+            var decision = DemoLedger.CanRun(inst);
+            if (!decision.Allowed)
+            {
+                blockReason = decision.BlockReason ?? "Community demo allowance reached for this 24h window.";
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private async Task RunChecks()
+    {
+        if (!RbacService.HasPermission(UserState.Role, "execute_checks"))
+        {
+            Toast.ShowWarning("Insufficient permissions. Operator role required to run checks.");
+            return;
+        }
+        if (_forceFresh)
+        {
+            await CheckRepo.LoadChecksAsync();
+            State.AddDiagEntry($"=== Catalog reloaded: {CheckRepo.Checks.Count} checks ===", "info");
+        }
+        CheckExecutor.ClearAllResults();
+        _runCts?.Dispose();
+        _runCts = new CancellationTokenSource();
+        var ct = _runCts.Token;
+        State.IsRunning       = true;
+        State.Progress        = 0;
+        State.ProgressMessage = "Starting...";
+        State.Results.Clear();
+        State.ServerSummaries.Clear();
+        State.ClearDiagLog();
+        State.ExecutionTime   = DateTime.Now;
+        State.ServersTested   = 0;
+        State.NotifyStateChanged();
+
+        var overallStart = DateTime.UtcNow;
+        State.AddDiagEntry("=== Audit Assessment started ===", "info");
+
+        try
+        {
+            var targets = new List<(ServerConnection Connection, string Server)>();
+
+            if (State.RunAllServers)
+            {
+                foreach (var conn in EnabledConnections)
+                    foreach (var server in conn.GetServerList())
+                        targets.Add((conn, server));
+            }
+            else
+            {
+                var connection = ConnectionManager.GetConnection(State.SelectedConnectionId);
+                if (connection == null)
+                {
+                    State.StatusMessage = "Connection not found.";
+                    State.StatusClass   = "error";
+                    State.AddDiagEntry("ERROR: Connection not found", "error");
+                    return;
+                }
+                foreach (var server in connection.GetServerList())
+                    targets.Add((connection, server));
+            }
+
+            if (targets.Count == 0)
+            {
+                State.StatusMessage = "No servers to check.";
+                State.StatusClass   = "error";
+                State.AddDiagEntry("ERROR: No servers to check", "error");
+                return;
+            }
+
+            // ── Corpus DEMO gate ──────────────────────────────────────────────
+            // The community bundle meters corpus runs to N distinct instances / 24h (signed in
+            // the bundle; tier-agnostic; full bundle ships N=0 = unlimited → no-op). Diagnostics
+            // and VA are NOT gated — only this corpus run. Block BEFORE any target executes.
+            var demoInstances = targets.Select(t => t.Server)
+                                       .Distinct(StringComparer.OrdinalIgnoreCase)
+                                       .ToList();
+            if (!TryAdmitDemoRun(demoInstances, out var demoBlock))
+            {
+                State.StatusMessage = demoBlock;
+                State.StatusClass   = "warning";
+                State.AddDiagEntry($"DEMO LIMIT: {demoBlock}", "warning");
+                Toast.ShowWarning(demoBlock);
+                return;
+            }
+
+            State.AddDiagEntry($"Targets: {targets.Count} server(s)", "info");
+
+            Func<SqlCheck, bool> filter = c => true;
+
+            var checksToRun = CheckRepo.GetEnabledChecks().Where(filter).ToList();
+            State.AddDiagEntry($"Checks to execute per server: {checksToRun.Count}", "info");
+
+            foreach (var g in checksToRun.GroupBy(c => c.Category).OrderBy(g => g.Key))
+                State.AddDiagEntry($"  Category '{g.Key}': {g.Count()} checks", "info");
+            foreach (var g in checksToRun.GroupBy(c => c.Severity).OrderBy(g => g.Key))
+                State.AddDiagEntry($"  Severity '{g.Key}': {g.Count()} checks", "info");
+            foreach (var g in checksToRun.GroupBy(c => c.ExecutionType ?? "scalar").OrderBy(g => g.Key))
+                State.AddDiagEntry($"  ExecutionType '{g.Key}': {g.Count()} checks", "info");
+
+            var allResults    = new List<CheckResult>();
+            int totalTargets  = targets.Count;
+            int completedTargets = 0;
+            var resultsLock = new object();
+
+            // Per-target work. Shared-state mutations (summaries, results, progress) are
+            // guarded by resultsLock so the parallel path is safe; CheckExecutor itself
+            // throttles per-instance queries and rents from the shared pool, so total
+            // concurrency stays bounded (servers × per-instance throttle ≤ pool cap).
+            async Task RunOneTarget(ServerConnection conn, string server)
+            {
+                lock (resultsLock)
+                {
+                    State.ProgressMessage = $"Checking {server}...";
+                    State.AddDiagEntry($"--- Connecting to {server} ---", "info");
+                }
+                State.NotifyStateChanged();
+
+                try
+                {
+                    var summary = await CheckExecutor.ExecuteChecksAsync(conn, server, filter, ct);
+                    var serverResults = CheckExecutor.GetResults(server, 1000);
+                    lock (resultsLock)
+                    {
+                        State.ServerSummaries.Add(summary);
+                        State.AddDiagEntry($"--- {server} complete: {summary.Passed} pass, {summary.Failed} fail, {summary.Errors} err ({summary.Duration.TotalSeconds:F1}s) ---", "info");
+                        allResults.AddRange(serverResults);
+                    }
+                    Toast.ShowInfo($"Audit Assessment: {server} — {summary.Passed} pass, {summary.Failed} fail ({summary.Duration.TotalSeconds:F1}s)");
+                }
+                catch (OperationCanceledException)
+                {
+                    lock (resultsLock)
+                        State.AddDiagEntry($"--- {server} cancelled ---", "warning");
+                }
+                catch (Exception ex)
+                {
+                    lock (resultsLock)
+                    {
+                        State.AddDiagEntry($"ERROR on {server}: {ex.Message}", "error");
+                        State.ServerSummaries.Add(new CheckExecutionSummary
+                        {
+                            InstanceName  = server,
+                            StartedAt     = DateTime.UtcNow,
+                            CompletedAt   = DateTime.UtcNow,
+                            Errors        = CheckRepo.GetEnabledChecks().Count
+                        });
+                    }
+                }
+
+                lock (resultsLock)
+                {
+                    completedTargets++;
+                    State.Progress      = (int)((double)completedTargets / totalTargets * 100);
+                    State.ServersTested = completedTargets;
+                }
+                State.NotifyStateChanged();
+            }
+
+            if (_parallelMode && targets.Count > 1)
+            {
+                // Start each server concurrently, staggered by the configured delay.
+                var tasks = new List<Task>();
+                for (int i = 0; i < targets.Count; i++)
+                {
+                    var (conn, server) = targets[i];
+                    var startDelay = TimeSpan.FromSeconds(_parallelDelaySeconds * i);
+                    tasks.Add(Task.Run(async () =>
+                    {
+                        if (startDelay > TimeSpan.Zero) await Task.Delay(startDelay, ct);
+                        if (ct.IsCancellationRequested) return;
+                        await RunOneTarget(conn, server);
+                    }, ct));
+                }
+                // Stagger tasks cancelled mid-delay surface OCE here; per-target
+                // failures are already caught inside RunOneTarget, so swallow only
+                // the cancellation and keep whatever partial results completed.
+                try { await Task.WhenAll(tasks); }
+                catch (OperationCanceledException) { }
+            }
+            else
+            {
+                foreach (var (conn, server) in targets)
+                {
+                    if (ct.IsCancellationRequested) break;
+                    await RunOneTarget(conn, server);
+                }
+            }
+
+            State.Results = allResults;
+            State.HasRun  = true;
+
+            // Claim the demo slot only for instances that ACTUALLY produced results — a
+            // cancelled/failed instance that never ran must not burn the operator's allowance.
+            // RecordRun is idempotent for an already-claimed instance and a no-op when unlimited.
+            foreach (var inst in allResults.Select(r => r.InstanceName)
+                                           .Where(n => !string.IsNullOrWhiteSpace(n))
+                                           .Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                DemoLedger.RecordRun(inst!);
+            }
+            RefreshDemoStatus();
+
+            var totalDuration     = DateTime.UtcNow - overallStart;
+            State.ExecutionDuration = $"{totalDuration.TotalSeconds:F1}s";
+            State.Categories = State.Results.Select(r => r.Category).Distinct().OrderBy(c => c).ToList();
+
+            if (ct.IsCancellationRequested)
+            {
+                State.StatusMessage = $"Audit Assessment cancelled — {State.Results.Count} partial result(s) from {State.ServersTested} server(s).";
+                State.StatusClass   = "warning";
+                State.AddDiagEntry("=== Cancelled by user ===", "warning");
+            }
+            else if (State.Results.Count > 0)
+            {
+                State.StatusMessage = $"Audit Assessment completed: {PassedCount} passed, {FailedCount} failed, {ErrorCount} errors across {State.ServersTested} server(s)";
+                State.StatusClass   = FailedCount > 0 || ErrorCount > 0 ? "warning" : "success";
+            }
+            else
+            {
+                State.StatusMessage = "No checks were executed. Make sure checks are enabled in sql-checks.json";
+                State.StatusClass   = "warning";
+            }
+
+            State.AddDiagEntry($"=== Complete: {State.Results.Count} total results in {State.ExecutionDuration} ===", "info");
+
+            var overallDuration = DateTime.UtcNow - overallStart;
+            var anyFailures = FailedCount > 0 || ErrorCount > 0;
+            AuditLog.LogScriptExecution("QuickCheck", string.Join(",", targets.Select(t => t.Server)),
+                !anyFailures, overallDuration,
+                anyFailures ? $"{FailedCount} failed, {ErrorCount} errors" : null);
+
+            await AutoExportQuickCheckResults();
+        }
+        catch (Exception ex)
+        {
+            State.StatusMessage = $"Error running checks: {ex.Message}";
+            State.StatusClass   = "error";
+            State.AddDiagEntry($"FATAL ERROR: {ex.Message}", "error");
+            System.Diagnostics.Debug.WriteLine($"[QuickCheck] Error: {ex}");
+        }
+        finally
+        {
+            State.IsRunning       = false;
+            State.Progress        = 100;
+            State.ProgressMessage = "Complete";
+            _runCts?.Dispose();
+            _runCts = null;
+            State.NotifyStateChanged();
+        }
+    }
+
+    private string GetRowClass(CheckResult result)
+    {
+        if (!string.IsNullOrEmpty(result.ErrorMessage)) return "row-error";
+        return result.Passed ? "row-passed" : "row-failed";
+    }
+
+    private string GetSeverityClass(string severity) =>
+        severity?.ToLower() switch
+        {
+            "critical" => "severity-critical",
+            "warning"  => "severity-warning",
+            "info"     => "severity-info",
+            _          => "severity-default"
+        };
+}
+

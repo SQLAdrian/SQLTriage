@@ -1,0 +1,82 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using System.Linq
+@using SQLTriage.Data
+@using SQLTriage.Data.Services
+@implements IDisposable
+@inject IServerContextService ServerCtx
+@inject ServerConnectionManager Conns
+@inject PowerEstimateService Power
+
+@* Selected-server power / green chip (Phase 1). Reacts to the PRIMARY server
+   selector (IServerContextService — the "Connected to:" dropdown). Relative-first +
+   honest: a modelled estimate, never a measurement. Hidden until a reachable server
+   is selected (with the default-to-first-server behaviour, that's on boot). *@
+@if (_est is not null)
+{
+    <span class="status-bar-sep" aria-hidden="true">&middot;</span>
+    <span class="status-bar-power" title="@Tooltip()">
+        <i class="fa-solid fa-leaf" aria-hidden="true"></i>
+        <span class="status-bar-power-text">@ChipLabel()</span>
+    </span>
+}
+
+@code {
+    private ServerPowerEstimate? _est;
+
+    protected override void OnInitialized()
+    {
+        ServerCtx.OnServerChanged += OnServerChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Catch a server already selected before this component subscribed
+        // (the default-to-first-server fire happens during init).
+        if (firstRender) await Load();
+    }
+
+    private void OnServerChanged() => _ = InvokeAsync(Load);
+
+    private async Task Load()
+    {
+        var name = ResolveServerName();
+        ServerPowerEstimate? est = null;
+        if (name is not null)
+        {
+            try { est = await Power.GetEstimateAsync(name); } catch { est = null; }
+        }
+        _est = est;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    // CurrentServerId is a connection GUID; resolve it to a server name for the estimate.
+    private string? ResolveServerName()
+    {
+        var id = ServerCtx.CurrentServerId;
+        if (string.IsNullOrEmpty(id)) return null;
+        var conn = Conns.GetConnections().FirstOrDefault(c => c.Id == id);
+        return conn?.GetServerList().FirstOrDefault();
+    }
+
+    // Physical host -> show the (hedged) watt band; VM/managed -> lead with the relative
+    // tuning headroom, since an absolute per-VM watt number is not observable.
+    private string ChipLabel()
+    {
+        if (_est is null) return "";
+        return _est.AbsoluteApplicable && _est.ServerWattsLow.HasValue
+            ? $"~{_est.ServerWattsLow}–{_est.ServerWattsHigh} W"
+            : $"tuning headroom ~{_est.TuneCutLowPct}–{_est.TuneCutHighPct}%";
+    }
+
+    private string Tooltip()
+    {
+        if (_est is null) return "";
+        var draw = _est.AbsoluteApplicable
+            ? $"  ·  est. draw {_est.AbsoluteBand}"
+            : _est.IsManaged ? "  ·  managed service: no host to measure"
+                             : "  ·  virtual host: absolute watts not observable";
+        return $"{_est.RelativeHeadline}{draw}  ·  SQL ~{_est.SqlCpuPct:0}% of host CPU  ·  modelled estimate, not a measurement ({_est.HardwareClass})";
+    }
+
+    public void Dispose() => ServerCtx.OnServerChanged -= OnServerChanged;
+}

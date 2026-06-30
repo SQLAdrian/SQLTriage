@@ -1,0 +1,609 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/index-analysis"
+@using SQLTriage.Components.Shared
+<PageTitle>SQLTriage - Index Analysis</PageTitle>
+@using System.Data
+@using Microsoft.Data.SqlClient
+@using System.Text
+@inject ServerConnectionManager ConnectionManager
+@inject IDbConnectionFactory ConnectionFactory
+@inject ToastService Toast
+@inject IJSRuntime JS
+
+<div class="ia-page page-fade-in">
+    <div class="ia-header">
+        <i class="fa-solid fa-list-ol"></i>
+        <h2>Index Analysis</h2>
+    </div>
+    <div class="ia-subtitle">Missing, unused, and fragmented indexes</div>
+
+    @* ── Server selector ── *@
+    <div class="ia-toolbar">
+        <div class="toolbar-group">
+            <label class="toolbar-label">Server:</label>
+            <select class="toolbar-select" value="@_selectedServerId" @onchange="OnServerChanged">
+                <option value="">— select server —</option>
+                @foreach (var conn in _enabledConnections)
+                {
+                    <option value="@conn.Id">@conn.ServerNames</option>
+                }
+            </select>
+        </div>
+        <button class="ia-btn ia-btn-primary" @onclick="RefreshAll" disabled="@(_loading || string.IsNullOrEmpty(_selectedServerId))">
+            <i class="fa-solid @(_loading ? "fa-spinner fa-spin" : "fa-rotate")"></i>
+            @(_loading ? "Loading…" : "Analyze")
+        </button>
+    </div>
+
+    @* ── Error ── *@
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="ia-error">
+            <i class="fa-solid fa-triangle-exclamation"></i> @_error
+        </div>
+    }
+
+    @* ── Loading ── *@
+    @if (_loading)
+    {
+        <LoadingSpinner Message="Querying index DMVs…" />
+    }
+    else if (_hasLoaded)
+    {
+        @* ── Summary cards ── *@
+        <div class="ia-summary">
+            <div class="ia-summary-card">
+                <div class="ia-summary-label">Missing Indexes</div>
+                <div class="ia-summary-value @(_missingIndexes.Count > 0 ? "warn" : "")">@_missingIndexes.Count</div>
+            </div>
+            <div class="ia-summary-card">
+                <div class="ia-summary-label">Unused Indexes</div>
+                <div class="ia-summary-value @(_unusedIndexes.Count > 10 ? "warn" : "")">@_unusedIndexes.Count</div>
+            </div>
+            <div class="ia-summary-card">
+                <div class="ia-summary-label">Fragmented Indexes</div>
+                <div class="ia-summary-value @(_fragmentedIndexes.Count > 0 ? "warn" : "")">@_fragmentedIndexes.Count</div>
+            </div>
+        </div>
+
+        @* ── Tabs ── *@
+        <div class="ia-tabs">
+            <button class="ia-tab @(_activeTab == "missing" ? "active" : "")" @onclick='() => _activeTab = "missing"'>
+                <i class="fa-solid fa-plus-circle"></i> Missing Indexes
+                <span class="ia-tab-badge">@_missingIndexes.Count</span>
+            </button>
+            <button class="ia-tab @(_activeTab == "unused" ? "active" : "")" @onclick='() => _activeTab = "unused"'>
+                <i class="fa-solid fa-minus-circle"></i> Unused Indexes
+                <span class="ia-tab-badge">@_unusedIndexes.Count</span>
+            </button>
+            <button class="ia-tab @(_activeTab == "fragmented" ? "active" : "")" @onclick='() => _activeTab = "fragmented"'>
+                <i class="fa-solid fa-scissors"></i> Fragmented Indexes
+                <span class="ia-tab-badge">@_fragmentedIndexes.Count</span>
+            </button>
+        </div>
+
+        @* ── Missing Indexes Tab ── *@
+        @if (_activeTab == "missing")
+        {
+            @if (_missingIndexes.Count == 0)
+            {
+                <div class="ia-empty">
+                    <i class="fa-solid fa-check-circle"></i>
+                    <p>No missing index suggestions found.</p>
+                </div>
+            }
+            else
+            {
+                <div class="ia-table-wrapper">
+                    <table class="ia-table">
+                        <thead>
+                            <tr>
+                                <th>Database</th>
+                                <th>Table</th>
+                                <th>Key Columns</th>
+                                <th>Included Columns</th>
+                                <th>Impact Score</th>
+                                <th>User Hits</th>
+                                <th>Avg Impact %</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var idx in _missingIndexes)
+                            {
+                                var isExpanded = _expandedMissing == idx.ImpactScore + idx.Database + idx.Table;
+                                <tr class="clickable" @onclick="() => ToggleMissing(idx)">
+                                    <td>@idx.Database</td>
+                                    <td>@idx.Table</td>
+                                    <td title="@idx.KeyColumns">@Truncate(idx.KeyColumns, 50)</td>
+                                    <td title="@idx.IncludedColumns">@Truncate(idx.IncludedColumns, 40)</td>
+                                    <td class="@GetImpactClass(idx.ImpactScore)">@idx.ImpactScore.ToString("N0")</td>
+                                    <td>@idx.UserHits.ToString("N0")</td>
+                                    <td>@idx.AvgImpact.ToString("F2")%</td>
+                                </tr>
+                                @if (isExpanded)
+                                {
+                                    <tr class="ia-script-row">
+                                        <td colspan="7">
+                                            <div class="ia-script-content">
+                                                <pre class="ia-script-text">@idx.SuggestedScript</pre>
+                                                <div class="ia-script-actions">
+                                                    <button class="ia-btn" @onclick="() => CopyToClipboard(idx.SuggestedScript)" @onclick:stopPropagation>
+                                                        <i class="fa-solid fa-copy"></i> Copy Script
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        }
+
+        @* ── Unused Indexes Tab ── *@
+        @if (_activeTab == "unused")
+        {
+            @if (_unusedIndexes.Count == 0)
+            {
+                <div class="ia-empty">
+                    <i class="fa-solid fa-check-circle"></i>
+                    <p>No unused indexes found. All indexes are being utilized.</p>
+                </div>
+            }
+            else
+            {
+                <div class="ia-table-wrapper">
+                    <table class="ia-table">
+                        <thead>
+                            <tr>
+                                <th>Database</th>
+                                <th>Table</th>
+                                <th>Index Name</th>
+                                <th>Type</th>
+                                <th>User Reads</th>
+                                <th>User Writes</th>
+                                <th>Size MB</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var idx in _unusedIndexes)
+                            {
+                                var isHighOverhead = idx.UserWrites > 1000;
+                                <tr class="@(isHighOverhead ? "ia-overhead" : "")">
+                                    <td>@idx.Database</td>
+                                    <td>@idx.Table</td>
+                                    <td>@idx.IndexName</td>
+                                    <td>@idx.IndexType</td>
+                                    <td>@idx.UserReads.ToString("N0")</td>
+                                    <td>@idx.UserWrites.ToString("N0")</td>
+                                    <td>@idx.SizeMB.ToString("F2")</td>
+                                    <td>
+                                        <button class="ia-btn" @onclick="() => CopyDropScript(idx)" title="Copy DROP INDEX script">
+                                            <i class="fa-solid fa-trash-can"></i> DROP script
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        }
+
+        @* ── Fragmented Indexes Tab ── *@
+        @if (_activeTab == "fragmented")
+        {
+            @if (_fragmentedIndexes.Count == 0)
+            {
+                <div class="ia-empty">
+                    <i class="fa-solid fa-check-circle"></i>
+                    <p>No significantly fragmented indexes found.</p>
+                </div>
+            }
+            else
+            {
+                <div style="margin-bottom: 12px;">
+                    <button class="ia-btn ia-btn-primary" @onclick="ShowMaintenanceScript">
+                        <i class="fa-solid fa-wrench"></i> Generate Maintenance Script
+                    </button>
+                </div>
+                <div class="ia-table-wrapper">
+                    <table class="ia-table">
+                        <thead>
+                            <tr>
+                                <th>Database</th>
+                                <th>Table</th>
+                                <th>Index Name</th>
+                                <th>Frag %</th>
+                                <th>Pages</th>
+                                <th>Size MB</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var idx in _fragmentedIndexes)
+                            {
+                                <tr>
+                                    <td>@idx.Database</td>
+                                    <td>@idx.Table</td>
+                                    <td>@idx.IndexName</td>
+                                    <td class="@GetFragClass(idx.FragPercent)">@idx.FragPercent.ToString("F1")%</td>
+                                    <td>@idx.PageCount.ToString("N0")</td>
+                                    <td>@idx.SizeMB.ToString("F2")</td>
+                                    <td>
+                                        <span class="ia-action-badge @(idx.Action == "REBUILD" ? "ia-action-rebuild" : "ia-action-reorganize")">
+                                            @idx.Action
+                                        </span>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        }
+    }
+    else if (!_loading && string.IsNullOrEmpty(_error))
+    {
+        <div class="ia-empty">
+            <i class="fa-solid fa-list-ol"></i>
+            <p>Select a server and click <strong>Analyze</strong> to inspect index health.</p>
+        </div>
+    }
+</div>
+
+@* ── Maintenance script modal ── *@
+@if (_showMaintModal)
+{
+    <div class="ia-maint-modal-overlay" @onclick="() => _showMaintModal = false">
+        <div class="ia-maint-modal" @onclick:stopPropagation>
+            <div class="ia-maint-modal-header">
+                <h3><i class="fa-solid fa-wrench" style="margin-right: 8px; color: var(--accent);"></i>Index Maintenance Script</h3>
+                <button class="panel-maximize-close" @onclick="() => _showMaintModal = false" title="Close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="ia-maint-modal-body">
+                <pre>@_maintenanceScript</pre>
+            </div>
+            <div class="ia-maint-modal-footer">
+                <button class="ia-btn" @onclick="() => _showMaintModal = false">Close</button>
+                <button class="ia-btn ia-btn-primary" @onclick="() => CopyToClipboard(_maintenanceScript)">
+                    <i class="fa-solid fa-copy"></i> Copy All
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<ServerConnection> _enabledConnections = new();
+    private string _selectedServerId = "";
+    private bool _loading;
+    private bool _hasLoaded;
+    private string? _error;
+    private string _activeTab = "missing";
+    private string? _expandedMissing;
+
+    private List<MissingIndexRow> _missingIndexes = new();
+    private List<UnusedIndexRow> _unusedIndexes = new();
+    private List<FragIndexRow> _fragmentedIndexes = new();
+
+    private bool _showMaintModal;
+    private string _maintenanceScript = "";
+
+    protected override void OnInitialized()
+    {
+        _enabledConnections = ConnectionManager.GetEnabledConnections();
+        var current = ConnectionManager.CurrentServer;
+        if (current != null && current.IsEnabled)
+            _selectedServerId = current.Id;
+        else if (_enabledConnections.Count > 0)
+            _selectedServerId = _enabledConnections[0].Id;
+    }
+
+    private void OnServerChanged(ChangeEventArgs e)
+    {
+        _selectedServerId = e.Value?.ToString() ?? "";
+        _hasLoaded = false;
+        _missingIndexes.Clear();
+        _unusedIndexes.Clear();
+        _fragmentedIndexes.Clear();
+        _error = null;
+    }
+
+    private async Task RefreshAll()
+    {
+        if (string.IsNullOrEmpty(_selectedServerId)) return;
+
+        var conn = ConnectionManager.GetConnection(_selectedServerId);
+        if (conn == null)
+        {
+            _error = "Selected server connection not found.";
+            return;
+        }
+
+        _loading = true;
+        _error = null;
+        _hasLoaded = false;
+        StateHasChanged();
+
+        try
+        {
+            var serverList = conn.GetServerList();
+            if (serverList.Count == 0)
+            {
+                _error = "No servers configured for this connection.";
+                return;
+            }
+
+            var serverName = serverList[0];
+            // The three index queries below run concurrently on ONE connection
+            // (Task.WhenAll), so MARS must be enabled or SQL throws
+            // "connection does not support MultipleActiveResultSets".
+            var connStr = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(
+                conn.GetConnectionString(serverName, "master")) { MultipleActiveResultSets = true }.ConnectionString;
+
+            await Task.Run(async () =>
+            {
+                using var sqlConn = new SqlConnection(connStr);
+                await sqlConn.OpenAsync();
+
+                var missingTask = QueryMissingIndexes(sqlConn);
+                var unusedTask = QueryUnusedIndexes(sqlConn);
+                var fragTask = QueryFragmentedIndexes(sqlConn);
+
+                await Task.WhenAll(missingTask, unusedTask, fragTask);
+
+                _missingIndexes = await missingTask;
+                _unusedIndexes = await unusedTask;
+                _fragmentedIndexes = await fragTask;
+            });
+
+            _hasLoaded = true;
+        }
+        catch (SqlException ex)
+        {
+            _error = $"SQL Error: {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            _error = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private static async Task<List<MissingIndexRow>> QueryMissingIndexes(SqlConnection conn)
+    {
+        const string sql = @"
+SELECT TOP 50
+    DB_NAME(mid.database_id) AS [Database],
+    OBJECT_NAME(mid.object_id, mid.database_id) AS [Table],
+    ISNULL(mid.equality_columns, '') AS EqualityColumns,
+    ISNULL(mid.inequality_columns, '') AS InequalityColumns,
+    ISNULL(mid.included_columns, '') AS IncludedColumns,
+    migs.user_seeks + migs.user_scans AS UserHits,
+    CAST(migs.avg_user_impact AS DECIMAL(6,2)) AS AvgImpact,
+    CAST((migs.user_seeks + migs.user_scans) * migs.avg_total_user_cost * migs.avg_user_impact AS DECIMAL(18,0)) AS ImpactScore,
+    'CREATE NONCLUSTERED INDEX IX_' + REPLACE(OBJECT_NAME(mid.object_id, mid.database_id), ' ', '_') + '_' + REPLACE(REPLACE(ISNULL(mid.equality_columns, ''), '[', ''), ']', '') +
+    ' ON ' + OBJECT_NAME(mid.object_id, mid.database_id) +
+    ' (' + ISNULL(mid.equality_columns, '') +
+    CASE WHEN mid.inequality_columns IS NOT NULL THEN ', ' + mid.inequality_columns ELSE '' END + ')' +
+    CASE WHEN mid.included_columns IS NOT NULL THEN ' INCLUDE (' + mid.included_columns + ')' ELSE '' END AS SuggestedScript
+FROM sys.dm_db_missing_index_details mid
+INNER JOIN sys.dm_db_missing_index_groups mig ON mid.index_handle = mig.index_handle
+INNER JOIN sys.dm_db_missing_index_group_stats migs ON mig.index_group_handle = migs.group_handle
+WHERE mid.database_id > 4
+ORDER BY ImpactScore DESC";
+
+        var results = new List<MissingIndexRow>();
+        using var cmd = new SqlCommand(sql, conn) { CommandTimeout = 30 };
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            results.Add(new MissingIndexRow
+            {
+                Database = reader.GetString(0),
+                Table = reader.IsDBNull(1) ? "" : reader.GetString(1),
+                KeyColumns = CombineColumns(
+                    reader.GetString(2),
+                    reader.IsDBNull(3) ? "" : reader.GetString(3)),
+                IncludedColumns = reader.IsDBNull(4) ? "" : reader.GetString(4),
+                UserHits = reader.GetInt64(5),
+                AvgImpact = reader.GetDecimal(6),
+                ImpactScore = reader.GetDecimal(7),
+                SuggestedScript = reader.IsDBNull(8) ? "" : reader.GetString(8)
+            });
+        }
+        return results;
+    }
+
+    private static async Task<List<UnusedIndexRow>> QueryUnusedIndexes(SqlConnection conn)
+    {
+        const string sql = @"
+SELECT TOP 50
+    DB_NAME(us.database_id) AS [Database],
+    OBJECT_NAME(us.object_id, us.database_id) AS [Table],
+    i.name AS IndexName,
+    i.type_desc AS IndexType,
+    us.user_seeks + us.user_scans + us.user_lookups AS UserReads,
+    us.user_updates AS UserWrites,
+    CAST(ps.used_page_count * 8.0 / 1024 AS DECIMAL(10,2)) AS SizeMB
+FROM sys.dm_db_index_usage_stats us
+INNER JOIN sys.indexes i ON us.object_id = i.object_id AND us.index_id = i.index_id
+LEFT JOIN sys.dm_db_partition_stats ps ON us.object_id = ps.object_id AND us.index_id = ps.index_id
+WHERE us.database_id = DB_ID()
+    AND i.type_desc <> 'HEAP'
+    AND i.is_primary_key = 0
+    AND i.is_unique_constraint = 0
+    AND us.user_seeks + us.user_scans + us.user_lookups = 0
+    AND us.user_updates > 0
+ORDER BY us.user_updates DESC";
+
+        var results = new List<UnusedIndexRow>();
+        using var cmd = new SqlCommand(sql, conn) { CommandTimeout = 30 };
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            results.Add(new UnusedIndexRow
+            {
+                Database = reader.GetString(0),
+                Table = reader.IsDBNull(1) ? "" : reader.GetString(1),
+                IndexName = reader.IsDBNull(2) ? "(unnamed)" : reader.GetString(2),
+                IndexType = reader.GetString(3),
+                UserReads = reader.GetInt64(4),
+                UserWrites = reader.GetInt64(5),
+                SizeMB = reader.GetDecimal(6)
+            });
+        }
+        return results;
+    }
+
+    private static async Task<List<FragIndexRow>> QueryFragmentedIndexes(SqlConnection conn)
+    {
+        const string sql = @"
+SELECT TOP 30
+    DB_NAME(ips.database_id) AS [Database],
+    OBJECT_NAME(ips.object_id, ips.database_id) AS [Table],
+    i.name AS IndexName,
+    ips.avg_fragmentation_in_percent AS FragPercent,
+    ips.page_count AS PageCount,
+    CAST(ips.page_count * 8.0 / 1024 AS DECIMAL(10,2)) AS SizeMB,
+    CASE WHEN ips.avg_fragmentation_in_percent > 30 THEN 'REBUILD' ELSE 'REORGANIZE' END AS RecommendedAction
+FROM sys.dm_db_index_physical_stats(DB_ID(), NULL, NULL, NULL, 'LIMITED') ips
+INNER JOIN sys.indexes i ON ips.object_id = i.object_id AND ips.index_id = i.index_id
+WHERE ips.avg_fragmentation_in_percent > 5
+    AND ips.page_count > 1000
+    AND i.type_desc <> 'HEAP'
+ORDER BY ips.avg_fragmentation_in_percent DESC";
+
+        var results = new List<FragIndexRow>();
+        using var cmd = new SqlCommand(sql, conn) { CommandTimeout = 60 };
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            results.Add(new FragIndexRow
+            {
+                Database = reader.GetString(0),
+                Table = reader.IsDBNull(1) ? "" : reader.GetString(1),
+                IndexName = reader.IsDBNull(2) ? "(unnamed)" : reader.GetString(2),
+                FragPercent = (double)reader.GetDecimal(3),
+                PageCount = reader.GetInt64(4),
+                SizeMB = reader.GetDecimal(5),
+                Action = reader.GetString(6)
+            });
+        }
+        return results;
+    }
+
+    private void ToggleMissing(MissingIndexRow idx)
+    {
+        var key = idx.ImpactScore + idx.Database + idx.Table;
+        _expandedMissing = _expandedMissing == key ? null : key;
+    }
+
+    private async Task CopyToClipboard(string text)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+            Toast.ShowSuccess("Copied to clipboard");
+        }
+        catch
+        {
+            Toast.ShowError("Failed to copy — check browser permissions");
+        }
+    }
+
+    private async Task CopyDropScript(UnusedIndexRow idx)
+    {
+        var script = $"DROP INDEX [{idx.IndexName}] ON [{idx.Database}].[dbo].[{idx.Table}]; -- {idx.SizeMB:F2} MB wasted, {idx.UserWrites:N0} writes, 0 reads";
+        await CopyToClipboard(script);
+    }
+
+    private void ShowMaintenanceScript()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("-- Index Maintenance Script");
+        sb.AppendLine($"-- Generated: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+        sb.AppendLine($"-- Fragmented indexes: {_fragmentedIndexes.Count}");
+        sb.AppendLine();
+
+        foreach (var idx in _fragmentedIndexes)
+        {
+            if (idx.Action == "REBUILD")
+            {
+                sb.AppendLine($"ALTER INDEX [{idx.IndexName}] ON [{idx.Database}].[dbo].[{idx.Table}] REBUILD;");
+            }
+            else
+            {
+                sb.AppendLine($"ALTER INDEX [{idx.IndexName}] ON [{idx.Database}].[dbo].[{idx.Table}] REORGANIZE;");
+            }
+        }
+
+        _maintenanceScript = sb.ToString();
+        _showMaintModal = true;
+    }
+
+    private static string CombineColumns(string equality, string inequality)
+    {
+        if (string.IsNullOrEmpty(inequality)) return equality;
+        if (string.IsNullOrEmpty(equality)) return inequality;
+        return equality + ", " + inequality;
+    }
+
+    private static string Truncate(string value, int maxLen)
+    {
+        if (string.IsNullOrEmpty(value)) return "";
+        return value.Length <= maxLen ? value : value[..maxLen] + "…";
+    }
+
+    private static string GetImpactClass(decimal score) =>
+        score > 1_000_000 ? "ia-impact-high" :
+        score > 100_000 ? "ia-impact-medium" :
+        "ia-impact-low";
+
+    private static string GetFragClass(double pct) =>
+        pct > 30 ? "ia-frag-high" :
+        pct > 10 ? "ia-frag-medium" :
+        "ia-frag-low";
+
+    private class MissingIndexRow
+    {
+        public string Database { get; set; } = "";
+        public string Table { get; set; } = "";
+        public string KeyColumns { get; set; } = "";
+        public string IncludedColumns { get; set; } = "";
+        public long UserHits { get; set; }
+        public decimal AvgImpact { get; set; }
+        public decimal ImpactScore { get; set; }
+        public string SuggestedScript { get; set; } = "";
+    }
+
+    private class UnusedIndexRow
+    {
+        public string Database { get; set; } = "";
+        public string Table { get; set; } = "";
+        public string IndexName { get; set; } = "";
+        public string IndexType { get; set; } = "";
+        public long UserReads { get; set; }
+        public long UserWrites { get; set; }
+        public decimal SizeMB { get; set; }
+    }
+
+    private class FragIndexRow
+    {
+        public string Database { get; set; } = "";
+        public string Table { get; set; } = "";
+        public string IndexName { get; set; } = "";
+        public double FragPercent { get; set; }
+        public long PageCount { get; set; }
+        public decimal SizeMB { get; set; }
+        public string Action { get; set; } = "";
+    }
+}

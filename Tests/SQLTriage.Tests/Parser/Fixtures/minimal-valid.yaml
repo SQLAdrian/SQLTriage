@@ -1,0 +1,27 @@
+---
+id: SQLT-CORE-00010
+title: Minimal valid check fixture
+category: Performance
+severity: Medium
+source:
+  framework: sp_Blitz
+  ref: 10
+applicability:
+  min_version: null
+  engine_editions: [SqlServer]
+  scope: instance
+result_contract: verdict
+framework_mappings:
+  - framework: NIST SP 800-53 Rev 5
+    control_id: 'CM-6'
+    mapping_type: direct_match
+provenance: custom
+---
+
+## Intent
+Smallest viable V2 Markdown+frontmatter check for parser tests.
+
+## Query
+```sql
+SELECT CASE WHEN 1=0 THEN 1 ELSE 0 END
+```

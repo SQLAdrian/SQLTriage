@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+{% include head-custom.html %}
+<title>{{ page.title | default: site.title }}</title>
+<link rel="preconnect" href="https://rsms.me/">
+<link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+<link rel="stylesheet" href="{{ '/assets/css/site.css' | relative_url }}">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="container header-inner">
+    <a href="{{ '/' | relative_url }}" class="brand">
+      <span class="brand-mark">SQLTriage</span>
+    </a>
+    <nav class="site-nav" aria-label="Primary">
+      <a href="#what-it-is">What it is</a>
+      <a href="#frameworks">Frameworks</a>
+      <a href="#checks">Checks</a>
+      <a href="#how-it-compares">Compare</a>
+      <a href="https://github.com/SQLAdrian/SQLTriage" class="nav-cta">GitHub →</a>
+    </nav>
+  </div>
+</header>
+<main id="main">
+{{ content }}
+</main>
+<footer class="site-footer">
+  <div class="container footer-inner">
+    <div class="footer-col">
+      <div class="brand-mark small">SQLTriage</div>
+      <p class="muted">Free and open-source under the GNU GPL v3 license. Built by <a href="https://sqldba.org">Adrian Sullivan</a>.</p>
+    </div>
+    <div class="footer-col">
+      <h4>Project</h4>
+      <ul>
+        <li><a href="https://github.com/SQLAdrian/SQLTriage">GitHub repository</a></li>
+        <li><a href="https://github.com/SQLAdrian/SQLTriage/releases">Releases</a></li>
+        <li><a href="https://github.com/SQLAdrian/SQLTriage/issues">Issues</a></li>
+      </ul>
+    </div>
+    <div class="footer-col">
+      <h4>About</h4>
+      <ul>
+        <li><a href="https://sqldba.org">sqldba.org consultancy</a></li>
+        <li><a href="mailto:adrian@sqldba.org">Contact</a></li>
+      </ul>
+    </div>
+  </div>
+</footer>
+</body>
+</html>

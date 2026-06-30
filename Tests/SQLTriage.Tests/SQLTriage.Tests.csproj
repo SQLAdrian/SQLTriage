@@ -1,0 +1,73 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!-- Mirror the app's build profile so this property is in scope for the gating
+         ItemGroup below. The -p:SQLTriageProfile=community flag CI passes is global,
+         so it reaches here too; default 'full' matches the app's default. -->
+    <SQLTriageProfile Condition="'$(SQLTriageProfile)' == ''">full</SQLTriageProfile>
+  </PropertyGroup>
+
+  <!-- Community builds Compile-Remove never-ship modules from SQLTriage.dll
+       (Mcp\** and Data\Services\RiskReport\** — see buildprofile.targets). The tests
+       that bind those types can't compile against a community SQLTriage.dll, so gate
+       them out under the same condition. They still run in full/dev builds (the
+       always-on local gate) where the types exist. -->
+  <ItemGroup Condition="'$(SQLTriageProfile)' == 'community'">
+    <Compile Remove="Mcp\McpReadOnlyServiceTests.cs" />
+    <Compile Remove="RiskAssessmentPdfTests.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.0" />
+    <PackageReference Include="FluentAssertions" Version="6.12.0" />
+    <PackageReference Include="MailKit" Version="4.16.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+    <!-- Pin transitive versions to match what the main project's Azure.Core /
+         DacFx chain pulls in (v10). Without these explicit references the test
+         project resolves v8 transitively, producing CS1705 "higher version than
+         referenced" errors when linking against SQLTriage.dll. 2026-05-15. -->
+    <!-- Bumped 10.0.3 -> 10.0.7 so the test build satisfies ModelContextProtocol's
+         transitive floor (Logging.Abstractions/Options >= 10.0.7 via the read-only
+         Mcp/ surface) without an NU1605 downgrade-as-error. Still v10, so the
+         original "match the main project's v10 chain" intent holds. -->
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.7" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.7" />
+    <PackageReference Include="System.Text.Json" Version="10.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\SQLTriage.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <!-- Copy golden snapshot files alongside the test runner so tests can read them. -->
+  <ItemGroup>
+    <Content Include="..\..\Config\roadmap-mapping.json" Link="Config\roadmap-mapping.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="GoldenFiles\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- B2 Slice 1: source parser fixtures -->
+    <Content Include="Parser\Fixtures\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,189 @@
+/* In the name of God, the Merciful, the Compassionate */
+/* Landing hero (home route "/" when LandingView = "hero").
+   Reuses the Guide design system (.guide-hero / .gh-word / .guide-stat-ribbon /
+   .guide-marquee-card / .guide-section) and adds only the hero-specific bits:
+   the eyebrow chip, the 3-pillar grid, the Audit->Score->Roadmap flow band,
+   and the CTA buttons. Canonical CSS vars only; colour-blind-safe. */
+
+.landing-root {
+    max-width: 1100px;
+}
+
+/* ── Eyebrow chip ── */
+.landing-eyebrow {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    color: var(--accent);
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+    border-radius: 999px;
+    padding: 4px 14px;
+    margin-bottom: 18px;
+}
+
+.landing-hero .gh-sub {
+    color: var(--text-secondary);
+}
+
+/* ── CTA row ── */
+.landing-cta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 26px;
+    align-items: center;
+}
+
+.landing-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    text-decoration: none;
+    border-radius: 8px;
+    padding: 12px 22px;
+    border: 1px solid transparent;
+    transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+}
+.landing-cta:hover { transform: translateY(-2px); }
+
+.landing-cta-primary {
+    background: var(--accent);
+    color: #fff;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+}
+.landing-cta-primary:hover { background: var(--accent-strong, var(--accent)); }
+
+.landing-cta-secondary {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border-color: var(--border);
+}
+.landing-cta-secondary:hover { border-color: var(--accent); }
+
+.landing-cta-tertiary {
+    background: transparent;
+    color: var(--text-secondary);
+    padding: 12px 10px;
+}
+.landing-cta-tertiary:hover { color: var(--accent); }
+
+/* ── 3 Pillars ── */
+.landing-pillars {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px;
+    margin: 48px 0 8px;
+}
+.landing-pillar {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-soft);
+    border-radius: 12px;
+    padding: 24px;
+    transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.landing-pillar:hover { border-color: var(--border); transform: translateY(-2px); }
+.landing-pillar-icon {
+    font-size: 1.4rem;
+    color: var(--accent);
+    margin-bottom: 12px;
+}
+.landing-pillar h3 {
+    margin: 0 0 8px;
+    font-size: 1.05rem;
+    color: var(--text-primary);
+}
+.landing-pillar p {
+    margin: 0 0 14px;
+    font-size: 0.88rem;
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+.landing-pillar-link {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--accent);
+    text-decoration: none;
+}
+.landing-pillar-link:hover { text-decoration: underline; }
+.landing-pillar-link i { margin-left: 4px; font-size: 0.72rem; }
+
+/* ── Audit -> Score -> Roadmap flow band ── */
+.landing-flow {
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 44px 0;
+    padding: 28px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-soft);
+    border-radius: 12px;
+}
+.landing-flow-step {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    flex: 1 1 220px;
+    max-width: 280px;
+    padding: 0 14px;
+}
+.landing-flow-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+.landing-flow-title {
+    font-size: 1.0rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+.landing-flow-hint {
+    font-size: 0.82rem;
+    line-height: 1.45;
+    color: var(--text-secondary);
+}
+.landing-flow-arrow {
+    align-self: center;
+    color: var(--border-strong);
+    font-size: 0.95rem;
+}
+
+/* ── Final CTA ── */
+.landing-final-cta {
+    text-align: center;
+    margin: 56px 0 32px;
+    padding: 40px 24px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-soft);
+    border-radius: 14px;
+}
+.landing-final-cta h2 {
+    margin: 0 0 6px;
+    font-size: 1.5rem;
+    color: var(--text-primary);
+}
+.landing-final-cta p {
+    margin: 0 0 22px;
+    font-size: 0.92rem;
+    color: var(--text-secondary);
+}
+.landing-final-cta .landing-cta { margin: 0 auto; }
+
+/* ── Responsive ── */
+@media (max-width: 880px) {
+    .landing-pillars { grid-template-columns: 1fr; }
+    .landing-flow-arrow { transform: rotate(90deg); }
+}

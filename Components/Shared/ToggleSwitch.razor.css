@@ -1,0 +1,51 @@
+/* Toggle Switch Component CSS */
+.toggle-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.toggle-disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.toggle-label {
+    font-size: 13px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.toggle-track {
+    width: 36px;
+    height: 20px;
+    border-radius: 10px;
+    background: var(--bg-tertiary, #2c2c2c);
+    border: 1px solid var(--border, #444);
+    position: relative;
+    transition: background 0.25s, border-color 0.25s;
+    flex-shrink: 0;
+}
+
+.toggle-track-on {
+    background: var(--accent, #0ea5e9);
+    border-color: var(--accent, #0ea5e9);
+}
+
+.toggle-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--text-secondary, #9ca3af);
+    position: absolute;
+    top: 1px;
+    left: 1px;
+    transition: transform 0.25s, background 0.25s;
+}
+
+.toggle-thumb-on {
+    transform: translateX(16px);
+    background: white;
+}

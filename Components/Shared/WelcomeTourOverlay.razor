@@ -1,0 +1,151 @@
+@*--*--*--*--*--*--*--*--*--*--*--*--*--*--*--*--*--*--*--*--*--*--*--*--*--*--
+    In the name of God, the Merciful, the Compassionate.
+
+    First-launch guided tour. Renders a bottom-centered narration card while
+    the WelcomeTourService walks the 7 marquee stops. Subscribes to
+    WelcomeTourService.StateChanged for re-renders.
+--*--*--*--*--*--*--*--*--*--*--*--*--*--*--*--*--*--*--*--*--*--*--*--*--*--*@
+
+@using SQLTriage.Data.Services
+@using Microsoft.JSInterop
+@inject WelcomeTourService Tour
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+@if (Tour.IsActive && Tour.CurrentStop is not null)
+{
+    <div class="welcome-tour-card" role="dialog" aria-live="polite"
+         aria-labelledby="welcome-tour-title" aria-describedby="welcome-tour-narration">
+        <div class="welcome-tour-header">
+            <div class="welcome-tour-progress">
+                Stop @(Tour.CurrentIndex + 1) <span class="welcome-tour-progress-sep">of</span> @Tour.TotalStops
+                <div class="welcome-tour-progress-bar">
+                    <div class="welcome-tour-progress-fill"
+                         style="width:@_progressPct%"></div>
+                </div>
+            </div>
+            <button class="welcome-tour-close" @onclick="Tour.Stop"
+                    title="Skip the tour" aria-label="Skip the tour">&#x2715;</button>
+        </div>
+        <h3 id="welcome-tour-title" class="welcome-tour-title">@Tour.CurrentStop.Title</h3>
+        <p id="welcome-tour-narration" class="welcome-tour-narration">@Tour.CurrentStop.Narration</p>
+        <div class="welcome-tour-controls">
+            <button class="welcome-tour-btn welcome-tour-btn-ghost"
+                    @onclick="Tour.Previous"
+                    disabled="@(Tour.CurrentIndex == 0)"
+                    title="Previous stop (←)">
+                <i class="fa-solid fa-chevron-left"></i> Prev
+            </button>
+            <button class="welcome-tour-btn welcome-tour-btn-ghost"
+                    @onclick="Tour.ToggleAutoAdvance"
+                    title="@(Tour.AutoAdvance ? "Pause auto-advance" : "Resume auto-advance")">
+                <i class="fa-solid @(Tour.AutoAdvance ? "fa-pause" : "fa-play")"></i>
+                @(Tour.AutoAdvance ? "Pause" : "Play")
+            </button>
+            <button class="welcome-tour-btn welcome-tour-btn-primary"
+                    @onclick="Tour.Next"
+                    title="Next stop (→)">
+                @(_isLastStop ? "Finish" : "Next")
+                @if (!_isLastStop)
+                {
+                    <i class="fa-solid fa-chevron-right"></i>
+                }
+            </button>
+        </div>
+    </div>
+}
+
+@code {
+    // Pre-computed in OnParametersSet so we don't inline ToString/format
+    // in markup (per feedback_razor_nested_quotes).
+    private double _progressPct;
+    private bool _isLastStop;
+
+    private DotNetObjectReference<WelcomeTourOverlay>? _dotNetRef;
+    private bool _keyboardRegistered;
+
+    protected override void OnInitialized()
+    {
+        Tour.StateChanged += OnStateChanged;
+        ComputeDerived();
+    }
+
+    private async void OnStateChanged()
+    {
+        ComputeDerived();
+        await SyncKeyboardRegistrationAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void ComputeDerived()
+    {
+        if (Tour.IsActive)
+        {
+            _progressPct = ((Tour.CurrentIndex + 1) * 100.0) / Tour.TotalStops;
+            _isLastStop = Tour.CurrentIndex == Tour.TotalStops - 1;
+        }
+        else
+        {
+            _progressPct = 0;
+            _isLastStop = false;
+        }
+    }
+
+    // Match the JS-side dotNetRef to whether the tour is active. Idempotent.
+    private async Task SyncKeyboardRegistrationAsync()
+    {
+        try
+        {
+            // Flag is claimed/released BEFORE the JS await so a second
+            // StateChanged firing mid-await (e.g. auto-advance) short-circuits
+            // instead of double-invoking. setDotNetRef/clearDotNetRef are
+            // idempotent, and the catch leaves the flag reflecting intent so
+            // the next StateChanged retries if JS wasn't ready.
+            if (Tour.IsActive && !_keyboardRegistered)
+            {
+                _dotNetRef ??= DotNetObjectReference.Create(this);
+                _keyboardRegistered = true;
+                await JS.InvokeVoidAsync("welcomeTourInterop.setDotNetRef", _dotNetRef);
+            }
+            else if (!Tour.IsActive && _keyboardRegistered)
+            {
+                _keyboardRegistered = false;
+                await JS.InvokeVoidAsync("welcomeTourInterop.clearDotNetRef");
+            }
+        }
+        catch { /* JS not ready yet — next StateChanged retries */ }
+    }
+
+    [JSInvokable]
+    public Task OnKeyPrevious()
+    {
+        Tour.Previous();
+        return Task.CompletedTask;
+    }
+
+    [JSInvokable]
+    public Task OnKeyNext()
+    {
+        Tour.Next();
+        return Task.CompletedTask;
+    }
+
+    [JSInvokable]
+    public Task OnKeyStop()
+    {
+        Tour.Stop();
+        return Task.CompletedTask;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Tour.StateChanged -= OnStateChanged;
+        try
+        {
+            if (_keyboardRegistered)
+                await JS.InvokeVoidAsync("welcomeTourInterop.clearDotNetRef");
+        }
+        catch { /* shutting down — JS may be gone */ }
+        _dotNetRef?.Dispose();
+    }
+}

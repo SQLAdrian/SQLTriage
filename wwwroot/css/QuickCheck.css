@@ -1,0 +1,180 @@
+/* Quick Check page — defensive table layout fixes
+ *
+ * Symptom: status badges (Pass/Fail pills) escaping their <td> cells and
+ * floating along the right edge of the viewport. Lock down table semantics
+ * so nothing in the cascade can promote cells to block-level or float them.
+ */
+
+.results-grid {
+    overflow-x: auto;          /* allow horizontal scroll, not overflow */
+    overflow-y: visible;
+    max-width: 100%;
+}
+
+.results-table {
+    display: table !important;
+    width: 100%;
+    table-layout: auto;
+    border-collapse: collapse;
+}
+
+.results-table thead {
+    display: table-header-group !important;
+}
+
+.results-table tbody {
+    display: table-row-group !important;
+}
+
+.results-table tr {
+    display: table-row !important;
+    float: none !important;
+    position: static !important;
+}
+
+.results-table td,
+.results-table th {
+    display: table-cell !important;
+    float: none !important;
+    position: static !important;
+    vertical-align: middle;
+}
+
+/* Status column — narrow, centered pill */
+.results-table td.status-cell,
+.results-table th:first-child {
+    width: 90px;
+    min-width: 90px;
+    white-space: nowrap;
+    text-align: left;
+}
+
+.results-table td.status-cell .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 9px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+    position: relative !important;
+}
+
+/* Make sure clickable rows don't try to float anything */
+.results-table tbody tr {
+    cursor: pointer;
+    transition: background var(--t-base), transform var(--t-quick), box-shadow var(--t-base);
+}
+
+.results-table tbody tr:hover {
+    background: rgba(0, 240, 255, 0.05);
+    box-shadow: inset 2px 0 0 var(--accent);
+    transform: translateX(2px);
+}
+
+/* Sticky header — the static !important above (a float-reset guard) would
+ * otherwise kill the app.css sticky rule on this high-row-count page. Re-assert
+ * it with higher specificity for the header cells only. */
+.results-table thead th {
+    position: sticky !important;
+    top: 0;
+    z-index: 2;
+}
+
+/* ── No-server empty state (replaces inline style="" blocks) ────────────────── */
+.qc-no-servers {
+    padding: 32px;
+    text-align: center;
+}
+
+.qc-no-servers-icon {
+    font-size: 32px;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+    display: block;
+}
+
+.qc-no-servers-msg {
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin-bottom: 16px;
+}
+
+.qc-add-server-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 20px;
+    background: var(--primary);
+    color: var(--text-primary);
+    border-radius: 6px;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+/* "Force fresh (reload catalog)" toggle in the run action row */
+.qc-force-fresh {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    user-select: none;
+}
+
+.qc-force-fresh input {
+    cursor: pointer;
+}
+
+/* Loud banner when the check catalog fails to load (no silent stale-serve) */
+.qc-loaderror-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 0 0 16px;
+    padding: 12px 16px;
+    border: 1px solid var(--red);
+    border-left: 4px solid var(--red);
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.qc-loaderror-banner i {
+    color: var(--red);
+    margin-top: 2px;
+}
+
+/* Corpus DEMO allocation banner — community/demo bundles only.
+ * Uses the canonical --purple token (info/demo accent) so colorblind-mode
+ * remaps it via Accessibility.css. Never hard-code status hex. */
+.demo-allocation-banner {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 8px 0 4px;
+    padding: 8px 12px;
+    border: 1px solid var(--purple);
+    border-left: 3px solid var(--purple);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--purple) 8%, var(--bg-secondary));
+    color: var(--text-primary);
+    font-size: 12.5px;
+    line-height: 1.4;
+}
+
+.demo-allocation-banner i {
+    color: var(--purple);
+}
+
+.demo-allocation-note {
+    font-weight: 600;
+    color: var(--text-secondary);
+}

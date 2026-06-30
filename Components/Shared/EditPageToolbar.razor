@@ -1,0 +1,33 @@
+@* In the name of God, the Merciful, the Compassionate *@
+
+@if (EditMode)
+{
+    <div class="edit-page-toolbar">
+        <span class="ept-indicator">
+            <i class="fa-solid fa-pen-to-square"></i> Editing: <strong>@PageTitle</strong>
+        </span>
+        <span class="ept-spacer"></span>
+        @if (HasUnsavedChanges)
+        {
+            <span class="ept-unsaved"><i class="fa-solid fa-circle-dot"></i> Unsaved changes</span>
+        }
+        <button class="btn btn-sm ept-btn ept-btn--add" @onclick="OnAddSection" title="Add a new section">
+            <i class="fa-solid fa-plus"></i> Add Section
+        </button>
+        <button class="btn btn-sm ept-btn ept-btn--reset" @onclick="OnReset" title="Reset to default layout">
+            <i class="fa-solid fa-rotate-left"></i> Reset
+        </button>
+        <button class="btn btn-sm ept-btn ept-btn--done" @onclick="OnDone">
+            <i class="fa-solid fa-check"></i> Done Editing
+        </button>
+    </div>
+}
+
+@code {
+    [Parameter] public bool     EditMode          { get; set; }
+    [Parameter] public string   PageTitle         { get; set; } = "";
+    [Parameter] public bool     HasUnsavedChanges { get; set; }
+    [Parameter] public EventCallback OnAddSection { get; set; }
+    [Parameter] public EventCallback OnDone       { get; set; }
+    [Parameter] public EventCallback OnReset      { get; set; }
+}

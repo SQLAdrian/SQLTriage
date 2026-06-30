@@ -1,0 +1,105 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using ApexCharts
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@inject IChartThemeService ChartTheme
+@implements IDisposable
+
+<div class="chart-panel chart-panel--donut"
+     role="img"
+     aria-label="@(!string.IsNullOrEmpty(Title) ? $"Donut chart showing {Title}" : "Donut chart")">
+    @if (!string.IsNullOrEmpty(Title))
+    {
+        <div class="chart-title">@Title</div>
+    }
+
+    @if (Data != null && Data.Any())
+    {
+        <ApexChart TItem="StatValue"
+                   @key="_chartKey"
+                   Height="@Height"
+                   Options="@GetChartOptions()">
+            <ApexPointSeries TItem="StatValue"
+                             Items="@Data"
+                             Name="@Title"
+                             SeriesType="SeriesType.Donut"
+                             XValue="@(s => s.Label)"
+                             YValue="@(s => (decimal)s.Value)" />
+        </ApexChart>
+    }
+    else
+    {
+        <div class="chart-empty">No data available</div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public List<StatValue>? Data { get; set; }
+    [Parameter] public int Height { get; set; } = 280;
+    [Parameter] public string ValueSuffix { get; set; } = "%";
+
+    private string _chartKey = Guid.NewGuid().ToString();
+
+    private ApexChartOptions<StatValue> GetChartOptions()
+    {
+        // Shared chrome (palette, dark theme, transparent background, right legend,
+        // dark tooltip, data-labels off) comes from ChartThemeService; only the
+        // donut-specific plot labels and the value-suffix formatter live here.
+        var opts = ChartTheme.GetDonutOptions<StatValue>("");
+
+        opts.Tooltip.Y = new TooltipY
+        {
+            Formatter = "function(val) { return val != null ? val.toFixed(1) + '" + ValueSuffix + "' : ''; }"
+        };
+
+        opts.PlotOptions = new PlotOptions
+        {
+            Pie = new PlotOptionsPie
+            {
+                Donut = new PlotOptionsDonut
+                {
+                    Size = "62%",
+                    Labels = new DonutLabels
+                    {
+                        Show = true,
+                        Total = new DonutLabelTotal
+                        {
+                            Show = true,
+                            Label = "Total",
+                            Color = "#8a9aa6",
+                            FontSize = "12px",
+                            Formatter = "function(w) { return w.globals.seriesTotals.reduce((a,b)=>a+b,0).toFixed(1) + '" + ValueSuffix + "'; }"
+                        },
+                        Value = new DonutLabelValue
+                        {
+                            Show = true,
+                            Color = "#e6edf2",
+                            FontSize = "16px",
+                            Formatter = "function(val) { return parseFloat(val).toFixed(1) + '" + ValueSuffix + "'; }"
+                        }
+                    }
+                }
+            }
+        };
+
+        return opts;
+    }
+
+    protected override void OnInitialized()
+    {
+        ChartTheme.OnChartThemeChanged += HandleThemeChanged;
+    }
+
+    // Force a chart re-create with the new palette when the user switches theme.
+    private void HandleThemeChanged()
+    {
+        _chartKey = Guid.NewGuid().ToString();
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        ChartTheme.OnChartThemeChanged -= HandleThemeChanged;
+    }
+}

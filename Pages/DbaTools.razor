@@ -1,0 +1,500 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/dbatools"
+<PageTitle>SQLTriage - dbatools</PageTitle>
+@inject SQLTriage.Data.Services.PowerShellService PS
+@inject SQLTriage.Data.ServerConnectionManager ConnectionManager
+@inject IJSRuntime JS
+@inject SQLTriage.Data.Services.AppUserState UserState
+@using System.Data
+@using System.Linq
+@using SQLTriage.Data.Services
+@implements IDisposable
+
+@if (!RbacService.HasPermission(UserState.Role, "run_scripts"))
+{
+    <div style="padding: 32px;">
+        <AccessDenied RequiredRole="Operator" Message="DbaTools requires Operator or Admin role." />
+    </div>
+    return;
+}
+
+<div class="settings-page">
+    <div class="settings-header">
+        <h2><i class="fa-brands fa-windows"></i> dbatools</h2>
+        <p class="text-app-text-secondary" style="margin-top:4px;">
+            Run dbatools PowerShell commands against SQL Server infrastructure.
+        </p>
+    </div>
+
+    <!-- Status bar -->
+    <div class="dba-status-bar">
+        <div class="dba-status-item @(PS.IsPowerShellAvailable ? "status-ok" : "status-err")">
+            <i class="fa-solid @(PS.IsPowerShellAvailable ? "fa-circle-check" : "fa-circle-xmark")"></i>
+            @if (PS.IsPowerShellAvailable)
+            {
+                <span>PowerShell available (<code>@PS.PowerShellPath</code>)</span>
+            }
+            else
+            {
+                <span>PowerShell not found — install PowerShell 7</span>
+            }
+        </div>
+        <div class="dba-status-item @(PS.IsDbatoolsAvailable ? "status-ok" : "status-warn")">
+            <i class="fa-solid @(PS.IsDbatoolsAvailable ? "fa-circle-check" : "fa-triangle-exclamation")"></i>
+            @if (PS.IsDbatoolsAvailable)
+            {
+                <span>dbatools module found</span>
+            }
+            else
+            {
+                <span>dbatools not downloaded</span>
+                <button class="btn btn-secondary btn-sm" @onclick="DownloadDbatools"
+                        disabled="@(_downloading || !PS.IsPowerShellAvailable)">
+                    @if (_downloading)
+                    {
+                        <span><i class="fa-solid fa-spinner fa-spin"></i> Downloading...</span>
+                    }
+                    else
+                    {
+                        <span><i class="fa-solid fa-download"></i> Download dbatools</span>
+                    }
+                </button>
+            }
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_downloadMsg))
+    {
+        <div class="@(_downloadOk ? "alert-success" : "alert-danger")" style="margin:8px 0;padding:8px 12px;border-radius:6px;font-size:12px;">
+            @_downloadMsg
+        </div>
+    }
+
+    <!-- Command area -->
+    <div class="settings-group" style="margin-top:16px;">
+        <div class="settings-group-header">Run Command</div>
+
+        <!-- Preset picker -->
+        <div class="dba-preset-row">
+            <label class="text-xs text-app-text-secondary" style="flex-shrink:0;">Preset:</label>
+            <select @onchange="OnPresetSelected" class="server-select" style="flex:1;max-width:420px;">
+                <option value="">-- Choose a preset --</option>
+                <optgroup label="Discovery">
+                    <option value="find-instance">Find-DbaInstance (network discovery)</option>
+                    <option value="get-service">Get-DbaService (SQL services on host)</option>
+                </optgroup>
+                <optgroup label="Inventory">
+                    <option value="get-database">Get-DbaDatabase (list databases)</option>
+                    <option value="get-login">Get-DbaLogin (list logins)</option>
+                    <option value="get-agentjob">Get-DbaAgentJob (list agent jobs)</option>
+                    <option value="get-memory">Get-DbaMaxMemory (memory settings)</option>
+                    <option value="get-build">Get-DbaBuild (version &amp; build info)</option>
+                    <option value="get-disk">Get-DbaDiskSpace (disk usage)</option>
+                </optgroup>
+                <optgroup label="Custom">
+                    <option value="custom">Custom command...</option>
+                </optgroup>
+            </select>
+
+            <!-- Dynamic param inputs based on preset -->
+            @if (_showComputerParam)
+            {
+                <input @bind="_paramComputer" placeholder="ComputerName (or .)" class="dba-param-input" title="Target computer name or IP" />
+            }
+            @if (_showInstanceParam)
+            {
+                @if (_availableInstances.Count > 0)
+                {
+                    <select @bind="_paramInstance" class="server-select" style="min-width:200px;"
+                            title="SQL Server instance">
+                        <option value="">-- Select instance --</option>
+                        @foreach (var inst in _availableInstances)
+                        {
+                            <option value="@inst">@inst</option>
+                        }
+                        <option value="__custom__">Custom…</option>
+                    </select>
+                    @if (_paramInstance == "__custom__")
+                    {
+                        <input @bind="_paramInstanceCustom" placeholder="SERVER\INST" class="dba-param-input" title="Custom instance name" />
+                    }
+                }
+                else
+                {
+                    <input @bind="_paramInstance" placeholder="SqlInstance (e.g. SERVER\INST)" class="dba-param-input" title="SQL Server instance" />
+                }
+            }
+            @if (_showDiscoveryType)
+            {
+                <select @bind="_paramDiscoveryType" class="server-select" style="width:220px;">
+                    <option value="DataSourceEnumeration">DataSourceEnumeration (broadcast)</option>
+                    <option value="Domain">Domain (AD SPN scan)</option>
+                    <option value="IPRange">IPRange (requires -IpAddress)</option>
+                </select>
+            }
+        </div>
+
+        <!-- Command editor -->
+        <textarea @bind="_command" @bind:event="oninput" class="dba-cmd-editor"
+                  placeholder="Enter PowerShell command (output will be parsed as JSON)"
+                  rows="4" spellcheck="false"></textarea>
+
+        <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap;">
+            <button class="btn btn-primary" @onclick="RunCommand"
+                    disabled="@(_running || !PS.IsPowerShellAvailable || string.IsNullOrWhiteSpace(_command))">
+                @if (_running)
+                {
+                    <span><i class="fa-solid fa-spinner fa-spin"></i> Running...</span>
+                }
+                else
+                {
+                    <span><i class="fa-solid fa-play"></i> Run</span>
+                }
+            </button>
+
+            <label style="font-size:12px;cursor:pointer;display:flex;align-items:center;gap:4px;">
+                <input type="checkbox" @bind="_asText" style="margin-right:4px;" />
+                Raw text output
+            </label>
+
+            <label style="font-size:12px;cursor:pointer;display:flex;align-items:center;gap:4px;">
+                <input type="checkbox" @bind="_usesDbatools" style="margin-right:4px;" />
+                Import dbatools module
+            </label>
+
+            @if (_running)
+            {
+                <button class="btn btn-danger btn-sm" @onclick="CancelRun">
+                    <i class="fa-solid fa-stop"></i> Cancel
+                </button>
+            }
+
+            <span style="margin-left:auto;font-size:11px;color:var(--text-secondary);">
+                @if (_elapsedMs > 0)
+                {
+                    <span>Completed in @(_elapsedMs)ms</span>
+                }
+            </span>
+        </div>
+    </div>
+
+    <!-- Error output -->
+    @if (!string.IsNullOrEmpty(_errorOutput))
+    {
+        <div class="settings-group" style="margin-top:8px;">
+            <div class="settings-group-header" style="color:#f87171;">
+                <i class="fa-solid fa-circle-xmark"></i> Error
+            </div>
+            <pre class="dba-output-pre dba-output-error">@_errorOutput</pre>
+        </div>
+    }
+
+    <!-- Text output -->
+    @if (_asText && !string.IsNullOrEmpty(_textOutput))
+    {
+        <div class="settings-group" style="margin-top:8px;">
+            <div class="settings-group-header">Output</div>
+            <pre class="dba-output-pre">@_textOutput</pre>
+        </div>
+    }
+
+    <!-- Grid output -->
+    @if (!_asText && _gridData != null && _gridData.Rows.Count > 0)
+    {
+        <div class="settings-group" style="margin-top:8px;">
+            <div class="settings-group-header" style="display:flex;align-items:center;justify-content:space-between;">
+                <span>Results — @_gridData.Rows.Count row(s)</span>
+                <button class="btn btn-secondary btn-sm" @onclick="ExportCsv">
+                    <i class="fa-solid fa-file-csv"></i> Export CSV
+                </button>
+            </div>
+            <div class="dba-grid-wrapper">
+                <table class="dba-grid">
+                    <thead>
+                        <tr>
+                            @foreach (DataColumn col in _gridData.Columns)
+                            {
+                                <th>@col.ColumnName</th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (DataRow row in _gridData.Rows)
+                        {
+                            <tr>
+                                @foreach (DataColumn col in _gridData.Columns)
+                                {
+                                    <td title="@row[col]?.ToString()">@row[col]?.ToString()</td>
+                                }
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+    else if (!_asText && !_running && _hasRun && (_gridData == null || _gridData.Rows.Count == 0) && string.IsNullOrEmpty(_errorOutput))
+    {
+        <div class="settings-group" style="margin-top:8px;text-align:center;padding:24px;color:var(--text-secondary);font-size:13px;">
+            <i class="fa-solid fa-inbox" style="font-size:24px;opacity:0.4;display:block;margin-bottom:8px;"></i>
+            No results returned.
+        </div>
+    }
+</div>
+
+@code {
+    protected override void OnInitialized()
+    {
+        _availableInstances = ConnectionManager.GetEnabledConnections()
+            .SelectMany(c => c.GetServerList())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(s => s)
+            .ToList();
+        if (_availableInstances.Count > 0)
+            _paramInstance = _availableInstances[0];
+    }
+
+    // ── State ────────────────────────────────────────────────────────────────
+    private string _command = "";
+    private bool _running = false;
+    private bool _asText = false;
+    private bool _usesDbatools = true;
+    private bool _hasRun = false;
+    private long _elapsedMs = 0;
+    private CancellationTokenSource? _cts;
+
+    // Output
+    private string? _textOutput;
+    private string? _errorOutput;
+    private DataTable? _gridData;
+
+    // Download
+    private bool _downloading = false;
+    private string? _downloadMsg;
+    private bool _downloadOk = false;
+
+    // Preset params
+    private string _paramComputer = ".";
+    private string _paramInstance = "";
+    private string _paramInstanceCustom = "";
+    private string _paramDiscoveryType = "DataSourceEnumeration";
+    private bool _showComputerParam = false;
+    private bool _showInstanceParam = false;
+    private bool _showDiscoveryType = false;
+    private List<string> _availableInstances = new();
+    // Resolves the effective instance: custom text input overrides dropdown when "Custom…" selected
+    private string EffectiveInstance => _paramInstance == "__custom__" ? _paramInstanceCustom : _paramInstance;
+
+    private async Task RunCommand()
+    {
+        if (string.IsNullOrWhiteSpace(_command) || _running) return;
+
+        _running = true;
+        _hasRun = false;
+        _errorOutput = null;
+        _textOutput = null;
+        _gridData?.Dispose();
+        _gridData = null;
+        _elapsedMs = 0;
+        _cts = new CancellationTokenSource();
+        StateHasChanged();
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            PowerShellResult result;
+            if (_asText)
+                result = await PS.ExecuteAsTextAsync(_command, _usesDbatools, timeoutSeconds: 120, _cts.Token);
+            else
+                result = await PS.ExecuteAsDataTableAsync(_command, _usesDbatools, timeoutSeconds: 120, _cts.Token);
+
+            sw.Stop();
+            _elapsedMs = sw.ElapsedMilliseconds;
+            _hasRun = true;
+
+            if (result.Success)
+            {
+                if (_asText)
+                    _textOutput = result.Output;
+                else
+                {
+                    _gridData = result.Data;
+                    // If JSON parse failed (e.g. command returned WARNING: lines instead of JSON),
+                    // fall back to showing raw output as text rather than a red error
+                    if (!string.IsNullOrEmpty(result.ParseError))
+                    {
+                        _asText = true;
+                        _textOutput = string.IsNullOrEmpty(result.Output)
+                            ? $"(No output — parse error: {result.ParseError})"
+                            : result.Output;
+                    }
+                }
+            }
+            else
+            {
+                _errorOutput = result.Error;
+                // If there's also output text, show it
+                if (!string.IsNullOrEmpty(result.Output))
+                    _textOutput = result.Output;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _errorOutput = "Command was cancelled.";
+        }
+        catch (Exception ex)
+        {
+            _errorOutput = ex.Message;
+        }
+        finally
+        {
+            _running = false;
+            _cts?.Dispose();
+            _cts = null;
+            StateHasChanged();
+        }
+    }
+
+    private void CancelRun()
+    {
+        _cts?.Cancel();
+    }
+
+    private void OnPresetSelected(ChangeEventArgs e)
+    {
+        _showComputerParam = false;
+        _showInstanceParam = false;
+        _showDiscoveryType = false;
+
+        switch (e.Value?.ToString())
+        {
+            case "find-instance":
+                _showComputerParam = false;
+                _showDiscoveryType = true;
+                _usesDbatools = true;
+                _asText = false;
+                UpdateFindInstanceCommand();
+                break;
+
+            case "get-service":
+                _showComputerParam = true;
+                _usesDbatools = true;
+                _asText = false;
+                _command = BuildDbatoolsCommand("Get-DbaService", $"-ComputerName '{_paramComputer}'");
+                break;
+
+            case "get-database":
+                _showInstanceParam = true;
+                _usesDbatools = true;
+                _asText = false;
+                _command = BuildDbatoolsCommand("Get-DbaDatabase", $"-SqlInstance '{EffectiveInstance}'",
+                    "| Select-Object SqlInstance, Name, Status, RecoveryModel, SizeMB, Compatibility, Owner");
+                break;
+
+            case "get-login":
+                _showInstanceParam = true;
+                _usesDbatools = true;
+                _asText = false;
+                _command = BuildDbatoolsCommand("Get-DbaLogin", $"-SqlInstance '{EffectiveInstance}'",
+                    "| Select-Object SqlInstance, Name, LoginType, IsDisabled, HasAccess, MustChangePassword");
+                break;
+
+            case "get-agentjob":
+                _showInstanceParam = true;
+                _usesDbatools = true;
+                _asText = false;
+                _command = BuildDbatoolsCommand("Get-DbaAgentJob", $"-SqlInstance '{EffectiveInstance}'",
+                    "| Select-Object SqlInstance, Name, Category, IsEnabled, LastRunDate, LastRunOutcome, NextRunDate");
+                break;
+
+            case "get-memory":
+                _showInstanceParam = true;
+                _usesDbatools = true;
+                _asText = false;
+                _command = BuildDbatoolsCommand("Get-DbaMaxMemory", $"-SqlInstance '{EffectiveInstance}'");
+                break;
+
+            case "get-build":
+                _showInstanceParam = true;
+                _usesDbatools = true;
+                _asText = false;
+                _command = BuildDbatoolsCommand("Get-DbaBuild", $"-SqlInstance '{EffectiveInstance}'",
+                    "| Select-Object SqlInstance, Build, NameLevel, SPLevel, CULevel, KBLevel, SupportedUntil");
+                break;
+
+            case "get-disk":
+                _showComputerParam = true;
+                _usesDbatools = true;
+                _asText = false;
+                _command = BuildDbatoolsCommand("Get-DbaDiskSpace", $"-ComputerName '{_paramComputer}'",
+                    "| Select-Object ComputerName, Name, Label, TotalGB, FreeGB, PercentFree, DriveType");
+                break;
+
+            case "custom":
+                _command = "";
+                break;
+        }
+    }
+
+    private void UpdateFindInstanceCommand()
+    {
+        _command = BuildDbatoolsCommand("Find-DbaInstance",
+            $"-DiscoveryType {_paramDiscoveryType}",
+            "| Select-Object ComputerName, InstanceName, FullSmoName, Availability, Confidence, SqlVersion");
+    }
+
+    private static string BuildDbatoolsCommand(string cmdlet, string args, string pipe = "")
+    {
+        var cmd = $"{cmdlet} {args}";
+        if (!string.IsNullOrEmpty(pipe)) cmd += $" {pipe}";
+        return cmd;
+    }
+
+    private async Task DownloadDbatools()
+    {
+        _downloading = true;
+        _downloadMsg = null;
+        StateHasChanged();
+
+        var result = await PS.DownloadDbatoolsAsync();
+        _downloadOk = result.Success;
+        _downloadMsg = result.Success
+            ? "dbatools downloaded successfully. You can now use dbatools commands."
+            : $"Download failed: {result.Error}";
+
+        _downloading = false;
+        StateHasChanged();
+    }
+
+    private async Task ExportCsv()
+    {
+        if (_gridData == null) return;
+
+        var sb = new System.Text.StringBuilder();
+        var cols = _gridData.Columns.Cast<DataColumn>().Select(c => c.ColumnName).ToList();
+        sb.AppendLine(string.Join(",", cols.Select(c => $"\"{c}\"")));
+        foreach (DataRow row in _gridData.Rows)
+        {
+            sb.AppendLine(string.Join(",", cols.Select(c => $"\"{row[c]?.ToString()?.Replace("\"", "\"\"")}\"")));
+        }
+
+        var csv = sb.ToString();
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", csv);
+        // fallback: trigger download
+        try
+        {
+            var bytes = System.Text.Encoding.UTF8.GetBytes(csv);
+            var base64 = Convert.ToBase64String(bytes);
+            await JS.InvokeVoidAsync("eval",
+                $"var a=document.createElement('a');a.href='data:text/csv;base64,{base64}';a.download='dbatools-export.csv';a.click();");
+        }
+        catch { }
+    }
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+        _gridData?.Dispose();
+    }
+}

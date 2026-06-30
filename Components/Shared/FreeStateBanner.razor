@@ -1,0 +1,85 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using SQLTriage.Data
+@using SQLTriage.Data.Services.Licensing
+@using Microsoft.AspNetCore.Components
+@inject IBundleAccessor Bundle
+@inject CheckRepositoryService CheckRepo
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject UserSettingsService UserSettings
+@implements IDisposable
+
+@if (!Bundle.IsUnlocked)
+{
+    <div class="free-state-banner free-state-banner--not-activated" role="alert" aria-live="assertive">
+        <span class="free-state-banner-icon">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+        </span>
+        <span class="free-state-banner-text">
+            <strong>Bundle not loaded.</strong>
+            SQLTriage couldn't decrypt either the Full or Free bundle on startup —
+            pages that need check definitions, framework mappings, or governance
+            weights will appear blank. Check the app log for the underlying error,
+            then re-install, or review the bundle settings.
+        </span>
+        <button class="free-state-banner-link" @onclick="GoToSettings" title="Open Settings">
+            Settings &rarr;
+        </button>
+    </div>
+}
+else if (Bundle.Tier == Tier.Free)
+{
+    @* Compact top-right pill, full builds only (the copy lives in
+       FullAuditUpsellPill, a never-ship component, so this shipping source stays
+       neutral). The orange variant above stays full-width for ALL builds because
+       that state means the app is broken until fixed. BuildModules const must be
+       ALONE in the @if so Roslyn prunes the branch in community builds. *@
+    @if (BuildModules.Premium)
+    {
+        <FullAuditUpsellPill />
+    }
+}
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        if (UserSettings.GetFastAppLoad()) await Task.Yield();
+        Bundle.BundleStateChanged += OnBundleStateChanged;
+
+        // The banner can render before any page has loaded the check catalog.
+        // Load it once (idempotent — skipped if already populated) so the
+        // free-tier check count is accurate wherever the banner appears.
+        if (CheckRepo.Checks.Count == 0)
+        {
+            await CheckRepo.LoadChecksAsync();
+            StateHasChanged();
+        }
+
+        // Cache the REAL enabled-check count for the pre-Blazor boot splash
+        // (loader.css boot log). This is the only honest source — working,
+        // non-error, enabled YAMLs — so the splash never shows a fabricated
+        // number. Read back by the loader script in index.html on next launch.
+        await CacheCheckCountForLoaderAsync();
+    }
+
+    private async Task CacheCheckCountForLoaderAsync()
+    {
+        try
+        {
+            var n = CheckRepo.GetEnabledChecks().Count;
+            if (n > 0)
+                await JS.InvokeVoidAsync("localStorage.setItem", "clippy.checkCount", n.ToString());
+        }
+        catch { /* JS not ready / server mode — splash falls back to "audit" */ }
+    }
+
+    private void GoToSettings() => Nav.NavigateTo("/settings");
+
+    private void OnBundleStateChanged(object? sender, EventArgs e)
+        => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Bundle.BundleStateChanged -= OnBundleStateChanged;
+    }
+}

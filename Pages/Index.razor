@@ -1,0 +1,201 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/"
+<PageTitle>SQLTriage — Free, framework-mapped SQL Server audit</PageTitle>
+@using SQLTriage.Components.Dashboards
+@using SQLTriage.Data
+@inject NavigationManager Navigation
+@inject ServerConnectionManager ConnectionManager
+@inject UserSettingsService UserSettings
+@inject SQLTriage.Data.CheckRepositoryService CheckRepo
+
+@if (_view == "dashboard")
+{
+    <RepositoryDashboard />
+}
+else if (_view == "hero")
+{
+    <div class="guide-container landing-root">
+
+        <!-- ── Hero ── -->
+        <div class="guide-hero landing-hero">
+            <span class="landing-eyebrow">FREE · OFFLINE · NO SIGN-UP</span>
+            <h1 class="guide-hero-title">
+                <span class="gh-word">The only free, framework-mapped</span>
+                <span class="gh-sub">SQL Server audit.</span>
+            </h1>
+            <p class="guide-hero-lede">
+                @if (_checkCount > 0)
+                {
+                    <b>@_checkCount</b><text> curated checks mapped to compliance frameworks, scored into one
+                    board-ready number — running fully offline from a single self-contained executable.
+                    No agent, no cloud, no account.</text>
+                }
+                else
+                {
+                    <text>Curated checks mapped to compliance frameworks, scored into one board-ready number —
+                    running fully offline from a single self-contained executable. No agent, no cloud, no account.</text>
+                }
+            </p>
+            <div class="guide-stat-ribbon">
+                @if (_checkCount > 0)
+                {
+                    <span class="gh-stat"><b>@_checkCount</b> audit checks</span>
+                    <span class="gh-stat-sep">·</span>
+                }
+                @if (_frameworkCount > 0)
+                {
+                    <span class="gh-stat"><b>@_frameworkCount</b> frameworks mapped</span>
+                    <span class="gh-stat-sep">·</span>
+                }
+                <span class="gh-stat">CIS · ISO 27001 · SOC 2 · NIST CSF · NZISM</span>
+            </div>
+            <div class="landing-cta-row">
+                <a href="@RouteConstants.QuickCheck" class="landing-cta landing-cta-primary">
+                    <i class="fa-solid fa-bolt"></i> Run a free audit
+                </a>
+                <a href="@RouteConstants.CioDashboard" class="landing-cta landing-cta-secondary">
+                    <i class="fa-solid fa-chart-line"></i> See the CIO Dashboard
+                </a>
+                <a href="@RouteConstants.Guide" class="landing-cta landing-cta-tertiary">
+                    How it works <i class="fa-solid fa-arrow-right"></i>
+                </a>
+            </div>
+        </div>
+
+        <!-- ── 3 Pillars ── -->
+        <div class="landing-pillars">
+            <div class="landing-pillar">
+                <i class="fa-solid fa-sitemap landing-pillar-icon"></i>
+                <h3>Mapped, not just flagged</h3>
+                <p>Every finding is tied to the compliance control it satisfies — CIS, ISO 27001, SOC 2,
+                   NIST CSF, NZISM — so an audit becomes evidence, not a wall of warnings.</p>
+                <a href="@RouteConstants.ComplianceMap" class="landing-pillar-link">See the Compliance Map <i class="fa-solid fa-arrow-right"></i></a>
+            </div>
+            <div class="landing-pillar">
+                <i class="fa-solid fa-shield-halved landing-pillar-icon"></i>
+                <h3>Offline &amp; tamper-evident</h3>
+                <p>A single self-contained executable. No telemetry, no cloud. Credentials sealed with
+                   AES-256-GCM + DPAPI; every audit written to an HMAC-chained, tamper-evident log.</p>
+                <a href="@RouteConstants.AuditLogViewer" class="landing-pillar-link">View the audit log <i class="fa-solid fa-arrow-right"></i></a>
+            </div>
+            <div class="landing-pillar">
+                <i class="fa-solid fa-landmark landing-pillar-icon"></i>
+                <h3>Built to last, cited to source</h3>
+                <p>Checks derived from the canon — sp_Blitz, Glenn Berry, Erik Darling, Ola Hallengren,
+                   Microsoft VA, CIS &amp; STIG — and engineered against a 15-year horizon.</p>
+                <a href="@RouteConstants.DiagnosticsRoadmap" class="landing-pillar-link">Open the roadmap <i class="fa-solid fa-arrow-right"></i></a>
+            </div>
+        </div>
+
+        <!-- ── Outcome narrative band: Audit → Score → Roadmap ── -->
+        <div class="landing-flow">
+            <div class="landing-flow-step">
+                <span class="landing-flow-num">1</span>
+                <span class="landing-flow-title">Audit</span>
+                <span class="landing-flow-hint">Point at your estate. @(_checkCount > 0 ? $"{_checkCount} checks" : "Hundreds of checks") run read-only, offline.</span>
+            </div>
+            <i class="fa-solid fa-arrow-right landing-flow-arrow"></i>
+            <div class="landing-flow-step">
+                <span class="landing-flow-num">2</span>
+                <span class="landing-flow-title">Score</span>
+                <span class="landing-flow-hint">Findings roll up to one board-ready governance number.</span>
+            </div>
+            <i class="fa-solid fa-arrow-right landing-flow-arrow"></i>
+            <div class="landing-flow-step">
+                <span class="landing-flow-num">3</span>
+                <span class="landing-flow-title">Roadmap</span>
+                <span class="landing-flow-hint">A prioritised, framework-mapped remediation path.</span>
+            </div>
+        </div>
+
+        <!-- ── 6 governance surfaces ── -->
+        <div class="guide-section">
+            <h2><i class="fa-solid fa-compass"></i> Governance, end to end</h2>
+            <div class="guide-marquee landing-cards">
+                <a href="@RouteConstants.QuickCheck" class="guide-marquee-card">
+                    <i class="fa-solid fa-bolt"></i>
+                    <span class="gm-title">Audit Assessment</span>
+                    <span class="gm-hint">Framework-mapped check corpus</span>
+                </a>
+                <a href="@RouteConstants.ComplianceMap" class="guide-marquee-card">
+                    <i class="fa-solid fa-table-cells"></i>
+                    <span class="gm-title">Compliance Map</span>
+                    <span class="gm-hint">Checks → controls coverage grid</span>
+                </a>
+                <a href="@RouteConstants.CioDashboard" class="guide-marquee-card">
+                    <i class="fa-solid fa-chart-line"></i>
+                    <span class="gm-title">CIO Dashboard</span>
+                    <span class="gm-hint">Executive governance score &amp; risk</span>
+                </a>
+                <a href="@RouteConstants.DiagnosticsRoadmap" class="guide-marquee-card">
+                    <i class="fa-solid fa-road"></i>
+                    <span class="gm-title">Diagnostics Roadmap</span>
+                    <span class="gm-hint">Maturity levels across 5 dimensions</span>
+                </a>
+                <a href="@RouteConstants.AuditLogViewer" class="guide-marquee-card">
+                    <i class="fa-solid fa-link"></i>
+                    <span class="gm-title">Audit Log</span>
+                    <span class="gm-hint">HMAC-chained, tamper-evident trail</span>
+                </a>
+                <a href="@RouteConstants.BlitzDashboard" class="guide-marquee-card">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <span class="gm-title">sp_Blitz Findings</span>
+                    <span class="gm-hint">Exceptions, scored &amp; explained</span>
+                </a>
+            </div>
+        </div>
+
+        <!-- ── Final CTA ── -->
+        <div class="landing-final-cta">
+            <h2>Audit your estate in minutes — for free.</h2>
+            <p>No sign-up, no agent, no data leaving the machine.</p>
+            <a href="@RouteConstants.QuickCheck" class="landing-cta landing-cta-primary">
+                <i class="fa-solid fa-bolt"></i> Run a free audit
+            </a>
+        </div>
+
+    </div>
+}
+
+@code {
+    private string _view = "hero";
+    private int _checkCount;
+    private int _frameworkCount;
+
+    protected override void OnInitialized()
+    {
+        // First-run with no servers: the Guide is the friendliest start point.
+        if (ConnectionManager.GetConnections().Count == 0)
+        {
+            Navigation.NavigateTo(RouteConstants.Guide, replace: true);
+            return;
+        }
+
+        _view = UserSettings.GetLandingView();   // "hero" | "guide" | "dashboard"
+        if (_view == "guide")
+        {
+            Navigation.NavigateTo(RouteConstants.Guide, replace: true);
+            return;
+        }
+        // "hero" and "dashboard" render inline below.
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (_view != "hero") return;   // counts only feed the hero
+        try
+        {
+            if (CheckRepo.Checks.Count == 0)
+                await CheckRepo.LoadChecksAsync();
+
+            _checkCount = CheckRepo.GetEnabledChecks().Count;
+            _frameworkCount = CheckRepo.FrameworkMappings.Values
+                .SelectMany(list => list)
+                .Select(m => m.Framework)
+                .Where(f => !string.IsNullOrWhiteSpace(f))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Count();
+        }
+        catch { /* omit counts rather than guess */ }
+    }
+}

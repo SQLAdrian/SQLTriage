@@ -1,0 +1,52 @@
+/* Styles extracted to wwwroot/css/XEvents.css 2026-05-11 (CLAUDE.md convention). */
+.xevents-page { padding: 20px; }
+.xevents-page h2 { margin-bottom: 8px; }
+.page-description { color: var(--text-muted); margin-bottom: 20px; }
+.server-selection-section { background: var(--bg-secondary); padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+.section-header h3 { margin: 0 0 16px 0; font-size: 16px; }
+.server-selection-controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+.server-scope-toggle { display: flex; }
+.scope-btn { padding: 8px 16px; border: 1px solid var(--border); background: var(--bg-secondary); cursor: pointer; }
+.scope-btn:first-child { border-radius: 4px 0 0 4px; }
+.scope-btn:last-child { border-radius: 0 4px 4px 0; }
+.scope-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.server-select { padding: 8px 12px; border: 1px solid var(--border); border-radius: 4px; min-width: 250px; }
+.selected-servers { display: flex; gap: 8px; flex-wrap: wrap; }
+.server-chip { background: var(--bg-hover); padding: 4px 12px; border-radius: 16px; font-size: 14px; }
+.tabs-container { background: var(--bg-panel); border-radius: 8px; overflow: hidden; }
+.tabs { display: flex; border-bottom: 1px solid var(--border); background: var(--bg-secondary); }
+.tab-btn { padding: 12px 24px; border: none; background: transparent; cursor: pointer; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.tab-btn:hover { background: var(--bg-hover); }
+.tab-btn.active { background: var(--bg-panel); border-bottom: 2px solid var(--accent); }
+.tab-content { padding: 20px; }
+.create-form { max-width: 600px; }
+.xevents-page .form-group { margin-bottom: 16px; }
+.xevents-page .form-group label { display: block; margin-bottom: 6px; font-weight: 600; }
+.xevents-page .form-control { width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 4px; }
+.xevents-page .btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.xevents-page .btn-primary { background: var(--accent); color: #fff; }
+.xevents-page .btn-primary:hover { background: var(--accent-soft); }
+.xevents-page .btn-primary:disabled { background: var(--text-muted); cursor: not-allowed; }
+.xevents-page .btn-sm { padding: 4px 8px; font-size: 12px; }
+.xevents-page .btn-success { background: var(--green); color: #fff; }
+.xevents-page .btn-warning { background: var(--orange); color: #000; }
+.xevents-page .btn-danger { background: var(--red); color: #fff; }
+.action-row { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+.data-table { width: 100%; border-collapse: collapse; }
+.data-table th, .data-table td { padding: 10px; text-align: left; border-bottom: 1px solid var(--border); }
+.data-table th { background: var(--bg-secondary); font-weight: 600; }
+.status-badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+.status-badge.active { background: rgba(33, 201, 122, 0.18); color: var(--green); }
+.status-badge.inactive { background: rgba(239, 68, 68, 0.18); color: var(--red); }
+.action-buttons { display: flex; gap: 6px; }
+.templates-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
+.template-card { border: 1px solid var(--border); border-radius: 8px; padding: 16px; background: var(--bg-panel); }
+.template-card h4 { margin: 0 0 8px 0; }
+.template-desc { color: var(--text-muted); margin-bottom: 12px; }
+.template-events ul { margin: 8px 0; padding-left: 20px; }
+.template-actions { margin-top: 12px; }
+.message-box { padding: 12px; border-radius: 4px; margin-top: 16px; }
+.message-box.success { background: rgba(33, 201, 122, 0.15); color: var(--green); }
+.message-box.error { background: rgba(239, 68, 68, 0.15); color: var(--red); }
+.empty-state { text-align: center; padding: 40px; color: var(--text-muted); }
+.loading { text-align: center; padding: 40px; color: var(--text-muted); }

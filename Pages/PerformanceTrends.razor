@@ -1,0 +1,476 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/trends"
+@using SQLTriage.Components.Shared
+<PageTitle>SQLTriage - Performance Trends</PageTitle>
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@using System.Collections.Generic
+@using System.Linq
+@inject ServerConnectionManager ConnectionManager
+@inject HistoricalPerformanceService HistoricalPerf
+@inject PerformanceBaselineService BaselineSvc
+@inject AuditLogService AuditLog
+@inject ToastService Toast
+@inject IServerContextService ServerContext
+@implements IDisposable
+
+<div class="settings-page" style="max-width: 1400px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h2 style="margin: 0;">Performance Trends</h2>
+        <div style="display: flex; gap: 8px; align-items: center;">
+            <button class="settings-btn" @onclick="LoadData" disabled="@_loading">
+                <i class="fa-solid @(_loading ? "fa-spinner fa-spin" : "fa-rotate")"></i>
+                @(_loading ? "Loading..." : "Refresh")
+            </button>
+        </div>
+    </div>
+
+    @* ── Filters ── *@
+    <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 20px;">
+        <div>
+            <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 4px;">Wait Type</label>
+            <select class="settings-input" style="min-width: 180px;" @bind="_selectedWaitType" @bind:after="LoadData">
+                <option value="">(all)</option>
+                @foreach (var w in _waitTypes)
+                {
+                    <option value="@w">@w</option>
+                }
+            </select>
+        </div>
+
+        <div>
+            <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 4px;">Range</label>
+            <select class="settings-input" @bind="_rangeDays" @bind:after="LoadData">
+                <option value="7">Last 7 days</option>
+                <option value="30">Last 30 days</option>
+                <option value="90">Last 90 days</option>
+                <option value="365">Last 365 days</option>
+            </select>
+        </div>
+
+        <div>
+            <label style="font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 4px;">Granularity</label>
+            <select class="settings-input" @bind="_selectedGranularity" @bind:after="LoadData">
+                <option value="Auto">Auto</option>
+                <option value="Hourly">Hourly</option>
+                <option value="Daily">Daily</option>
+            </select>
+        </div>
+
+        <div style="align-self: flex-end; padding-bottom: 2px;">
+            <span style="font-size: 11px; color: var(--text-muted);">
+                Granularity: <strong>@_granularityLabel</strong>
+            </span>
+        </div>
+    </div>
+
+    @* ── Anomaly toggle row ── *@
+    @if (!string.IsNullOrEmpty(_selectedServer))
+    {
+        <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 16px; flex-wrap: wrap;">
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;">
+                <input type="checkbox" @bind="_showAnomalies" @bind:after="LoadAnomalies" />
+                Show anomalies (&gt;σ from learned baseline)
+            </label>
+            @if (_showAnomalies)
+            {
+                <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted);">
+                    <label>σ threshold</label>
+                    <input type="number" class="settings-input" style="width: 70px;" min="1.0" max="4.0" step="0.5"
+                           @bind="_zThreshold" @bind:after="LoadAnomalies" />
+                </div>
+            }
+        </div>
+    }
+
+    @* ── Anomaly panel ── *@
+    @if (_showAnomalies && !string.IsNullOrEmpty(_selectedServer))
+    {
+        <div style="margin-bottom: 20px; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden;">
+            <div style="background: var(--card-header-bg); padding: 8px 14px; display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 13px; font-weight: 600;">
+                    <i class="fa-solid fa-triangle-exclamation" style="margin-right: 6px; color: var(--orange);"></i>
+                    Anomalies — @_selectedServer
+                    @if (!string.IsNullOrEmpty(_selectedWaitType)) { <span style="font-weight: 400;"> / @_selectedWaitType</span> }
+                </span>
+                <div style="display: flex; gap: 8px;">
+                    <button class="settings-btn" @onclick="LearnBaseline" disabled="@_learningBaseline" style="font-size: 12px; padding: 4px 10px;">
+                        <i class="fa-solid @(_learningBaseline ? "fa-spinner fa-spin" : "fa-graduation-cap")"></i>
+                        @(_learningBaseline ? "Learning..." : "Learn baseline")
+                    </button>
+                    @if (string.IsNullOrEmpty(_selectedWaitType))
+                    {
+                        <button class="settings-btn" @onclick="LearnAllBaselines" disabled="@_learningBaseline" style="font-size: 12px; padding: 4px 10px;">
+                            <i class="fa-solid fa-layer-group"></i> Learn all
+                        </button>
+                    }
+                </div>
+            </div>
+
+            @if (_anomalyLoading)
+            {
+                <LoadingSpinner Message="Scanning for anomalies…" />
+            }
+            else if (!_hasBaseline)
+            {
+                <div style="padding: 16px; font-size: 12px; color: var(--text-muted);">
+                    No baseline learned yet for
+                    <strong>@(_selectedWaitType.Length > 0 ? _selectedWaitType : "this server")</strong>.
+                    Click <strong>Learn baseline</strong> to compute it from the last 30 days of rollup data.
+                    @if (!string.IsNullOrEmpty(_selectedWaitType))
+                    {
+                        <span> Or select <em>(all)</em> and click <strong>Learn all</strong> to cover every wait type at once.</span>
+                    }
+                </div>
+            }
+            else if (_anomalies.Count == 0)
+            {
+                <div style="padding: 16px; font-size: 12px; color: var(--text-muted);">
+                    No anomalies detected in the selected range at &ge;@_zThreshold&sigma;.
+                </div>
+            }
+            else
+            {
+                <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                    <thead>
+                        <tr style="background: var(--table-header-bg);">
+                            <th style="padding: 6px 12px; text-align: left; font-weight: 600;">Timestamp (UTC)</th>
+                            <th style="padding: 6px 12px; text-align: left; font-weight: 600;">Wait Type</th>
+                            <th style="padding: 6px 12px; text-align: right; font-weight: 600;">Observed (ms)</th>
+                            <th style="padding: 6px 12px; text-align: right; font-weight: 600;">Baseline Mean (ms)</th>
+                            <th style="padding: 6px 12px; text-align: right; font-weight: 600;">z-score</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var a in _anomalies)
+                        {
+                            var absZ = Math.Abs(a.ZScore);
+                            var zColor = absZ >= 3.0 ? "var(--red)" : "var(--orange)";
+                            <tr style="border-top: 1px solid var(--border-color);">
+                                <td style="padding: 5px 12px;">@a.Timestamp.ToString("yyyy-MM-dd HH:mm")</td>
+                                <td style="padding: 5px 12px; font-family: monospace;">@a.WaitType</td>
+                                <td style="padding: 5px 12px; text-align: right;">@a.ObservedValue.ToString("N1")</td>
+                                <td style="padding: 5px 12px; text-align: right;">@a.BaselineMean.ToString("N1")</td>
+                                <td style="padding: 5px 12px; text-align: right; color: @zColor; font-weight: 600;">
+                                    @(a.ZScore >= 0 ? "+" : "")@a.ZScore.ToString("N2")
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <div style="padding: 6px 12px; font-size: 11px; color: var(--text-muted);">
+                    @_anomalies.Count anomaly point(s) — sorted by |z-score| descending
+                </div>
+            }
+        </div>
+    }
+
+    @* ── Chart or empty state ── *@
+    @if (_loading)
+    {
+        <PageLoadingSpinner Message="Loading trend data..." />
+    }
+    else if (string.IsNullOrEmpty(_selectedServer))
+    {
+        <div style="text-align: center; padding: 48px; color: var(--text-muted);">
+            <i class="fa-solid fa-chart-area" style="font-size: 48px; margin-bottom: 16px; opacity: 0.3;"></i>
+            <div style="font-size: 14px;">Select a server to view historical wait-stats trends.</div>
+        </div>
+    }
+    else if (_chartData == null || _chartData.Count == 0)
+    {
+        <div style="text-align: center; padding: 48px; color: var(--text-muted);">
+            <i class="fa-solid fa-hourglass-half" style="font-size: 48px; margin-bottom: 16px; opacity: 0.3;"></i>
+            <div style="font-size: 14px; margin-bottom: 8px;">No rollup data yet for <strong>@_selectedServer</strong></div>
+            <div style="font-size: 12px;">
+                Hourly rollups run once per hour. Data accumulates from raw snapshots collected by<br/>
+                WaitStatsHistoryService — or run one now instead of waiting for the tick.
+            </div>
+            <button class="settings-btn" style="margin-top: 16px;" @onclick="ForceRollupNow" disabled="@_rollingUp">
+                <i class="fa-solid @(_rollingUp ? "fa-spinner fa-spin" : "fa-bolt")"></i>
+                @(_rollingUp ? "Running rollup..." : "Run rollup now")
+            </button>
+        </div>
+    }
+    else
+    {
+        <TimeSeriesChart Title="@_chartTitle"
+                         Data="_chartData"
+                         YAxisUnit="ms"
+                         Height="340"
+                         ChartSeriesType="ApexCharts.SeriesType.Line" />
+
+        <div style="font-size: 11px; color: var(--text-muted); margin-top: 8px;">
+            @{ var shownSeries = _chartData.Select(p => p.Series).Distinct().Count(); }
+            @if (string.IsNullOrEmpty(_selectedWaitType) && _totalSeriesCount > shownSeries)
+            {
+                <span>top @shownSeries of @_totalSeriesCount wait types (by total wait, benign excluded) &nbsp;·&nbsp;</span>
+            }
+            else
+            {
+                <span>@shownSeries series &nbsp;·&nbsp;</span>
+            }
+            @_chartData.Count points &nbsp;·&nbsp;
+            @_granularityLabel granularity
+        </div>
+    }
+</div>
+
+@code {
+    // ── State ────────────────────────────────────────────────────────────────
+    private string[]       _servers        = Array.Empty<string>();
+    private List<string>   _waitTypes      = new();
+    private string         _selectedServer = "";
+    private string         _selectedWaitType = "";
+    private int            _rangeDays      = 30;
+    private bool           _loading;
+    private List<TimeSeriesPoint>? _chartData;
+    private string         _chartTitle     = "";
+    private string         _granularityLabel = "hourly";
+    private string         _selectedGranularity = "Auto";
+    private int            _totalSeriesCount;
+    private const int      TopSeriesWhenAll = 8;
+
+    // ── Anomaly state ────────────────────────────────────────────────────────
+    private bool                    _showAnomalies    = false;
+    private double                  _zThreshold       = 2.0;
+    private bool                    _anomalyLoading   = false;
+    private bool                    _learningBaseline = false;
+    private bool                    _hasBaseline      = false;
+    private List<AnomalyPoint>      _anomalies        = new();
+
+    // ── Lifecycle ────────────────────────────────────────────────────────────
+
+    protected override void OnInitialized()
+    {
+        _servers = ConnectionManager.GetEnabledServerNames();
+        _selectedServer = ServerContext.CurrentServerId ?? "";
+        ServerContext.OnServerChanged += HandleServerChanged;
+    }
+
+    private void HandleServerChanged()
+    {
+        _selectedServer = ServerContext.CurrentServerId ?? "";
+        _ = InvokeAsync(async () =>
+        {
+            await LoadData();
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        ServerContext.OnServerChanged -= HandleServerChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !string.IsNullOrEmpty(_selectedServer))
+            await LoadData();
+    }
+
+    // ── Data load ────────────────────────────────────────────────────────────
+
+    private bool _rollingUp;
+
+    // Manual on-demand rollup — skip the hourly wait (the empty-state CTA).
+    private async Task ForceRollupNow()
+    {
+        if (_rollingUp) return;
+        _rollingUp = true;
+        StateHasChanged();
+        try
+        {
+            await HistoricalPerf.RunRollupAsync(System.Threading.CancellationToken.None);
+            Toast.ShowSuccess("Rollup complete", "Hourly rollup ran on demand.");
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("Rollup failed", ex.Message);
+        }
+        finally
+        {
+            _rollingUp = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadData()
+    {
+        if (string.IsNullOrEmpty(_selectedServer)) return;
+        _loading = true;
+        StateHasChanged();
+
+        await Task.Run(() =>
+        {
+            var toUtc   = DateTime.UtcNow;
+            var fromUtc = toUtc.AddDays(-_rangeDays);
+
+            // Populate wait-type dropdown (always from hourly — best coverage).
+            _waitTypes = HistoricalPerf.GetKnownWaitTypes(_selectedServer).ToList();
+
+            var waitTypeFilter = string.IsNullOrEmpty(_selectedWaitType) ? null : _selectedWaitType;
+
+            // Granularity selection: Auto logic or explicit override.
+            bool useHourly = false;
+            if (_selectedGranularity == "Auto")
+            {
+                useHourly = _rangeDays <= 14;
+            }
+            else
+            {
+                useHourly = _selectedGranularity == "Hourly";
+            }
+
+            if (useHourly)
+            {
+                _granularityLabel = "hourly";
+                var rows = HistoricalPerf.GetHourlyWaitStats(_selectedServer, fromUtc, toUtc, waitTypeFilter);
+                _chartData = rows.Select(r => new TimeSeriesPoint
+                {
+                    Time   = r.HourUtc,
+                    Series = r.WaitType,
+                    Value  = r.AvgWaitMs,
+                }).ToList();
+            }
+            else
+            {
+                _granularityLabel = "daily";
+                var rows = HistoricalPerf.GetDailyWaitStats(_selectedServer, fromUtc, toUtc, waitTypeFilter);
+                _chartData = rows.Select(r => new TimeSeriesPoint
+                {
+                    Time   = r.DayUtc,
+                    Series = r.WaitType,
+                    Value  = r.AvgWaitMs,
+                }).ToList();
+            }
+
+            // "(all)" plots one line per wait type — unreadable past a handful.
+            // Keep the top N series by total wait (benign types excluded); the
+            // dropdown still gives any single type in full.
+            _totalSeriesCount = _chartData.Select(p => p.Series).Distinct().Count();
+            if (waitTypeFilter == null && _totalSeriesCount > TopSeriesWhenAll)
+            {
+                var top = _chartData
+                    .Where(p => !WaitCategoryClassifier.IsIdleBenign(p.Series))
+                    .GroupBy(p => p.Series, StringComparer.OrdinalIgnoreCase)
+                    .OrderByDescending(g => g.Sum(p => p.Value))
+                    .Take(TopSeriesWhenAll)
+                    .Select(g => g.Key)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                _chartData = _chartData.Where(p => top.Contains(p.Series)).ToList();
+            }
+
+            var typeDesc = string.IsNullOrEmpty(waitTypeFilter)
+                ? (_totalSeriesCount > TopSeriesWhenAll ? $"top {TopSeriesWhenAll} wait types" : "all wait types")
+                : waitTypeFilter;
+            _chartTitle  = $"{_selectedServer} — {typeDesc} (avg wait ms, {_granularityLabel})";
+        });
+
+        _loading = false;
+
+        // Refresh anomalies whenever main data reloads (if panel is open).
+        if (_showAnomalies) await LoadAnomalies();
+
+        StateHasChanged();
+    }
+
+    // ── Anomaly helpers ──────────────────────────────────────────────────────
+
+    private async Task LoadAnomalies()
+    {
+        if (string.IsNullOrEmpty(_selectedServer) || !_showAnomalies)
+        {
+            _anomalies  = new();
+            _hasBaseline = false;
+            StateHasChanged();
+            return;
+        }
+
+        _anomalyLoading = true;
+        StateHasChanged();
+
+        await Task.Run(() =>
+        {
+            var waitTypeFilter = string.IsNullOrEmpty(_selectedWaitType) ? null : _selectedWaitType;
+
+            // Determine hasBaseline: if "all" is selected, check each known type.
+            if (waitTypeFilter == null)
+            {
+                _hasBaseline = _waitTypes.Any(wt => BaselineSvc.HasBaseline(_selectedServer, wt));
+            }
+            else
+            {
+                _hasBaseline = BaselineSvc.HasBaseline(_selectedServer, waitTypeFilter);
+            }
+        });
+
+        if (_hasBaseline)
+        {
+            var toUtc   = DateTime.UtcNow;
+            var fromUtc = toUtc.AddDays(-_rangeDays);
+
+            if (string.IsNullOrEmpty(_selectedWaitType))
+            {
+                // Collect anomalies for all wait types, then flatten and re-sort.
+                var all = new List<AnomalyPoint>();
+                foreach (var wt in _waitTypes)
+                {
+                    if (!BaselineSvc.HasBaseline(_selectedServer, wt)) continue;
+                    var pts = await BaselineSvc.DetectAnomaliesAsync(_selectedServer, wt, fromUtc, toUtc, _zThreshold);
+                    all.AddRange(pts);
+                }
+                all.Sort((a, b) => Math.Abs(b.ZScore).CompareTo(Math.Abs(a.ZScore)));
+                _anomalies = all;
+            }
+            else
+            {
+                var pts = await BaselineSvc.DetectAnomaliesAsync(_selectedServer, _selectedWaitType, fromUtc, toUtc, _zThreshold);
+                _anomalies = pts.ToList();
+            }
+        }
+        else
+        {
+            _anomalies = new();
+        }
+
+        _anomalyLoading = false;
+        StateHasChanged();
+    }
+
+    private async Task LearnBaseline()
+    {
+        if (string.IsNullOrEmpty(_selectedServer)) return;
+        var wt = string.IsNullOrEmpty(_selectedWaitType) ? null : _selectedWaitType;
+        if (wt == null) { await LearnAllBaselines(); return; }
+
+        _learningBaseline = true;
+        StateHasChanged();
+
+        var bucketsWritten = await BaselineSvc.LearnBaselineAsync(_selectedServer, wt);
+        AuditLog.LogBaselineLearned(_selectedServer, wt, bucketsWritten, 30);
+
+        Toast.ShowSuccess($"Baseline learned: {bucketsWritten} bucket(s) for {wt}");
+        _learningBaseline = false;
+        await LoadAnomalies();
+    }
+
+    private async Task LearnAllBaselines()
+    {
+        if (string.IsNullOrEmpty(_selectedServer)) return;
+
+        _learningBaseline = true;
+        StateHasChanged();
+
+        var results = await BaselineSvc.LearnAllBaselinesAsync(_selectedServer);
+        var total   = results.Values.Sum();
+        foreach (var kv in results)
+            AuditLog.LogBaselineLearned(_selectedServer, kv.Key, kv.Value, 30);
+
+        Toast.ShowSuccess($"Baselines learned: {total} bucket(s) across {results.Count} wait type(s)");
+        _learningBaseline = false;
+        await LoadAnomalies();
+    }
+}

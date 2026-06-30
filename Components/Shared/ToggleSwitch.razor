@@ -1,0 +1,38 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+<div class="toggle-switch @(Disabled ? "toggle-disabled" : "")" @onclick="Toggle" title="@Title">
+    @if (!string.IsNullOrWhiteSpace(Label) && LabelPosition == ToggleLabelPosition.Left)
+    {
+        <span class="toggle-label toggle-label-left">@Label</span>
+    }
+
+    <div class="toggle-track @(Value ? "toggle-track-on" : "")" style="@(Value && !string.IsNullOrEmpty(ActiveColor) ? $"background: {ActiveColor}; border-color: {ActiveColor};" : "")">
+        <div class="toggle-thumb @(Value ? "toggle-thumb-on" : "")"></div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(Label) && LabelPosition == ToggleLabelPosition.Right)
+    {
+        <span class="toggle-label toggle-label-right">@Label</span>
+    }
+</div>
+
+@code {
+    public enum ToggleLabelPosition { Left, Right }
+
+    [Parameter] public bool Value { get; set; }
+    [Parameter] public EventCallback<bool> ValueChanged { get; set; }
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public ToggleLabelPosition LabelPosition { get; set; } = ToggleLabelPosition.Right;
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string? ActiveColor { get; set; } // e.g. "var(--accent)" or "#dc2626"
+    [Parameter] public bool Disabled { get; set; }
+
+    private async Task Toggle()
+    {
+        if (Disabled) return;
+        Value = !Value;
+        if (ValueChanged.HasDelegate)
+        {
+            await ValueChanged.InvokeAsync(Value);
+        }
+    }
+}

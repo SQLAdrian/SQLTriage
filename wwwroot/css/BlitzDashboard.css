@@ -1,0 +1,169 @@
+/* In the name of God, the Merciful, the Compassionate */
+/* sp_Blitz Health Dashboard (/blitz).
+ * Colour-blind safety: ALL status colour comes from the canonical CSS vars
+ * (--green/--yellow/--orange/--red/--purple), so body.colorblind-mode remaps
+ * them via Accessibility.css. No literal status hex anywhere in this file. */
+
+.blitz-container {
+    padding: 24px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+/* ── Empty state ── */
+.blitz-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 64px 24px;
+    gap: 12px;
+}
+.blitz-empty-icon { font-size: 48px; color: var(--text-muted); }
+.blitz-empty-title { margin: 0; color: var(--text-primary); }
+.blitz-empty-text { max-width: 540px; color: var(--text-secondary); font-size: 14px; }
+.blitz-empty-actions { display: flex; gap: 12px; margin-top: 8px; align-items: center; }
+.blitz-empty-link {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 16px; border-radius: 6px;
+    background: var(--accent); color: #000; font-weight: 600; text-decoration: none;
+}
+
+/* ── Header ── */
+.blitz-header-row {
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;
+}
+.blitz-header { display: flex; align-items: center; gap: 14px; }
+.blitz-header-icon {
+    width: 44px; height: 44px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    background: color-mix(in srgb, var(--accent) 16%, var(--bg-secondary));
+    color: var(--accent); font-size: 20px;
+}
+.blitz-header-title { margin: 0; font-size: 22px; color: var(--text-primary); }
+.blitz-header-subtitle { margin: 2px 0 0; font-size: 13px; color: var(--text-secondary); }
+
+.blitz-warning-banner {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 14px; margin-bottom: 16px;
+    border: 1px solid var(--orange); border-left: 3px solid var(--orange);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--orange) 8%, var(--bg-secondary));
+    color: var(--text-primary); font-size: 13px;
+}
+.blitz-warning-banner i { color: var(--orange); }
+
+/* ── Estate summary ── */
+.blitz-estate {
+    display: flex; align-items: center; gap: 28px;
+    padding: 20px; margin-bottom: 24px;
+    border: 1px solid var(--border); border-radius: 12px;
+    background: var(--bg-secondary);
+}
+/* Exceptions view: a coloured count, not a % ring — the number itself carries the band colour. */
+.blitz-gauge {
+    display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
+    flex-shrink: 0; min-width: 110px; padding-right: 8px;
+}
+.blitz-gauge-value { font-size: 52px; font-weight: 800; line-height: 1; color: var(--band); }
+.blitz-gauge-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 6px; }
+.blitz-estate-stats { display: flex; gap: 32px; }
+.blitz-stat { display: flex; flex-direction: column; }
+.blitz-stat-value { font-size: 26px; font-weight: 700; color: var(--text-primary); }
+.blitz-stat-label { font-size: 12px; color: var(--text-muted); }
+
+/* ── Band classes → canonical vars (colour-blind remappable) ── */
+.blitz-band-excellent { --band: var(--green); }
+.blitz-band-good      { --band: var(--yellow); }
+.blitz-band-warn      { --band: var(--orange); }
+.blitz-band-crit      { --band: var(--red); }
+
+/* ── Instance card ── */
+.blitz-card {
+    border: 1px solid var(--border); border-radius: 12px;
+    background: var(--bg-secondary); padding: 18px; margin-bottom: 18px;
+}
+.blitz-card-head { display: flex; justify-content: space-between; align-items: flex-start; }
+.blitz-card-id { display: flex; flex-direction: column; }
+.blitz-instance-name { font-size: 17px; font-weight: 700; color: var(--text-primary); }
+.blitz-instance-sub { font-size: 12px; color: var(--text-muted); }
+.blitz-score-pill {
+    font-size: 20px; font-weight: 700; padding: 6px 14px; border-radius: 8px;
+    color: var(--band);
+    border: 2px solid var(--band);
+    background: color-mix(in srgb, var(--band) 10%, transparent);
+}
+.blitz-card-metrics {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    margin: 12px 0; font-size: 13px; color: var(--text-secondary);
+}
+.blitz-muted { color: var(--text-muted); }
+.blitz-depth { color: var(--text-muted); }
+
+/* ── Category rollup ── */
+.blitz-cat-rollup { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
+.blitz-cat { display: grid; grid-template-columns: 160px 1fr 60px; gap: 10px; align-items: center; font-size: 12px; }
+.blitz-cat-name { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.blitz-cat-bar { height: 8px; border-radius: 4px; background: color-mix(in srgb, var(--text-muted) 25%, transparent); overflow: hidden; }
+.blitz-cat-fill { height: 100%; background: var(--band); border-radius: 4px; }
+.blitz-cat-num { color: var(--text-muted); text-align: right; }
+
+/* ── Findings table ── */
+.blitz-findings { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
+.blitz-findings th {
+    text-align: left; padding: 6px 8px; color: var(--text-muted);
+    font-weight: 600; border-bottom: 1px solid var(--border); font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.4px;
+}
+.blitz-findings td { padding: 7px 8px; border-bottom: 1px solid var(--border); color: var(--text-secondary); vertical-align: top; }
+.blitz-findings .blitz-num { text-align: right; }
+.blitz-finding-name { color: var(--text-primary); font-weight: 500; }
+.blitz-next { color: var(--text-muted); max-width: 420px; }
+.blitz-row-info td { opacity: 0.7; }
+
+/* ── Two-voice "next action" cell: CIO "why" + DBA "do this" ── */
+.blitz-voice {
+    display: flex; gap: 6px; align-items: baseline;
+    font-size: 12.5px; line-height: 1.35;
+    color: var(--text-secondary);
+}
+.blitz-voice + .blitz-voice { margin-top: 4px; }
+.blitz-voice-tag {
+    flex: 0 0 auto;
+    font-size: 9.5px; font-weight: 700; letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 1px 5px; border-radius: 4px;
+    border: 1px solid var(--border);
+    color: var(--text-muted); background: var(--bg-secondary);
+    position: relative; top: -1px;
+}
+/* CIO line = business framing (purple accent); DBA line = action (teal accent).
+   Both pull from canonical vars so colorblind-mode remaps them. */
+.blitz-voice-cio .blitz-voice-tag { color: var(--purple); border-color: var(--purple); }
+.blitz-voice-dba .blitz-voice-tag { color: var(--accent);  border-color: var(--accent); }
+
+.blitz-badge {
+    display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 4px;
+    font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px;
+}
+.blitz-badge-basic   { color: var(--purple); border: 1px solid var(--purple); }
+.blitz-badge-unknown { color: var(--text-muted); border: 1px solid var(--text-muted); }
+
+/* ── Severity badges → canonical vars ── */
+.blitz-sev {
+    display: inline-block; padding: 2px 8px; border-radius: 10px;
+    font-size: 11px; font-weight: 600; color: #000;
+}
+.blitz-sev-crit    { background: var(--red); color: #fff; }
+.blitz-sev-high    { background: var(--orange); }
+.blitz-sev-med     { background: var(--yellow); }
+.blitz-sev-low     { background: var(--green); }
+.blitz-sev-info    { background: var(--text-muted); color: #fff; }
+.blitz-sev-unknown { background: transparent; color: var(--text-muted); border: 1px solid var(--text-muted); }
+
+.blitz-expand {
+    margin-top: 8px; background: none; border: none; cursor: pointer;
+    color: var(--accent); font-size: 12px; font-weight: 600;
+}
+.blitz-expand:hover { text-decoration: underline; }

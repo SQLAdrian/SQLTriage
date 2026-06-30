@@ -1,0 +1,208 @@
+/* AlertsNoc.razor.css - War Room Aesthetic */
+
+.noc-container {
+    padding: 24px;
+    max-width: 100%;
+    min-height: 100vh;
+    background-color: #0b1216; /* Deep dark background */
+    background-image: 
+        linear-gradient(rgba(45, 212, 191, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(45, 212, 191, 0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    font-family: 'Inter', sans-serif;
+    color: #e6edf2;
+    position: relative;
+    overflow-x: hidden;
+}
+
+/* Subtle CRT scanline effect over the whole page */
+.noc-container::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: repeating-linear-gradient(
+        0deg,
+        rgba(0, 0, 0, 0.15),
+        rgba(0, 0, 0, 0.15) 1px,
+        transparent 1px,
+        transparent 2px
+    );
+    pointer-events: none;
+    z-index: 9999;
+    opacity: 0.3;
+}
+
+.noc-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid rgba(45, 212, 191, 0.2);
+}
+
+.noc-title {
+    margin: 0;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: #2dd4bf;
+    text-shadow: 0 0 10px rgba(45, 212, 191, 0.4);
+}
+
+.noc-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+    margin-bottom: 32px;
+}
+
+.noc-card {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    padding: 16px;
+    background: rgba(11, 18, 22, 0.7);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.noc-card:hover {
+    transform: translateY(-2px);
+}
+
+/* Cyber corner accents */
+.noc-card::before, .noc-card::after {
+    content: '';
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    border: 2px solid transparent;
+    pointer-events: none;
+}
+.noc-card::before {
+    top: 0; left: 0;
+    border-top-color: inherit; border-left-color: inherit;
+}
+.noc-card::after {
+    bottom: 0; right: 0;
+    border-bottom-color: inherit; border-right-color: inherit;
+}
+
+.noc-card.status-ok {
+    /* Explicit subtle tint (like status-warning/critical below) so the war-room glass
+       look holds AND a generic global `.status-ok { background:… }` can't paint the
+       whole card solid green. */
+    background: rgba(33, 201, 122, 0.06);
+    border-color: rgba(33, 201, 122, 0.3);
+    border-top-color: rgba(33, 201, 122, 0.8);
+    border-left-color: rgba(33, 201, 122, 0.8);
+    border-bottom-color: rgba(33, 201, 122, 0.8);
+    border-right-color: rgba(33, 201, 122, 0.8);
+}
+
+.noc-card.status-warning {
+    border-color: rgba(255, 204, 0, 0.4);
+    background: rgba(255, 204, 0, 0.05);
+    border-top-color: rgba(255, 204, 0, 0.8);
+    border-left-color: rgba(255, 204, 0, 0.8);
+    border-bottom-color: rgba(255, 204, 0, 0.8);
+    border-right-color: rgba(255, 204, 0, 0.8);
+}
+
+.noc-card.status-critical {
+    border-color: rgba(244, 71, 71, 0.6);
+    background: rgba(244, 71, 71, 0.1);
+    box-shadow: 0 0 15px rgba(244, 71, 71, 0.3);
+    border-top-color: rgba(244, 71, 71, 1);
+    border-left-color: rgba(244, 71, 71, 1);
+    border-bottom-color: rgba(244, 71, 71, 1);
+    border-right-color: rgba(244, 71, 71, 1);
+    animation: nocGlitch 4s infinite;
+}
+
+/* Glitch animation for critical cards */
+@keyframes nocGlitch {
+    0%   { transform: translate(0); box-shadow: 0 0 15px rgba(244, 71, 71, 0.3); }
+    2%   { transform: translate(-2px, 1px); box-shadow: 0 0 25px rgba(244, 71, 71, 0.6), -2px 0 0 rgba(0, 255, 255, 0.5), 2px 0 0 rgba(255, 0, 255, 0.5); }
+    4%   { transform: translate(2px, -1px); box-shadow: 0 0 15px rgba(244, 71, 71, 0.3); }
+    6%   { transform: translate(0); }
+    100% { transform: translate(0); box-shadow: 0 0 15px rgba(244, 71, 71, 0.3); }
+}
+
+.noc-ticker-container {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(45, 212, 191, 0.3);
+    border-radius: 4px;
+    padding: 12px;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    align-items: center;
+    margin-bottom: 24px;
+    box-shadow: inset 0 0 10px rgba(0,0,0,0.5);
+}
+
+.noc-ticker-label {
+    font-weight: 700;
+    color: #2dd4bf;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    font-size: 11px;
+    padding-right: 16px;
+    margin-right: 16px;
+    border-right: 1px solid rgba(45, 212, 191, 0.3);
+    white-space: nowrap;
+    z-index: 2;
+    background: #0b1216;
+}
+
+.noc-ticker-wrapper {
+    flex: 1;
+    overflow: hidden;
+    white-space: nowrap;
+    position: relative;
+    mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent);
+    -webkit-mask-image: linear-gradient(to right, transparent, black 5%, black 95%, transparent);
+}
+
+.noc-ticker-track {
+    display: inline-block;
+    animation: nocScroll 30s linear infinite;
+}
+
+.noc-ticker-track:hover {
+    animation-play-state: paused;
+}
+
+@keyframes nocScroll {
+    0%   { transform: translateX(100%); }
+    100% { transform: translateX(-100%); }
+}
+
+.noc-ticker-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-right: 40px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+}
+
+.noc-table-container {
+    background: rgba(11, 18, 22, 0.7);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(45, 212, 191, 0.2);
+    border-radius: 4px;
+    padding: 16px;
+}

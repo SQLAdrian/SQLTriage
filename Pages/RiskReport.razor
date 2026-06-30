@@ -1,0 +1,92 @@
+@* In the name of God, the Merciful, the Compassionate *@
+@* Risk Assessment report — DEV-TOOLS GATED, NEVER ships to community/public.
+   Content-Removed by buildprofile.targets alongside the RiskReport services.
+   Per-customer-domain report read from the SQLDBA.ORG repo views (select that
+   instance as the active connection first). *@
+@page "/riskreport"
+@using System.IO
+@using SQLTriage.Data.Services.RiskReport
+@using Microsoft.Extensions.Logging
+@inject RiskAssessmentService RiskSvc
+@inject ILogger<RiskReport> Logger
+
+<h1>SQL Risk Assessment (consultant)</h1>
+<p class="text-muted">
+    Reads <code>Domains_Details_Reporting</code> + <code>003_Checks_ConsultantTasks</code>
+    from the connected instance. Select your SQLDBA.ORG repo as the active connection first.
+</p>
+
+<div style="max-width:520px; display:flex; flex-direction:column; gap:10px;">
+    <label>
+        Customer domain
+        <input @bind="_domain" placeholder="e.g. example.co.nz" style="width:100%;" />
+    </label>
+
+    <label><input type="checkbox" @bind="_supportedOnly" /> Supported instances only</label>
+    <label><input type="checkbox" @bind="_detailed" /> Detailed (include finding detail)</label>
+    <label><input type="checkbox" @bind="_showAll" /> Show all checks (incl. passing)</label>
+    <label><input type="checkbox" @bind="_includeYellow" /> Include yellow (medium) checks</label>
+
+    <button @onclick="Generate" disabled="@(_busy || string.IsNullOrWhiteSpace(_domain))">
+        @(_busy ? "Generating…" : "Generate PDF")
+    </button>
+
+    @if (_result is not null)
+    {
+        <div style="margin-top:8px;">
+            @if (_result.Value.ok)
+            {
+                <span style="color:green;">Saved: @_result.Value.msg</span>
+            }
+            else
+            {
+                <span style="color:#c00;">Failed: @_result.Value.msg</span>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private string _domain = "";
+    private bool _supportedOnly;
+    private bool _detailed = true;
+    private bool _showAll;
+    private bool _includeYellow = true;
+    private bool _busy;
+    private (bool ok, string msg)? _result;
+
+    private async Task Generate()
+    {
+        _busy = true;
+        _result = null;
+        try
+        {
+            var filters = new RiskReportFilters
+            {
+                SupportedOnly = _supportedOnly,
+                Detailed = _detailed,
+                ShowAllChecks = _showAll,
+                IncludeYellowChecks = _includeYellow,
+            };
+
+            var bytes = await RiskSvc.BuildPdfAsync(_domain.Trim(), filters);
+
+            var dir = Path.Combine(AppContext.BaseDirectory, "output");
+            Directory.CreateDirectory(dir);
+            var safe = _domain.Trim().Replace("\\", "_").Replace("/", "_").Replace(":", "_");
+            var path = Path.Combine(dir, $"{safe}_RiskAssessment_{DateTime.Now:yyyy-MM-dd-HHmmss}.pdf");
+            await File.WriteAllBytesAsync(path, bytes);
+
+            _result = (true, path);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Risk Assessment report generation failed for {Domain}", _domain);
+            _result = (false, ex.Message);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

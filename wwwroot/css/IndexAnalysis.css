@@ -1,0 +1,411 @@
+/* Index Analysis page — CSS variables only, no hardcoded hex */
+
+.ia-page {
+    padding: 16px;
+    max-width: 1600px;
+}
+
+.ia-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 4px;
+}
+
+.ia-header h2 {
+    margin: 0;
+    font-size: 20px;
+    color: var(--text-primary);
+}
+
+.ia-header i {
+    font-size: 20px;
+    color: var(--accent);
+}
+
+.ia-subtitle {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+}
+
+.ia-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+
+.ia-tabs {
+    display: flex;
+    gap: 2px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 16px;
+}
+
+.ia-tab {
+    padding: 8px 16px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-radius: 4px 4px 0 0;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.15s;
+}
+
+.ia-tab:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+
+.ia-tab.active {
+    background: var(--bg-panel);
+    color: var(--accent);
+    border-color: var(--border);
+    font-weight: 600;
+    position: relative;
+    top: 1px;
+}
+
+.ia-tab .ia-tab-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    font-size: 10px;
+    font-weight: 700;
+    background: var(--bg-hover);
+    color: var(--text-muted);
+}
+
+.ia-tab.active .ia-tab-badge {
+    background: rgba(0, 122, 204, 0.15);
+    color: var(--accent);
+}
+
+/* ── Data table ── */
+.ia-table-wrapper {
+    overflow-x: auto;
+    max-height: 65vh;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-panel);
+}
+
+.ia-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+.ia-table th {
+    position: sticky;
+    top: 0;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    padding: 8px 12px;
+    text-align: left;
+    font-weight: 600;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+    user-select: none;
+    z-index: 1;
+}
+
+.ia-table td {
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-primary);
+    max-width: 320px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ia-table tr:hover {
+    background: var(--bg-hover);
+}
+
+.ia-table tr.clickable {
+    cursor: pointer;
+}
+
+/* ── Impact colour coding ── */
+.ia-impact-high {
+    color: var(--red);
+    font-weight: 700;
+}
+
+.ia-impact-medium {
+    color: var(--yellow);
+    font-weight: 600;
+}
+
+.ia-impact-low {
+    color: var(--green);
+}
+
+/* ── Frag colour coding ── */
+.ia-frag-high {
+    color: var(--red);
+    font-weight: 700;
+}
+
+.ia-frag-medium {
+    color: var(--yellow);
+    font-weight: 600;
+}
+
+.ia-frag-low {
+    color: var(--green);
+}
+
+/* ── Action badge ── */
+.ia-action-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.ia-action-rebuild {
+    background: rgba(244, 71, 71, 0.12);
+    color: var(--red);
+    border: 1px solid rgba(244, 71, 71, 0.25);
+}
+
+.ia-action-reorganize {
+    background: rgba(78, 201, 176, 0.1);
+    color: var(--green);
+    border: 1px solid rgba(78, 201, 176, 0.25);
+}
+
+/* ── Expanded script row ── */
+.ia-script-row td {
+    padding: 0;
+    background: var(--bg-secondary);
+}
+
+.ia-script-content {
+    padding: 12px 16px;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+}
+
+.ia-script-text {
+    flex: 1;
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: var(--text-primary);
+    background: var(--bg-primary);
+    padding: 10px 12px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    max-height: 120px;
+    overflow-y: auto;
+}
+
+.ia-script-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+/* ── Buttons ── */
+.ia-btn {
+    padding: 5px 12px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    border: 1px solid var(--border);
+    background: var(--bg-panel);
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+
+.ia-btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent);
+}
+
+.ia-btn i {
+    margin-right: 4px;
+}
+
+.ia-btn-primary {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+}
+
+.ia-btn-primary:hover {
+    opacity: 0.85;
+}
+
+/* ── Empty / Loading ── */
+.ia-empty {
+    text-align: center;
+    padding: 48px 16px;
+    color: var(--text-muted);
+}
+
+.ia-empty i {
+    font-size: 40px;
+    display: block;
+    margin-bottom: 12px;
+    opacity: 0.3;
+}
+
+.ia-empty p {
+    font-size: 13px;
+    margin: 0;
+}
+
+.ia-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 16px;
+    gap: 12px;
+    color: var(--text-secondary);
+}
+
+.ia-loading i {
+    font-size: 28px;
+    color: var(--accent);
+}
+
+/* ── Error banner ── */
+.ia-error {
+    padding: 12px 16px;
+    margin-bottom: 12px;
+    background: rgba(244, 71, 71, 0.08);
+    border: 1px solid rgba(244, 71, 71, 0.25);
+    border-radius: 6px;
+    color: var(--red);
+    font-size: 13px;
+}
+
+/* ── Overhead highlight (unused indexes with high writes) ── */
+.ia-overhead {
+    background: rgba(244, 71, 71, 0.04);
+}
+
+.ia-overhead td:first-child {
+    border-left: 3px solid var(--red);
+}
+
+/* ── Summary stats row ── */
+.ia-summary {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+
+.ia-summary-card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 16px;
+    min-width: 160px;
+}
+
+.ia-summary-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 4px;
+}
+
+.ia-summary-value {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.ia-summary-value.warn {
+    color: var(--red);
+}
+
+/* ── Maintenance script modal ── */
+.ia-maint-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.ia-maint-modal {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    width: 90vw;
+    max-width: 900px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.ia-maint-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+}
+
+.ia-maint-modal-header h3 {
+    margin: 0;
+    font-size: 15px;
+    color: var(--text-primary);
+}
+
+.ia-maint-modal-body {
+    flex: 1;
+    overflow: auto;
+    padding: 16px;
+}
+
+.ia-maint-modal-body pre {
+    margin: 0;
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: var(--text-primary);
+    background: var(--bg-primary);
+    padding: 12px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+}
+
+.ia-maint-modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+}

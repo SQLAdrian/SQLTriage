@@ -1,0 +1,13 @@
+@* Shared loading indicator — drop into any page with async init *@
+@if (IsLoading)
+{
+    <div role="status" aria-label="Loading content" style="display:flex;align-items:center;justify-content:center;padding:48px 24px;gap:12px;">
+        <div style="width:24px;height:24px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;"></div>
+        <span style="font-size:13px;color:var(--text-muted);">@Message</span>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsLoading { get; set; }
+    [Parameter] public string Message { get; set; } = "Loading...";
+}

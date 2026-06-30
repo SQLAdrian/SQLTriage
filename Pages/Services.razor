@@ -1,0 +1,78 @@
+@*/* In the name of God, the Merciful, the Compassionate */*@
+@page "/services"
+<PageTitle>SQLTriage - Services</PageTitle>
+@using SQLTriage.Data
+@using SQLTriage.Data.Services
+@inject ServiceCatalog Catalog
+@inject NavigationManager Nav
+
+<div class="settings-page" style="max-width: 1200px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+        <h2 style="margin:0;"><i class="fa-solid fa-diagram-project"></i> Services</h2>
+        <button class="settings-btn" @onclick="Refresh"><i class="fa-solid fa-arrows-rotate"></i> Refresh</button>
+    </div>
+    <p style="font-size:12px; color:var(--text-muted); margin:0 0 18px; max-width:760px;">
+        Every service and collection scenario the platform can run — where each one lives and its current state.
+        In-app services run inside this process; headless services run as a Windows service; target-instance
+        collectors deploy into a database on a monitored server; portable agents are dropped onto a server.
+    </p>
+
+    @foreach (var group in _entries.GroupBy(e => e.Locus).OrderBy(g => (int)g.Key))
+    {
+        <div class="nav-section-label" style="margin:16px 0 8px;">@LocusLabel(group.Key)</div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(360px, 1fr)); gap:12px;">
+            @foreach (var e in group)
+            {
+                <div style="border:1px solid var(--border); border-radius:10px; padding:14px 16px; background:var(--bg-secondary); display:flex; flex-direction:column; gap:8px;">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <span style="width:30px; height:30px; border-radius:7px; background:rgba(255,255,255,0.04); display:flex; align-items:center; justify-content:center; color:var(--accent);">
+                            <i class="fa-solid @e.Icon"></i>
+                        </span>
+                        <span style="font-weight:600; font-size:14px; color:var(--text-primary); flex:1;">@e.Name</span>
+                        <span class="svc-badge svc-@e.Health.ToString().ToLowerInvariant()">@HealthLabel(e.Health)</span>
+                    </div>
+                    <div style="font-size:12px; color:var(--text-secondary); line-height:1.5;">@e.Description</div>
+                    <div style="font-size:11px; color:var(--text-muted);"><i class="fa-solid fa-circle-info"></i> @e.StateText</div>
+                    @if (!string.IsNullOrEmpty(e.ManageRoute))
+                    {
+                        <div><button class="settings-btn" style="font-size:12px; padding:4px 12px;" @onclick="@(() => Nav.NavigateTo(e.ManageRoute!))">Manage →</button></div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<style>
+.svc-badge { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; padding:2px 9px; border-radius:999px; white-space:nowrap; }
+.svc-running, .svc-healthy { background:rgba(34,197,94,0.14); color:var(--green); }
+.svc-stopped { background:rgba(148,163,184,0.16); color:var(--text-muted); }
+.svc-degraded { background:rgba(245,158,11,0.16); color:var(--orange); }
+.svc-notinstalled, .svc-unknown { background:rgba(239,68,68,0.12); color:var(--red); }
+.svc-available { background:rgba(59,130,246,0.16); color:#60a5fa; }
+.svc-planned { background:rgba(168,85,247,0.16); color:#c084fc; }
+</style>
+
+@code {
+    private List<ServiceCatalogEntry> _entries = new();
+
+    protected override void OnInitialized() => Refresh();
+
+    private void Refresh() => _entries = Catalog.GetEntries();
+
+    private static string LocusLabel(ServiceLocus l) => l switch
+    {
+        ServiceLocus.InAppProcess => "In-app process",
+        ServiceLocus.HeadlessService => "Headless Windows service",
+        ServiceLocus.TargetInstance => "On a target SQL instance",
+        ServiceLocus.PortableAgent => "Portable agent (roadmap)",
+        ServiceLocus.External => "External",
+        _ => "Other",
+    };
+
+    private static string HealthLabel(ServiceHealth h) => h switch
+    {
+        ServiceHealth.NotInstalled => "Not installed",
+        _ => h.ToString(),
+    };
+}

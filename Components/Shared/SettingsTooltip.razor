@@ -1,0 +1,11 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+<div class="settings-tooltip">
+    <i class="fa-solid fa-circle-info tooltip-icon"></i>
+    <div class="tooltip-text">
+        @ChildContent
+    </div>
+</div>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

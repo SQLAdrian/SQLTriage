@@ -1,0 +1,132 @@
+/* In the name of God, the Merciful, the Compassionate */
+
+using System;
+using SQLTriage.Data;
+
+namespace SQLTriage.Data.Services
+{
+    // BM:IUserSettingsService.Class — user settings persistence abstraction
+    /// <summary>
+    /// Abstraction over UserSettingsService — enables testing and future alternative implementations.
+    /// </summary>
+    public interface IUserSettingsService
+    {
+        UserSettingsService.UserSettings GetSettings();
+
+        int GetRefreshInterval();
+        void SetRefreshInterval(int seconds);
+
+        bool GetAutoRefresh();
+        void SetAutoRefresh(bool enabled);
+
+        int GetDefaultTimeRange();
+        void SetDefaultTimeRange(int minutes);
+
+        bool GetShowDiagnosticPane();
+        void SetShowDiagnosticPane(bool enabled);
+
+        string GetDefaultDashboardId();
+        void SetDefaultDashboardId(string dashboardId);
+
+        string GetDataSource();
+        void SetDataSource(string source);
+
+        int GetZoomLevel();
+        void SetZoomLevel(int zoomPercent);
+
+        bool GetDebugLogging();
+        void SetDebugLogging(bool enabled);
+
+        bool GetAnonymiseServerNames();
+        void SetAnonymiseServerNames(bool enabled);
+
+        bool GetUseV2PlanIcons();
+        void SetUseV2PlanIcons(bool enabled);
+
+        bool GetShowVaQueries();
+        void SetShowVaQueries(bool enabled);
+
+        bool GetNoPantsMode();
+        void SetNoPantsMode(bool enabled);
+
+        bool GetNoPantsDisclaimerAccepted();
+        void SetNoPantsDisclaimerAccepted(bool accepted);
+
+        bool GetAlertBaselineEnabled();
+        void SetAlertBaselineEnabled(bool enabled);
+        event Action<bool>? OnAlertBaselineEnabledChanged;
+
+        bool GetAlertBaselinePerServer();
+        void SetAlertBaselinePerServer(bool enabled);
+
+        bool GetExperimentalMode();
+        void SetExperimentalMode(bool enabled);
+
+        bool GetOnboardingComplete();
+        void SetOnboardingComplete(bool complete);
+
+        string GetLastSeenVersion();
+        void SetLastSeenVersion(string version);
+
+        void UpdateAutoExportSettings(
+            bool auditCsv, bool auditJson, bool auditPdf,
+            bool quickCheckCsv, bool quickCheckPdf,
+            bool vaCsv, bool vaPdf);
+
+        UserSettingsService.UserSettings.VaScheduleSnapshot GetVaSchedule();
+        void SaveVaSchedule(bool enabled, string type, string time, int dayOfWeek, int dayOfMonth);
+        void UpdateVaScheduleLastRun(DateTime utcNow);
+
+        UserSettingsService.UserSettings.RoadmapScheduleSnapshot GetRoadmapSchedule();
+        void SaveRoadmapSchedule(bool enabled, string type, string time, int dayOfWeek, int dayOfMonth, bool splitByDomain);
+        void UpdateRoadmapScheduleLastRun(DateTime utcNow);
+
+        int GetMaxHeavyConcurrent();
+        void SetMaxHeavyConcurrent(int limit);
+
+        int GetMaxLightConcurrent();
+        void SetMaxLightConcurrent(int limit);
+
+        int GetMaxConcurrentPerServer();
+        void SetMaxConcurrentPerServer(int limit);
+
+        bool GetEnableBurstMode();
+        void SetEnableBurstMode(bool enabled);
+
+        double GetBurstConcurrencyMultiplier();
+        void SetBurstConcurrencyMultiplier(double mult);
+
+        int GetBurstDurationSec();
+        void SetBurstDurationSec(int sec);
+
+        event Action<int>? OnZoomChanged;
+        event Action<bool>? OnDebugLoggingChanged;
+        event Action<bool>? OnNoPantsModeChanged;
+        event Action<bool>? OnExperimentalModeChanged;
+        event Action<bool>? OnShowMaturityRoadmapChanged;
+
+        // UX / Appearance
+        bool GetEnableAnimations();
+        void SetEnableAnimations(bool enabled);
+
+        // Fast App Load (instant skeleton screens at the cost of memory)
+        bool GetFastAppLoad();
+        void SetFastAppLoad(bool enabled);
+
+        // Threshold-based highlighting
+        bool GetThresholdsEnabled();
+        void SetThresholdsEnabled(bool enabled);
+        int GetThresholdCpuMs();
+        void SetThresholdCpuMs(int ms);
+        int GetThresholdWaitTimeMs();
+        void SetThresholdWaitTimeMs(int ms);
+        int GetThresholdMemoryMb();
+        void SetThresholdMemoryMb(int mb);
+        int GetThresholdReadsKb();
+        void SetThresholdReadsKb(int kb);
+        int GetThresholdWritesKb();
+        void SetThresholdWritesKb(int kb);
+        int GetThresholdDurationMs();
+        void SetThresholdDurationMs(int ms);
+    }
+}

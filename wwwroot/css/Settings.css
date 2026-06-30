@@ -1,0 +1,289 @@
+/* Settings page — rail + content layout (2026-05-13) */
+
+.settings-page {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 24px 24px 64px;
+}
+
+/* The actual scroll container in this app is .app-content (not <html>),
+   so anchor-link smooth scrolling has to be set there. */
+body:has(.settings-page) .app-content {
+    scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    body:has(.settings-page) .app-content {
+        scroll-behavior: auto !important;
+    }
+}
+
+.settings-page > h2 {
+    margin: 0 0 20px;
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.settings-layout {
+    display: flex;
+    align-items: flex-start;
+    gap: 28px;
+}
+
+.settings-rail {
+    position: sticky;
+    top: 16px;
+    flex: 0 0 220px;
+    align-self: flex-start;
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+    padding: 14px 12px;
+    background: var(--bg-panel);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 12px;
+}
+
+.settings-rail-group {
+    margin-bottom: 14px;
+}
+
+.settings-rail-group:last-child {
+    margin-bottom: 0;
+}
+
+.settings-rail-heading {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    padding: 0 8px 6px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 6px;
+}
+
+.settings-rail a {
+    display: block;
+    padding: 5px 8px;
+    border-radius: 4px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    line-height: 1.35;
+}
+
+.settings-rail a:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.settings-rail a:target,
+.settings-rail a.active {
+    background: var(--bg-hover);
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.settings-content {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.settings-group {
+    scroll-margin-top: 16px;
+}
+
+@media (max-width: 960px) {
+    .settings-layout {
+        flex-direction: column;
+    }
+    .settings-rail {
+        position: static;
+        flex: 0 0 auto;
+        max-height: none;
+        width: 100%;
+    }
+}
+
+/* Section card — already partially defined in app.css; refine here */
+.settings-group {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px 20px;
+    margin-bottom: 16px;
+}
+
+.settings-group h3 {
+    margin: 0 0 14px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+}
+
+.settings-group h4 {
+    margin: 16px 0 8px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+}
+
+.settings-group h4:first-child {
+    margin-top: 0;
+}
+
+/* Field row — label + input/control aligned horizontally with consistent spacing */
+.settings-field {
+    margin-bottom: 14px;
+}
+
+.settings-field:last-child {
+    margin-bottom: 0;
+}
+
+.settings-field > label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+}
+
+.settings-field input[type="text"],
+.settings-field input[type="number"],
+.settings-field input[type="password"],
+.settings-field select,
+.settings-field textarea {
+    width: 100%;
+    background: var(--bg-hover);
+    border: 1px solid var(--border-strong);
+    color: var(--text-primary);
+    padding: 8px 12px;
+    border-radius: var(--r-md);
+    font-size: var(--h5);
+    box-sizing: border-box;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+
+.settings-field input:focus,
+.settings-field select:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+/* Buttons — base is the secondary/ghost treatment; .settings-btn-primary
+ * promotes to the accent. Updated 2026-05-11 for the audit-first design
+ * system: teal accent needs dark foreground (white-on-teal fails WCAG AA). */
+.settings-btn {
+    background: var(--bg-panel);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    padding: 7px 14px;
+    border-radius: var(--r-sm);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background var(--t-quick), border-color var(--t-quick), color var(--t-quick);
+}
+
+.settings-btn:hover:not(:disabled) {
+    background: var(--bg-hover);
+    border-color: var(--border-strong);
+}
+
+.settings-btn-primary {
+    background: var(--accent);
+    color: var(--bg-primary);
+    border-color: var(--accent);
+}
+
+.settings-btn-primary:hover:not(:disabled) {
+    background: var(--accent-strong);
+    border-color: var(--accent-strong);
+    color: var(--bg-primary);
+}
+
+.settings-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Divider */
+.settings-divider {
+    margin: 16px 0;
+    border-top: 1px solid var(--border);
+}
+
+/* ── CLIPPY config panel (visual-layer tuning surface) ─────────────────────
+ * Lives inside the Appearance group. Uses the existing .settings-field rhythm;
+ * adds a titled sub-card + range sliders + a switch, all on theme tokens. */
+.cl-config {
+    margin-top: 18px;
+    padding: 16px;
+    border: 1px solid var(--cl-edge, var(--border));
+    border-radius: var(--r-lg, 12px);
+    background: var(--cl-glass-bg-soft, var(--bg-secondary));
+    position: relative;
+}
+.cl-config-title {
+    display: block;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 12px;
+}
+.cl-config-title i { color: var(--accent); margin-right: 6px; }
+.cl-config-hint {
+    display: block;
+    font-weight: 400;
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+}
+.cl-val {
+    font-variant-numeric: tabular-nums;
+    color: var(--accent);
+    font-weight: 600;
+    margin-left: 6px;
+}
+.cl-slider {
+    width: 240px;
+    max-width: 100%;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+
+/* Switch — reused look for the wallpaper toggle. */
+.cl-switch { display: inline-flex; align-items: center; cursor: pointer; }
+.cl-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.cl-switch-track {
+    width: 40px; height: 22px;
+    border-radius: 999px;
+    background: var(--border-strong);
+    transition: background var(--t-base, 180ms);
+    display: inline-block;
+    position: relative;
+}
+.cl-switch-thumb {
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 18px; height: 18px;
+    background: var(--text-primary);
+    border-radius: 50%;
+    transition: transform var(--t-base, 180ms), background var(--t-base, 180ms);
+}
+.cl-switch input:checked + .cl-switch-track { background: var(--accent-soft); }
+.cl-switch input:checked + .cl-switch-track .cl-switch-thumb {
+    transform: translateX(18px);
+    background: #fff;
+}
+.cl-switch input:focus-visible + .cl-switch-track {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
