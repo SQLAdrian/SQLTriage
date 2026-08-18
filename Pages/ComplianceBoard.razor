@@ -1,0 +1,359 @@
+@* /* In the name of God, the Merciful, the Compassionate */ *@
+@page "/compliance-board"
+<PageTitle>SQLTriage — Compliance Board</PageTitle>
+
+@using System.Globalization
+@using System.Linq
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@inject ComplianceMappingService Mapping
+@inject ComplianceScoreService ScoreSvc
+@inject VulnerabilityAssessmentStateService VaState
+
+@*
+    Compliance Board — a "live PCB" view of the control mapping. Check families
+    (sqlCheckHints, drawn as pads on the left) are wired to the frameworks they
+    satisfy (IC chips on the right), with glowing traces carrying a travelling
+    "current" pulse. Frameworks + families come from control_mappings.json in the
+    active bundle (ComplianceMappingService).
+
+    LIVE STATUS: when a Vulnerability Assessment is loaded, pads/traces/chips are
+    coloured green/amber/red by real pass-rate (ComplianceScoreService). With no
+    assessment loaded it falls back to the per-family palette (just the mapping).
+
+    Hover a pad or chip to highlight its connections; click to lock focus.
+    Preview feature (Experimental).
+*@
+
+<div class="pcb-page">
+    <div class="pcb-head">
+        <div>
+            <h2 class="pcb-title">Compliance Board</h2>
+            <div class="pcb-sub">Every audit check family, wired to the frameworks it satisfies.</div>
+        </div>
+        <div class="pcb-sub pcb-status">
+            @if (HasFocus)
+            {
+                <span class="pcb-focus-chip">@_focusLabel</span>
+                <button class="pcb-clear" @onclick="ClearFocus" title="Clear focus">clear ✕</button>
+            }
+            else if (_scored)
+            {
+                <span><i class="fa-solid fa-circle" style="color:#34d399;font-size:8px;margin-right:5px;"></i>Live · scored against @_serverCount server@(_serverCount == 1 ? "" : "s") · @_resultCount findings</span>
+            }
+            else
+            {
+                <span>@_fws.Count frameworks · @_fams.Count check families · @_mapCount mappings</span>
+            }
+        </div>
+    </div>
+
+    <div class="pcb-legend">
+        @if (_scored)
+        {
+            <span><span class="pcb-key pcb-key-ok"></span> Compliant ≥80%</span>
+            <span><span class="pcb-key pcb-key-warn"></span> Partial ≥50%</span>
+            <span><span class="pcb-key pcb-key-bad"></span> Non-compliant</span>
+            <span><span class="pcb-key pcb-key-nodata"></span> No data</span>
+            <span class="pcb-hint">Hover to highlight · click to lock focus</span>
+        }
+        else
+        {
+            <span><span class="pcb-key pcb-key-pad"></span> Check family (pad)</span>
+            <span><span class="pcb-key pcb-key-chip"></span> Framework (IC)</span>
+            <span><span class="pcb-key pcb-key-trace"></span> Mapping trace</span>
+            <span class="pcb-hint">No assessment loaded — run a Vulnerability Assessment for live status. Hover/click to focus.</span>
+        }
+    </div>
+
+    @if (_fws.Count == 0)
+    {
+        <div class="pcb-empty">
+            <i class="fa-solid fa-circle-nodes"></i>
+            <p>No framework mappings are available in the current bundle.</p>
+        </div>
+    }
+    else
+    {
+        <div class="pcb-matrix-container card-glass" style="overflow-x:auto; margin-top:20px; border-radius:12px; border:1px solid var(--border);">
+            <table class="pcb-matrix" style="width:100%; border-collapse:collapse; text-align:left;">
+                <thead>
+                    <tr style="border-bottom:1px solid var(--border); background:rgba(0,0,0,0.2);">
+                        <th class="matrix-th" style="padding:16px 20px; font-weight:600; color:var(--text-primary); position:sticky; left:0; background:var(--bg-glass); z-index:2; min-width:220px; border-right:1px solid var(--border);">Check Family</th>
+                        @foreach (var fw in _fws)
+                        {
+                            <th class="matrix-th" style="padding:16px 12px; font-weight:600; color:var(--text-primary); text-align:center; min-width:80px;" title="@fw.Tooltip">
+                                <div style="display:flex; flex-direction:column; align-items:center; gap:6px;">
+                                    <span style="font-family:ui-monospace,Consolas,monospace; font-size:14px;">@fw.Acr</span>
+                                    <div style="display:flex; align-items:center; gap:6px; font-size:11px; color:var(--text-muted); font-weight:normal;">
+                                        <span class="pcb-led @fw.StatusClass" style="display:inline-block; width:8px; height:8px; border-radius:50%;"></span>
+                                        <span>@fw.CntText</span>
+                                    </div>
+                                </div>
+                            </th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var fam in _fams)
+                    {
+                        <tr class="matrix-row" style="border-bottom:1px solid var(--border-light);">
+                            <td class="matrix-td" style="padding:12px 20px; position:sticky; left:0; background:var(--bg-glass); z-index:1; border-right:1px solid var(--border);">
+                                <span style="font-family:ui-monospace,Consolas,monospace; font-size:12px; color:var(--text-secondary);">@fam.Label</span>
+                            </td>
+                            @foreach (var fw in _fws)
+                            {
+                                <td class="matrix-td" style="padding:12px; text-align:center;">
+                                    @if (_famFws[fam.Idx].Contains(fw.Idx))
+                                    {
+                                        <div class="matrix-dot" style="display:inline-block; width:12px; height:12px; border-radius:50%; background:@fam.Color; box-shadow:0 0 6px @(fam.Color)66;"></div>
+                                    }
+                                </td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div class="pcb-foot">Frameworks &amp; mappings from <code>control_mappings.json</code>@(_scored ? "; status from the loaded Vulnerability Assessment." : ". Run a Vulnerability Assessment to colour by live compliance.")</div>
+    }
+</div>
+
+<style>
+    .pcb-page { padding: 18px 26px 30px; max-width: none; }
+    .pcb-head { display:flex; justify-content:space-between; align-items:flex-end; gap:16px; flex-wrap:wrap; }
+    .pcb-title { font-size:21px; font-weight:600; color:var(--text-primary); margin:0; }
+    .pcb-sub { color:var(--text-muted); font-size:12.5px; }
+    .pcb-status { display:flex; align-items:center; gap:10px; }
+    .pcb-focus-chip { color:var(--text-primary); font-weight:600; font-family:ui-monospace,Consolas,monospace;
+                      border:1px solid rgba(45,212,191,.5); border-radius:6px; padding:2px 8px; }
+    .pcb-clear { background:none; border:1px solid var(--border); color:var(--text-secondary); border-radius:6px;
+                 padding:2px 8px; cursor:pointer; font-size:11px; }
+    .pcb-clear:hover { border-color:var(--accent,#2dd4bf); color:var(--text-primary); }
+    .pcb-legend { display:flex; gap:18px; flex-wrap:wrap; margin:10px 0 14px; font-size:11.5px; color:var(--text-secondary); align-items:center; }
+    .pcb-hint { color:var(--text-muted); font-style:italic; }
+    .pcb-key { display:inline-block; width:14px; height:10px; vertical-align:middle; margin-right:5px; border-radius:2px; }
+    .pcb-key-pad  { width:10px; height:10px; border-radius:50%; background:#0b0f12; border:2px solid #2dd4bf; box-shadow:0 0 5px #2dd4bf; }
+    .pcb-key-chip { background:rgba(20,31,38,.9); border:1px solid #2dd4bf; box-shadow:0 0 5px rgba(45,212,191,.4); }
+    .pcb-key-trace{ background:linear-gradient(90deg,#3186ff,#2dd4bf); }
+    .pcb-key-ok { background:#34d399; } .pcb-key-warn { background:#f59e0b; }
+    .pcb-key-bad { background:#ef4444; } .pcb-key-nodata { background:#64748b; }
+
+    .pcb-led { background:#2dd4bf; box-shadow:0 0 4px #2dd4bf; }
+    .pcb-led.s-ok   { background:#34d399; box-shadow:0 0 4px #34d399; }
+    .pcb-led.s-warn { background:#f59e0b; box-shadow:0 0 4px #f59e0b; }
+    .pcb-led.s-bad  { background:#ef4444; box-shadow:0 0 4px #ef4444; }
+    .pcb-led.s-nodata { background:#64748b; box-shadow:none; }
+
+    .matrix-row:hover { background:rgba(255,255,255,0.03); }
+    .matrix-row:hover .matrix-td { background:var(--bg-glass-hover, rgba(30,40,50,0.9)); }
+
+    .pcb-foot { color:var(--text-muted); font-size:11px; margin-top:16px; }
+    .pcb-foot code, .pcb-sub code { font-family:ui-monospace,Consolas,monospace; color:var(--text-secondary); }
+    .pcb-empty { text-align:center; color:var(--text-muted); padding:60px 20px; }
+    .pcb-empty i { font-size:34px; opacity:.5; display:block; margin-bottom:10px; }
+
+    @@media print {
+        .pcb-page { padding:0; }
+        .pcb-matrix-container { overflow:visible !important; border:none; box-shadow:none; }
+        .matrix-th, .matrix-td { border:1px solid #ddd; background:#fff !important; color:#000 !important; }
+        .matrix-dot { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+</style>
+
+@code {
+    private const double LeftX = 240;
+    private const double ChipLeft = 1360;
+    private const double Top = 86;
+    private const double RowGap = 44;
+
+    private readonly List<Fam> _fams = new();
+    private readonly List<Fw> _fws = new();
+    private readonly List<Tr> _trs = new();
+    private List<HashSet<int>> _famFws = new();
+    private List<HashSet<int>> _fwFams = new();
+    private double _vbH = 600;
+    private int _mapCount;
+
+    // Live-scoring state
+    private bool _scored;
+    private int _resultCount;
+    private int _serverCount;
+
+    private int? _focusFam, _focusFw;
+    private bool _locked;
+    private bool HasFocus => _focusFam.HasValue || _focusFw.HasValue;
+    private string _focusLabel => _focusFam is int fi ? _fams[fi].Label
+                                : _focusFw is int wj ? _fws[wj].Acr : "";
+
+    private sealed record Fam(int Idx, string Label, double Y, string Color);
+    private sealed record Fw(int Idx, string Acr, string Name, double Y, string CntText, string StatusClass, string Tooltip);
+    private sealed record Tr(int FamIdx, int FwIdx, string D, string Color, double Delay, double Dur);
+
+    private static readonly string[] Palette =
+    {
+        "#2dd4bf", "#3186ff", "#8b5cf6", "#22d3ee", "#60a5fa",
+        "#a78bfa", "#f59e0b", "#ec4899", "#34d399", "#38bdf8", "#fb923c", "#f472b6"
+    };
+
+    // status thresholds mirror ComplianceScoreService (>=80 / >=50)
+    private enum St { NoData, Bad, Warn, Ok }
+    private static St StatusOf(double pct) => pct < 0 ? St.NoData : pct >= 80 ? St.Ok : pct >= 50 ? St.Warn : St.Bad;
+    private static string ColorOf(St s) => s switch { St.Ok => "#34d399", St.Warn => "#f59e0b", St.Bad => "#ef4444", _ => "#64748b" };
+    private static string ClassOf(St s) => s switch { St.Ok => "s-ok", St.Warn => "s-warn", St.Bad => "s-bad", _ => "s-nodata" };
+
+    private bool TraceActive(Tr t) => (_focusFam == t.FamIdx) || (_focusFw == t.FwIdx);
+    private bool FamActive(int i) => !HasFocus || _focusFam == i || (_focusFw is int w && _fwFams[w].Contains(i));
+    private bool FwActive(int j) => !HasFocus || _focusFw == j || (_focusFam is int f && _famFws[f].Contains(j));
+
+    private void HoverFam(int i) { if (!_locked) { _focusFam = i; _focusFw = null; } }
+    private void HoverFw(int j)  { if (!_locked) { _focusFw = j; _focusFam = null; } }
+    private void ClearHover()    { if (!_locked) { _focusFam = null; _focusFw = null; } }
+    private void ClickFam(int i) { if (_locked && _focusFam == i) ClearFocus(); else { _locked = true; _focusFam = i; _focusFw = null; } }
+    private void ClickFw(int j)  { if (_locked && _focusFw == j) ClearFocus(); else { _locked = true; _focusFw = j; _focusFam = null; } }
+    private void ClearFocus()    { _locked = false; _focusFam = null; _focusFw = null; }
+
+    protected override void OnInitialized()
+    {
+        try { BuildModel(); } catch { /* leave empty-state on any data issue */ }
+    }
+
+    private void BuildModel()
+    {
+        var oic = StringComparer.OrdinalIgnoreCase;
+        var allowed = new HashSet<string>(Mapping.GetFrameworks(), oic);
+
+        var agg = new Dictionary<string, FwAgg>(oic);
+        foreach (var d in Mapping.GetFrameworkDefinitions())
+        {
+            if (string.IsNullOrWhiteSpace(d.Acronym) || !allowed.Contains(d.Acronym)) continue;
+            if (!agg.TryGetValue(d.Acronym, out var a))
+            {
+                a = new FwAgg { Name = string.IsNullOrWhiteSpace(d.Name) ? d.Acronym : d.Name };
+                agg[d.Acronym] = a;
+            }
+            foreach (var c in d.Categories)
+                foreach (var h in c.SqlCheckHints)
+                    if (!string.IsNullOrWhiteSpace(h)) a.Hints.Add(h);
+        }
+        if (agg.Count == 0) return;
+
+        var famNames = agg.Values.SelectMany(a => a.Hints).Distinct(oic).OrderBy(h => h, oic).ToList();
+        var famIndex = new Dictionary<string, int>(oic);
+        for (int i = 0; i < famNames.Count; i++) famIndex[famNames[i]] = i;
+
+        var fwOrdered = agg.OrderByDescending(kv => kv.Value.Hints.Count).ThenBy(kv => kv.Key, oic).ToList();
+
+        // ── Live scoring (optional) ───────────────────────────────────────────
+        var results = VaState.Results ?? new List<AssessmentResult>();
+        _scored = results.Count > 0;
+        _resultCount = results.Count;
+        _serverCount = VaState.AssessedServers?.Count ?? 0;
+
+        var hintStatus = new Dictionary<string, St>(oic);
+        var fwStatus = new Dictionary<string, (St St, double Pct)>(oic);
+        if (_scored)
+        {
+            // hint → VA categories (reverse of CategoryToHints)
+            var hintToVaCats = new Dictionary<string, List<string>>(oic);
+            foreach (var kv in ComplianceMappingService.CategoryToHints)
+                foreach (var h in kv.Value)
+                {
+                    if (!hintToVaCats.TryGetValue(h, out var l)) { l = new List<string>(); hintToVaCats[h] = l; }
+                    l.Add(kv.Key);
+                }
+            var byCat = results.Where(r => !string.IsNullOrEmpty(r.Category))
+                               .GroupBy(r => r.Category, oic)
+                               .ToDictionary(g => g.Key, g => g.ToList(), oic);
+
+            foreach (var fnm in famNames)
+            {
+                double pct = -1;
+                if (hintToVaCats.TryGetValue(fnm, out var cats))
+                {
+                    int pass = 0, total = 0;
+                    foreach (var c in cats)
+                        if (byCat.TryGetValue(c, out var list))
+                        {
+                            total += list.Count;
+                            pass += list.Count(r => string.Equals(r.Status, "Passed", StringComparison.OrdinalIgnoreCase));
+                        }
+                    pct = total > 0 ? pass * 100.0 / total : -1;
+                }
+                hintStatus[fnm] = StatusOf(pct);
+            }
+            foreach (var kv in fwOrdered)
+            {
+                double pct = ScoreSvc.ComputeScorecard(results, kv.Key).OverallPercent;
+                fwStatus[kv.Key] = (StatusOf(pct), pct);
+            }
+        }
+
+        int nf = famNames.Count, nw = fwOrdered.Count;
+        double contentH = Math.Max(nf, nw) * RowGap;
+        _vbH = Top + contentH + 56;
+        _famFws = Enumerable.Range(0, nf).Select(_ => new HashSet<int>()).ToList();
+        _fwFams = Enumerable.Range(0, nw).Select(_ => new HashSet<int>()).ToList();
+
+        double FamY(int i) => Top + contentH / nf * (i + 0.5);
+        double FwY(int j) => Top + contentH / nw * (j + 0.5);
+
+        // family pads (colour by status when scored, else palette)
+        for (int i = 0; i < nf; i++)
+        {
+            string color = _scored ? ColorOf(hintStatus[famNames[i]]) : Palette[i % Palette.Length];
+            _fams.Add(new Fam(i, Pretty(famNames[i]), FamY(i), color));
+        }
+
+        for (int j = 0; j < nw; j++)
+        {
+            var kv = fwOrdered[j];
+            double wy = FwY(j);
+            int famCount = kv.Value.Hints.Count;
+
+            string cntText, statusClass, tip;
+            if (_scored && fwStatus.TryGetValue(kv.Key, out var st))
+            {
+                cntText = st.Pct >= 0 ? $"{st.Pct:F0}%" : "—";
+                statusClass = ClassOf(st.St);
+                tip = st.Pct >= 0
+                    ? $"{kv.Value.Name} — {st.Pct:F0}% compliant ({famCount} check families)"
+                    : $"{kv.Value.Name} — no assessment data ({famCount} check families)";
+            }
+            else
+            {
+                cntText = famCount.ToString();
+                statusClass = "";
+                tip = $"{kv.Value.Name} — satisfied by {famCount} check famil{(famCount == 1 ? "y" : "ies")}";
+            }
+            _fws.Add(new Fw(j, kv.Key, kv.Value.Name, wy, cntText, statusClass, tip));
+
+            foreach (var hint in kv.Value.Hints)
+            {
+                if (!famIndex.TryGetValue(hint, out int fi)) continue;
+                _famFws[fi].Add(j);
+                _fwFams[j].Add(fi);
+
+                double y0 = FamY(fi), x0 = LeftX + 10, x1 = ChipLeft - 4, y1 = wy;
+                double dx = (x1 - x0) * 0.45;
+                string d = $"M{N(x0)} {N(y0)} C{N(x0 + dx)} {N(y0)} {N(x1 - dx)} {N(y1)} {N(x1)} {N(y1)}";
+                double delay = (fi * 7 + j * 5) % 24 / 10.0;
+                double dur = (1.7 + Math.Abs(y1 - y0) / 230.0) * 5.0;
+                _trs.Add(new Tr(fi, j, d, _fams[fi].Color, delay, dur));
+                _mapCount++;
+            }
+        }
+    }
+
+    private sealed class FwAgg
+    {
+        public string Name = "";
+        public HashSet<string> Hints = new(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string N(double d) => d.ToString("0.##", CultureInfo.InvariantCulture);
+    private static string Enc(string s) => s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
+    private static string Pretty(string hint) =>
+        string.Join(' ', hint.Split('_', StringSplitOptions.RemoveEmptyEntries)
+                             .Select(w => char.ToUpperInvariant(w[0]) + w[1..]));
+}

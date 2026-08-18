@@ -1,0 +1,45 @@
+/* In the name of God, the Merciful, the Compassionate */
+
+.nav-tier-badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    vertical-align: middle;
+    line-height: 1.4;
+    flex-shrink: 0;
+}
+
+.nav-tier-badge--free {
+    background: rgba(0, 0, 0, 0.15);
+    color: var(--yellow);
+    border-color: var(--yellow);
+}
+
+.nav-tier-badge--full {
+    background: rgba(0, 0, 0, 0.15);
+    color: var(--green);
+    border-color: var(--green);
+}
+
+.nav-tier-badge--not-activated {
+    background: rgba(0, 0, 0, 0.15);
+    color: var(--orange);
+    border-color: var(--orange);
+    /* Subtle pulse so the boot-failure state is hard to miss. */
+    animation: nav-tier-not-activated-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes nav-tier-not-activated-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.55; }
+}
+
+.nav-tier-badge:hover {
+    opacity: 0.8;
+}

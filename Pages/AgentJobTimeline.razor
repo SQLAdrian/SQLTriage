@@ -1,0 +1,350 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/agent-timeline"
+@using SQLTriage.Components.Shared
+<PageTitle>SQLTriage - Agent Job Timeline</PageTitle>
+@using SQLTriage.Data.Services
+@using SQLTriage.Data.Models
+@using Microsoft.Data.SqlClient
+@using System.Data
+@inject ServerConnectionManager ConnectionManager
+@inject ToastService Toast
+@inject UserSettingsService UserSettings
+@inject AgentJobControlService JobControl
+@inject AuditLogService AuditLog
+
+<link href="css/AgentJobTimeline.css" rel="stylesheet" />
+
+<div class="page-container">
+    <div class="page-header">
+        <div class="header-left">
+            <h2>Agent Job Timeline (Last 24 Hours)</h2>
+            <p class="subtitle">Gantt visualization of SQL Agent job executions across connected instances</p>
+        </div>
+        <div class="header-right">
+            <button class="action-btn" @onclick="LoadTimelineAsync" disabled="@_isLoading">
+                @if (_isLoading) { <span class="spinner"></span> }
+                Refresh
+            </button>
+        </div>
+    </div>
+
+    @if (_isLoading && _jobExecutions.Count == 0)
+    {
+        <LoadingSpinner Message="Loading agent job history from all servers..." />
+    }
+    else if (_jobExecutions.Count == 0)
+    {
+        <div class="empty-state">
+            <div class="empty-icon">📊</div>
+            <h3>No Agent Jobs Found</h3>
+            <p>No job history found in the last 24 hours on the connected instances.</p>
+        </div>
+    }
+    else
+    {
+        <!-- Summary Stats -->
+        <div class="metrics-grid" style="margin-bottom: 24px;">
+            <div class="metric-card" style='cursor:pointer; @(_filter == "All" ? "border: 2px solid var(--accent);" : "")' @onclick='() => _filter = "All"'>
+                <div class="metric-label">Total Executions</div>
+                <div class="metric-value">@_jobExecutions.Count</div>
+            </div>
+            <div class="metric-card" style='cursor:pointer; @(_filter == "Failed" ? "border: 2px solid var(--danger);" : "")' @onclick='() => _filter = "Failed"'>
+                <div class="metric-label">Failed</div>
+                <div class="metric-value" style="color: var(--danger);">@_jobExecutions.Count(j => j.Status == 0)</div>
+            </div>
+            <div class="metric-card" style='cursor:pointer; @(_filter == "Succeeded" ? "border: 2px solid var(--success);" : "")' @onclick='() => _filter = "Succeeded"'>
+                <div class="metric-label">Succeeded</div>
+                <div class="metric-value" style="color: var(--success);">@_jobExecutions.Count(j => j.Status == 1)</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Unique Jobs</div>
+                <div class="metric-value">@_jobExecutions.Select(j => $"{j.ServerName}_{j.JobName}").Distinct().Count()</div>
+            </div>
+        </div>
+
+        <div class="timeline-container">
+            <!-- Timeline X-Axis (Hours) -->
+            <div class="timeline-axis-container">
+                @for (int i = 0; i <= 24; i += 2)
+                {
+                    // Markers every 2 hours
+                    var markerTime = _timelineStart.AddHours(i);
+                    var leftPercent = (i / 24.0) * 100;
+                    <div class="timeline-axis-marker" style="left: @(leftPercent)%">
+                        @markerTime.ToString("HH:mm")
+                    </div>
+                }
+            </div>
+
+            <!-- Group by Server then by Job -->
+            @foreach (var serverGroup in FilteredExecutions().GroupBy(j => j.ServerName).OrderBy(g => g.Key))
+            {
+                <div class="server-header" style="padding: 8px 0; margin-top: 16px; border-bottom: 1px solid var(--border); font-weight: bold; color: var(--accent);">
+                    @serverGroup.Key
+                </div>
+
+                @foreach (var jobGroup in serverGroup.GroupBy(j => j.JobName).OrderBy(g => g.Key))
+                {
+                    <div class="timeline-row">
+                        <div class="timeline-row-label" title="@jobGroup.Key">
+                            <span class="job-name-text">
+                                @jobGroup.Key
+                                @if (jobGroup.Any(j => j.Status == 0))
+                                {
+                                    <span style="color: var(--danger); margin-left: 6px;" title="Contains failed executions in timeline"><i class="fa-solid fa-circle-xmark"></i></span>
+                                }
+                            </span>
+                            @if (_noPantsMode)
+                            {
+                                <div class="job-actions">
+                                    <button class="action-icon-btn start-btn" title="Start Job" @onclick="() => StartJob(serverGroup.Key, jobGroup.Key)"><i class="fa-solid fa-play"></i></button>
+                                    <button class="action-icon-btn stop-btn" title="Stop Job" @onclick="() => StopJob(serverGroup.Key, jobGroup.Key)"><i class="fa-solid fa-stop"></i></button>
+                                    @if (jobGroup.First().IsEnabled)
+                                    {
+                                        <button class="action-icon-btn disable-btn" title="Disable Job" @onclick="() => DisableJob(serverGroup.Key, jobGroup.Key)"><i class="fa-solid fa-ban"></i></button>
+                                    }
+                                    else
+                                    {
+                                        <button class="action-icon-btn enable-btn" title="Enable Job" @onclick="() => EnableJob(serverGroup.Key, jobGroup.Key)"><i class="fa-solid fa-check"></i></button>
+                                    }
+                                </div>
+                            }
+                        </div>
+                        <div class="timeline-track">
+                            @foreach (var exec in jobGroup)
+                            {
+                                <div class="timeline-block" 
+                                     style="left: @(exec.OffsetPercent)%; width: @(Math.Max(exec.WidthPercent, 0.2))%; background-color: @exec.StatusColor;">
+                                    <div class="timeline-tooltip-content">
+                                        <div class="tooltip-title">@exec.JobName</div>
+                                        <div class="tooltip-row">
+                                            <span class="tooltip-label">Server:</span>
+                                            <span>@exec.ServerName</span>
+                                        </div>
+                                        <div class="tooltip-row">
+                                            <span class="tooltip-label">Status:</span>
+                                            <span style="color: @exec.StatusColor">@exec.StatusText</span>
+                                        </div>
+                                        <div class="tooltip-row">
+                                            <span class="tooltip-label">Start:</span>
+                                            <span>@exec.StartTime.ToString("yyyy-MM-dd HH:mm:ss")</span>
+                                        </div>
+                                        <div class="tooltip-row">
+                                            <span class="tooltip-label">End:</span>
+                                            <span>@exec.EndTime.ToString("yyyy-MM-dd HH:mm:ss")</span>
+                                        </div>
+                                        <div class="tooltip-row">
+                                            <span class="tooltip-label">Duration:</span>
+                                            <span>@TimeSpan.FromSeconds(exec.DurationSeconds).ToString(@"hh\:mm\:ss")</span>
+                                        </div>
+                                        @if (exec.Status == 0 && !string.IsNullOrEmpty(exec.ErrorMessage))
+                                        {
+                                            <div class="tooltip-error">@exec.ErrorMessage</div>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private bool _isLoading;
+    private bool _noPantsMode;
+    private List<AgentJobExecution> _jobExecutions = new();
+    private DateTime _timelineStart;
+    private DateTime _timelineEnd;
+    private string _filter = "All";
+
+    private IEnumerable<AgentJobExecution> FilteredExecutions()
+    {
+        if (_filter == "Failed") return _jobExecutions.Where(j => j.Status == 0);
+        if (_filter == "Succeeded") return _jobExecutions.Where(j => j.Status == 1);
+        return _jobExecutions;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (UserSettings.GetFastAppLoad()) await Task.Yield();
+        _noPantsMode = UserSettings.GetNoPantsMode();
+        await LoadTimelineAsync();
+    }
+
+    private async Task LoadTimelineAsync()
+    {
+        _isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            _timelineEnd = DateTime.Now;
+            _timelineStart = _timelineEnd.AddHours(-24);
+            _jobExecutions.Clear();
+
+            var connections = ConnectionManager.GetEnabledConnections();
+            var fetchTasks = new List<Task<List<AgentJobExecution>>>();
+            
+            foreach (var conn in connections)
+            {
+                foreach (var serverName in conn.GetServerList())
+                {
+                    fetchTasks.Add(FetchJobHistoryAsync(conn, serverName));
+                }
+            }
+            
+            var allResults = await Task.WhenAll(fetchTasks);
+            foreach (var execs in allResults)
+            {
+                _jobExecutions.AddRange(execs);
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("Timeline Error", $"Failed to load job history: {ex.Message}");
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task<List<AgentJobExecution>> FetchJobHistoryAsync(ServerConnection conn, string serverName)
+    {
+        var results = new List<AgentJobExecution>();
+        
+        try
+        {
+            var query = @"
+                SELECT 
+                    j.name AS JobName,
+                    h.run_status AS Status,
+                    msdb.dbo.agent_datetime(h.run_date, h.run_time) AS StartTime,
+                    h.run_duration AS DurationInt,
+                    h.message AS ErrorMessage,
+                    j.enabled AS IsEnabled
+                FROM msdb.dbo.sysjobhistory h
+                JOIN msdb.dbo.sysjobs j ON h.job_id = j.job_id
+                WHERE h.step_id = 0 
+                  AND msdb.dbo.agent_datetime(h.run_date, h.run_time) >= DATEADD(hh, -24, GETDATE())
+                ORDER BY StartTime DESC";
+
+            var connStr = conn.GetConnectionString(serverName, "master");
+            using var sqlConn = new SqlConnection(connStr);
+            await sqlConn.OpenAsync();
+            using var cmd = new SqlCommand(query, sqlConn);
+            
+            using var reader = await cmd.ExecuteReaderAsync();
+            
+            while (await reader.ReadAsync())
+            {
+                var durationInt = reader.GetInt32(reader.GetOrdinal("DurationInt"));
+                var durationSeconds = ParseSqlAgentDuration(durationInt);
+                
+                var start = reader.GetDateTime(reader.GetOrdinal("StartTime"));
+                
+                // Calculate percentage for timeline
+                var totalSeconds = (_timelineEnd - _timelineStart).TotalSeconds;
+                var offsetSeconds = (start - _timelineStart).TotalSeconds;
+                
+                // Clamp percentages
+                double offsetPercent = (offsetSeconds / totalSeconds) * 100.0;
+                if (offsetPercent < 0) offsetPercent = 0;
+                
+                double widthPercent = (durationSeconds / totalSeconds) * 100.0;
+                if (offsetPercent + widthPercent > 100) widthPercent = 100 - offsetPercent;
+
+                results.Add(new AgentJobExecution
+                {
+                    ServerName = serverName,
+                    JobName = reader.GetString(reader.GetOrdinal("JobName")),
+                    Status = reader.GetInt32(reader.GetOrdinal("Status")),
+                    StartTime = start,
+                    DurationSeconds = durationSeconds,
+                    ErrorMessage = reader.IsDBNull(reader.GetOrdinal("ErrorMessage")) ? "" : reader.GetString(reader.GetOrdinal("ErrorMessage")),
+                    IsEnabled = reader.GetByte(reader.GetOrdinal("IsEnabled")) == 1,
+                    OffsetPercent = offsetPercent,
+                    WidthPercent = widthPercent
+                });
+            }
+        }
+        catch (Exception)
+        {
+            // Silently skip servers that can't be reached or don't have agent perms
+        }
+        
+        return results;
+    }
+
+    private int ParseSqlAgentDuration(int duration)
+    {
+        // duration is an integer representing HHMMSS e.g. 10223 = 01:02:23
+        int hours = duration / 10000;
+        int minutes = (duration / 100) % 100;
+        int seconds = duration % 100;
+        return (hours * 3600) + (minutes * 60) + seconds;
+    }
+
+    private async Task StartJob(string serverName, string jobName)
+    {
+        try
+        {
+            await JobControl.StartJobAsync(serverName, jobName);
+            AuditLog.LogSecurityEvent($"Started Agent Job '{jobName}' on server '{serverName}'", AuditSeverity.Warning, new Dictionary<string, string> { ["User"] = Environment.UserName, ["Action"] = "StartJob", ["Server"] = serverName });
+            Toast.ShowSuccess("Job Started", $"Successfully started {jobName}");
+            await LoadTimelineAsync();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("Action Failed", $"Could not start job: {ex.Message}");
+        }
+    }
+
+    private async Task StopJob(string serverName, string jobName)
+    {
+        try
+        {
+            await JobControl.StopJobAsync(serverName, jobName);
+            AuditLog.LogSecurityEvent($"Stopped Agent Job '{jobName}' on server '{serverName}'", AuditSeverity.Warning, new Dictionary<string, string> { ["User"] = Environment.UserName, ["Action"] = "StopJob", ["Server"] = serverName });
+            Toast.ShowSuccess("Job Stopped", $"Successfully stopped {jobName}");
+            await LoadTimelineAsync();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("Action Failed", $"Could not stop job: {ex.Message}");
+        }
+    }
+
+    private async Task EnableJob(string serverName, string jobName)
+    {
+        try
+        {
+            await JobControl.EnableJobAsync(serverName, jobName);
+            AuditLog.LogSecurityEvent($"Enabled Agent Job '{jobName}' on server '{serverName}'", AuditSeverity.Warning, new Dictionary<string, string> { ["User"] = Environment.UserName, ["Action"] = "EnableJob", ["Server"] = serverName });
+            Toast.ShowSuccess("Job Enabled", $"Successfully enabled {jobName}");
+            await LoadTimelineAsync();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("Action Failed", $"Could not enable job: {ex.Message}");
+        }
+    }
+
+    private async Task DisableJob(string serverName, string jobName)
+    {
+        try
+        {
+            await JobControl.DisableJobAsync(serverName, jobName);
+            AuditLog.LogSecurityEvent($"Disabled Agent Job '{jobName}' on server '{serverName}'", AuditSeverity.Warning, new Dictionary<string, string> { ["User"] = Environment.UserName, ["Action"] = "DisableJob", ["Server"] = serverName });
+            Toast.ShowSuccess("Job Disabled", $"Successfully disabled {jobName}");
+            await LoadTimelineAsync();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("Action Failed", $"Could not disable job: {ex.Message}");
+        }
+    }
+}

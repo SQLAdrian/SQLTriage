@@ -1,0 +1,700 @@
+/* In the name of God, the Merciful, the Compassionate */
+/* Compliance Map — extracted inline styles + <style> block */
+
+.compliance-map-container {
+    padding: 24px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.compliance-map-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 4px;
+}
+
+.compliance-map-header h1 {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.compliance-map-header i {
+    color: var(--accent);
+    font-size: 24px;
+}
+
+.compliance-map-subtitle {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+    padding-left: 36px;
+}
+
+.framework-tabs {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0;
+}
+
+.framework-tab {
+    padding: 8px 16px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: transparent;
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.framework-tab:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+
+.framework-tab.active {
+    color: var(--accent);
+    background: var(--bg-panel);
+    border-color: var(--border);
+    border-bottom-color: var(--bg-panel);
+    margin-bottom: -1px;
+    font-weight: 600;
+}
+
+.coverage-summary-bar {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 16px 20px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.coverage-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.coverage-stat-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.coverage-stat-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.coverage-bar-track {
+    flex: 1;
+    min-width: 200px;
+    height: 10px;
+    background: var(--bg-primary);
+    border-radius: 5px;
+    overflow: hidden;
+}
+
+.coverage-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--green), var(--green));
+    border-radius: 5px;
+    transition: width 0.4s ease;
+}
+
+.coverage-percentage {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--green);
+    min-width: 60px;
+    text-align: right;
+}
+
+.controls-table-wrapper {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 24px;
+}
+
+.controls-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.controls-table th {
+    text-align: left;
+    padding: 10px 14px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+}
+
+.controls-table th.col-id { width: 120px; }
+.controls-table th.col-mapping { width: 130px; }
+.controls-table th.col-checks { width: 280px; }
+.controls-table th.col-status { width: 100px; }
+
+.controls-table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-primary);
+    /* middle, not top: the status badge wraps to 2 lines ("Non-Compliant"),
+       growing row height — top-aligned cells then leave checks/bar floating
+       above the badge. Centre keeps every column on one line. */
+    vertical-align: middle;
+}
+
+.controls-table td.control-id-cell {
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-weight: 600;
+    font-size: 12px;
+}
+
+.controls-table td .no-checks-placeholder {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.controls-table tr:last-child td {
+    border-bottom: none;
+}
+
+.controls-table tr:hover td {
+    background: var(--bg-hover);
+}
+
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.status-covered {
+    background: rgba(34, 197, 94, 0.15);
+    color: var(--green);
+    border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.status-gap {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--red);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.mapping-type-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.mapping-direct {
+    background: rgba(59, 130, 246, 0.2);
+    color: var(--accent);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.mapping-related {
+    background: rgba(156, 163, 175, 0.15);
+    color: var(--text-secondary);
+    border: 1px solid rgba(156, 163, 175, 0.25);
+}
+
+.mapping-supplementary {
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+}
+
+.check-pill {
+    display: inline-block;
+    padding: 2px 7px;
+    margin: 2px 3px 2px 0;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 11px;
+    color: var(--text-secondary);
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+}
+
+.check-pill-name {
+    font-size: 11px;
+    color: var(--text-muted);
+    display: block;
+    margin-top: 2px;
+    font-family: inherit;
+}
+
+.gap-analysis-section {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+}
+
+.gap-analysis-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.gap-analysis-header h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.gap-analysis-header i {
+    color: var(--orange);
+}
+
+.gap-compliance-line {
+    font-size: 14px;
+    color: var(--text-primary);
+    margin-bottom: 12px;
+}
+
+.gap-compliance-line strong {
+    color: var(--green);
+}
+
+.gap-missing-label {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+.gap-control-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.gap-control-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--text-primary);
+}
+
+.gap-control-item .gap-id {
+    font-weight: 600;
+    color: var(--red);
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+}
+
+.gap-control-item .gap-name {
+    color: var(--text-secondary);
+}
+
+.no-gaps-message {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    background: rgba(34, 197, 94, 0.08);
+    border: 1px solid rgba(34, 197, 94, 0.2);
+    border-radius: 6px;
+    color: var(--green);
+    font-size: 13px;
+}
+
+.section-count-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    padding: 8px 14px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+}
+
+.loading-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 80px 20px;
+    gap: 16px;
+}
+
+.loading-spinner {
+    width: 36px;
+    height: 36px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: compliance-spin 0.8s linear infinite;
+}
+
+@keyframes compliance-spin {
+    to { transform: rotate(360deg); }
+}
+
+.loading-text {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.error-banner {
+    padding: 12px 16px;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    border-radius: 6px;
+    color: var(--red);
+    font-size: 13px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* ── Compliance Scorecard v1 additions ── */
+
+.compliance-map-title-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.compliance-no-data-banner {
+    padding: 14px 18px;
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    border-radius: 6px;
+    color: var(--orange);
+    font-size: 13px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.compliance-link {
+    color: var(--accent);
+    text-decoration: underline;
+    margin-left: 4px;
+}
+
+.compliance-gap-table-wrapper {
+    margin-top: 16px;
+}
+
+.compliance-gap-hint {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+}
+
+/* Overall score circle */
+.compliance-overall-score {
+    font-size: 28px;
+    font-weight: 800;
+    min-width: 70px;
+    text-align: center;
+}
+.compliance-overall-score.score-compliant   { color: var(--green); }
+.compliance-overall-score.score-partial     { color: var(--orange); }
+.compliance-overall-score.score-noncompliant { color: var(--red); }
+
+body.colorblind-mode .compliance-overall-score.score-compliant    { color: var(--green); }
+body.colorblind-mode .compliance-overall-score.score-partial      { color: var(--orange); }
+body.colorblind-mode .compliance-overall-score.score-noncompliant { color: var(--red); }
+
+.compliance-summary-details {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 200px;
+}
+
+.compliance-summary-stats {
+    display: flex;
+    gap: 16px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+/* Coverage bar fill — status-aware colours */
+.coverage-bar-fill.score-compliant    { background: var(--green); }
+.coverage-bar-fill.score-partial      { background: var(--orange); }
+.coverage-bar-fill.score-noncompliant { background: var(--red); }
+
+/* Export button */
+.btn-export-compliance {
+    padding: 8px 16px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+    background: transparent;
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s ease;
+}
+.btn-export-compliance:hover {
+    background: rgba(99, 102, 241, 0.1);
+}
+
+/* Scorecard table columns */
+.controls-table th.col-bar  { width: 160px; }
+/* Keep as a real table-cell (was display:flex, which dropped it out of table
+   layout and desynced it from the middle-aligned sibling cells). Lay the bar +
+   label out inline-centred instead. */
+.controls-table td.bar-cell { white-space: nowrap; }
+.controls-table td.bar-cell .mini-bar-track { display: inline-block; vertical-align: middle; }
+.controls-table td.bar-cell .mini-bar-label { display: inline-block; vertical-align: middle; margin-left: 8px; }
+.controls-table td.checks-cell { font-size: 12px; color: var(--text-secondary); }
+.controls-table tr { cursor: pointer; }
+.controls-table tr.expanded td { background: var(--bg-secondary); }
+
+/* Mini progress bar */
+.mini-bar-track {
+    width: 90px;
+    height: 6px;
+    background: var(--bg-primary);
+    border-radius: 3px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+.mini-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.3s ease;
+}
+.mini-bar-fill.bar-compliant    { background: var(--green); }
+.mini-bar-fill.bar-partial      { background: var(--orange); }
+.mini-bar-fill.bar-noncompliant { background: var(--red); }
+.mini-bar-fill.bar-nodata       { background: var(--text-muted); }
+
+body.colorblind-mode .mini-bar-fill.bar-compliant    { background: var(--green); }
+body.colorblind-mode .mini-bar-fill.bar-partial      { background: var(--orange); }
+body.colorblind-mode .mini-bar-fill.bar-noncompliant { background: var(--red); }
+
+.mini-bar-label { font-size: 11px; color: var(--text-secondary); }
+
+/* Status badges — partial + nodata */
+.status-partial {
+    background: rgba(245, 158, 11, 0.15);
+    color: var(--orange);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+.status-nodata {
+    background: rgba(156, 163, 175, 0.1);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+}
+
+/* Drill-down panel */
+.drill-down-row td { padding: 0 !important; border-bottom: 2px solid var(--border) !important; }
+.drill-down-panel {
+    padding: 14px 20px;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border);
+}
+.drill-down-header {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.drill-down-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+.drill-down-table th {
+    text-align: left;
+    padding: 6px 10px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+}
+.drill-down-table td {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-primary);
+    vertical-align: top;
+}
+.drill-down-table tr:last-child td { border-bottom: none; }
+
+/* Gap percentage label */
+.gap-control-item .gap-pct {
+    font-size: 11px;
+    color: var(--red);
+    font-weight: 600;
+    margin-left: 4px;
+}
+
+/* VA finding compliance hint */
+.va-compliance-hints {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    margin-top: 3px;
+}
+.va-compliance-hint-tag {
+    display: inline-block;
+    padding: 1px 6px;
+    font-size: 10px;
+    font-weight: 600;
+    background: rgba(99, 102, 241, 0.1);
+    color: var(--accent);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+/* Server scope filter above the framework tabs */
+.compliance-server-filter {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.compliance-server-filter-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+
+/* "Legendary" — a framework at 100% compliance earns a soft pulsing glow that
+   shimmers between emerald and gold. Decorative only; the score colour + 100%
+   in the tooltip carry the meaning, so it stays colour-blind-safe. */
+.framework-tab--legendary {
+    border-radius: 6px;
+    animation: legendaryGlow 2.6s ease-in-out infinite;
+}
+}
+@media (prefers-reduced-motion: reduce) {
+    .framework-tab--legendary { animation: none; box-shadow: 0 0 0 1px rgba(22,163,74,0.5), 0 0 10px 1px rgba(22,163,74,0.45); }
+}
+
+/* --- EXECUTIVE OVERRIDES --- */
+.compliance-map-container {
+    padding: 40px !important;
+    max-width: 1400px !important;
+}
+.compliance-map-header h1 {
+    font-size: 2.2rem !important;
+    font-weight: 800 !important;
+    background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: -0.03em !important;
+}
+
+.coverage-summary-bar {
+    background: linear-gradient(145deg, rgba(24, 34, 41, 0.8) 0%, rgba(13, 20, 24, 0.9) 100%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.05) !important;
+    backdrop-filter: blur(12px) !important;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05) !important;
+    border-radius: 16px !important;
+    padding: 30px !important;
+}
+
+.controls-table-wrapper {
+    background: rgba(24, 34, 41, 0.4) !important;
+    border: 1px solid rgba(255, 255, 255, 0.05) !important;
+    border-radius: 16px !important;
+    box-shadow: inset 0 0 40px rgba(0,0,0,0.2) !important;
+}
+
+.controls-table th {
+    background: rgba(255, 255, 255, 0.02) !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04) !important;
+    font-size: 0.85rem !important;
+    color: var(--text-secondary) !important;
+}
+
+.controls-table td {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03) !important;
+    font-size: 1.05rem !important;
+    color: #ffffff !important;
+}
+
+.controls-table tr:hover td {
+    background: rgba(30, 41, 50, 0.8) !important;
+}
+
+.status-badge, .mapping-type-badge {
+    padding: 0.4rem 0.8rem !important;
+    font-size: 0.8rem !important;
+    border-radius: 999px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
+}
+
+.compliance-overall-score {
+    font-size: 3.5rem !important;
+    font-weight: 800 !important;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.5) !important;
+}
+
+.framework-tab {
+    font-size: 1.05rem !important;
+    padding: 10px 20px !important;
+}
+
+.gap-analysis-section {
+    background: linear-gradient(145deg, rgba(24, 34, 41, 0.8) 0%, rgba(13, 20, 24, 0.9) 100%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.05) !important;
+    border-radius: 16px !important;
+    padding: 30px !important;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05) !important;
+}
+@media (prefers-reduced-motion: reduce) {
+    .framework-tab--legendary { animation: none; box-shadow: 0 0 0 1px rgba(22,163,74,0.5), 0 0 10px 1px rgba(22,163,74,0.45); }
+}

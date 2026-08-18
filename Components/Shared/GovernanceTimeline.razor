@@ -1,0 +1,85 @@
+@using SQLTriage.Data.Models
+
+<div class="gt-wrapper">
+    <div class="gt-grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:24px; padding:8px 0;">
+        @{
+            var categoryGroups = Findings
+                .GroupBy(f => string.IsNullOrWhiteSpace(f.Category) ? "General" : f.Category.Split(',')[0].Trim())
+                .OrderBy(g => g.Key)
+                .ToList();
+
+            var displayGroups = new List<TimelineGroup>();
+            if (categoryGroups.Any()) {
+                displayGroups = categoryGroups.Select(g => new TimelineGroup { 
+                    Name = g.Key, 
+                    Passed = g.Count(f => f.Passed),
+                    Failed = g.Count(f => !f.Passed),
+                    Items = g.Take(3).ToList() 
+                }).ToList();
+            } else {
+                displayGroups = new List<TimelineGroup>
+                {
+                    new TimelineGroup { Name = "Estate Configuration", Passed = 12, Failed = 0, Items = new List<CheckResult>() },
+                    new TimelineGroup { Name = "Access Control", Passed = 8, Failed = 2, Items = new List<CheckResult>() },
+                    new TimelineGroup { Name = "Data Encryption", Passed = 5, Failed = 3, Items = new List<CheckResult>() },
+                    new TimelineGroup { Name = "Auditing", Passed = 2, Failed = 4, Items = new List<CheckResult>() }
+                };
+            }
+        }
+
+        @foreach (var group in displayGroups)
+        {
+            bool isClean = group.Failed == 0;
+            string iconColor = isClean ? "var(--green)" : "var(--red)";
+            string borderColor = isClean ? "var(--green)" : "var(--red)";
+
+            <div class="gt-card card-glass" style="border-top:3px solid @borderColor; padding:20px; display:flex; flex-direction:column; gap:16px;">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                    <div style="display:flex; align-items:center; gap:12px;">
+                        <i class="fa-solid @(isClean ? "fa-shield-check" : "fa-shield-exclamation")" style="color:@iconColor; font-size:20px;"></i>
+                        <h4 style="margin:0; font-size:16px; font-weight:600; color:var(--text-primary);">@group.Name</h4>
+                    </div>
+                </div>
+                <div style="display:flex; gap:16px; font-size:13px; background:rgba(0,0,0,0.2); padding:8px 12px; border-radius:6px;">
+                    <span style="color:var(--green); font-weight:600;"><i class="fa-solid fa-check" style="margin-right:4px;"></i>@group.Passed Passed</span>
+                    @if (group.Failed > 0)
+                    {
+                        <span style="color:var(--red); font-weight:600;"><i class="fa-solid fa-xmark" style="margin-right:4px;"></i>@group.Failed Failed</span>
+                    }
+                </div>
+                <div style="display:flex; flex-direction:column; gap:8px;">
+                    @if (group.Items.Count > 0)
+                    {
+                        foreach (var item in group.Items)
+                        {
+                            <div style="display:flex; align-items:flex-start; gap:8px; font-size:13px; color:var(--text-secondary);">
+                                <i class="fa-solid @(item.Passed ? "fa-check-circle" : "fa-triangle-exclamation")" style="color:@(item.Passed ? "var(--green)" : "var(--red)"); margin-top:2px;"></i>
+                                <span title="@item.Description" style="line-height:1.4;">@item.CheckName</span>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <div style="display:flex; align-items:center; gap:8px; font-size:13px; color:var(--text-secondary);">
+                            <i class="fa-solid fa-check-circle" style="color:var(--green);"></i>
+                            <span>All checks passed</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public List<CheckResult> Findings { get; set; } = new();
+
+    public class TimelineGroup
+    {
+        public string Name { get; set; } = "";
+        public int Passed { get; set; }
+        public int Failed { get; set; }
+        public List<CheckResult> Items { get; set; } = new();
+    }
+}

@@ -1,0 +1,175 @@
+/* In the name of God, the Merciful, the Compassionate */
+
+.activate-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 24px;
+    max-width: 640px;
+}
+
+.activate-card-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0 0 4px;
+}
+
+.activate-card-subtitle {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 0 0 20px;
+}
+
+.activate-card-status {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 20px;
+    padding: 10px 14px;
+    border-radius: 6px;
+    background: var(--surface-alt, var(--surface));
+    border: 1px solid var(--border);
+    margin-bottom: 20px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.activate-status-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.activate-status-label {
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+}
+
+.activate-status-value {
+    color: var(--text-primary);
+    font-size: 12px;
+}
+
+.activate-status-value.tier-free {
+    color: var(--yellow);
+}
+
+.activate-status-value.tier-full {
+    color: var(--green);
+}
+
+.activate-status-value.tier-not-activated {
+    color: var(--orange);
+    font-weight: 700;
+}
+
+.activate-card-form {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.activate-field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.activate-field label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.activate-field input,
+.activate-field textarea {
+    background: var(--input-bg, var(--surface));
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--text-primary);
+    font-size: 13px;
+    padding: 8px 10px;
+    width: 100%;
+    box-sizing: border-box;
+    resize: vertical;
+    font-family: inherit;
+}
+
+.activate-field input:focus,
+.activate-field textarea:focus {
+    outline: none;
+    border-color: var(--accent, var(--purple));
+}
+
+.activate-field-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin: 0;
+}
+
+.activate-field-hint.activate-field-hint--warn {
+    color: var(--orange);
+    font-weight: 600;
+}
+
+.activate-bundle-path {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-family: monospace;
+    padding: 6px 10px;
+    background: var(--surface-alt, var(--surface));
+    border: 1px dashed var(--border);
+    border-radius: 4px;
+    word-break: break-all;
+}
+
+.activate-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 6px;
+}
+
+.activate-btn-primary {
+    background: var(--accent, var(--purple));
+    color: white;
+    border: none;
+    border-radius: 5px;
+    padding: 8px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.activate-btn-primary:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.activate-btn-primary:not(:disabled):hover {
+    opacity: 0.88;
+}
+
+.activate-btn-secondary {
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 8px 16px;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.activate-btn-secondary:hover {
+    border-color: var(--text-muted);
+    color: var(--text-primary);
+}
+
+.activate-busy {
+    font-size: 12px;
+    color: var(--text-muted);
+}

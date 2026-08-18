@@ -1,0 +1,1094 @@
+/* In the name of God, the Merciful, the Compassionate */
+/* CIO Dashboard — extracted inline styles */
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* ── Container ── */
+.cio-container {
+    padding: 24px;
+    max-width: 1200px;
+    margin: 0 auto;
+    font-family: var(--font-sans);
+    color: var(--text-primary);
+}
+
+/* ── Loading ── */
+.cio-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 400px;
+    gap: 16px;
+}
+
+.cio-spinner {
+    width: 48px;
+    height: 48px;
+    border: 3px solid var(--border);
+    border-top: 3px solid var(--accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+.cio-loading-text {
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
+/* ── Empty State ── */
+.cio-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 400px;
+    gap: 16px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 48px;
+}
+
+.cio-empty-icon {
+    font-size: 48px;
+    color: var(--text-secondary);
+}
+
+.cio-empty-title {
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.cio-empty-text {
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+.cio-empty-link {
+    margin-top: 8px;
+    padding: 10px 24px;
+    background: var(--accent);
+    color: white;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.cio-empty-link i {
+    margin-right: 6px;
+}
+
+/* ── Header ── */
+.cio-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.cio-header-icon {
+    width: 40px;
+    height: 40px;
+    background: linear-gradient(135deg, var(--accent), #00b4d8);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.cio-header-icon i {
+    font-size: 20px;
+    color: white;
+}
+
+.cio-header-title {
+    margin: 0;
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.cio-header-subtitle {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+/* ── Score Hero ── */
+.cio-score-card {
+    background: var(--bg-panel);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-lg);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4), inset 0 1px 1px rgba(255,255,255,0.08);
+    padding: 32px;
+    margin-top: 24px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.cio-score-card::before {
+    content: '';
+    position: absolute;
+    top: -50%; left: -50%; width: 200%; height: 200%;
+    background: radial-gradient(circle at center, var(--accent-soft) 0%, transparent 40%);
+    opacity: 0.15;
+    pointer-events: none;
+}
+
+.cio-score-label {
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-secondary);
+    margin-bottom: 16px;
+    font-weight: 600;
+}
+
+.cio-score-value {
+    font-size: 84px;
+    font-weight: 800;
+    line-height: 1;
+    text-shadow: 0 0 24px rgba(255,255,255,0.1);
+}
+
+.cio-score-band {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-top: 12px;
+    letter-spacing: 0.02em;
+}
+
+.cio-assessment-badge {
+    display: inline-block;
+    padding: 6px 16px;
+    border-radius: 16px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.cio-score-updated {
+    margin-top: 16px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+/* ── Category Grid ── */
+.cio-category-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 20px;
+    margin-top: 32px;
+}
+
+.cio-dial-card {
+    background: var(--bg-panel);
+    backdrop-filter: blur(16px) saturate(160%);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-lg);
+    padding: 24px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    transition: transform var(--t-base), box-shadow var(--t-base), border-color var(--t-base);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+}
+
+.cio-dial-card:hover {
+    transform: translateY(-4px);
+    border-color: var(--accent-strong);
+    box-shadow: 0 16px 32px rgba(0,0,0,0.5), 0 0 16px var(--accent-soft);
+}
+
+.cio-glass-panel {
+    background: var(--bg-panel);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-lg);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4), inset 0 1px 1px rgba(255,255,255,0.06);
+}
+
+.cio-narration {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 16px 20px;
+    border-radius: 12px;
+    border-left: 3px solid var(--accent);
+    margin-bottom: 24px;
+}
+
+.cio-narration-icon {
+    color: var(--accent);
+    font-size: 18px;
+    margin-top: 2px;
+    flex-shrink: 0;
+}
+
+.cio-narration-text {
+    margin: 0;
+    font-size: 0.98rem;
+    line-height: 1.55;
+    color: var(--text-secondary, #d8d8e0);
+}
+
+.cio-dial-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.4);
+}
+
+.cio-dial-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    margin-bottom: 8px;
+}
+
+.cio-dial-name {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.cio-dial-weight {
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
+.cio-dial-footer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font-size: 12px;
+    margin-top: 8px;
+    width: 100%;
+}
+
+.cio-dial-pass {
+    font-weight: 700;
+    font-size: 14px;
+}
+
+.cio-dial-findings {
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
+.cio-dial-na {
+    font-weight: 500;
+    color: var(--text-muted);
+}
+
+/* ── Section Header (shared) ── */
+.cio-section-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.cio-section-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* ── Server Risk Heatmap ── */
+.cio-heatmap-section {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 24px;
+    margin-top: 24px;
+}
+
+.cio-heatmap-scroll {
+    overflow-x: auto;
+}
+
+.cio-heatmap-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.cio-heatmap-th {
+    text-align: left;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.cio-heatmap-th-center {
+    text-align: center;
+}
+
+.cio-heatmap-row {
+    cursor: pointer;
+}
+
+.cio-heatmap-td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.cio-heatmap-td-server {
+    font-weight: 500;
+}
+
+.cio-heatmap-td-server i {
+    margin-right: 6px;
+    color: var(--text-secondary);
+    font-size: 11px;
+}
+
+.cio-heatmap-td-center {
+    text-align: center;
+}
+
+.cio-heatmap-cell {
+    display: inline-block;
+    min-width: 24px;
+    padding: 0 7px;
+    height: 24px;
+    border-radius: 4px;
+    line-height: 24px;
+    text-align: center;
+    font-size: 10px;
+    color: white;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.cio-heatmap-cell-nodata {
+    background: var(--bg-secondary);
+    color: var(--text-muted);
+}
+
+.cio-legend {
+    display: flex;
+    gap: 16px;
+    margin-top: 12px;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.cio-legend-swatch {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    vertical-align: middle;
+    margin-right: 4px;
+}
+
+/* ── Top Risks ── */
+.cio-risks-section {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 24px;
+    margin-top: 24px;
+}
+
+.cio-risks-icon {
+    color: var(--yellow);
+}
+
+.cio-risks-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.cio-risk-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--bg-primary);
+    border-radius: 6px;
+    border-left: 3px solid;
+}
+
+.cio-risk-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    white-space: nowrap;
+    margin-top: 2px;
+}
+
+.cio-risk-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.cio-risk-name {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
+.cio-risk-server {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+}
+
+.cio-risk-server i {
+    margin-right: 4px;
+    font-size: 10px;
+}
+
+.cio-risk-action {
+    font-size: 12px;
+    color: var(--accent);
+    margin-top: 4px;
+}
+
+.cio-risk-action i {
+    margin-right: 4px;
+    font-size: 10px;
+}
+
+.cio-risks-empty {
+    text-align: center;
+    padding: 24px;
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.cio-risks-empty-icon {
+    font-size: 24px;
+    margin-bottom: 8px;
+    display: block;
+}
+
+/* ── Quick Actions ── */
+.cio-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 24px;
+    flex-wrap: wrap;
+}
+
+.cio-action-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 20px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.cio-action-btn-secondary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 20px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.cio-action-btn-disabled {
+    opacity: 0.7;
+}
+
+/* ── Trend Chart ── */
+.cio-trend-toggle {
+    display: flex;
+    gap: 4px;
+    margin-left: auto;
+}
+
+.cio-trend-btn,
+.cio-trend-btn-active {
+    padding: 4px 12px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    background: var(--bg-primary);
+    color: var(--text-muted);
+}
+
+.cio-trend-btn-active {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
+
+.cio-trend-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 120px;
+    padding: 12px 0;
+}
+
+.cio-trend-bar-wrapper {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: 100%;
+    justify-content: flex-end;
+    min-width: 0;
+}
+
+.cio-trend-bar {
+    width: 100%;
+    max-width: 32px;
+    border-radius: 3px 3px 0 0;
+    transition: height 0.3s ease;
+    min-height: 4px;
+}
+
+.cio-trend-label {
+    font-size: 9px;
+    color: var(--text-muted);
+    margin-top: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    text-align: center;
+}
+
+.cio-trend-delta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    padding-top: 8px;
+}
+
+.cio-action-btn-export {
+    padding: 10px 20px;
+    border: 1px solid var(--accent);
+    background: rgba(0, 122, 204, 0.09);
+    color: var(--accent);
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: background 0.15s;
+}
+
+.cio-action-btn-export:hover {
+    background: rgba(0, 122, 204, 0.18);
+}
+
+.cio-action-btn-export:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* ── Remediation Cost Estimate ── */
+.cio-cost-estimate {
+    background: linear-gradient(135deg, rgba(0,122,204,0.08), rgba(0,122,204,0.02));
+    border: 1px solid rgba(0,122,204,0.25);
+    border-radius: 10px;
+    padding: 18px 22px;
+    margin-top: 16px;
+}
+
+.cio-cost-header {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.cio-cost-value {
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 4px;
+    letter-spacing: -0.5px;
+}
+
+.cio-cost-range-sep {
+    color: var(--text-muted);
+    font-weight: 400;
+    margin: 0 4px;
+}
+
+.cio-cost-rawline {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin: 6px 0 10px;
+    font-variant-numeric: tabular-nums;
+}
+
+.cio-cost-pitch {
+    font-size: 13px;
+    color: var(--text-primary);
+    background: var(--bg-hover);
+    border-left: 3px solid var(--accent);
+    padding: 8px 12px;
+    border-radius: 4px;
+    margin: 8px 0 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.cio-cost-pitch strong {
+    color: var(--accent);
+}
+
+.cio-risk-ops {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--border);
+    font-size: 11px;
+}
+
+.cio-risk-op {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 90px;
+}
+
+.cio-risk-op-label {
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-size: 10px;
+}
+
+.cio-risk-op-value {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+/* License & Cost Position panel */
+
+.cio-license-position {
+    margin-top: 16px;
+}
+
+.cio-license-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin: 12px 0;
+}
+
+.cio-license-table th {
+    text-align: left;
+    padding: 8px 10px;
+    color: var(--text-secondary);
+    font-weight: 500;
+    border-bottom: 1px solid var(--border);
+}
+
+.cio-license-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border-soft, var(--border));
+    color: var(--text-primary);
+}
+
+.cio-license-table .cio-num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.cio-license-table .cio-license-total td {
+    border-top: 2px solid var(--border);
+    border-bottom: none;
+    padding-top: 10px;
+    font-size: 14px;
+}
+
+.cio-license-note-row td {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-style: italic;
+    border-bottom: 1px solid var(--border-soft, var(--border));
+    padding: 4px 10px 8px;
+}
+
+.cio-license-saving {
+    background: var(--bg-hover);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    padding: 10px 14px;
+    margin: 12px 0;
+}
+
+.cio-license-saving-line {
+    font-size: 13px;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.cio-license-saving-line strong {
+    color: var(--accent-strong);
+}
+
+.cio-license-saving-confidence {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.cio-license-disclaimer {
+    color: var(--text-muted);
+}
+
+.cio-confidence-high   { color: var(--green); font-weight: 600; }
+.cio-confidence-medium { color: var(--yellow); font-weight: 600; }
+.cio-confidence-low    { color: var(--orange); font-weight: 600; }
+
+.cio-ag-badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+}
+
+.cio-ag-primary {
+    color: var(--accent-strong);
+    background: var(--bg-hover);
+    border-color: var(--accent);
+}
+
+.cio-ag-secondary {
+    color: var(--text-muted);
+    background: var(--bg-subtle, var(--bg-hover));
+}
+
+.cio-license-passive td {
+    color: var(--text-muted);
+}
+
+.cio-license-free {
+    font-size: 11px;
+    color: var(--green);
+    font-style: italic;
+}
+.cio-confidence-none   { color: var(--text-muted); font-weight: 600; }
+
+.cio-license-tco {
+    margin: 12px 0;
+    padding: 10px 14px;
+    background: var(--bg-secondary);
+    border-radius: 4px;
+}
+
+.cio-license-tco-line {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-size: 14px;
+}
+
+.cio-license-tco-label {
+    color: var(--text-secondary);
+}
+
+.cio-license-tco-value {
+    color: var(--text-primary);
+    font-weight: 700;
+    font-size: 18px;
+    font-variant-numeric: tabular-nums;
+}
+
+.cio-license-tco-breakdown {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+.cio-cost-detail {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+}
+
+.cio-cost-note {
+    font-size: 11px;
+    color: var(--text-muted);
+    display: flex;
+    gap: 6px;
+    line-height: 1.5;
+}
+
+/* Performance Health (Wait Stats) */
+.cio-wait-section {
+    background: linear-gradient(135deg, rgba(245,158,11,0.08), rgba(245,158,11,0.02));
+    border: 1px solid rgba(245,158,11,0.25);
+    border-radius: 10px;
+    padding: 16px 22px;
+    margin-top: 16px;
+}
+
+.cio-wait-header {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--orange);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.cio-wait-verdict {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    line-height: 1.5;
+}
+
+/* ── Dimension Stars ── */
+.cio-dimension-score {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    margin-top: 10px;
+    font-size: 14px;
+}
+
+.cio-dimension-star-filled {
+    color: var(--accent);
+}
+
+.cio-dimension-star-empty {
+    color: var(--border);
+}
+
+.cio-dimension-label {
+    color: var(--text-muted);
+    font-size: 11px;
+    margin-left: 6px;
+}
+
+/* ── Health Score & Risk Rating section (Strategic #7) ── */
+.cio-health-score-section {
+    margin-bottom: 28px;
+}
+
+.cio-health-view-full {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--accent);
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    opacity: 0.85;
+    transition: opacity 120ms;
+}
+.cio-health-view-full:hover { opacity: 1; text-decoration: underline; }
+
+.cio-health-server-card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 12px;
+}
+
+.cio-health-hero {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.cio-health-server-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    min-width: 120px;
+}
+
+.cio-health-score {
+    font-size: 28px;
+    font-weight: 800;
+    line-height: 1;
+}
+.cio-health-score.sev-healthy  { color: var(--green); }
+.cio-health-score.sev-warning  { color: var(--yellow); }
+.cio-health-score.sev-critical { color: var(--red); }
+.cio-health-score.sev-unknown  { color: var(--text-muted); }
+
+.cio-health-band {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+    background: rgba(var(--accent-rgb, 99, 102, 241), 0.10);
+    padding: 2px 8px;
+    border-radius: 6px;
+}
+
+.cio-health-trend {
+    font-size: 18px;
+}
+
+/* Dimension mini-bars */
+.cio-health-dims {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.cio-health-dim {
+    display: grid;
+    grid-template-columns: 100px 1fr 36px;
+    align-items: center;
+    gap: 8px;
+    cursor: help;
+}
+
+.cio-health-dim-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cio-health-dim-track {
+    height: 6px;
+    background: var(--bg-input);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.cio-health-dim-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 500ms ease;
+}
+
+.cio-health-dim-score {
+    font-size: 11px;
+    font-weight: 700;
+    text-align: right;
+}
+
+/* ── Section header icon (shared: heart-pulse + table-cells) ── */
+.cio-section-header-icon,
+.cio-heatmap-icon {
+    color: var(--accent);
+}
+
+/* ── Health card trend arrows ── */
+.cio-trend-up     { color: var(--green); }
+.cio-trend-down   { color: var(--red); }
+.cio-trend-stable { color: var(--text-muted); }
+
+/* ── Not-yet-assessed muted state ── */
+.cio-health-unassessed-badge {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    padding: 2px 10px;
+    border-radius: 6px;
+}
+
+.cio-health-unassessed-hint {
+    margin: 4px 0 0;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+
+
+/* ── S-Tier Layout Overrides ── */
+.cio-header-row {
+    margin-bottom: 24px;
+}
+.cio-notification-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 18px;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+.cio-notification-btn:hover {
+    color: var(--text-primary);
+}
+.cio-top-layout {
+    display: grid;
+    grid-template-columns: 1fr 440px;
+    gap: 24px;
+    margin-bottom: 24px;
+    align-items: start;
+}
+.cio-hero-column {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+.cio-findings-column {
+    height: 100%;
+}
+.cio-findings-column .cio-risks-section {
+    height: 100%;
+    margin-top: 0;
+}

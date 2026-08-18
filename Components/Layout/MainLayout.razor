@@ -1,0 +1,452 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.AspNetCore.Components.Web
+@using SQLTriage.Components.Shared
+@using SQLTriage.Data
+@using Radzen.Blazor
+@inject SQLTriage.Data.Services.KeyboardShortcutService ShortcutSvc
+@inject SQLTriage.Data.UserSettingsService UserSettings
+@inject SQLTriage.Data.ServerConnectionManager ConnectionManager
+@inject SQLTriage.Data.AutoUpdateService AutoUpdate
+@inject SQLTriage.Data.Services.NotificationChannelService ChannelService
+@inject SQLTriage.Data.Services.WelcomeTourService Tour
+@implements IDisposable
+
+@inject SQLTriage.Data.CorrelationIdAccessor CorrelationAccessor
+@inject SQLTriage.Data.Services.AppUserState UserState
+
+<!-- Skip link for screen readers -->
+<a href="#main-content" class="skip-link">Skip to main content</a>
+
+<div class="print-header" aria-hidden="true">
+    <span class="print-header-brand"><i class="fa-solid fa-heart-pulse"></i> SQLTriage</span>
+    <span class="print-header-date" id="print-header-date"></span>
+</div>
+<div class="print-footer" aria-hidden="true">
+    <span class="print-footer-label">SQLTriage — Internal Use Only</span>
+    <span class="print-footer-page">Page <span class="print-page-num"></span></span>
+</div>
+
+@if (_afterFirstRender)
+{
+    <ErrorBoundary>
+        <ChildContent>
+            <RadzenComponents />
+            <CommandPalette />
+        </ChildContent>
+        <ErrorContent Context="ex">
+            @{ LogErrorToConsole(ex); }
+        </ErrorContent>
+    </ErrorBoundary>
+}
+
+<div class="app-container" tabindex="0" role="application" aria-label="SQLTriage Application" @onkeydown="HandleKeyDown">
+    <ToastContainer />
+    <ShortcutsDialog IsVisible="@showShortcuts" OnClose="@(() => showShortcuts = false)" />
+    <OnboardingWizard IsVisible="@_showOnboarding" OnComplete="OnOnboardingComplete" />
+    <ReleaseNotesModal IsVisible="@_showReleaseNotes" OnClose="OnReleaseNotesClosed" />
+    <WelcomeTourOverlay />
+
+    @* ── First-launch welcome-tour CTA ── *@
+    @if (_showWelcomeTourCta)
+    {
+        <div class="welcome-tour-cta" role="dialog" aria-labelledby="welcome-tour-cta-title">
+            <h4 id="welcome-tour-cta-title" class="welcome-tour-cta-title">
+                <i class="fa-solid fa-compass"></i> New here?
+            </h4>
+            <p class="welcome-tour-cta-body">
+                Take a 60-second guided tour of the 7 surfaces you'll use most. You can skip or pause at any time.
+            </p>
+            <div class="welcome-tour-cta-controls">
+                <button class="welcome-tour-btn welcome-tour-btn-ghost" @onclick="DismissWelcomeTourCta">
+                    No thanks
+                </button>
+                <button class="welcome-tour-btn welcome-tour-btn-primary" @onclick="StartWelcomeTour">
+                    Take the tour
+                </button>
+            </div>
+        </div>
+    }
+
+    @* ── Update available banner ── *@
+    @if (_updateAvailable && _updateInfo != null)
+    {
+        <div style="position:fixed;top:0;left:0;right:0;z-index:2000;background:var(--accent);color:var(--text-primary);
+                    display:flex;align-items:center;justify-content:center;gap:12px;
+                    padding:7px 16px;font-size:13px;box-shadow:0 2px 6px rgba(0,0,0,0.3);">
+            <i class="fa-solid fa-circle-arrow-up"></i>
+            <span>Update available: <strong>v@(_updateInfo.Version)</strong></span>
+            <a href="RouteConstants.Settings" style="color:var(--text-primary);font-weight:600;text-decoration:underline;"
+               @onclick="() => _updateAvailable = false">Go to Settings to update</a>
+            <button @onclick="() => _updateAvailable = false"
+                    style="background:transparent;border:none;color:var(--text-primary);cursor:pointer;margin-left:8px;font-size:16px;line-height:1;"
+                    title="Dismiss">&#x2715;</button>
+        </div>
+        <div style="height:36px;"></div>  @* spacer so content isn't hidden under the banner *@
+    }
+
+    @* ── Maintenance mode banner ── *@
+    @if (_maintenanceActive)
+    {
+        <div style="position:fixed;top:@(_updateAvailable && _updateInfo != null ? "36px" : "0");left:0;right:0;z-index:1999;
+                    background:#7c5a00;color:#ffe082;
+                    display:flex;align-items:center;justify-content:center;gap:12px;
+                    padding:7px 16px;font-size:13px;box-shadow:0 2px 6px rgba(0,0,0,0.3);">
+            <i class="fa-solid fa-wrench"></i>
+            <span><strong>Maintenance mode active</strong>@(_maintenanceUntilText)</span>
+            <a href="RouteConstants.AlertingConfig" style="color:#ffe082;font-weight:600;text-decoration:underline;">
+                End early →
+            </a>
+        </div>
+        <div style="height:36px;"></div>
+    }
+
+    <Router AppAssembly="@typeof(MainLayout).Assembly">
+    <Found Context="routeData">
+        <div class="app-layout" role="main" aria-label="Main content area">
+            <NavMenu />
+            <div class="app-content" id="main-content" role="content" aria-label="Page content">
+                @* Global Server Selector *@
+                <div class="global-toolbar" style="display:flex; justify-content:space-between; align-items:center;">
+                    <div style="display:flex; align-items:center; gap:12px; margin-left: 16px;">
+                        <button class="nav-arrow-btn" @onclick="GoBack" title="Go Back" style="background:transparent; border:none; color:var(--text-secondary); cursor:pointer;"><i class="fa-solid fa-arrow-left"></i></button>
+                        <button class="nav-arrow-btn" @onclick="GoForward" title="Go Forward" style="background:transparent; border:none; color:var(--text-secondary); cursor:pointer;"><i class="fa-solid fa-arrow-right"></i></button>
+                        <GlobalServerSelector />
+                    </div>
+                    
+                    <div class="global-user-actions" style="display:flex; align-items:center; gap:16px; margin-right:24px;">
+                        @* Theme toggle moved to the bottom status bar (StatusBar.razor). *@
+                        @if (UserState != null && UserState.Role != AppRoles.Viewer)
+                        {
+                            <button class="theme-toggle-btn" @onclick='() => Navigation.NavigateTo("/settings")' title="Settings" style="background:transparent; border:none; color:var(--text-secondary); cursor:pointer;">
+                                <i class="fa-solid fa-gear"></i>
+                            </button>
+                        }
+                        <button class="user-profile-btn" @onclick='() => Navigation.NavigateTo("/settings")' title="Settings" style="display:flex; align-items:center; gap:8px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); padding:4px 12px; border-radius:20px; cursor:pointer; color:var(--text-primary); transition: background 0.2s;">
+                            <div style="width:24px; height:24px; border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center; color:white; font-size:12px;">
+                                <i class="fa-solid fa-user"></i>
+                            </div>
+                            <span style="font-size:13px; font-weight:600;">@(UserState?.Role ?? "Admin")</span>
+                        </button>
+                    </div>
+                </div>
+
+                @* Bundle-state banner — shows the orange "Not Activated" warning on every
+                   page when both Full + Free bundle decryption failed at boot, OR the yellow
+                   "Free tier" nag when running on Free. Hidden when Full is active. *@
+                <FreeStateBanner />
+                <ErrorBoundary @ref="_pageErrorBoundary">
+                    <ChildContent>
+                        <div class="page-fade-in" @key="Navigation.Uri">
+                            <RouteView RouteData="@routeData" />
+                        </div>
+                    </ChildContent>
+                    <ErrorContent Context="ex">
+                        @{
+                            var corrId = Guid.NewGuid().ToString("N")[..8];
+                            LogErrorToConsole(ex);
+                        }
+                        <div class="error-boundary" role="alert" aria-live="assertive" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:50vh;padding:48px 24px;text-align:center;">
+                            <i class="fa-solid fa-triangle-exclamation" style="font-size:48px;color:var(--red);margin-bottom:20px;"></i>
+                            <h2 style="font-size:22px;font-weight:700;color:var(--text-primary);margin:0 0 8px;">Something went wrong</h2>
+                            <p style="font-size:13px;color:var(--text-muted);max-width:480px;margin:0 0 24px;line-height:1.6;">
+                                The page encountered an unexpected error. This has been logged and the development team
+                                can investigate. If this persists, please share reference <code style="background:var(--bg-tertiary);padding:2px 6px;border-radius:3px;font-size:12px;">@corrId</code>.
+                            </p>
+                            <div style="display:flex;gap:12px;">
+                                <button class="btn btn-primary" @onclick="() => _pageErrorBoundary?.Recover()" style="padding:10px 24px;">
+                                    <i class="fa-solid fa-rotate-right" style="margin-right:6px;"></i>Retry
+                                </button>
+                                <button class="btn btn-secondary" @onclick="() => Navigation.NavigateTo(RouteConstants.Guide)" style="padding:10px 24px;">
+                                    <i class="fa-solid fa-house" style="margin-right:6px;"></i>Go to Dashboard
+                                </button>
+                            </div>
+                            <details style="margin-top:32px;max-width:480px;text-align:left;">
+                                <summary style="font-size:11px;color:var(--text-muted);cursor:pointer;">Technical details (for support)</summary>
+                                <pre style="font-size:10px;color:var(--text-muted);background:var(--bg-secondary);padding:12px;border-radius:4px;margin-top:8px;max-height:200px;overflow:auto;white-space:pre-wrap;">@ex.ToString()</pre>
+                            </details>
+                        </div>
+                    </ErrorContent>
+                </ErrorBoundary>
+            </div>
+        </div>
+    </Found>
+    <NotFound>
+        <div class="app-layout" role="alert" aria-live="polite">
+            <NavMenu />
+            <div class="app-content">
+                <div class="not-found">
+                    <h2>Page not found</h2>
+                    <p>The page you're looking for doesn't exist.</p>
+                </div>
+            </div>
+        </div>
+    </NotFound>
+</Router>
+
+    <StatusBar />
+</div>
+
+@code {
+    private ErrorBoundary? _pageErrorBoundary { get; set; }
+    [Inject] private NavigationManager Navigation { get; set; } = null!;
+    [Inject] private IJSRuntime JS { get; set; } = null!;
+    private bool showShortcuts = false;
+    private bool _afterFirstRender = false;
+    private bool _showOnboarding    = false;
+    private bool _showWelcomeTourCta = false;
+    private bool _showReleaseNotes  = false;
+    private bool _updateAvailable   = false;
+    private UpdateInfo? _updateInfo;
+    private bool _maintenanceActive = false;
+    private string _maintenanceUntilText = "";
+    private System.Timers.Timer? _maintenanceTimer;
+
+    private async Task GoBack()
+    {
+        await JS.InvokeVoidAsync("history.back");
+    }
+
+    private async Task GoForward()
+    {
+        await JS.InvokeVoidAsync("history.forward");
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Resolve the current user's role for this circuit BEFORE any page renders.
+        // WPF desktop mode: sets Admin synchronously (no network). Server mode:
+        // fetches role from /auth/me. Without this, AppUserState.Role falls back
+        // to Viewer and every Admin-gated page (Settings, Servers, AlertingConfig,
+        // AuditLogViewer, ServerDocs, ServiceManagement) shows "restricted to Admin".
+        await UserState.InitAsync();
+
+        // Push a correlation ID into Serilog LogContext for this circuit/request
+        _ = CorrelationAccessor.PushToLogContext();
+        // Show onboarding wizard whenever there are no servers configured
+        if (ConnectionManager.GetConnections().Count == 0)
+        {
+            _showOnboarding = true;
+        }
+        else
+        {
+            // Show release notes when version has changed since last seen (if user hasn't disabled it)
+            var currentVersion = GetCurrentVersion();
+            if (!string.IsNullOrEmpty(currentVersion)
+                && UserSettings.GetLastSeenVersion() != currentVersion
+                && UserSettings.GetShowReleaseNotesOnUpdate())
+                _showReleaseNotes = true;
+        }
+
+        // Kick off a background update check; banner appears if a newer version is found
+        AutoUpdate.OnUpdateAvailable += OnUpdateFound;
+        AutoUpdate.StartBackgroundCheck();
+
+        // Poll maintenance window state every 30 seconds
+        RefreshMaintenanceState();
+        _maintenanceTimer = new System.Timers.Timer(30_000);
+        _maintenanceTimer.Elapsed += (_, _) => _ = InvokeAsync(() => { RefreshMaintenanceState(); StateHasChanged(); });
+        _maintenanceTimer.AutoReset = true;
+        _maintenanceTimer.Start();
+    }
+
+    private void RefreshMaintenanceState()
+    {
+        var windows = ChannelService.GetAlertWindows();
+        _maintenanceActive = windows.IsMaintenanceActive;
+        if (!_maintenanceActive)
+        {
+            _maintenanceUntilText = "";
+            return;
+        }
+        if (windows.IsManualMaintenanceActive && windows.MaintenanceActiveUntil.HasValue)
+            _maintenanceUntilText = $" — all alerts suppressed until {windows.MaintenanceActiveUntil.Value:HH:mm}";
+        else
+            _maintenanceUntilText = " — scheduled window";
+    }
+
+    private static string GetCurrentVersion()
+    {
+        try
+        {
+            var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Config", "version.json");
+            if (!File.Exists(path))
+                path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config", "version.json");
+            if (!File.Exists(path)) return "";
+            var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
+            return doc.RootElement.TryGetProperty("version", out var v) ? v.GetString() ?? "" : "";
+        }
+        catch { return ""; }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _afterFirstRender = true;
+            // Apply UX global classes to body
+            try
+            {
+                var noAnim = !UserSettings.GetEnableAnimations();
+                await JS.InvokeVoidAsync("eval", $"document.body.classList.toggle('no-animations', {noAnim.ToString().ToLower()});");
+            } catch { /* pre-render */ }
+            
+            // Show welcome-tour CTA on first launch (or whenever the flag is
+            // false). Only triggered AFTER any onboarding wizard has been
+            // dismissed — otherwise the two overlap visually.
+            if (!UserSettings.GetHasSeenWelcomeTour() && !_showOnboarding)
+            {
+                _showWelcomeTourCta = true;
+            }
+            StateHasChanged();
+        }
+        await Task.CompletedTask;
+    }
+
+    private void StartWelcomeTour()
+    {
+        _showWelcomeTourCta = false;
+        UserSettings.SetHasSeenWelcomeTour(true);
+        Tour.Start();
+        StateHasChanged();
+    }
+
+    private void DismissWelcomeTourCta()
+    {
+        _showWelcomeTourCta = false;
+        UserSettings.SetHasSeenWelcomeTour(true);
+        StateHasChanged();
+    }
+
+    private void OnOnboardingComplete()
+    {
+        _showOnboarding = false;
+        UserSettings.SetOnboardingComplete(true);
+
+        // After onboarding, check if a "What's new" notice is also pending
+        // (happens on first-ever install where LastSeenVersion was never set)
+        var currentVersion = GetCurrentVersion();
+        if (!string.IsNullOrEmpty(currentVersion)
+            && UserSettings.GetLastSeenVersion() != currentVersion
+            && UserSettings.GetShowReleaseNotesOnUpdate())
+            _showReleaseNotes = true;
+
+        // Surface the welcome-tour CTA after onboarding too, if not yet seen.
+        if (!UserSettings.GetHasSeenWelcomeTour())
+            _showWelcomeTourCta = true;
+
+        StateHasChanged();
+    }
+
+    private void OnReleaseNotesClosed(bool dontShowAgain)
+    {
+        _showReleaseNotes = false;
+        var version = GetCurrentVersion();
+        if (!string.IsNullOrEmpty(version))
+            UserSettings.SetLastSeenVersion(version);
+        if (dontShowAgain)
+            UserSettings.SetShowReleaseNotesOnUpdate(false);
+        StateHasChanged();
+    }
+
+    private void OnUpdateFound(UpdateInfo info)
+    {
+        _updateInfo      = info;
+        _updateAvailable = true;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        AutoUpdate.OnUpdateAvailable -= OnUpdateFound;
+        _maintenanceTimer?.Stop();
+        _maintenanceTimer?.Dispose();
+    }
+
+    private async void LogErrorToConsole(Exception ex)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("blazorErrorLogger.logError", ex.Message, ex.StackTrace);
+        }
+        catch (Exception jsEx)
+        {
+            // JS interop unavailable (server mode or WebView2 not ready) — non-fatal
+            Console.WriteLine($"[MainLayout] blazorErrorLogger unavailable: {jsEx.Message}");
+        }
+    }
+
+    private async Task ToggleThemeAsync()
+    {
+        await JS.InvokeVoidAsync("toggleTheme");
+    }
+
+    private void HandleKeyDown(KeyboardEventArgs args)
+    {
+        // ? for shortcuts help
+        if (args.Key == "?" && !args.CtrlKey && !args.AltKey)
+        {
+            showShortcuts = !showShortcuts;
+            return;
+        }
+
+        // Esc to close dialogs
+        if (args.Key == "Escape")
+        {
+            showShortcuts = false;
+            return;
+        }
+
+        if (args.CtrlKey)
+        {
+            var key = args.Key;
+
+            // Ctrl+R — Run/Scan on active page
+            if (key is "r" or "R")
+            {
+                _ = ShortcutSvc.TriggerRun();
+                return;
+            }
+
+            // Ctrl+P — PDF export on active page
+            if (key is "p" or "P")
+            {
+                _ = ShortcutSvc.TriggerExportPdf();
+                return;
+            }
+
+            // Ctrl+E — CSV export on active page
+            if (key is "e" or "E")
+            {
+                _ = ShortcutSvc.TriggerExportCsv();
+                return;
+            }
+
+            // Ctrl+K — Command palette
+            if (key is "k" or "K")
+            {
+                CommandPalette.RequestOpen?.Invoke();
+                return;
+            }
+
+            // Ctrl+1-9 for quick navigation
+            string? route = key switch
+            {
+                "1" => "/",
+                "2" => "/instance",
+                "3" => "/checks",
+                "4" => "/fullaudit",
+                "5" => "/health",
+                "6" => "/settings",
+                "7" => "/dashboard-editor",
+                "8" => "/servers",
+                "h" or "H" => "/health",
+                "q" or "Q" => "/checks",
+                _ => null
+            };
+
+            if (route != null)
+                Navigation.NavigateTo(route);
+        }
+    }
+}

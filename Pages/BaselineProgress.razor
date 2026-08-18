@@ -1,0 +1,326 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/servers/baseline"
+@using SQLTriage.Components.Shared
+@using SQLTriage.Data
+@using SQLTriage.Data.Services
+@using SQLTriage.Data.Services.Narration
+@inject CheckExecutionService Execution
+@inject GovernanceHistoryService HistoryService
+@inject SQLTriage.Data.Services.Narration.ValueNarrativeService ValueEngine
+@inject UserSettingsService UserSettings
+@inject NavigationManager Navigation
+
+<PageTitle>Progress since baseline - @ServerName - SQLTriage</PageTitle>
+
+<div class="check-trend-page">
+    <div class="check-trend-header">
+        <button class="btn btn-secondary" @onclick="GoBack" title="Back">
+            <i class="fa-solid fa-arrow-left"></i> Back
+        </button>
+        <h2><i class="fa-solid fa-flag-checkered"></i> Progress since baseline &mdash; <code>@ServerName</code></h2>
+    </div>
+
+    @if (_loading)
+    {
+        <PageLoadingSpinner Message="Loading baseline progress..." />
+    }
+    else if (_baseline == null)
+    {
+        <div class="check-trend-empty">
+            <p>No baseline has been frozen for <code>@ServerName</code> yet.</p>
+            <p style="color: var(--text-muted); font-size: 13px;">
+                The first full assessment of a server is frozen automatically as its baseline
+                (the &ldquo;gospel&rdquo;). Run a full assessment against this server, then return here
+                to see what has changed since.
+            </p>
+        </div>
+    }
+    else
+    {
+        <div class="check-trend-meta">
+            <div class="check-trend-meta-row">
+                <span class="check-trend-meta-label">Baseline frozen:</span>
+                <span>@_baseline.CapturedAt</span>
+            </div>
+            <div class="check-trend-meta-row">
+                <span class="check-trend-meta-label">Origin:</span>
+                <span>@(string.IsNullOrWhiteSpace(_baseline.Reason) ? "First assessment (gospel)" : $"Re-baseline — {_baseline.Reason}")</span>
+            </div>
+            <div class="check-trend-meta-row">
+                <span class="check-trend-meta-label">At baseline:</span>
+                <span>@_baseline.PassedChecks / @_baseline.TotalChecks passing</span>
+            </div>
+        </div>
+
+        @* Hero stats. Wins and regressions carry equal visual weight — regressions are
+           never hidden or softened (Language Contract: report observations, not a sales story). *@
+        <div class="check-trend-summary">
+            <div class="check-trend-stat">
+                <div class="check-trend-stat-value"
+                     style="color: @(_t!.HealthDelta > 0 ? "var(--green)" : _t.HealthDelta < 0 ? "var(--red)" : "var(--text-muted)");">
+                    @(_t.HealthDelta > 0 ? "+" : "")@_t.HealthDelta
+                </div>
+                <div class="check-trend-stat-label">Health delta (score)</div>
+            </div>
+            <div class="check-trend-stat">
+                <div class="check-trend-stat-value" style="color: var(--green);">@_t.Resolved.Count</div>
+                <div class="check-trend-stat-label">Resolved (fail &rarr; pass)</div>
+            </div>
+            <div class="check-trend-stat">
+                <div class="check-trend-stat-value" style="color: @(_t.Regressed.Count > 0 ? "var(--red)" : "var(--text-muted)");">
+                    @_t.Regressed.Count
+                </div>
+                <div class="check-trend-stat-label">Regressed (pass &rarr; fail)</div>
+            </div>
+            <div class="check-trend-stat">
+                <div class="check-trend-stat-value">@_t.CurrentCompositeScore</div>
+                <div class="check-trend-stat-label">Current score</div>
+            </div>
+        </div>
+
+        @* F-NAR — colleague-voice read of the since-baseline story, gated on the same Narration
+           toggle as the dashboard. Qualitative (direction + what moved); the quantified hours
+           live in the value card below, so the two don't overlap. *@
+        @if (UserSettings.GetNarrationMode() && !string.IsNullOrEmpty(_narration))
+        {
+            <div class="check-trend-section">
+                <div class="cio-narration card-glass">
+                    <i class="fa-solid fa-comment-dots cio-narration-icon"></i>
+                    <p class="cio-narration-text">@_narration</p>
+                </div>
+            </div>
+        }
+
+        @* F-VAL — value delivered since baseline. Ranged + attributed-to-standard + regressions
+           surfaced + indicative caveat (Language Contract; HonestyContractTests). *@
+        @if (_value != null && _value.ResolvedCount > 0 && _value.TotalEffortHours > 0)
+        {
+            <div class="check-trend-section">
+                <div style="border:1px solid var(--border); border-radius:8px; padding:16px; background:var(--bg-card);">
+                    <div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;">
+                        <i class="fa-solid fa-hand-holding-dollar" style="color: var(--green);"></i>
+                        <span style="font-size:13px; color: var(--text-muted); text-transform:uppercase; letter-spacing:0.5px;">
+                            Estimated remediation effort delivered since baseline
+                        </span>
+                        <span style="font-size:24px; font-weight:700; color: var(--green);">
+                            ~@_value.LowHours&ndash;@_value.HighHours hrs
+                        </span>
+                        <span style="font-size:12px; color: var(--text-muted);">(indicative)</span>
+                    </div>
+                    <p style="margin-top:10px; color: var(--text-secondary); line-height:1.5;">@_valueNarrative</p>
+                </div>
+            </div>
+        }
+
+        <div class="check-trend-section" style="display:flex; gap:8px;">
+            <button class="btn btn-primary" @onclick="ShowReBaselineDialog">
+                <i class="fa-solid fa-flag"></i> Re-baseline (set new milestone)
+            </button>
+        </div>
+
+        @* Resolved — the defensible record of what got fixed since baseline. *@
+        <div class="check-trend-section">
+            <h3 style="color: var(--green);"><i class="fa-solid fa-check"></i> Resolved &mdash; fail &rarr; pass (@_t.Resolved.Count)</h3>
+            @if (_t.Resolved.Count == 0)
+            {
+                <p style="color: var(--text-muted); font-size: 13px;">No checks have moved from fail to pass since baseline.</p>
+            }
+            else
+            {
+                @RenderTransitions(_t.Resolved)
+            }
+        </div>
+
+        @* Regressed — always rendered, equal prominence to Resolved. *@
+        <div class="check-trend-section">
+            <h3 style="color: var(--red);"><i class="fa-solid fa-xmark"></i> Regressed &mdash; pass &rarr; fail (@_t.Regressed.Count)</h3>
+            @if (_t.Regressed.Count == 0)
+            {
+                <p style="color: var(--text-muted); font-size: 13px;">No checks have regressed since baseline.</p>
+            }
+            else
+            {
+                @RenderTransitions(_t.Regressed)
+            }
+        </div>
+
+        @* Secondary buckets — not true baseline transitions, kept subordinate. *@
+        @if (_t.NewlyFailing.Count > 0)
+        {
+            <div class="check-trend-section">
+                <h3 style="color: var(--text-muted);">Newly failing &mdash; not present at baseline (@_t.NewlyFailing.Count)</h3>
+                <p style="color: var(--text-muted); font-size: 12px;">
+                    These checks were not in the baseline (added to the corpus, or first evaluated since) and are failing now.
+                </p>
+                @RenderTransitions(_t.NewlyFailing)
+            </div>
+        }
+        @if (_t.DisappearedFailing.Count > 0)
+        {
+            <div class="check-trend-section">
+                <h3 style="color: var(--text-muted);">No longer evaluated &mdash; failing at baseline, absent now (@_t.DisappearedFailing.Count)</h3>
+                <p style="color: var(--text-muted); font-size: 12px;">
+                    These were failing at baseline but did not run in the latest assessment, so no transition can be asserted.
+                </p>
+                <table class="check-trend-table">
+                    <thead><tr><th>Check ID</th></tr></thead>
+                    <tbody>
+                        @foreach (var c in _t.DisappearedFailing)
+                        {
+                            <tr><td><code>@c.CheckId</code></td></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+</div>
+
+@if (_showReBaseline)
+{
+    <div class="dialog-overlay" @onclick="CancelReBaseline">
+        <div class="dialog-content" @onclick:stopPropagation="true" style="max-width:520px;">
+            <h3><i class="fa-solid fa-flag"></i> Re-baseline &mdash; @ServerName</h3>
+            <p style="color: var(--text-muted); font-size: 13px;">
+                This sets the current assessment as the new baseline for this server. The previous
+                baseline is kept in history but is no longer the comparison point. Record why &mdash;
+                e.g. a remediation milestone or a major change &mdash; so the timeline explains the move.
+            </p>
+            <div class="form-group" style="margin: 12px 0;">
+                <label>Reason (required)</label>
+                <input class="form-control" @bind="_reBaselineReason" @bind:event="oninput"
+                       placeholder="e.g. Post-remediation milestone — Q2 hardening" maxlength="200" />
+            </div>
+            @if (!string.IsNullOrEmpty(_reBaselineError))
+            {
+                <p style="color: var(--red); font-size: 13px;">@_reBaselineError</p>
+            }
+            <div class="dialog-actions" style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;">
+                <button class="btn btn-secondary" @onclick="CancelReBaseline" disabled="@_reBaselining">Cancel</button>
+                <button class="btn btn-primary" @onclick="ConfirmReBaseline"
+                        disabled="@(_reBaselining || string.IsNullOrWhiteSpace(_reBaselineReason))">
+                    @if (_reBaselining)
+                    {
+                        <i class="fa-solid fa-spinner fa-spin"></i> <text>Setting...</text>
+                    }
+                    else
+                    {
+                        <text>Set new baseline</text>
+                    }
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, SupplyParameterFromQuery(Name = "server")]
+    public string? ServerName { get; set; }
+
+    private bool _loading = true;
+    private BaselineSummary? _baseline;
+    private CheckTransitionResult? _t;
+    private ValueEstimate? _value;
+    private string _valueNarrative = "";
+    private string _narration = "";
+
+    private bool _showReBaseline;
+    private string _reBaselineReason = "";
+    private string _reBaselineError = "";
+    private bool _reBaselining;
+
+    protected override void OnParametersSet() => Load();
+
+    private void Load()
+    {
+        _loading = true;
+        try
+        {
+            if (string.IsNullOrWhiteSpace(ServerName)) { _baseline = null; _t = null; _value = null; return; }
+            _baseline = HistoryService.GetActiveBaseline(ServerName);
+            _t = _baseline == null ? null : Execution.GetBaselineTransitions(ServerName);
+            if (_t != null)
+            {
+                _value = ValueEngine.Estimate(_t);
+                _valueNarrative = ValueEngine.Narrate(_value);
+                _narration = NarrationService.NarrateBaseline(_t, _baseline);
+            }
+            else
+            {
+                _value = null;
+                _valueNarrative = "";
+                _narration = "";
+            }
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private RenderFragment RenderTransitions(List<CheckTransition> rows) => __builder =>
+    {
+        <table class="check-trend-table">
+            <thead>
+                <tr>
+                    <th>Check ID</th>
+                    <th>Name</th>
+                    <th>Category</th>
+                    <th>Severity</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var c in rows)
+                {
+                    <tr>
+                        <td><code>@c.CheckId</code></td>
+                        <td>@c.CheckName</td>
+                        <td>@c.Category</td>
+                        <td>@c.Severity</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    };
+
+    private void ShowReBaselineDialog()
+    {
+        _reBaselineReason = "";
+        _reBaselineError = "";
+        _showReBaseline = true;
+    }
+
+    private void CancelReBaseline() => _showReBaseline = false;
+
+    private void ConfirmReBaseline()
+    {
+        if (string.IsNullOrWhiteSpace(_reBaselineReason))
+        {
+            _reBaselineError = "A reason is required.";
+            return;
+        }
+        _reBaselining = true;
+        _reBaselineError = "";
+        try
+        {
+            var id = Execution.ReBaseline(ServerName, _reBaselineReason.Trim());
+            if (id == 0)
+            {
+                _reBaselineError = "Could not re-baseline — no current results for this server. Run an assessment first.";
+                return;
+            }
+            _showReBaseline = false;
+            Load();
+        }
+        catch (Exception ex)
+        {
+            _reBaselineError = $"Re-baseline failed: {ex.Message}";
+        }
+        finally
+        {
+            _reBaselining = false;
+        }
+    }
+
+    private void GoBack() => Navigation.NavigateTo(RouteConstants.Servers);
+}

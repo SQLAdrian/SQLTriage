@@ -1,0 +1,211 @@
+[
+  {
+    "errorCode": "CACHE_CORRUPTED",
+    "category": "Cache",
+    "userMessage": "Local cache data for \u0027{0}\u0027 appears corrupted and was discarded.",
+    "governanceImpact": "Reliability -5: Cache miss storm may increase SQL Server load.",
+    "remediation": "1) Verify SQLite database integrity via PRAGMA integrity_check. 2) Clear cache and allow rebuild. 3) Review disk health if corruption recurs.",
+    "audienceMessages": {
+      "dba": "Cache corruption detected \u2014 run integrity check and rebuild cache.",
+      "it": "Local storage integrity issue. Verify disk health and backup strategy.",
+      "exec": "Minor service degradation. Monitor for recurrence indicating hardware fault."
+    },
+    "relatedCheckIds": [
+      "REL_001"
+    ],
+    "docUrl": null
+  },
+  {
+    "errorCode": "CONFIG_INVALID",
+    "category": "Config",
+    "userMessage": "Configuration value \u0027{0}\u0027 is invalid or missing.",
+    "governanceImpact": "Compliance -5: Configuration drift from approved baseline.",
+    "remediation": "1) Restore from Config/dashboard-config.default.json if available. 2) Validate JSON syntax. 3) Refer to schema documentation for allowed values.",
+    "audienceMessages": {
+      "dba": "Invalid config \u2014 restore default, validate JSON, and check schema.",
+      "it": "Configuration drift detected. Implement config-as-code and validation gates.",
+      "exec": "Process control gap. Strengthen change management for configuration updates."
+    },
+    "relatedCheckIds": [
+      "CFG_002"
+    ],
+    "docUrl": null
+  },
+  {
+    "errorCode": "CONN_AUTH_FAILURE",
+    "category": "Connection",
+    "userMessage": "Login failed for user \u0027{0}\u0027.",
+    "governanceImpact": "Security -15: Authentication weakness or credential leak risk.",
+    "remediation": "1) Verify username/password. 2) Check SQL authentication mode. 3) Ensure account is not locked or disabled. 4) Review failed login audit logs.",
+    "audienceMessages": {
+      "dba": "Authentication failed \u2014 check credentials, authentication mode, and account status.",
+      "it": "A service account or user login is failing. Verify credential vault and account policies.",
+      "exec": "Unauthorized access attempt detected. Credential hygiene review recommended."
+    },
+    "relatedCheckIds": [
+      "TRIAGE_016",
+      "SEC_001"
+    ],
+    "docUrl": null
+  },
+  {
+    "errorCode": "CONN_TIMEOUT",
+    "category": "Connection",
+    "userMessage": "The connection to SQL Server timed out after {0} seconds.",
+    "governanceImpact": "Reliability -10: Unmonitored downtime windows.",
+    "remediation": "1) Verify SQL Server service is running. 2) Check firewall rules for port 1433. 3) Review network latency via ping/tracert. 4) Increase ConnectTimeout in connection string if transient.",
+    "audienceMessages": {
+      "dba": "Connection timed out after {0}s \u2014 verify instance availability, firewall, and network path.",
+      "it": "Network or service outage detected. Verify server uptime and firewall rules.",
+      "exec": "A critical server is unreachable. This may indicate an outage affecting business continuity."
+    },
+    "relatedCheckIds": [
+      "TRIAGE_016"
+    ],
+    "docUrl": "https://docs.microsoft.com/sql/database-engine/configure-windows/configure-client-protocols"
+  },
+  {
+    "errorCode": "CONN_TLS_FAILURE",
+    "category": "Connection",
+    "userMessage": "Unable to establish encrypted connection to {0}.",
+    "governanceImpact": "Security -20: Data in transit may be unencrypted.",
+    "remediation": "1) Verify TLS 1.2\u002B is enabled on both client and server. 2) Check certificate validity. 3) Review Encrypt=True in connection string.",
+    "audienceMessages": {
+      "dba": "TLS handshake failed \u2014 verify certificate and TLS version compatibility.",
+      "it": "Encryption negotiation failed. Review certificate expiry and TLS policy.",
+      "exec": "Sensitive data may be transmitted unencrypted. Immediate security review required."
+    },
+    "relatedCheckIds": [
+      "SEC_002"
+    ],
+    "docUrl": null
+  },
+  {
+    "errorCode": "CRED_EXPIRED",
+    "category": "Credential",
+    "userMessage": "The credential for server \u0027{0}\u0027 has expired or is invalid.",
+    "governanceImpact": "Security -15: Service disruption due to credential lifecycle gaps.",
+    "remediation": "1) Rotate credential via credential manager. 2) Update connection string or secret store. 3) Set calendar reminder for next rotation. 4) Enable auto-rotation if supported.",
+    "audienceMessages": {
+      "dba": "Credential expired \u2014 rotate immediately and update all dependent connection strings.",
+      "it": "Password or certificate expiry caused outage. Implement rotation policy and alerting.",
+      "exec": "Preventable outage due to credential expiry. Process improvement recommended."
+    },
+    "relatedCheckIds": [
+      "SEC_004"
+    ],
+    "docUrl": null
+  },
+  {
+    "errorCode": "DATA_SHAPE_MISMATCH",
+    "category": "DataShape",
+    "userMessage": "Expected column \u0027{0}\u0027 was not found in result set.",
+    "governanceImpact": "Reliability -8: Dashboard or alert pipeline may show stale data.",
+    "remediation": "1) Verify query returns expected schema. 2) Check for schema drift in underlying tables. 3) Update panel/check definition if query changed intentionally.",
+    "audienceMessages": {
+      "dba": "Result schema mismatch \u2014 verify query output and check for schema drift.",
+      "it": "Data pipeline compatibility issue. Version control for schema changes recommended.",
+      "exec": "Reporting accuracy may be compromised. Validate data governance controls."
+    },
+    "relatedCheckIds": [
+      "CFG_001"
+    ],
+    "docUrl": null
+  },
+  {
+    "errorCode": "EDGE_OLEDB_LEGACY",
+    "category": "Edge",
+    "userMessage": "Legacy OLE DB provider detected on \u0027{0}\u0027. Support ends {1}.",
+    "governanceImpact": "Compliance -15: Unsupported component risk for audit.",
+    "remediation": "1) Identify consuming applications. 2) Plan migration to MSOLEDBSQL or ODBC. 3) Document exception if timeline exceeds vendor support.",
+    "audienceMessages": {
+      "dba": "Legacy provider in use \u2014 plan migration to supported driver before support ends.",
+      "it": "Technical debt with compliance exposure. Add to risk register and plan remediation.",
+      "exec": "Audit risk due to unsupported software. Budget for modernization initiative."
+    },
+    "relatedCheckIds": [
+      "CFG_003"
+    ],
+    "docUrl": null
+  },
+  {
+    "errorCode": "PERM_DENIED",
+    "category": "Permission",
+    "userMessage": "User \u0027{0}\u0027 lacks permission to {1} on \u0027{2}\u0027.",
+    "governanceImpact": "Security -12: Over-privileging or broken least-privilege model.",
+    "remediation": "1) Verify required permissions via sys.database_permissions. 2) Grant minimum necessary rights. 3) Document exception if elevated rights are required.",
+    "audienceMessages": {
+      "dba": "Permission denied \u2014 audit effective permissions and apply least-privilege grants.",
+      "it": "Access control gap detected. Review role-based permissions and service account rights.",
+      "exec": "Unauthorized data access attempt or broken workflow. Compliance exposure possible."
+    },
+    "relatedCheckIds": [
+      "SEC_003"
+    ],
+    "docUrl": null
+  },
+  {
+    "errorCode": "QUERY_DEADLOCK",
+    "category": "Query",
+    "userMessage": "A deadlock was detected while executing query {0}.",
+    "governanceImpact": "Performance -10: User-facing latency and retry storms.",
+    "remediation": "1) Capture deadlock graph via Extended Events. 2) Review transaction isolation level. 3) Consider snapshot isolation. 4) Optimize query access patterns to reduce lock contention.",
+    "audienceMessages": {
+      "dba": "Deadlock detected \u2014 capture graph, review isolation levels, and tune queries.",
+      "it": "Database contention causing user-facing delays. Review peak-hour transaction patterns.",
+      "exec": "System performance degradation may impact customer experience and SLA commitments."
+    },
+    "relatedCheckIds": [
+      "PRF_001"
+    ],
+    "docUrl": null
+  },
+  {
+    "errorCode": "QUERY_TIMEOUT",
+    "category": "Query",
+    "userMessage": "Query execution exceeded the {0}-second timeout.",
+    "governanceImpact": "Performance -8: Degraded user experience and resource starvation.",
+    "remediation": "1) Review execution plan for missing indexes. 2) Update statistics. 3) Consider query rewrite or pagination. 4) Increase CommandTimeout only as temporary measure.",
+    "audienceMessages": {
+      "dba": "Query timed out \u2014 inspect execution plan, indexes, and statistics.",
+      "it": "Slow queries affecting application responsiveness. Capacity planning review suggested.",
+      "exec": "Operational delays may erode user trust. Prioritize performance tuning."
+    },
+    "relatedCheckIds": [
+      "PRF_002",
+      "PRF_003"
+    ],
+    "docUrl": null
+  },
+  {
+    "errorCode": "RESOURCE_CPU_HIGH",
+    "category": "Resource",
+    "userMessage": "CPU utilization on \u0027{0}\u0027 exceeded {1}% for more than {2} minutes.",
+    "governanceImpact": "Performance -12: Capacity constraint risks throughput degradation.",
+    "remediation": "1) Identify top CPU queries via sys.dm_exec_query_stats. 2) Review missing indexes. 3) Consider query store hints or plan guides. 4) Evaluate hardware scaling.",
+    "audienceMessages": {
+      "dba": "CPU pressure \u2014 identify heavy queries, missing indexes, and plan regressions.",
+      "it": "Server approaching capacity limits. Evaluate scaling or workload redistribution.",
+      "exec": "Infrastructure capacity risk. Budget for scaling or optimization initiative."
+    },
+    "relatedCheckIds": [
+      "PRF_004",
+      "PRF_005"
+    ],
+    "docUrl": null
+  },
+  {
+    "errorCode": "RUNTIME_UNHANDLED",
+    "category": "Runtime",
+    "userMessage": "An unexpected error occurred: {0}",
+    "governanceImpact": "Reliability -10: Unhandled exception may leave resources in inconsistent state.",
+    "remediation": "1) Review application logs for stack trace. 2) Reproduce with diagnostic logging enabled. 3) Report issue with logs attached.",
+    "audienceMessages": {
+      "dba": "Unhandled runtime error \u2014 capture logs and stack trace for investigation.",
+      "it": "Unexpected system failure. Escalate to engineering with full diagnostic bundle.",
+      "exec": "System instability detected. Request root-cause analysis and remediation timeline."
+    },
+    "relatedCheckIds": [],
+    "docUrl": null
+  }
+]

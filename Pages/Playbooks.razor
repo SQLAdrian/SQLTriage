@@ -1,0 +1,382 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/playbooks"
+<PageTitle>SQLTriage - Playbooks</PageTitle>
+@using System.IO
+@using System.Text.Json
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@inject CheckRepositoryService CheckRepo
+@inject ServerConnectionManager ConnectionManager
+@inject ToastService Toast
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<div class="playbooks-page page-fade-in">
+    <div class="playbooks-header">
+        <h2><i class="fa-solid fa-book-medical"></i> Remediation Playbooks</h2>
+        <p class="playbooks-subtitle">Actionable guidance for every finding</p>
+    </div>
+
+    @if (_loading)
+    {
+        <PageLoadingSpinner Message="Loading playbooks..." />
+    }
+    else if (_allChecks.Count == 0)
+    {
+        <div class="playbooks-empty">
+            <i class="fa-solid fa-book-medical"></i>
+            <p>No playbooks available</p>
+            <span class="playbooks-empty-hint">No checks are available from the active bundle. Check Settings, or reinstall if the bundle is missing.</span>
+        </div>
+    }
+    else
+    {
+        <div class="playbooks-filter-bar">
+            <label for="pb-category">Category</label>
+            <select id="pb-category" @bind="_selectedCategory" @bind:after="ApplyFilters">
+                <option value="">All</option>
+                @foreach (var cat in _categories)
+                {
+                    <option value="@cat">@cat</option>
+                }
+            </select>
+
+            <label for="pb-severity">Severity</label>
+            <select id="pb-severity" @bind="_selectedSeverity" @bind:after="ApplyFilters">
+                <option value="">All</option>
+                @foreach (var sev in _severities)
+                {
+                    <option value="@sev">@sev</option>
+                }
+            </select>
+
+            <input type="text" placeholder="Search by name or description..."
+                   @bind="_searchText" @bind:after="ApplyFilters" />
+
+            <label class="pb-top-actions-toggle" title="Show only the consolidated top-action findings.">
+                <input type="checkbox" @bind="_topActionsOnly" @bind:after="ApplyFilters" />
+                <i class="fa-solid fa-star"></i> Top Actions only
+            </label>
+
+            <span class="playbooks-count">@_filteredChecks.Count of @_allChecks.Count playbooks</span>
+        </div>
+
+        <div class="playbooks-scroll">
+            @if (_filteredChecks.Count == 0)
+            {
+                <div class="playbooks-empty">
+                    <i class="fa-solid fa-filter-circle-xmark"></i>
+                    <p>No playbooks match your filters</p>
+                    <span class="playbooks-empty-hint">Try broadening your search or resetting the filters.</span>
+                </div>
+            }
+            else
+            {
+                <div class="playbooks-grid">
+                    @foreach (var check in _filteredChecks)
+                    {
+                        var isExpanded = _expandedId == check.Id;
+                        <div class="playbook-card @(isExpanded ? "expanded" : "")"
+                             @onclick="() => ToggleExpand(check.Id)">
+                            <div class="playbook-card-header">
+                                <div class="playbook-card-title">
+                                    <h3>@check.Name</h3>
+                                    <div class="playbook-badges">
+                                        <span class="badge badge-severity-@check.Severity.ToLowerInvariant()">@check.Severity</span>
+                                        <span class="badge badge-category">@check.Category</span>
+                                        @if (check.IncludeInMainActions == true)
+                                        {
+                                            <span class="badge badge-top-action" title="Top action in the consolidated narrative — surfaces in monthly reports.">
+                                                <i class="fa-solid fa-star"></i> Top Action
+                                            </span>
+                                        }
+                                    </div>
+                                </div>
+                                <span class="playbook-card-expand">
+                                    <i class="fa-solid fa-chevron-down"></i>
+                                </span>
+                            </div>
+
+                            <div class="playbook-description @(isExpanded ? "" : "truncated")">
+                                @check.Description
+                            </div>
+
+                            @if (check.FrameworkMappings?.Count > 0)
+                            {
+                                <div class="playbook-mappings pb-framework-badges" style="margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px;">
+                                    @foreach (var m in check.FrameworkMappings.Take(4))
+                                    {
+                                        <span class="mapping-pill pb-fw-badge" style="font-size: 10px; padding: 3px 8px; border-radius: 4px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); display: flex; gap: 6px;">
+                                            <span class="mapping-framework" style="font-weight: 700; color: var(--accent);">@ShortFramework(m.Framework)</span>
+                                            <span class="mapping-id" style="color: var(--text-secondary);">@m.ControlId</span>
+                                        </span>
+                                    }
+                                    @if (check.FrameworkMappings.Count > 4)
+                                    {
+                                        <span class="mapping-pill pb-fw-badge" style="font-size: 10px; padding: 3px 8px; border-radius: 4px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);">+@(check.FrameworkMappings.Count - 4) more</span>
+                                    }
+                                </div>
+                            }
+
+                            @if (isExpanded)
+                            {
+                                <div class="playbook-detail" @onclick:stopPropagation>
+                                    @if (!string.IsNullOrWhiteSpace(check.FullStoryAction) || !string.IsNullOrWhiteSpace(check.NextAction))
+                                    {
+                                        <div class="playbook-detail-section playbook-detail-story">
+                                            <h4><i class="fa-solid fa-book-open"></i> Story</h4>
+                                            @if (!string.IsNullOrWhiteSpace(check.FullStoryAction))
+                                            {
+                                                <p class="playbook-story-body">@check.FullStoryAction</p>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(check.NextAction))
+                                            {
+                                                <p class="playbook-next-action">
+                                                    <strong>Next action:</strong> @check.NextAction
+                                                </p>
+                                            }
+                                        </div>
+                                    }
+
+                                    @if (!string.IsNullOrWhiteSpace(check.RecommendedAction))
+                                    {
+                                        <div class="playbook-detail-section">
+                                            <h4><i class="fa-solid fa-wrench"></i> Remediation Steps</h4>
+                                            <div class="pb-code-container">
+                                                <button class="pb-copy-btn" @onclick="() => CopyToClipboard(check.RecommendedAction)" title="Copy script" @onclick:stopPropagation>
+                                                    <i class="fa-regular fa-copy"></i> Copy
+                                                </button>
+                                                <pre>@check.RecommendedAction</pre>
+                                            </div>
+                                        </div>
+                                    }
+
+                                    @if (check.FrameworkMappings?.Count > 0)
+                                    {
+                                        <div class="playbook-detail-section">
+                                            <h4><i class="fa-solid fa-shield-halved"></i> Framework Mappings</h4>
+                                            <table class="playbook-mapping-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Framework</th>
+                                                        <th>Control ID</th>
+                                                        <th>Control Name</th>
+                                                        <th>Type</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    @foreach (var m in check.FrameworkMappings)
+                                                    {
+                                                        <tr>
+                                                            <td>@m.Framework</td>
+                                                            <td>@m.ControlId</td>
+                                                            <td>@m.ControlName</td>
+                                                            <td>
+                                                                <span class="mapping-type-badge @(m.MappingType ?? "")">
+                                                                    @(m.MappingType ?? "n/a")
+                                                                </span>
+                                                            </td>
+                                                        </tr>
+                                                    }
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    }
+
+                                    @if (!string.IsNullOrWhiteSpace(check.ExpectedResult))
+                                    {
+                                        <div class="playbook-detail-section">
+                                            <h4><i class="fa-solid fa-circle-check"></i> What to Expect</h4>
+                                            <p>@check.ExpectedResult</p>
+                                        </div>
+                                    }
+
+
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private bool _loading = true;
+    private List<PlaybookCheck> _allChecks = new();
+    private List<PlaybookCheck> _filteredChecks = new();
+    private List<string> _categories = new();
+    private List<string> _severities = new();
+
+    private string _selectedCategory = "";
+    private string _selectedSeverity = "";
+    private string _searchText = "";
+    private bool _topActionsOnly = false;
+    private string? _expandedId;
+
+    private static readonly JsonSerializerOptions JsonOpts = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
+    protected override Task OnInitializedAsync()
+    {
+        try
+        {
+            var checks = CheckRepo.GetAllChecks();
+            if (checks == null || checks.Count == 0)
+            {
+                Toast.ShowWarning("Playbooks", "No checks available from the active bundle.");
+                _loading = false;
+                return Task.CompletedTask;
+            }
+
+            var fwMappings = CheckRepo.FrameworkMappings;
+
+            _allChecks = checks
+                .Where(c => c.Enabled)
+                .Select(c => MapToPlaybook(c, fwMappings))
+                .ToList();
+
+            _categories = _allChecks
+                .Select(c => c.Category)
+                .Where(c => !string.IsNullOrWhiteSpace(c))
+                .Distinct()
+                .OrderBy(c => c)
+                .ToList();
+
+            _severities = _allChecks
+                .Select(c => c.Severity)
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Distinct()
+                .OrderBy(s => SeverityOrder(s))
+                .ToList();
+
+            ApplyFilters();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("Playbooks", $"Failed to load playbooks: {ex.Message}");
+        }
+        finally
+        {
+            _loading = false;
+        }
+        return Task.CompletedTask;
+    }
+
+    private static PlaybookCheck MapToPlaybook(
+        SqlCheck c,
+        IReadOnlyDictionary<string, IReadOnlyList<SQLTriage.Data.Parser.FrameworkMapping>> fwMappings)
+    {
+        var pc = new PlaybookCheck
+        {
+            Id = c.Id,
+            Name = c.Name,
+            Description = c.Description,
+            Category = c.Category,
+            Severity = c.Severity,
+            RecommendedAction = c.RecommendedAction,
+            ExpectedResult = c.ResultInterpretation,
+            Enabled = c.Enabled,
+            IncludeInMainActions = c.IncludeInMainActions,
+            FullStoryAction = c.FullStoryAction,
+            NextAction = c.NextAction,
+            CheckTriggeredSimplified = c.CheckTriggeredSimplified,
+            CheckClearSimplified = c.CheckClearedSimplified,
+        };
+
+        if (fwMappings.TryGetValue(c.Id, out var pfwList) && pfwList.Count > 0)
+        {
+            pc.FrameworkMappings = pfwList.Select(m => new FrameworkMapping
+            {
+                Framework = m.Framework,
+                ControlId = m.ControlId,
+                ControlName = m.ControlName ?? "",
+                MappingType = m.MappingType,
+            }).ToList();
+        }
+
+        return pc;
+    }
+
+    private void ApplyFilters()
+    {
+        _filteredChecks = _allChecks.Where(c =>
+        {
+            if (!string.IsNullOrEmpty(_selectedCategory) &&
+                !string.Equals(c.Category, _selectedCategory, StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            if (!string.IsNullOrEmpty(_selectedSeverity) &&
+                !string.Equals(c.Severity, _selectedSeverity, StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            if (!string.IsNullOrWhiteSpace(_searchText))
+            {
+                var search = _searchText.Trim();
+                var nameMatch = c.Name?.Contains(search, StringComparison.OrdinalIgnoreCase) == true;
+                var descMatch = c.Description?.Contains(search, StringComparison.OrdinalIgnoreCase) == true;
+                if (!nameMatch && !descMatch)
+                    return false;
+            }
+
+            if (_topActionsOnly && c.IncludeInMainActions != true)
+                return false;
+
+            return true;
+        }).ToList();
+
+        _expandedId = null;
+    }
+
+    private void ToggleExpand(string id)
+    {
+        _expandedId = _expandedId == id ? null : id;
+    }
+
+    private void NavigateToQuickCheck(string checkId)
+    {
+        Navigation.NavigateTo($"/audit?checkId={checkId}");
+    }
+
+    private async Task CopyToClipboard(string? text)
+    {
+        if (!string.IsNullOrEmpty(text))
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+                Toast.ShowSuccess("Copied", "Remediation script copied to clipboard.");
+            }
+            catch
+            {
+                Toast.ShowError("Copy Failed", "Unable to copy to clipboard.");
+            }
+        }
+    }
+
+    private static string ShortFramework(string framework)
+    {
+        if (string.IsNullOrWhiteSpace(framework)) return "";
+        if (framework.StartsWith("NIST", StringComparison.OrdinalIgnoreCase)) return "NIST";
+        if (framework.StartsWith("CIS", StringComparison.OrdinalIgnoreCase)) return "CIS";
+        if (framework.StartsWith("SOC", StringComparison.OrdinalIgnoreCase)) return "SOC2";
+        if (framework.StartsWith("ISO", StringComparison.OrdinalIgnoreCase)) return "ISO";
+        if (framework.StartsWith("PCI", StringComparison.OrdinalIgnoreCase)) return "PCI";
+        if (framework.StartsWith("HIPAA", StringComparison.OrdinalIgnoreCase)) return "HIPAA";
+        var parts = framework.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length > 0 ? parts[0] : framework;
+    }
+
+    private static int SeverityOrder(string severity) => severity.ToLowerInvariant() switch
+    {
+        "critical" => 0,
+        "high" => 1,
+        "medium" => 2,
+        "warning" => 3,
+        "low" => 4,
+        _ => 5
+    };
+}

@@ -1,0 +1,154 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/scheduler-health"
+<PageTitle>SQLTriage - Scheduler Health</PageTitle>
+@using SQLTriage.Data.Scheduling
+@using SQLTriage.Data.Services
+@using Microsoft.Extensions.DependencyInjection
+@inject IServiceProvider Services
+@inject QueryRegistry QueryRegistry
+@inject NavigationManager Navigation
+
+<div class="page-container">
+    <h1 class="page-title">Scheduler Health</h1>
+
+    @if (_registry is null)
+    {
+        <div class="card">
+            <h2>Service Registry</h2>
+            <p style="color:var(--text-secondary);">
+                Service registry diagnostics are unavailable in this build — the legacy
+                scheduler-registry service is not active (live query scheduling runs through
+                the Query Orchestrator). Query group and per-query metrics below are live.
+            </p>
+        </div>
+    }
+    else
+    {
+    <div class="card">
+        <h2>Service Registry</h2>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th>Interval</th>
+                    <th>Details</th>
+                    <th>Last Updated</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var svc in _registry.GetAllServices())
+                {
+                    <tr>
+                        <td>@svc.Name</td>
+                        <td>@svc.Type</td>
+                        <td>
+                            <span class="status-badge @(svc.Status == "running" ? "status-ok" : "status-error")">
+                                @svc.Status
+                            </span>
+                        </td>
+                        <td>@(svc.IntervalSeconds.HasValue ? $"{svc.IntervalSeconds}s" : "-")</td>
+                        <td>
+                            @if (svc.Type == "query_scheduler")
+                            {
+                                <span>Queries: @svc.QueryCount</span>
+                                <br />
+                                <span>Groups: @svc.ActiveGroups</span>
+                                <br />
+                                <span>Multiplier: @svc.GlobalMultiplier?.ToString("F2")</span>
+                                <br />
+                                <span>Concurrency: @svc.ConcurrencyLimit</span>
+                            }
+                            else if (svc.TaskCount.HasValue)
+                            {
+                                <span>Tasks: @svc.TaskCount</span>
+                            }
+                        </td>
+                        <td>@svc.LastUpdated.ToString("HH:mm:ss")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    }
+
+    <div class="card">
+        <h2>Query Groups</h2>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Group ID</th>
+                    <th>Queries</th>
+                    <th>Avg Roundtrip (ms)</th>
+                    <th>In-Flight</th>
+                    <th>Next Release</th>
+                    <th>Healthy</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var group in QueryRegistry.GetAllGroups())
+                {
+                    <tr>
+                        <td>@group.GroupId</td>
+                        <td>@group.Queries.Count</td>
+                        <td>@group.AvgRoundtripMs.ToString("F0")</td>
+                        <td>@group.InFlightCount</td>
+                        <td>@group.NextReleaseTime.ToString("HH:mm:ss")</td>
+                        <td>
+                            <span class="status-badge @(group.IsHealthy ? "status-ok" : "status-warn")">
+                                @(group.IsHealthy ? "OK" : "High")
+                            </span>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card">
+        <h2>Registered Queries</h2>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Query ID</th>
+                    <th>Group</th>
+                    <th>Roundtrip (ms)</th>
+                    <th>Samples</th>
+                    <th>Last Executed</th>
+                    <th>Server</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var q in QueryRegistry.GetAllQueries().OrderByDescending(q => q.LastExecuted).Take(100))
+                {
+                    <tr>
+                        <td>@q.QueryId</td>
+                        <td>@q.BatchGroupId</td>
+                        <td>@q.RoundtripMs.ToString("F0")</td>
+                        <td>@q.SampleCount</td>
+                        <td>@q.LastExecuted.ToString("yyyy-MM-dd HH:mm")</td>
+                        <td>@(q.ServerName ?? "-")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    // SchedulerRegistryService is a legacy service that is NOT registered in DI
+    // (it depends on the legacy QueryScheduler, which would start a SECOND query
+    // processor alongside the live QueryOrchestrator). Resolve it OPTIONALLY so
+    // this page degrades gracefully instead of throwing "no registered service"
+    // on instantiation (which previously wedged the Blazor circuit). Live query
+    // group / per-query metrics still come from the registered QueryRegistry.
+    private SchedulerRegistryService? _registry;
+
+    protected override void OnInitialized()
+    {
+        _registry = Services.GetService<SchedulerRegistryService>();
+    }
+}
+
+<!-- Styles extracted to wwwroot/css/SchedulerHealth.css 2026-05-11 (CLAUDE.md convention). -->

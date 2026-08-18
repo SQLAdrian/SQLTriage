@@ -1,0 +1,309 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/checks"
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@inject CheckRepositoryService CheckRepo
+@inject QuickCheckResultStore ResultStore
+@inject NavigationManager Nav
+@inject SQLTriage.Data.Services.Licensing.IBundleAccessor Bundle
+<PageTitle>SQLTriage - Check Catalog</PageTitle>
+
+@* Full-tier-only surface (Adrian, 2026-06-23): the catalog is gated to Full tier — both in
+   the nav (DashboardConfig.FullTierOnly) AND here, so a direct /checks URL on a free/community
+   build can't bypass the gate. DevBridge enables it on a dev machine, mirroring the nav clause. *@
+@if (Bundle.Tier != SQLTriage.Data.Services.Licensing.Tier.Full && !SQLTriage.Data.BuildMode.DevBridgeActive)
+{
+    <div class="settings-page" style="max-width:760px; padding:32px;">
+        <h2 style="margin:0 0 8px;"><i class="fa-solid fa-lock"></i> Check Catalog — full edition</h2>
+        <p style="color:var(--text-muted); font-size:13px;">
+            The standalone Check Catalog view is part of the full edition and is not enabled in this build.
+            Every check still runs — diagnosis and reporting are unaffected.
+        </p>
+    </div>
+    return;
+}
+
+@* Dedicated corpus check CATALOG/INVENTORY page. Reads the shipped checks from the
+   bundle (or the dev source-parser) via CheckRepositoryService — NOT through the
+   DynamicDashboard SQL-query engine, which can only feed panels from target-server SQL.
+   Phase 1 = catalog (server-independent). Phase 2 = latest STORED outcomes (read-only;
+   running an assessment lives on /audit). *@
+
+<div class="settings-page" style="max-width:1200px; padding:24px;">
+    <h2 style="margin:0 0 4px;"><i class="fa-solid fa-list-check"></i> Check Catalog</h2>
+    <p style="color:var(--text-muted); font-size:13px; margin:0 0 16px;">
+        The library of checks this build ships — sourced from @LoadSourceLabel. Read-only;
+        run an assessment on <a href="/audit">Run Audit</a>.
+    </p>
+
+    @if (!string.IsNullOrEmpty(CheckRepo.LoadError))
+    {
+        <div style="background:#3a1212; border:1px solid #7a2a2a; padding:12px; border-radius:6px; margin:0 0 16px;">
+            <i class="fa-solid fa-triangle-exclamation" style="color:#ff8a8a;"></i>
+            <strong>Check catalog failed to load.</strong> @CheckRepo.LoadError
+        </div>
+    }
+    else if (CheckRepo.SkippedChecks.Count > 0)
+    {
+        <div style="background:#3a2a00; border:1px solid #7a5a00; padding:10px 12px; border-radius:6px; margin:0 0 16px; font-size:13px;">
+            <i class="fa-solid fa-circle-info" style="color:#e0b000;"></i>
+            @CheckRepo.SkippedChecks.Count check(s) were skipped while loading the catalog.
+        </div>
+    }
+
+    @* ── Phase 1: catalog stats (server-independent) ── *@
+    <div style="display:flex; gap:14px; flex-wrap:wrap; margin-bottom:16px;">
+        @StatCard("Total checks", _all.Count, "var(--text-primary)", ClearCatalogFilters, NoCatalogFilter)
+        @StatCard("Enabled", _all.Count(c => c.Enabled), "var(--green)", () => ToggleEnabled("enabled"), _enabledFilter == "enabled")
+        @StatCard("Disabled", _all.Count(c => !c.Enabled), "var(--text-muted)", () => ToggleEnabled("disabled"), _enabledFilter == "disabled")
+        @StatCard("Flagged (needs work)", _all.Count(c => c.IsBad), "var(--orange)", () => _flaggedOnly = !_flaggedOnly, _flaggedOnly)
+    </div>
+
+    @if (_all.Count > 0)
+    {
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:18px;">
+            @foreach (var s in SeverityOrdered())
+            {
+                var key = s.Key;
+                <span role="button" tabindex="0" @onclick="@(() => ToggleSev(key))" title="Click to filter by severity"
+                      style="cursor:pointer; user-select:none; display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:12px; font-size:12px; background:@(_sev == key ? "rgba(74,222,128,0.10)" : "rgba(255,255,255,0.04)"); border:1px solid @(_sev == key ? "var(--green)" : "var(--border)");">
+                    <span style="width:9px; height:9px; border-radius:50%; background:@SevColor(key);"></span>
+                    @key <strong>@s.Value</strong>
+                </span>
+            }
+        </div>
+
+        @* ── Filters ── *@
+        <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
+            <input type="text" placeholder="Search id / name / category…" @bind="_q" @bind:event="oninput"
+                   class="form-control" style="min-width:280px;" />
+            <select @bind="_cat" class="form-control" style="width:auto;">
+                <option value="">All categories</option>
+                @foreach (var c in _categories) { <option value="@c">@c</option> }
+            </select>
+            <select @bind="_sev" class="form-control" style="width:auto;">
+                <option value="">All severities</option>
+                @foreach (var s in SeverityOrdered()) { <option value="@s.Key">@s.Key</option> }
+            </select>
+            <select @bind="_enabledFilter" class="form-control" style="width:auto;">
+                <option value="">Enabled + disabled</option>
+                <option value="enabled">Enabled only</option>
+                <option value="disabled">Disabled only</option>
+            </select>
+        </div>
+
+        <div style="border:1px solid var(--border); border-radius:6px; overflow:auto; max-height:520px;">
+            <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                <thead style="position:sticky; top:0; background:var(--bg-secondary);">
+                    <tr>
+                        <th style="@Th">Status</th>
+                        <th style="@Th">Severity</th>
+                        <th style="@Th">ID</th>
+                        <th style="@Th">Name</th>
+                        <th style="@Th">Category</th>
+                        <th style="@Th; text-align:right;">Effort (h)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var c in Filtered)
+                    {
+                        <tr style="border-top:1px solid var(--border);">
+                            <td style="@Td">
+                                <span style="font-size:11px; color:@(c.Enabled ? "var(--green)" : "var(--text-muted)");">
+                                    @(c.Enabled ? "● enabled" : "○ disabled")
+                                </span>
+                            </td>
+                            <td style="@Td"><span style="color:@SevColor(c.Severity);">@c.Severity</span></td>
+                            <td style="@Td; font-family:monospace; font-size:11px; color:var(--text-muted);">@c.Id</td>
+                            <td style="@Td">@c.Name</td>
+                            <td style="@Td">@c.Category</td>
+                            <td style="@Td; text-align:right;">@(c.EffortHours > 0 ? c.EffortHours.ToString("0.#") : "—")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div style="font-size:12px; color:var(--text-muted); margin-top:6px;">
+            Showing @Filtered.Count() of @_all.Count checks.
+        </div>
+    }
+
+    @* ── Phase 2: latest STORED outcomes (read-only) ── *@
+    <h3 style="margin:28px 0 8px;"><i class="fa-solid fa-clipboard-check"></i> Latest outcomes</h3>
+    @if (_serversWithRuns.Count == 0)
+    {
+        <div style="background:rgba(255,255,255,0.03); border:1px dashed var(--border); padding:16px; border-radius:6px; font-size:13px; color:var(--text-muted);">
+            No assessment has been run yet. Outcomes appear here after a corpus assessment is run on
+            <a href="/audit">Run Audit</a>. (This page is read-only and never runs checks itself.)
+        </div>
+    }
+    else
+    {
+        <div style="margin-bottom:10px;">
+            <label style="font-size:12px; color:var(--text-muted);">Server
+                <select @bind="_selectedServer" @bind:after="LoadOutcomes" class="form-control" style="width:auto; margin-left:6px;">
+                    @foreach (var s in _serversWithRuns) { <option value="@s">@s</option> }
+                </select>
+            </label>
+        </div>
+
+        @if (_latest is null || _latest.Count == 0)
+        {
+            <div style="font-size:13px; color:var(--text-muted);">No stored results for <strong>@_selectedServer</strong> yet — run an assessment on <a href="/audit">Run Audit</a>.</div>
+        }
+        else
+        {
+            var failed = _latest.Where(r => !r.Passed && !r.IsCorrupted).ToList();
+            <div style="display:flex; gap:14px; flex-wrap:wrap; margin-bottom:12px;">
+                @StatCard("Results", _latest.Count, "var(--text-primary)", () => _outcomeFilter = "", _outcomeFilter == "")
+                @StatCard("Passed", _latest.Count(r => r.Passed), "var(--green)", () => ToggleOutcome("passed"), _outcomeFilter == "passed")
+                @StatCard("Failing", failed.Count, "var(--red)", () => ToggleOutcome("failing"), _outcomeFilter == "failing")
+                @StatCard("Critical failing", failed.Count(r => string.Equals(r.Severity, "Critical", StringComparison.OrdinalIgnoreCase)), "var(--red)", () => ToggleOutcome("critical"), _outcomeFilter == "critical")
+                @StatCard("High failing", failed.Count(r => string.Equals(r.Severity, "High", StringComparison.OrdinalIgnoreCase)), "var(--orange)", () => ToggleOutcome("high"), _outcomeFilter == "high")
+            </div>
+
+            <div style="border:1px solid var(--border); border-radius:6px; overflow:auto; max-height:460px;">
+                <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                    <thead style="position:sticky; top:0; background:var(--bg-secondary);">
+                        <tr>
+                            <th style="@Th">Status</th>
+                            <th style="@Th">Severity</th>
+                            <th style="@Th">Check</th>
+                            <th style="@Th">Category</th>
+                            <th style="@Th">Message</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var r in FilteredOutcomes(_latest))
+                        {
+                            <tr style="border-top:1px solid var(--border);">
+                                <td style="@Td">
+                                    <span style="color:@(r.IsCorrupted ? "var(--orange)" : r.Passed ? "var(--green)" : "var(--red)");">
+                                        @(r.IsCorrupted ? "corrupted" : r.Passed ? "✓ pass" : "✗ fail")
+                                    </span>
+                                </td>
+                                <td style="@Td"><span style="color:@SevColor(r.Severity);">@r.Severity</span></td>
+                                <td style="@Td">@(string.IsNullOrEmpty(r.CheckName) ? r.CheckId : r.CheckName)</td>
+                                <td style="@Td">@r.Category</td>
+                                <td style="@Td; color:var(--text-muted);">@(r.ErrorMessage ?? r.Message)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <div style="font-size:12px; color:var(--text-muted); margin-top:6px;">
+                Stored result for @_selectedServer@(_latest.FirstOrDefault()?.ExecutedAt is { } at ? $" — captured {at:yyyy-MM-dd HH:mm}" : "").
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private const string Th = "text-align:left; padding:7px 10px; font-weight:600; color:var(--text-muted); white-space:nowrap;";
+    private const string Td = "padding:6px 10px; vertical-align:top;";
+
+    private List<SqlCheck> _all = new();
+    private List<string> _categories = new();
+    private string _q = "", _cat = "", _sev = "", _enabledFilter = "";
+    private bool _flaggedOnly;
+    private string _outcomeFilter = "";
+
+    private List<string> _serversWithRuns = new();
+    private string _selectedServer = "";
+    private List<CheckResult>? _latest;
+
+    private string LoadSourceLabel => CheckRepo.LoadSource switch
+    {
+        "bundle" => "the full bundle",
+        "source-parser" => "the corpus source (dev)",
+        _ => "the catalog",
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (CheckRepo.Checks.Count == 0 && string.IsNullOrEmpty(CheckRepo.LoadError))
+        {
+            try { await CheckRepo.LoadChecksAsync(); } catch { /* surfaced via CheckRepo.LoadError */ }
+        }
+        _all = CheckRepo.Checks.ToList();
+        _categories = _all.Select(c => c.Category).Where(c => !string.IsNullOrEmpty(c))
+                          .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(c => c).ToList();
+
+        _serversWithRuns = ResultStore.GetServersWithRuns() ?? new();
+        if (_serversWithRuns.Count > 0) { _selectedServer = _serversWithRuns[0]; LoadOutcomes(); }
+    }
+
+    private void LoadOutcomes() =>
+        _latest = string.IsNullOrEmpty(_selectedServer) ? null : ResultStore.ReadLatestRun(_selectedServer);
+
+    private IEnumerable<SqlCheck> Filtered
+    {
+        get
+        {
+            var q = _all.AsEnumerable();
+            if (!string.IsNullOrWhiteSpace(_q))
+            {
+                var t = _q.Trim();
+                q = q.Where(c =>
+                    (c.Id?.Contains(t, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (c.Name?.Contains(t, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                    (c.Category?.Contains(t, StringComparison.OrdinalIgnoreCase) ?? false));
+            }
+            if (!string.IsNullOrEmpty(_cat)) q = q.Where(c => string.Equals(c.Category, _cat, StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrEmpty(_sev)) q = q.Where(c => string.Equals(c.Severity, _sev, StringComparison.OrdinalIgnoreCase));
+            if (_enabledFilter == "enabled") q = q.Where(c => c.Enabled);
+            else if (_enabledFilter == "disabled") q = q.Where(c => !c.Enabled);
+            if (_flaggedOnly) q = q.Where(c => c.IsBad);
+            return q.OrderBy(c => SevRank(c.Severity)).ThenBy(c => c.Category).ThenBy(c => c.Name);
+        }
+    }
+
+    private IEnumerable<KeyValuePair<string, int>> SeverityOrdered() =>
+        _all.GroupBy(c => string.IsNullOrEmpty(c.Severity) ? "Unspecified" : c.Severity)
+            .Select(g => new KeyValuePair<string, int>(g.Key, g.Count()))
+            .OrderBy(kv => SevRank(kv.Key)).ThenBy(kv => kv.Key);
+
+    private static int SevRank(string? sev) => (sev ?? "").ToLowerInvariant() switch
+    {
+        "critical" => 0, "high" => 1, "medium" => 2, "warning" => 2,
+        "low" => 3, "informational" => 4, "info" => 4, _ => 5,
+    };
+
+    private static string SevColor(string? sev) => (sev ?? "").ToLowerInvariant() switch
+    {
+        "critical" => "var(--red)",
+        "high" => "var(--orange)",
+        "medium" or "warning" => "var(--yellow)",
+        "low" => "var(--green)",
+        _ => "var(--text-muted)",
+    };
+
+    // Clickable summary card that applies/toggles a filter; highlighted when active.
+    private RenderFragment StatCard(string label, int value, string color, Action onClick, bool active) => __builder =>
+    {
+        <div role="button" tabindex="0" @onclick="onClick" title="Click to filter"
+             style="cursor:pointer; user-select:none; background:@(active ? "rgba(74,222,128,0.10)" : "var(--bg-secondary)"); border:1px solid @(active ? "var(--green)" : "var(--border)"); border-radius:8px; padding:12px 16px; min-width:120px;">
+            <div style="font-size:1.6rem; font-weight:700; line-height:1; color:@color;">@value</div>
+            <div style="font-size:11px; color:var(--text-muted); margin-top:4px;">@label</div>
+        </div>
+    };
+
+    private bool NoCatalogFilter => string.IsNullOrEmpty(_enabledFilter) && !_flaggedOnly && string.IsNullOrEmpty(_sev);
+    private void ClearCatalogFilters() { _enabledFilter = ""; _flaggedOnly = false; _sev = ""; }
+    private void ToggleEnabled(string v) => _enabledFilter = _enabledFilter == v ? "" : v;
+    private void ToggleSev(string s) => _sev = _sev == s ? "" : s;
+    private void ToggleOutcome(string v) => _outcomeFilter = _outcomeFilter == v ? "" : v;
+
+    private IEnumerable<CheckResult> FilteredOutcomes(List<CheckResult> rows)
+    {
+        var q = _outcomeFilter switch
+        {
+            "passed" => rows.Where(r => r.Passed),
+            "failing" => rows.Where(r => !r.Passed && !r.IsCorrupted),
+            "critical" => rows.Where(r => !r.Passed && !r.IsCorrupted && string.Equals(r.Severity, "Critical", StringComparison.OrdinalIgnoreCase)),
+            "high" => rows.Where(r => !r.Passed && !r.IsCorrupted && string.Equals(r.Severity, "High", StringComparison.OrdinalIgnoreCase)),
+            _ => rows.AsEnumerable(),
+        };
+        return q.OrderBy(r => r.Passed).ThenBy(r => SevRank(r.Severity));
+    }
+}

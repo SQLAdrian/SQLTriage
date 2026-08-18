@@ -1,0 +1,100 @@
+{
+  "id": "live-monitor",
+  "title": "Live Monitor",
+  "description": "Real-time monitoring dashboard with live performance metrics and current system state",
+  "navTitle": "Live Monitor",
+  "navIcon": "fa-solid fa-tower-broadcast",
+  "navCategory": "Dashboards",
+  "navOrder": 4,
+  "route": "/live",
+  "enabled": true,
+  "source": "master",
+  "defaultDatabase": "master",
+  "showAllOption": true,
+  "panels": [
+    {
+      "id": "live.cpu",
+      "title": "CPU %",
+      "description": "Current CPU utilization percentage from ring buffer. Shows ProcessUtilization from sys.dm_os_ring_buffers RING_BUFFER_SCHEDULER_MONITOR.",
+      "enabled": true,
+      "source": "",
+      "panelType": "StatCard",
+      "chartType": "Line",
+      "height": 120,
+      "refreshIntervalSeconds": 5,
+      "layout": {
+        "column": 0,
+        "order": 0,
+        "spanColumns": false
+      },
+      "query": {
+        "source": "sqlwatch",
+        "sqlServer": "SELECT TOP 1 CONVERT(XML,record).value('(./Record/SchedulerMonitorEvent/SystemHealth/ProcessUtilization)[1]','int') AS [Value] FROM sys.dm_os_ring_buffers WITH(NOLOCK) WHERE ring_buffer_type='RING_BUFFER_SCHEDULER_MONITOR' ORDER BY timestamp DESC"
+      },
+      "defaultDatabase": "master",
+      "statUnit": "%",
+      "statThresholdKey": null,
+      "barGaugeThresholdKey": null,
+      "barGaugeUnitSuffix": "%",
+      "valueFormat": "",
+      "colorThresholds": [
+        {
+          "operator": ">=",
+          "value": 0,
+          "color": "#0078D4"
+        },
+        {
+          "operator": ">=",
+          "value": 80,
+          "color": "#FF8C00"
+        },
+        {
+          "operator": ">=",
+          "value": 95,
+          "color": "#E81123"
+        }
+      ],
+      "dataGridIsClickable": false,
+      "dataGridMaxRows": 500,
+      "dataGridTopRows": 0,
+      "actionColumn": null,
+      "actionColumnMode": null,
+      "dataGridColumns": null,
+      "dataGridColumnColors": null
+    },
+    {
+      "id": "live.blocking",
+      "title": "Blocking Sessions",
+      "description": "Current blocking sessions and lock waits from system DMVs",
+      "enabled": true,
+      "source": "",
+      "panelType": "DataGrid",
+      "chartType": "Line",
+      "height": 300,
+      "refreshIntervalSeconds": 10,
+      "layout": {
+        "column": 1,
+        "order": 0,
+        "spanColumns": true
+      },
+      "query": {
+        "source": "sqlwatch",
+        "sqlServer": "SELECT\n    sp.spid AS [SPID],\n    sp.blocked AS [Blocked By],\n    sp.waittime AS [Wait Time (ms)],\n    sp.lastwaittype AS [Wait Type],\n    sp.cpu AS [CPU],\n    sp.physical_io AS [Physical IO],\n    DB_NAME(sp.dbid) AS [Database],\n    sp.loginame AS [Login],\n    sp.program_name AS [Program],\n    SUBSTRING(st.text, (sp.stmt_start / 2) + 1, (\n        CASE sp.stmt_end\n            WHEN -1 THEN DATALENGTH(st.text)\n            ELSE sp.stmt_end\n        END - sp.stmt_start) / 2 + 1) AS [Current SQL]\nFROM sys.sysprocesses sp WITH (NOLOCK)\nOUTER APPLY sys.dm_exec_sql_text(sp.sql_handle) st\nWHERE sp.blocked <> 0\nORDER BY sp.waittime DESC"
+      },
+      "defaultDatabase": "master",
+      "statUnit": "",
+      "statThresholdKey": null,
+      "barGaugeThresholdKey": null,
+      "barGaugeUnitSuffix": "",
+      "valueFormat": "",
+      "colorThresholds": [],
+      "dataGridIsClickable": false,
+      "dataGridMaxRows": 500,
+      "dataGridTopRows": 0,
+      "actionColumn": null,
+      "actionColumnMode": null,
+      "dataGridColumns": null,
+      "dataGridColumnColors": null
+    }
+  ]
+}

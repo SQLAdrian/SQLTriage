@@ -1,0 +1,331 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/editauditscripts"
+<PageTitle>SQLTriage - Edit Audit Scripts</PageTitle>
+@using System
+@using System.Collections.Generic
+@using System.IO
+@using System.Linq
+@using System.Text.Json
+@using SQLTriage.Data.Models
+@using SQLTriage.Data
+@inject DiagnosticScriptRunner ScriptRunner
+
+<div class="bulk-edit-page">
+    <h2 style="margin-bottom: 20px;"><i class="fa-solid fa-file-pen"></i> Edit Audit Scripts</h2>
+
+    <!-- Status Message -->
+    @if (!string.IsNullOrEmpty(StatusMessage))
+    {
+        <div class="status-message @(StatusSuccess ? "success" : "error")" role="status">
+            @StatusMessage
+        </div>
+    }
+
+    <!-- Filter Section -->
+    <div class="filter-section">
+        <div class="filter-row">
+            <div class="filter-group">
+                <label for="categoryFilter">Category:</label>
+                <select id="categoryFilter" class="form-input" @bind="SelectedCategory">
+                    <option value="">All Categories</option>
+                    @foreach (var cat in Categories)
+                    {
+                        <option value="@cat">@cat</option>
+                    }
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="statusFilter">Status:</label>
+                <select id="statusFilter" class="form-input" @bind="SelectedStatus">
+                    <option value="">All</option>
+                    <option value="enabled">Enabled</option>
+                    <option value="disabled">Disabled</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="searchFilter">Search:</label>
+                <input id="searchFilter" class="form-input" type="text" @bind="SearchText" placeholder="Search scripts..." />
+            </div>
+            <button class="btn btn-primary" @onclick="LoadScripts" disabled="@IsLoading">
+                @if (IsLoading)
+                {
+                    <span>Loading...</span>
+                }
+                else
+                {
+                    <span><i class="fa-solid fa-magnifying-glass"></i> Load Scripts</span>
+                }
+            </button>
+        </div>
+    </div>
+
+    <!-- Selection Actions -->
+    <div class="selection-actions">
+        <span class="selection-info">
+            Showing <strong>@FilteredScripts.Count</strong> of <strong>@AllScripts.Count</strong> scripts
+        </span>
+        <div class="selection-buttons">
+            <button class="btn btn-sm" @onclick="SaveAll" disabled="@IsSaving">
+                <i class="fa-solid fa-floppy-disk"></i> Save All Changes
+            </button>
+        </div>
+    </div>
+
+    <!-- Scripts Table -->
+    <div class="table-container">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th style="width: 60px;">Order</th>
+                    <th style="width: 60px;">Enabled</th>
+                    <th>Name</th>
+                    <th>Category</th>
+                    <th>Description</th>
+                    <th style="width: 80px;">Timeout</th>
+                    <th style="width: 80px;">CSV</th>
+                    <th style="width: 100px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var script in FilteredScripts)
+                {
+                    <tr class="@(script.Enabled ? "enabled-row" : "disabled-row")">
+                        <td>
+                            <input type="number" class="form-input small" @bind="script.ExecutionOrder" min="0" />
+                        </td>
+                        <td style="text-align: center;">
+                            <input type="checkbox" @bind="script.Enabled" />
+                        </td>
+                        <td>
+                            <strong>@script.Name</strong>
+                        </td>
+                        <td>
+                            <input type="text" class="form-input" @bind="script.Category" />
+                        </td>
+                        <td>
+                            <input type="text" class="form-input" @bind="script.Description" />
+                        </td>
+                        <td>
+                            <input type="number" class="form-input small" @bind="script.TimeoutSeconds" min="10" />
+                        </td>
+                        <td style="text-align: center;">
+                            <input type="checkbox" @bind="script.ExportToCsv" />
+                        </td>
+                        <td>
+                            <button class="btn btn-sm" @onclick="() => EditScript(script)"><i class="fa-solid fa-pencil"></i>️ Edit</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Edit Modal -->
+@if (ShowEditModal && EditingScript != null)
+{
+    <div class="modal-overlay" @onclick="CloseModal">
+        <div class="modal-content" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3>Edit Script: @EditingScript.Name</h3>
+                <button class="modal-close" @onclick="CloseModal">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>ID:</label>
+                    <input type="text" class="form-input" @bind="EditingScript.Id" readonly />
+                </div>
+                <div class="form-group">
+                    <label>Name:</label>
+                    <input type="text" class="form-input" @bind="EditingScript.Name" />
+                </div>
+                <div class="form-group">
+                    <label>Description:</label>
+                    <textarea class="form-input" rows="3" @bind="EditingScript.Description"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Script Path:</label>
+                    <input type="text" class="form-input" @bind="EditingScript.ScriptPath" />
+                </div>
+                <div class="form-group">
+                    <label>Execution Test:</label>
+                    <textarea class="form-input" rows="2" @bind="EditingScript.ExecutionTest"
+                              placeholder="Optional SQL returning a ToRun column (0 or 1). If 0, ExecutionParameters is skipped."></textarea>
+                    <small style="color: var(--text-muted); font-size: 11px;">Query must return a single row with a <code>ToRun</code> column. If ToRun=0, the .sql script still runs but ExecutionParameters is skipped.</small>
+                </div>
+                <div class="form-group">
+                    <label>Execution Parameters:</label>
+                    <input type="text" class="form-input" @bind="EditingScript.ExecutionParameters" />
+                </div>
+                <div class="form-group">
+                    <label>SQL Query for Output:</label>
+                    <textarea class="form-input" rows="3" @bind="EditingScript.SqlQueryForOutput"></textarea>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Execution Order:</label>
+                        <input type="number" class="form-input" @bind="EditingScript.ExecutionOrder" min="0" />
+                    </div>
+                    <div class="form-group">
+                        <label>Timeout (seconds):</label>
+                        <input type="number" class="form-input" @bind="EditingScript.TimeoutSeconds" min="10" />
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group checkbox-group">
+                        <label>
+                            <input type="checkbox" @bind="EditingScript.Enabled" /> Enabled
+                        </label>
+                    </div>
+                    <div class="form-group checkbox-group">
+                        <label>
+                            <input type="checkbox" @bind="EditingScript.ExportToCsv" /> Export to CSV
+                        </label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Category:</label>
+                    <input type="text" class="form-input" @bind="EditingScript.Category" />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" @onclick="CloseModal">Cancel</button>
+                <button class="btn btn-primary" @onclick="SaveScript" disabled="@IsSaving">
+                    <i class="fa-solid fa-floppy-disk"></i> Save
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<ScriptConfiguration> AllScripts = new();
+    private List<ScriptConfiguration> FilteredScripts = new();
+    private string SelectedCategory = "";
+    private string SelectedStatus = "";
+    private string SearchText = "";
+    private bool IsLoading = false;
+    private bool IsSaving = false;
+    private string StatusMessage = "";
+    private bool StatusSuccess = false;
+    private bool ShowEditModal = false;
+    private ScriptConfiguration? EditingScript;
+
+    private List<string> Categories => AllScripts
+        .Select(s => s.Category)
+        .Distinct()
+        .OrderBy(c => c)
+        .ToList();
+
+    protected override void OnInitialized()
+    {
+        LoadScripts();
+    }
+
+    private void LoadScripts()
+    {
+        IsLoading = true;
+        StatusMessage = "";
+        
+        try
+        {
+            AllScripts = ScriptRunner.LoadScriptConfigurations();
+            ApplyFilters();
+            StatusMessage = $"Loaded {AllScripts.Count} scripts";
+            StatusSuccess = true;
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error loading scripts: {ex.Message}";
+            StatusSuccess = false;
+        }
+        finally
+        {
+            IsLoading = false;
+        }
+    }
+
+    private void ApplyFilters()
+    {
+        var filtered = AllScripts.AsEnumerable();
+
+        if (!string.IsNullOrEmpty(SelectedCategory))
+        {
+            filtered = filtered.Where(s => s.Category.Equals(SelectedCategory, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!string.IsNullOrEmpty(SelectedStatus))
+        {
+            if (SelectedStatus == "enabled")
+                filtered = filtered.Where(s => s.Enabled);
+            else if (SelectedStatus == "disabled")
+                filtered = filtered.Where(s => !s.Enabled);
+        }
+
+        if (!string.IsNullOrEmpty(SearchText))
+        {
+            var search = SearchText.ToLower();
+            filtered = filtered.Where(s => 
+                s.Name.ToLower().Contains(search) ||
+                s.Description.ToLower().Contains(search) ||
+                s.Category.ToLower().Contains(search));
+        }
+
+        FilteredScripts = filtered.OrderBy(s => s.ExecutionOrder).ToList();
+    }
+
+    private void EditScript(ScriptConfiguration script)
+    {
+        EditingScript = script;
+        ShowEditModal = true;
+    }
+
+    private void CloseModal()
+    {
+        ShowEditModal = false;
+        EditingScript = null;
+    }
+
+    private void SaveScript()
+    {
+        if (EditingScript == null) return;
+
+        try
+        {
+            ScriptRunner.SaveScriptConfigurations(AllScripts);
+            StatusMessage = $"Saved changes to script: {EditingScript.Name}";
+            StatusSuccess = true;
+            CloseModal();
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error saving: {ex.Message}";
+            StatusSuccess = false;
+        }
+    }
+
+    private async Task SaveAll()
+    {
+        IsSaving = true;
+        StatusMessage = "";
+
+        try
+        {
+            ScriptRunner.SaveScriptConfigurations(AllScripts);
+            StatusMessage = $"Successfully saved {AllScripts.Count} scripts";
+            StatusSuccess = true;
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error saving: {ex.Message}";
+            StatusSuccess = false;
+        }
+        finally
+        {
+            IsSaving = false;
+            await Task.CompletedTask;
+        }
+    }
+}
+
+<!-- Styles extracted to wwwroot/css/EditAuditScripts.css 2026-05-11 (CLAUDE.md convention). -->

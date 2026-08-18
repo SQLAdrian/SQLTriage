@@ -1,0 +1,15 @@
+{
+    "version":  "0.92.5",
+    "buildNumber":  2862,
+    "buildDate":  "2026-06-30",
+    "releaseType":  "Production",
+    "updateCheckUrl":  "https://api.github.com/repos/SQLAdrian/SQLTriage/releases/latest",
+    "whatsnew":  [
+                     "Audit-first: every check ships included, plus first-class sp_BLITZ CSV import — paste your existing sp_BLITZ output and see it merged with live findings on the Audit Assessment page.",
+                     "Full Audit engagements: framework mappings, governance weighting, build catalogue, and the SQL Server cost estimator are delivered as a per-customer encrypted bundle.",
+                     "Security: customer bundles ship encrypted (AES-256-GCM) next to sqltriage.exe and bind cryptographically to the customer name (GCM AAD watermark). No phone-home; everything works fully offline.",
+                     "RAG retrieval: rag.db is distributed separately via secure share — drop the file next to sqltriage.exe to enable semantic search over the audit history.",
+                     "Release packaging: LICENSE.txt now ships with the installer and appears as a wizard accept page. Curation artefacts and the stray measurement_*.json files no longer leak into release builds.",
+                     "Boot-order: governance-weights.json no longer required at IConfiguration time; lazy-loaded from the active bundle. Removes the v0.90.1 hard failure when the file was missing."
+                 ]
+}

@@ -1,0 +1,84 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using SQLTriage.Data
+@inject DatabaseAvailabilityService DbAvailability
+@inject NavigationManager Nav
+@inject UserSettingsService UserSettings
+@implements IDisposable
+
+@*
+   Inline banner shown when a page depends on a SQL database that isn't present on
+   the active server. Surfaces the otherwise-silent "Cannot open database X requested
+   by the login" failure that turns Loading spinners into indefinite waits.
+
+   Bind <DatabaseName>, optionally <DeployRoute> (defaults to /deploysqlwatch — the
+   PerformanceMonitor installer), and an optional <ServerName> if you want to
+   probe a specific server rather than all enabled connections.
+*@
+
+@if (_checked && !_exists)
+{
+    <div class="db-missing-banner" role="status" aria-live="polite">
+        <span class="db-missing-banner-icon">
+            <i class="fa-solid fa-database"></i>
+        </span>
+        <span class="db-missing-banner-text">
+            <strong>@DatabaseName not deployed</strong> on the active server. This page reads
+            from @DatabaseName; panels will stay empty (or fail with login errors) until the
+            schema is installed.
+        </span>
+        @if (!string.IsNullOrEmpty(DeployRoute))
+        {
+            <button class="db-missing-banner-link" @onclick="GoToDeploy"
+                    title="Open the installer for @DatabaseName">
+                Deploy &rarr;
+            </button>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public string DatabaseName { get; set; } = string.Empty;
+    [Parameter] public string DeployRoute { get; set; } = "/deploysqlwatch";
+    [Parameter] public string? ServerName { get; set; }
+
+    private bool _checked;
+    private bool _exists;
+    private CancellationTokenSource? _cts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (UserSettings.GetFastAppLoad()) await Task.Yield();
+        if (string.IsNullOrWhiteSpace(DatabaseName)) return;
+        // Common system DBs always exist — short-circuit so callers can use this
+        // banner blindly without filtering ahead of time.
+        if (IsSystemDatabase(DatabaseName)) { _checked = true; _exists = true; return; }
+
+        _cts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        try
+        {
+            _exists = !string.IsNullOrEmpty(ServerName)
+                ? await DbAvailability.DatabaseExistsOnServerAsync(ServerName!, DatabaseName, _cts.Token)
+                : await DbAvailability.DatabaseExistsAsync(DatabaseName, _cts.Token);
+        }
+        catch
+        {
+            // Connection failure — treat as not-present so the user at least sees a hint.
+            _exists = false;
+        }
+        finally
+        {
+            _checked = true;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void GoToDeploy() => Nav.NavigateTo(DeployRoute);
+
+    private static bool IsSystemDatabase(string name) =>
+        name.Equals("master", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("tempdb", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("model", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("msdb", StringComparison.OrdinalIgnoreCase);
+
+    public void Dispose() { _cts?.Cancel(); _cts?.Dispose(); }
+}

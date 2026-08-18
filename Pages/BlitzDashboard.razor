@@ -1,0 +1,362 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/blitz"
+@using SQLTriage.Components.Shared
+@using SQLTriage.Data
+@using SQLTriage.Data.Services
+@using Microsoft.Extensions.Logging
+@inject IAuditOutputScanner Scanner
+@inject IBlitzDashboardService DashboardSvc
+@inject CheckRepositoryService CheckRepo
+@inject NavigationManager Navigation
+@inject ToastService Toast
+@inject ILogger<BlitzDashboard> Logger
+
+<PageTitle>sp_Blitz Dashboard - SQLTriage</PageTitle>
+
+<div class="blitz-container">
+
+    @if (_loading)
+    {
+        <LoadingSpinner Message="@_loadingMessage" />
+    }
+    else if (_dashboard is null || _dashboard.InstanceCount == 0)
+    {
+        <div class="blitz-empty-state">
+            <i class="fa-solid fa-gauge-high blitz-empty-icon"></i>
+            <h2 class="blitz-empty-title">No sp_Blitz output found</h2>
+            <p class="blitz-empty-text">
+                Drop sp_Blitz or sp_triage CSV exports into the <code>output</code> folder, or run Raw
+                Diagnostics to generate them, then refresh. Each exception is a finding sp_Blitz flagged.
+            </p>
+            <div class="blitz-empty-actions">
+                <a href="@RouteConstants.FullAudit" class="blitz-empty-link">
+                    <i class="fa-solid fa-play"></i> Run Raw Diagnostics
+                </a>
+                <button class="btn btn-secondary" @onclick="Refresh">
+                    <i class="fa-solid fa-rotate"></i> Rescan output folder
+                </button>
+            </div>
+        </div>
+    }
+    else
+    {
+        <!-- Header -->
+        <div class="blitz-header-row">
+            <div class="blitz-header">
+                <div class="blitz-header-icon"><i class="fa-solid fa-gauge-high"></i></div>
+                <div>
+                    <h1 class="blitz-header-title">sp_Blitz Findings</h1>
+                    <p class="blitz-header-subtitle">
+                        Exceptions flagged in each instance's sp_Blitz output — fewer is better.
+                    </p>
+                </div>
+            </div>
+            <button class="btn btn-secondary" @onclick="Refresh" disabled="@_loading" title="Rescan the output folder">
+                <i class="fa-solid fa-rotate"></i> Refresh
+            </button>
+        </div>
+
+        @if (!_dashboard.CatalogAvailable)
+        {
+            <div class="blitz-warning-banner">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <span>
+                    The check catalogue is unavailable (corpus not loaded and roadmap-mapping.json missing),
+                    so findings are shown name-only and health cannot be scored.
+                </span>
+            </div>
+        }
+
+        <!-- Estate summary -->
+        <div class="blitz-estate">
+            <div class="blitz-gauge @EstateBandClass" title="@_estateScoreTip">
+                <span class="blitz-gauge-value">@_totalFired</span>
+                <span class="blitz-gauge-label">Exceptions found</span>
+            </div>
+            <div class="blitz-estate-stats">
+                <div class="blitz-stat">
+                    <span class="blitz-stat-value">@_dashboard.InstanceCount</span>
+                    <span class="blitz-stat-label">Instances</span>
+                </div>
+                <div class="blitz-stat">
+                    <span class="blitz-stat-value">@_totalInfo</span>
+                    <span class="blitz-stat-label">Informational</span>
+                </div>
+                @if (_totalUnrated > 0)
+                {
+                    <div class="blitz-stat">
+                        <span class="blitz-stat-value">@_totalUnrated</span>
+                        <span class="blitz-stat-label">Unrated</span>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Per-instance reports -->
+        @foreach (var inst in _dashboard.Instances)
+        {
+            var meta = _meta[inst.Instance];
+            <div class="blitz-card">
+                <div class="blitz-card-head">
+                    <div class="blitz-card-id">
+                        <span class="blitz-instance-name">@inst.Instance</span>
+                        <span class="blitz-instance-sub">@meta.SubLine</span>
+                    </div>
+                    <div class="blitz-score-pill @meta.BandClass" title="@meta.ScoreTip">
+                        @meta.ExceptionsText
+                    </div>
+                </div>
+
+                <div class="blitz-card-metrics">
+                    <span class="blitz-depth" title="Share of fired exceptions with full corpus analysis">
+                        @meta.DepthText analysed
+                    </span>
+                    @if (inst.InfoFired > 0)
+                    {
+                        <span class="blitz-muted">· @inst.InfoFired informational</span>
+                    }
+                    @if (inst.UnclassifiedFired > 0)
+                    {
+                        <span class="blitz-muted">· @inst.UnclassifiedFired unrated</span>
+                    }
+                </div>
+
+                @if (inst.Categories.Count > 0)
+                {
+                    <div class="blitz-cat-rollup">
+                        @foreach (var cat in inst.Categories.Take(6))
+                        {
+                            <div class="blitz-cat">
+                                <span class="blitz-cat-name">@cat.Category</span>
+                                <div class="blitz-cat-bar">
+                                    <div class="blitz-cat-fill @CatBand(cat.Score)" style="width:@(CssPct(cat.Score))"></div>
+                                </div>
+                                <span class="blitz-cat-num">@cat.FiredCount/@cat.UniverseCount</span>
+                            </div>
+                        }
+                    </div>
+                }
+
+                @if (inst.Findings.Count > 0)
+                {
+                    <table class="blitz-findings">
+                        <thead>
+                            <tr>
+                                <th>Finding</th>
+                                <th>Category</th>
+                                <th>Severity</th>
+                                <th class="blitz-num">Count</th>
+                                <th>Next action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var f in inst.Findings.Take(_expandedInstances.Contains(inst.Instance) ? 1000 : 12))
+                            {
+                                <tr class="@(f.IsBad ? "" : "blitz-row-info")">
+                                    <td>
+                                        <span class="blitz-finding-name">@f.Name</span>
+                                        @if (f.Unclassified)
+                                        {
+                                            <span class="blitz-badge blitz-badge-unknown" title="Not in the catalogue — shown name-only">unrated</span>
+                                        }
+                                        else if (f.Source == BlitzMetaSource.Map)
+                                        {
+                                            <span class="blitz-badge blitz-badge-basic" title="Basic analysis (roadmap mapping)">basic</span>
+                                        }
+                                    </td>
+                                    <td>@f.Category</td>
+                                    <td><span class="blitz-sev @SevClass(f)">@SevLabel(f)</span></td>
+                                    <td class="blitz-num">@f.FireCount</td>
+                                    <td class="blitz-next">
+                                        @if (!string.IsNullOrEmpty(f.CioLine))
+                                        {
+                                            <div class="blitz-voice blitz-voice-cio"><span class="blitz-voice-tag">CIO</span>@f.CioLine</div>
+                                        }
+                                        @if (!string.IsNullOrEmpty(f.DbaLine))
+                                        {
+                                            <div class="blitz-voice blitz-voice-dba"><span class="blitz-voice-tag">DBA</span>@f.DbaLine</div>
+                                        }
+                                        @if (string.IsNullOrEmpty(f.CioLine) && string.IsNullOrEmpty(f.DbaLine))
+                                        {
+                                            <span class="blitz-muted">—</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    @if (inst.Findings.Count > 12)
+                    {
+                        <button class="blitz-expand" @onclick="() => ToggleExpand(inst.Instance)">
+                            @(_expandedInstances.Contains(inst.Instance)
+                                ? "Show fewer"
+                                : $"Show all {inst.Findings.Count} findings")
+                        </button>
+                    }
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private bool _loading = true;
+    private string _loadingMessage = "Scanning output folder…";
+    private BlitzDashboardData? _dashboard;
+    private string _estateScoreTip = "";
+    private string EstateBandClass = "blitz-band-good";
+    private int _totalFired;
+    private int _totalInfo;
+    private int _totalUnrated;
+
+    private readonly HashSet<string> _expandedInstances = new(StringComparer.OrdinalIgnoreCase);
+
+    // Per-instance pre-computed display strings (razor-quotes discipline: no inline formatting in markup).
+    private sealed record InstanceMeta(string ExceptionsText, string BandClass, string ScoreTip, string DepthText, string SubLine);
+    private Dictionary<string, InstanceMeta> _meta = new(StringComparer.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    private async Task Refresh() => await Load();
+
+    private async Task Load()
+    {
+        _loading = true;
+        _loadingMessage = "Scanning output folder…";
+        StateHasChanged();
+
+        try
+        {
+            // The dashboard reads corpus metadata from the loaded catalogue; ensure it's loaded.
+            if (CheckRepo.Checks.Count == 0)
+                await CheckRepo.LoadChecksAsync();
+
+            var files = await Scanner.ScanAsync();
+            _loadingMessage = $"Reading {files.Count} audit file(s)…";
+            StateHasChanged();
+
+            foreach (var f in files)
+                await Scanner.LoadFiredChecksAsync(f);
+
+            _dashboard = DashboardSvc.Build(files);
+            BuildDisplayState();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "[BlitzDashboard] Load failed");
+            Toast.ShowError($"Failed to build sp_Blitz dashboard: {ex.Message}");
+            _dashboard = null;
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void BuildDisplayState()
+    {
+        _meta = new(StringComparer.OrdinalIgnoreCase);
+        if (_dashboard is null) return;
+
+        _totalFired = _dashboard.Instances.Sum(i => i.ChecksFired);
+        _totalInfo = _dashboard.Instances.Sum(i => i.InfoFired);
+        _totalUnrated = _dashboard.Instances.Sum(i => i.UnclassifiedFired);
+
+        // Estate band = worst severity present across every instance's exceptions.
+        var allFindings = _dashboard.Instances.SelectMany(i => i.Findings).ToList();
+        EstateBandClass = SeverityBand(allFindings);
+        var estPct = DisplayScore(_dashboard.EstateHealthScore, _totalFired);
+        _estateScoreTip = $"{_totalFired} exception(s) across {_dashboard.InstanceCount} instance(s) · weighted health {estPct}%";
+
+        foreach (var inst in _dashboard.Instances)
+        {
+            var depthPct = (int)Math.Round(inst.AnalysisDepth * 100);
+            var sub = $"{(inst.SourceType == AuditFileType.SpBlitz ? "sp_Blitz" : "sp_triage")} · {inst.AuditDate:yyyy-MM-dd}";
+            if (!string.IsNullOrWhiteSpace(inst.Domain)) sub = $"{inst.Domain} · {sub}";
+            var worst = WorstSeverity(inst.Findings);
+            var pct = DisplayScore(inst.HealthScore, inst.ChecksFired);
+            _meta[inst.Instance] = new InstanceMeta(
+                ExceptionsText: $"{inst.ChecksFired} {(inst.ChecksFired == 1 ? "exception" : "exceptions")}",
+                BandClass: SeverityBand(inst.Findings),
+                ScoreTip: $"Worst severity: {worst} · weighted health {pct}% · {inst.ChecksFired}/{inst.UniverseSize} checks fired",
+                DepthText: $"{depthPct}%",
+                SubLine: sub);
+        }
+    }
+
+    // ── Severity-driven banding (replaces score% banding for the exceptions view) ──
+    // Worst severity among the scored exceptions drives the band colour; informational/unrated
+    // fires don't escalate it. Reuses the canonical colour-blind-safe band vars.
+    private static readonly string[] SeverityRank = { "Critical", "High", "Medium", "Low" };
+
+    private static string WorstSeverity(IEnumerable<BlitzFinding> findings)
+    {
+        var scored = findings.Where(f => f.Scored && !f.Unclassified && !string.IsNullOrWhiteSpace(f.Severity));
+        foreach (var sev in SeverityRank)
+            if (scored.Any(f => string.Equals(f.Severity, sev, StringComparison.OrdinalIgnoreCase)))
+                return sev;
+        return findings.Any(f => f.Scored) ? "Low" : "None";
+    }
+
+    private static string SeverityBand(IEnumerable<BlitzFinding> findings) => WorstSeverity(findings) switch
+    {
+        "Critical" => "blitz-band-crit",
+        "High"     => "blitz-band-warn",
+        "Medium"   => "blitz-band-good",
+        "Low"      => "blitz-band-good",
+        _          => "blitz-band-excellent",   // no scored exceptions
+    };
+
+    // Honest rounding: never show 100% when failures fired. A few low-weight (map-fallback)
+    // failures barely move the weighted ratio (~99.8%) and would otherwise round UP to 100 —
+    // misleading next to a non-zero failure count. Corpus backfill makes these weigh properly.
+    private static int DisplayScore(double raw, int failuresFired)
+    {
+        var rounded = (int)Math.Round(raw);
+        if (failuresFired > 0 && rounded >= 100 && raw < 100) rounded = 99;
+        return rounded;
+    }
+
+    private void ToggleExpand(string instance)
+    {
+        if (!_expandedInstances.Add(instance)) _expandedInstances.Remove(instance);
+    }
+
+    // ── colour-blind-safe band classes (CSS maps each to a canonical var) ──
+    private static string BandClass(double score)
+    {
+        if (score >= 90) return "blitz-band-excellent";
+        if (score >= 75) return "blitz-band-good";
+        if (score >= 50) return "blitz-band-warn";
+        return "blitz-band-crit";
+    }
+
+    private static string CatBand(double score) => BandClass(score);
+
+    private static string CssPct(double score)
+    {
+        var v = Math.Max(0, Math.Min(100, score));
+        return $"{v.ToString(System.Globalization.CultureInfo.InvariantCulture)}%";
+    }
+
+    private static string SevClass(BlitzFinding f)
+    {
+        if (f.Unclassified) return "blitz-sev-unknown";
+        var s = f.Severity ?? "";
+        if (s.Equals("Critical", StringComparison.OrdinalIgnoreCase)) return "blitz-sev-crit";
+        if (s.Equals("High", StringComparison.OrdinalIgnoreCase)) return "blitz-sev-high";
+        if (s.Equals("Medium", StringComparison.OrdinalIgnoreCase)) return "blitz-sev-med";
+        if (s.Equals("Low", StringComparison.OrdinalIgnoreCase)) return "blitz-sev-low";
+        if (s.Equals("Info", StringComparison.OrdinalIgnoreCase)) return "blitz-sev-info";
+        // map-only / no severity: classify by IsBad so the badge still reads sensibly
+        return f.IsBad ? "blitz-sev-med" : "blitz-sev-info";
+    }
+
+    private static string SevLabel(BlitzFinding f)
+    {
+        if (f.Unclassified) return "Unrated";
+        if (!string.IsNullOrWhiteSpace(f.Severity)) return f.Severity!;
+        return f.IsBad ? "Standard" : "Info";
+    }
+}

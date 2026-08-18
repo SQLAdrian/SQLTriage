@@ -1,0 +1,1300 @@
+@* In the name of God, the Merciful, the Compassionate *@
+@page "/alerting-config"
+<PageTitle>SQLTriage - Alerting Config</PageTitle>
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@inject NotificationChannelService ChannelService
+@inject UserSettingsService UserSettings
+@inject XEventService XEventService
+@inject ServerConnectionManager ConnectionManager
+@inject SQLTriage.Data.Services.AppUserState UserState
+@implements IDisposable
+
+@if (!RbacService.HasPermission(UserState.Role, "manage_alerts"))
+{
+    <div style="padding: 32px;">
+        <AccessDenied RequiredRole="Admin" Message="Notification channel configuration is restricted to Admin users." />
+    </div>
+    return;
+}
+
+<div class="settings-page" style="max-width: 900px;">
+    <h1 class="visually-hidden">Alert Configuration</h1>
+    <h2 style="margin-bottom: 20px;"><i class="fa-solid fa-envelope" style="color: var(--accent); margin-right: 8px;"></i>Notification Channels</h2>
+
+    @* ── SMTP Email Channel ── *@
+    <div class="settings-group">
+        <h3 style="display: flex; align-items: center; gap: 8px;">
+            <i class="fa-solid fa-envelope" style="color: var(--accent);"></i>
+            Email (SMTP)
+            <label style="margin-left: auto; display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px; font-weight: normal;">
+                <input type="checkbox" @bind="_smtp.Enabled" style="width: auto;" />
+                <span style="color: var(--text-secondary);">Enabled</span>
+            </label>
+        </h3>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="settings-field">
+                <label>SMTP Host <span style="color: var(--red);">*</span></label>
+                <input type="text" @bind="_smtp.Host" @bind:event="oninput" placeholder="smtp.office365.com" />
+            </div>
+            <div class="settings-field">
+                <label>Port</label>
+                <input type="number" @bind="_smtp.Port" />
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="settings-field">
+                <label>Username</label>
+                <input type="text" @bind="_smtp.Username" @bind:event="oninput" placeholder="alerts@company.com" />
+            </div>
+            <div class="settings-field">
+                <label>Password</label>
+                <input type="password" @bind="_smtpPassword" @bind:event="oninput"
+                       placeholder="@(_hasExistingSmtpPassword ? "(encrypted — leave blank to keep)" : "Enter password")" />
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="settings-field">
+                <label>From Address</label>
+                <input type="text" @bind="_smtp.FromAddress" @bind:event="oninput" placeholder="sqldba-alerts@company.com" />
+            </div>
+            <div class="settings-field">
+                <label>From Name</label>
+                <input type="text" @bind="_smtp.FromName" @bind:event="oninput" />
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="settings-field">
+                <label>Reply-To Address</label>
+                <input type="text" @bind="_smtp.ReplyToAddress" @bind:event="oninput" placeholder="dba-team@company.com (optional)" />
+            </div>
+            <div class="settings-field">
+                <label>Notification Email (To) <span style="color: var(--red);">*</span></label>
+                <input type="text" @bind="_smtpToAddresses" @bind:event="oninput" placeholder="dba-team@company.com, oncall@company.com" />
+                <small style="display: block; margin-top: 4px; color: var(--text-muted); font-size: 11px;">Comma-separated list of recipient addresses</small>
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="settings-field" style="display: flex; align-items: center; gap: 8px;">
+                <input type="checkbox" @bind="_smtp.UseTls" style="width: auto;" />
+                <label style="margin: 0;">Encrypt connection (TLS)</label>
+            </div>
+            <div class="settings-field">
+                <label>Minimum Severity</label>
+                <select @bind="_smtp.MinimumSeverity">
+                    <option value="info">Info (all alerts)</option>
+                    <option value="warning">Warning & Critical</option>
+                    <option value="critical">Critical only</option>
+                </select>
+            </div>
+        </div>
+
+        @* ── OAuth2 / Microsoft Graph ── *@
+        <div style="margin-top: 12px; padding: 12px; background: var(--bg-hover); border-radius: 6px; border: 1px solid var(--border);">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                <input type="checkbox" @bind="_smtp.UseOAuth2" style="width: auto;" />
+                <label style="margin: 0; font-weight: 600;">Use OAuth2 (Microsoft Graph) for O365</label>
+                <small style="color: var(--text-muted); font-size: 11px; margin-left: 4px;">— replaces Basic Auth; requires Azure App Registration</small>
+                <button type="button" @onclick="() => _showOAuth2Help = true"
+                        style="margin-left: auto; width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary); font-size: 12px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0;"
+                        title="How to set up Azure App Registration">?</button>
+            </div>
+            @if (_smtp.UseOAuth2)
+            {
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div class="settings-field">
+                        <label>Tenant ID <span style="color: var(--red);">*</span></label>
+                        <input type="text" @bind="_smtp.TenantId" @bind:event="oninput" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+                    </div>
+                    <div class="settings-field">
+                        <label>Client ID <span style="color: var(--red);">*</span></label>
+                        <input type="text" @bind="_smtp.ClientId" @bind:event="oninput" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+                    </div>
+                </div>
+                <div class="settings-field" style="margin-top: 8px;">
+                    <label>Client Secret <span style="color: var(--red);">*</span></label>
+                    <input type="password" @bind="_smtpClientSecret" @bind:event="oninput"
+                           placeholder="@(_hasExistingSmtpClientSecret ? "(encrypted — leave blank to keep)" : "Enter client secret")" />
+                    <small style="display: block; margin-top: 4px; color: var(--text-muted); font-size: 11px;">App Registration → Certificates &amp; secrets → Client secrets</small>
+                </div>
+            }
+        </div>
+    </div>
+
+    @if (UserSettings.GetExperimentalMode())
+    {
+    @* ── Teams Webhook Channel ── *@
+    <div class="settings-group">
+        <h3 style="display: flex; align-items: center; gap: 8px;">
+            <i class="fa-solid fa-hashtag" style="color: var(--purple);"></i>
+            Microsoft Teams Webhook
+            <label style="margin-left: auto; display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px; font-weight: normal;">
+                <input type="checkbox" @bind="_teams.Enabled" style="width: auto;" />
+                <span style="color: var(--text-secondary);">Enabled</span>
+            </label>
+        </h3>
+
+        <div class="settings-field">
+            <label>Webhook URL <span style="color: var(--red);">*</span></label>
+            <input type="password" @bind="_teamsWebhookUrl" @bind:event="oninput"
+                   placeholder="@(_hasExistingTeamsUrl ? "(encrypted — leave blank to keep)" : "https://outlook.office.com/webhook/...")" />
+        </div>
+
+        <div class="settings-field">
+            <label>Minimum Severity</label>
+            <select @bind="_teams.MinimumSeverity">
+                <option value="info">Info (all alerts)</option>
+                <option value="warning">Warning & Critical</option>
+                <option value="critical">Critical only</option>
+            </select>
+        </div>
+    </div>
+
+    @* ── Slack Channel ── *@
+    <div class="settings-group">
+        <h3 style="display: flex; align-items: center; gap: 8px;">
+            <i class="fa-brands fa-slack" style="color: #4A154B;"></i>
+            Slack
+            <label style="margin-left: auto; display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px; font-weight: normal;">
+                <input type="checkbox" @bind="_slack.Enabled" style="width: auto;" />
+                <span style="color: var(--text-secondary);">Enabled</span>
+            </label>
+        </h3>
+
+        <div class="settings-field">
+            <label>Webhook URL <span style="color: var(--red);">*</span></label>
+            <input type="password" @bind="_slackWebhookUrl" @bind:event="oninput"
+                   placeholder="@(_hasExistingSlackUrl ? "(encrypted — leave blank to keep)" : "https://hooks.slack.com/services/T.../B.../...")" />
+            <small style="display: block; margin-top: 4px; color: var(--text-muted); font-size: 11px;">Create at <em>api.slack.com > Your App > Incoming Webhooks</em></small>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="settings-field">
+                <label>Channel Override (optional)</label>
+                <input type="text" @bind="_slack.Channel" @bind:event="oninput" placeholder="#dba-alerts" />
+            </div>
+            <div class="settings-field">
+                <label>Bot Username</label>
+                <input type="text" @bind="_slack.Username" @bind:event="oninput" placeholder="SQLTriage" />
+            </div>
+        </div>
+
+        <div class="settings-field">
+            <label>Minimum Severity</label>
+            <select @bind="_slack.MinimumSeverity">
+                <option value="info">Info (all alerts)</option>
+                <option value="warning">Warning & Critical</option>
+                <option value="critical">Critical only</option>
+            </select>
+        </div>
+    </div>
+
+    @* ── Generic Webhook ── *@
+    <div class="settings-group">
+        <h3 style="display: flex; align-items: center; gap: 8px;">
+            <i class="fa-solid fa-globe" style="color: var(--accent);"></i>
+            Webhook (Generic HTTP POST)
+            <label style="margin-left: auto; display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px; font-weight: normal;">
+                <input type="checkbox" @bind="_webhook.Enabled" style="width: auto;" />
+                <span style="color: var(--text-secondary);">Enabled</span>
+            </label>
+        </h3>
+
+        <div class="settings-field">
+            <label>Endpoint URL <span style="color: var(--red);">*</span></label>
+            <input type="password" @bind="_webhookUrl" @bind:event="oninput"
+                   placeholder="@(_hasExistingWebhookUrl ? "(encrypted — leave blank to keep)" : "https://api.example.com/webhooks/alerts")" />
+        </div>
+
+        <div class="settings-field">
+            <label>Bearer Token (optional)</label>
+            <input type="password" @bind="_webhookAuthToken" @bind:event="oninput"
+                   placeholder="@(_hasExistingWebhookToken ? "(encrypted — leave blank to keep)" : "API key or Bearer token")" />
+        </div>
+
+        <div class="settings-field">
+            <label>Custom Headers (optional, key=value per line)</label>
+            <textarea rows="2" @bind="_webhook.CustomHeaders" @bind:event="oninput"
+                      style="font-family: monospace; font-size: 11px;"
+                      placeholder="X-Custom-Header=value"></textarea>
+        </div>
+
+        <div class="settings-field">
+            <label>Minimum Severity</label>
+            <select @bind="_webhook.MinimumSeverity">
+                <option value="info">Info (all alerts)</option>
+                <option value="warning">Warning & Critical</option>
+                <option value="critical">Critical only</option>
+            </select>
+        </div>
+    </div>
+
+    @* ── PagerDuty ── *@
+    <div class="settings-group">
+        <h3 style="display: flex; align-items: center; gap: 8px;">
+            <i class="fa-solid fa-pager" style="color: #06AC38;"></i>
+            PagerDuty
+            <label style="margin-left: auto; display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px; font-weight: normal;">
+                <input type="checkbox" @bind="_pagerDuty.Enabled" style="width: auto;" />
+                <span style="color: var(--text-secondary);">Enabled</span>
+            </label>
+        </h3>
+
+        <div class="settings-field">
+            <label>Integration/Routing Key <span style="color: var(--red);">*</span></label>
+            <input type="password" @bind="_pagerDutyRoutingKey" @bind:event="oninput"
+                   placeholder="@(_hasExistingPagerDutyKey ? "(encrypted — leave blank to keep)" : "Events API v2 integration key")" />
+            <small style="display: block; margin-top: 4px; color: var(--text-muted); font-size: 11px;">Service > Integrations > Events API v2 > Integration Key</small>
+        </div>
+
+        <div class="settings-field">
+            <label>Minimum Severity</label>
+            <select @bind="_pagerDuty.MinimumSeverity">
+                <option value="warning">Warning & Critical</option>
+                <option value="critical">Critical only</option>
+            </select>
+        </div>
+    </div>
+
+    @* ── ServiceNow ── *@
+    <div class="settings-group">
+        <h3 style="display: flex; align-items: center; gap: 8px;">
+            <i class="fa-solid fa-ticket" style="color: #81B5A1;"></i>
+            ServiceNow
+            <label style="margin-left: auto; display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px; font-weight: normal;">
+                <input type="checkbox" @bind="_serviceNow.Enabled" style="width: auto;" />
+                <span style="color: var(--text-secondary);">Enabled</span>
+            </label>
+        </h3>
+
+        <div class="settings-field">
+            <label>Instance URL <span style="color: var(--red);">*</span></label>
+            <input type="text" @bind="_serviceNow.InstanceUrl" @bind:event="oninput" placeholder="https://mycompany.service-now.com" />
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="settings-field">
+                <label>Username <span style="color: var(--red);">*</span></label>
+                <input type="password" @bind="_serviceNowUsername" @bind:event="oninput"
+                       placeholder="@(_hasExistingServiceNowUser ? "(encrypted — leave blank to keep)" : "API user")" />
+            </div>
+            <div class="settings-field">
+                <label>Password <span style="color: var(--red);">*</span></label>
+                <input type="password" @bind="_serviceNowPassword" @bind:event="oninput"
+                       placeholder="@(_hasExistingServiceNowPass ? "(encrypted — leave blank to keep)" : "API password")" />
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+            <div class="settings-field">
+                <label>Table</label>
+                <input type="text" @bind="_serviceNow.Table" @bind:event="oninput" placeholder="incident" />
+            </div>
+            <div class="settings-field">
+                <label>Assignment Group</label>
+                <input type="text" @bind="_serviceNow.AssignmentGroup" @bind:event="oninput" placeholder="DBA Team" />
+            </div>
+            <div class="settings-field">
+                <label>Caller ID</label>
+                <input type="text" @bind="_serviceNow.CallerId" @bind:event="oninput" placeholder="admin" />
+            </div>
+        </div>
+
+        <div class="settings-field">
+            <label>Minimum Severity</label>
+            <select @bind="_serviceNow.MinimumSeverity">
+                <option value="warning">Warning & Critical</option>
+                <option value="critical">Critical only</option>
+            </select>
+        </div>
+    </div>
+
+    @* ── WhatsApp ── *@
+    <div class="settings-group">
+        <h3 style="display: flex; align-items: center; gap: 8px;">
+            <i class="fa-brands fa-whatsapp" style="color: #25D366;"></i>
+            WhatsApp (Meta Business API)
+            <label style="margin-left: auto; display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 12px; font-weight: normal;">
+                <input type="checkbox" @bind="_whatsApp.Enabled" style="width: auto;" />
+                <span style="color: var(--text-secondary);">Enabled</span>
+            </label>
+        </h3>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="settings-field">
+                <label>Phone Number ID <span style="color: var(--red);">*</span></label>
+                <input type="text" @bind="_whatsApp.PhoneNumberId" @bind:event="oninput" placeholder="1234567890" />
+                <small style="display: block; margin-top: 4px; color: var(--text-muted); font-size: 11px;">From Meta Business > WhatsApp > API Setup</small>
+            </div>
+            <div class="settings-field">
+                <label>Access Token <span style="color: var(--red);">*</span></label>
+                <input type="password" @bind="_whatsAppAccessToken" @bind:event="oninput"
+                       placeholder="@(_hasExistingWhatsAppToken ? "(encrypted — leave blank to keep)" : "Permanent access token")" />
+            </div>
+        </div>
+
+        <div class="settings-field">
+            <label>Recipient Numbers <span style="color: var(--red);">*</span></label>
+            <input type="text" @bind="_whatsAppRecipients" @bind:event="oninput" placeholder="+1234567890, +0987654321" />
+            <small style="display: block; margin-top: 4px; color: var(--text-muted); font-size: 11px;">Comma-separated, E.164 format (e.g. +1234567890). Recipients must have messaged your business number first.</small>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="settings-field">
+                <label>Template Name</label>
+                <input type="text" @bind="_whatsApp.TemplateName" @bind:event="oninput" placeholder="sql_alert_notification (optional)" />
+                <small style="display: block; margin-top: 4px; color: var(--text-muted); font-size: 11px;">Pre-approved template for business-initiated messages. Leave blank for plain text (24-hour window only).</small>
+            </div>
+            <div class="settings-field">
+                <label>Template Language</label>
+                <input type="text" @bind="_whatsApp.TemplateLanguage" @bind:event="oninput" placeholder="en_US" />
+            </div>
+        </div>
+
+        <div class="settings-field">
+            <label>Minimum Severity</label>
+            <select @bind="_whatsApp.MinimumSeverity">
+                <option value="warning">Warning & Critical</option>
+                <option value="critical">Critical only</option>
+            </select>
+        </div>
+    </div>
+    } @* end experimental *@
+
+    @* ── Actions ── *@
+    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap;">
+        <button class="settings-btn" @onclick="SaveConfig">
+            <i class="fa-solid fa-floppy-disk" style="margin-right: 4px;"></i> Save Configuration
+        </button>
+
+        <button class="settings-btn" style="background: var(--bg-hover);" @onclick="TestSmtp" disabled="@(_testingSmtp || !_smtp.Enabled)">
+            @if (_testingSmtp)
+            {
+                <i class="fa-solid fa-spinner fa-spin" style="margin-right: 4px;"></i> <span>Testing...</span>
+            }
+            else
+            {
+                <i class="fa-solid fa-envelope" style="margin-right: 4px;"></i> <span>Test Email</span>
+            }
+        </button>
+
+        @if (UserSettings.GetExperimentalMode())
+        {
+        <button class="settings-btn" style="background: var(--bg-hover);" @onclick="TestTeams" disabled="@(_testingTeams || !_teams.Enabled)">
+            @if (_testingTeams)
+            {
+                <i class="fa-solid fa-spinner fa-spin" style="margin-right: 4px;"></i> <span>Testing...</span>
+            }
+            else
+            {
+                <i class="fa-solid fa-hashtag" style="margin-right: 4px;"></i> <span>Test Teams</span>
+            }
+        </button>
+
+        <button class="settings-btn" style="background: var(--bg-hover);" @onclick="TestSlack" disabled="@(_testingSlack || !_slack.Enabled)">
+            @if (_testingSlack)
+            {
+                <i class="fa-solid fa-spinner fa-spin" style="margin-right: 4px;"></i> <span>Testing...</span>
+            }
+            else
+            {
+                <i class="fa-brands fa-slack" style="margin-right: 4px;"></i> <span>Test Slack</span>
+            }
+        </button>
+
+        <button class="settings-btn" style="background: var(--bg-hover);" @onclick="TestWebhook" disabled="@(_testingWebhook || !_webhook.Enabled)">
+            @if (_testingWebhook)
+            {
+                <i class="fa-solid fa-spinner fa-spin" style="margin-right: 4px;"></i> <span>Testing...</span>
+            }
+            else
+            {
+                <i class="fa-solid fa-globe" style="margin-right: 4px;"></i> <span>Test Webhook</span>
+            }
+        </button>
+
+        <button class="settings-btn" style="background: var(--bg-hover);" @onclick="TestPagerDuty" disabled="@(_testingPagerDuty || !_pagerDuty.Enabled)">
+            @if (_testingPagerDuty)
+            {
+                <i class="fa-solid fa-spinner fa-spin" style="margin-right: 4px;"></i> <span>Testing...</span>
+            }
+            else
+            {
+                <i class="fa-solid fa-pager" style="margin-right: 4px;"></i> <span>Test PagerDuty</span>
+            }
+        </button>
+
+        <button class="settings-btn" style="background: var(--bg-hover);" @onclick="TestServiceNow" disabled="@(_testingServiceNow || !_serviceNow.Enabled)">
+            @if (_testingServiceNow)
+            {
+                <i class="fa-solid fa-spinner fa-spin" style="margin-right: 4px;"></i> <span>Testing...</span>
+            }
+            else
+            {
+                <i class="fa-solid fa-ticket" style="margin-right: 4px;"></i> <span>Test ServiceNow</span>
+            }
+        </button>
+
+        <button class="settings-btn" style="background: var(--bg-hover);" @onclick="TestWhatsApp" disabled="@(_testingWhatsApp || !_whatsApp.Enabled)">
+            @if (_testingWhatsApp)
+            {
+                <i class="fa-solid fa-spinner fa-spin" style="margin-right: 4px;"></i> <span>Testing...</span>
+            }
+            else
+            {
+                <i class="fa-brands fa-whatsapp" style="margin-right: 4px;"></i> <span>Test WhatsApp</span>
+            }
+        </button>
+        } @* end experimental buttons *@
+    </div>
+
+    @if (!string.IsNullOrEmpty(_statusMessage))
+    {
+        <p style="padding: 10px; border-radius: 4px; font-size: 13px; margin-bottom: 16px; background: @(_statusSuccess ? "rgba(78, 201, 176, 0.1)" : "rgba(244, 71, 71, 0.1)"); border: 1px solid @(_statusSuccess ? "var(--green)" : "var(--red)"); color: @(_statusSuccess ? "var(--green)" : "var(--red)");">
+            <i class="fa-solid @(_statusSuccess ? "fa-check-circle" : "fa-times-circle")" style="margin-right: 4px;"></i>
+            @_statusMessage
+        </p>
+    }
+
+    @if (ChannelService.Config.LastModified.HasValue)
+    {
+        <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 16px;">
+            <i class="fa-solid fa-clock" style="margin-right: 4px;"></i>
+            Last modified: @ChannelService.Config.LastModified.Value.ToString("dd MMM yyyy HH:mm:ss")
+        </p>
+    }
+
+    @* ── Extended Events Sessions ── *@
+    <div class="settings-group" style="margin-top: 24px;">
+        <h3 style="display: flex; align-items: center; gap: 8px;">
+            <i class="fa-solid fa-bolt" style="color: var(--accent);"></i>
+            Extended Events Sessions
+            <button class="settings-btn" style="margin-left: auto; padding: 4px 10px; font-size: 11px;"
+                    @onclick="RefreshXesSessions" disabled="@_xesLoading">
+                @if (_xesLoading)
+                {
+                    <i class="fa-solid fa-spinner fa-spin" style="margin-right: 4px;"></i>
+                }
+                else
+                {
+                    <i class="fa-solid fa-rotate" style="margin-right: 4px;"></i>
+                }
+                Refresh
+            </button>
+        </h3>
+        <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
+            All Extended Event sessions defined on the currently selected server. Start/stop sessions or toggle auto-start on server boot.
+            Sessions marked <strong>Auto-start</strong> use <code>STARTUP_STATE=ON</code>.
+        </p>
+
+        @if (!string.IsNullOrEmpty(_xesStatusMessage))
+        {
+            <p style="padding: 8px 12px; border-radius: 4px; font-size: 12px; margin-bottom: 10px;
+                       background: @(_xesStatusOk ? "rgba(78,201,176,0.1)" : "rgba(244,71,71,0.1)");
+                       border: 1px solid @(_xesStatusOk ? "var(--green)" : "var(--red)");
+                       color: @(_xesStatusOk ? "var(--green)" : "var(--red)");">
+                <i class="fa-solid @(_xesStatusOk ? "fa-check-circle" : "fa-times-circle")" style="margin-right: 4px;"></i>
+                @_xesStatusMessage
+            </p>
+        }
+
+        @if (_xesSessions == null)
+        {
+            <div style="font-size: 12px; color: var(--text-muted); padding: 16px 0;">
+                <i class="fa-solid fa-info-circle" style="margin-right: 4px;"></i>
+                Click Refresh to load sessions for the currently selected server.
+            </div>
+        }
+        else if (_xesSessions.Count == 0)
+        {
+            <div style="font-size: 12px; color: var(--text-muted); padding: 16px 0;">
+                No Extended Event sessions found on this server.
+            </div>
+        }
+        else
+        {
+            <table class="results-table" style="width: 100%; font-size: 12px;">
+                <thead>
+                    <tr>
+                        <th style="padding: 6px 10px; text-align: left;">Session</th>
+                        <th style="padding: 6px 10px; text-align: center;">Status</th>
+                        <th style="padding: 6px 10px; text-align: center;">Auto-start</th>
+                        <th style="padding: 6px 10px; text-align: right;">Events Emitted</th>
+                        <th style="padding: 6px 10px; text-align: right;">Buffer</th>
+                        <th style="padding: 6px 10px; text-align: center;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var ses in _xesSessions)
+                    {
+                        <tr>
+                            <td style="padding: 6px 10px; font-weight: 500;">@ses.Name</td>
+                            <td style="padding: 6px 10px; text-align: center;">
+                                @if (ses.IsRunning)
+                                {
+                                    <span class="severity-badge severity-ok" style="font-size: 10px;">
+                                        <i class="fa-solid fa-circle" style="font-size: 7px; margin-right: 3px;"></i>Running
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span class="severity-badge" style="font-size: 10px; background: var(--bg-tertiary); color: var(--text-muted);">
+                                        <i class="fa-solid fa-circle" style="font-size: 7px; margin-right: 3px;"></i>Stopped
+                                    </span>
+                                }
+                            </td>
+                            <td style="padding: 6px 10px; text-align: center;">
+                                <label style="display: inline-flex; align-items: center; gap: 5px; cursor: pointer;">
+                                    <input type="checkbox" checked="@ses.StartupState"
+                                           @onchange="async e => await ToggleStartupState(ses, (bool)(e.Value ?? false))"
+                                           style="width: auto; cursor: pointer;" />
+                                    <span style="font-size: 11px; color: @(ses.StartupState ? "var(--green)" : "var(--text-muted)");">
+                                        @(ses.StartupState ? "On" : "Off")
+                                    </span>
+                                </label>
+                            </td>
+                            <td style="padding: 6px 10px; text-align: right; color: var(--text-secondary);">
+                                @(ses.IsRunning ? ses.TotalEventsEmitted.ToString("N0") : "—")
+                            </td>
+                            <td style="padding: 6px 10px; text-align: right; color: var(--text-secondary);">
+                                @(ses.IsRunning && ses.BufferSizeBytes > 0 ? FormatBytes(ses.BufferSizeBytes) : "—")
+                            </td>
+                            <td style="padding: 6px 10px; text-align: center;">
+                                <div style="display: flex; gap: 6px; justify-content: center;">
+                                    @if (ses.IsRunning)
+                                    {
+                                        <button class="settings-btn" style="padding: 3px 8px; font-size: 11px; background: rgba(244,71,71,0.12); color: var(--red);"
+                                                @onclick="async () => await StopXesSession(ses.Name)"
+                                                title="Stop session">
+                                            <i class="fa-solid fa-stop"></i> Stop
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <button class="settings-btn" style="padding: 3px 8px; font-size: 11px; background: rgba(78,201,176,0.12); color: var(--green);"
+                                                @onclick="async () => await StartXesSession(ses.Name)"
+                                                title="Start session">
+                                            <i class="fa-solid fa-play"></i> Start
+                                        </button>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+
+    @* ── Operational Windows ── *@
+    <div class="settings-group" style="margin-top: 24px;">
+        <h3 style="display: flex; align-items: center; gap: 8px;">
+            <i class="fa-solid fa-clock" style="color: var(--accent);"></i>
+            Operational Windows
+        </h3>
+        <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 16px;">
+            Control when alerts fire. During <strong>operational hours</strong> all alerts fire normally.
+            Outside those hours only alerts marked <em>Always Alert</em> fire.
+            During a <strong>maintenance window</strong> all alerts are suppressed — including Always Alert ones.
+        </p>
+
+        @* Maintenance now banner *@
+        @if (_windows.IsManualMaintenanceActive)
+        {
+            <div style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 6px;
+                        background: rgba(244,71,71,0.1); border: 1px solid var(--red); margin-bottom: 14px; font-size: 12px;">
+                <i class="fa-solid fa-tools" style="color: var(--red);"></i>
+                <span style="color: var(--red); font-weight: 500;">Maintenance active</span>
+                <span style="color: var(--text-secondary);">— all alerts suppressed until @_windows.MaintenanceActiveUntil!.Value.ToString("HH:mm")</span>
+                <button class="settings-btn" style="margin-left: auto; padding: 3px 10px; font-size: 11px; background: rgba(244,71,71,0.15); color: var(--red);"
+                        @onclick="EndMaintenanceNow">End now</button>
+            </div>
+        }
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+
+            @* ── Operational window ── *@
+            <div style="border: 1px solid var(--border); border-radius: 6px; padding: 14px;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                    <i class="fa-solid fa-sun" style="color: var(--yellow);"></i>
+                    <strong style="font-size: 13px;">Operational Hours</strong>
+                    <label style="margin-left: auto; display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: normal; cursor: pointer;">
+                        <input type="checkbox" @bind="_windows.OperationalWindow.Enabled" style="width: auto;" />
+                        <span style="color: var(--text-secondary);">Enabled</span>
+                    </label>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                    <div class="settings-field">
+                        <label>Start time</label>
+                        <input type="time" value="@_windows.OperationalWindow.StartTime"
+                               @onchange="e => _windows.OperationalWindow.StartTime = e.Value?.ToString() ?? _windows.OperationalWindow.StartTime"
+                               disabled="@(!_windows.OperationalWindow.Enabled)" />
+                    </div>
+                    <div class="settings-field">
+                        <label>End time</label>
+                        <input type="time" value="@_windows.OperationalWindow.EndTime"
+                               @onchange="e => _windows.OperationalWindow.EndTime = e.Value?.ToString() ?? _windows.OperationalWindow.EndTime"
+                               disabled="@(!_windows.OperationalWindow.Enabled)" />
+                    </div>
+                </div>
+                <div class="settings-field">
+                    <label style="margin-bottom: 6px; display: block;">Active days</label>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                        @foreach (var day in _allDays)
+                        {
+                            var flag = day.Flag;
+                            var active = (_windows.OperationalWindow.Days & flag) != 0;
+                            <label style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; cursor: pointer;
+                                          padding: 3px 8px; border-radius: 4px;
+                                          background: @(active ? "rgba(0,122,204,0.15)" : "var(--bg-tertiary)");
+                                          border: 1px solid @(active ? "var(--accent)" : "var(--border)");
+                                          color: @(active ? "var(--accent)" : "var(--text-secondary)");
+                                          opacity: @(_windows.OperationalWindow.Enabled ? "1" : "0.5");">
+                                <input type="checkbox" checked="@active"
+                                       @onchange="e => ToggleOperationalDay(flag, (bool)(e.Value ?? false))"
+                                       disabled="@(!_windows.OperationalWindow.Enabled)"
+                                       style="width: auto;" />
+                                @day.Label
+                            </label>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            @* ── Maintenance window ── *@
+            <div style="border: 1px solid var(--border); border-radius: 6px; padding: 14px;">
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                    <i class="fa-solid fa-tools" style="color: var(--red);"></i>
+                    <strong style="font-size: 13px;">Maintenance Window</strong>
+                    <label style="margin-left: auto; display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: normal; cursor: pointer;">
+                        <input type="checkbox" @bind="_windows.MaintenanceWindow.Enabled" style="width: auto;" />
+                        <span style="color: var(--text-secondary);">Scheduled</span>
+                    </label>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                    <div class="settings-field">
+                        <label>Start time</label>
+                        <input type="time" value="@_windows.MaintenanceWindow.StartTime"
+                               @onchange="e => _windows.MaintenanceWindow.StartTime = e.Value?.ToString() ?? _windows.MaintenanceWindow.StartTime"
+                               disabled="@(!_windows.MaintenanceWindow.Enabled)" />
+                    </div>
+                    <div class="settings-field">
+                        <label>End time</label>
+                        <input type="time" value="@_windows.MaintenanceWindow.EndTime"
+                               @onchange="e => _windows.MaintenanceWindow.EndTime = e.Value?.ToString() ?? _windows.MaintenanceWindow.EndTime"
+                               disabled="@(!_windows.MaintenanceWindow.Enabled)" />
+                    </div>
+                </div>
+                <div class="settings-field" style="margin-bottom: 12px;">
+                    <label style="margin-bottom: 6px; display: block;">Active days</label>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                        @foreach (var day in _allDays)
+                        {
+                            var flag = day.Flag;
+                            var active = (_windows.MaintenanceWindow.Days & flag) != 0;
+                            <label style="display: inline-flex; align-items: center; gap: 4px; font-size: 11px; cursor: pointer;
+                                          padding: 3px 8px; border-radius: 4px;
+                                          background: @(active ? "rgba(244,71,71,0.12)" : "var(--bg-tertiary)");
+                                          border: 1px solid @(active ? "var(--red)" : "var(--border)");
+                                          color: @(active ? "var(--red)" : "var(--text-secondary)");
+                                          opacity: @(_windows.MaintenanceWindow.Enabled ? "1" : "0.5");">
+                                <input type="checkbox" checked="@active"
+                                       @onchange="e => ToggleMaintenanceDay(flag, (bool)(e.Value ?? false))"
+                                       disabled="@(!_windows.MaintenanceWindow.Enabled)"
+                                       style="width: auto;" />
+                                @day.Label
+                            </label>
+                        }
+                    </div>
+                </div>
+
+                @* Start now dropdown *@
+                <div style="border-top: 1px solid var(--border); padding-top: 10px; display: flex; align-items: center; gap: 8px;">
+                    <i class="fa-solid fa-play-circle" style="color: var(--text-muted); font-size: 13px;"></i>
+                    <span style="font-size: 12px; color: var(--text-secondary);">Start maintenance now for</span>
+                    <select @bind="_maintenanceNowMinutes" style="width: auto; padding: 3px 6px; font-size: 12px;">
+                        <option value="5">5 minutes</option>
+                        <option value="15">15 minutes</option>
+                        <option value="30">30 minutes</option>
+                        <option value="60">60 minutes</option>
+                    </select>
+                    <button class="settings-btn" style="padding: 3px 10px; font-size: 11px;"
+                            @onclick="StartMaintenanceNow">
+                        <i class="fa-solid fa-play" style="margin-right: 4px;"></i>Start
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(_windowsStatusMessage))
+        {
+            <p style="margin-top: 12px; padding: 8px 12px; border-radius: 4px; font-size: 12px;
+                       background: @(_windowsStatusOk ? "rgba(78,201,176,0.1)" : "rgba(244,71,71,0.1)");
+                       border: 1px solid @(_windowsStatusOk ? "var(--green)" : "var(--red)");
+                       color: @(_windowsStatusOk ? "var(--green)" : "var(--red)");">
+                <i class="fa-solid @(_windowsStatusOk ? "fa-check-circle" : "fa-times-circle")" style="margin-right: 4px;"></i>
+                @_windowsStatusMessage
+            </p>
+        }
+
+        <div style="margin-top: 14px; display: flex; gap: 10px;">
+            <button class="settings-btn settings-btn-primary" @onclick="SaveWindowConfig">
+                <i class="fa-solid fa-save" style="margin-right: 6px;"></i>Save Window Config
+            </button>
+        </div>
+    </div>
+
+</div>
+
+@* ── OAuth2 Setup Help Modal ── *@
+@if (_showOAuth2Help)
+{
+    <div style="position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000; display: flex; align-items: center; justify-content: center;" @onclick="() => _showOAuth2Help = false">
+        <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; padding: 28px; max-width: 600px; width: 90%; max-height: 85vh; overflow-y: auto;" @onclick:stopPropagation>
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
+                <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;">
+                    <i class="fa-brands fa-microsoft" style="color: var(--accent);"></i>
+                    Azure App Registration for OAuth2 Email
+                </h3>
+                <button type="button" @onclick="() => _showOAuth2Help = false"
+                        style="background: none; border: none; color: var(--text-secondary); font-size: 18px; cursor: pointer; padding: 4px 8px;">&times;</button>
+            </div>
+
+            <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 20px;">
+                O365 has disabled Basic Auth for SMTP. OAuth2 via Microsoft Graph is the supported replacement.
+                You need a one-time Azure App Registration with <strong>Mail.Send</strong> permission.
+            </p>
+
+            <ol style="padding-left: 20px; line-height: 2; font-size: 13px;">
+                <li>
+                    Go to <strong>portal.azure.com</strong> → <em>Azure Active Directory</em> → <em>App registrations</em> → <strong>New registration</strong><br />
+                    <span style="color: var(--text-muted);">Name: anything (e.g. "SQL Health Monitor") · Account type: This org only · No redirect URI needed</span>
+                </li>
+                <li>
+                    Open the new app → <em>API permissions</em> → <strong>Add a permission</strong><br />
+                    → Microsoft Graph → <strong>Application permissions</strong> → search <code>Mail.Send</code> → check it → Add<br />
+                    → Click <strong>Grant admin consent</strong> (requires Global Admin)
+                </li>
+                <li>
+                    <em>Certificates &amp; secrets</em> → <strong>New client secret</strong><br />
+                    <span style="color: var(--text-muted);">Copy the <strong>Value</strong> immediately — it is only shown once.</span>
+                </li>
+                <li>
+                    From the app <em>Overview</em> page, copy:<br />
+                    <span style="color: var(--text-muted);"><strong>Directory (tenant) ID</strong> and <strong>Application (client) ID</strong></span>
+                </li>
+                <li>
+                    Back here: check <strong>Use OAuth2</strong>, enter the three values, set <strong>From Address</strong> to the licensed mailbox, <strong>Save</strong>, then <strong>Test</strong>.
+                </li>
+            </ol>
+
+            <div style="margin-top: 20px; padding: 10px 14px; background: var(--bg-hover); border-radius: 6px; border-left: 3px solid var(--accent); font-size: 12px; color: var(--text-secondary);">
+                <i class="fa-solid fa-circle-info" style="margin-right: 6px;"></i>
+                The From Address must match the mailbox the app has <strong>Mail.Send</strong> permission on.
+                Username and Password fields are ignored when OAuth2 is enabled.
+            </div>
+
+            <div style="margin-top: 16px; text-align: right;">
+                <button class="settings-btn" @onclick="() => _showOAuth2Help = false">Close</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    // Local copies for editing
+    private SmtpChannelConfig _smtp = new();
+    private TeamsWebhookChannelConfig _teams = new();
+    private SlackChannelConfig _slack = new();
+    private WebhookChannelConfig _webhook = new();
+    private PagerDutyChannelConfig _pagerDuty = new();
+    private ServiceNowChannelConfig _serviceNow = new();
+    private WhatsAppChannelConfig _whatsApp = new();
+
+    private string _smtpPassword = "";
+    private string _smtpClientSecret = "";
+    private string _smtpToAddresses = "";
+    private string _teamsWebhookUrl = "";
+    private string _slackWebhookUrl = "";
+    private string _webhookUrl = "";
+    private string _webhookAuthToken = "";
+    private string _pagerDutyRoutingKey = "";
+    private string _serviceNowUsername = "";
+    private string _serviceNowPassword = "";
+    private string _whatsAppAccessToken = "";
+    private string _whatsAppRecipients = "";
+
+    private bool _hasExistingSmtpPassword;
+    private bool _hasExistingSmtpClientSecret;
+    private bool _hasExistingTeamsUrl;
+    private bool _hasExistingSlackUrl;
+    private bool _hasExistingWebhookUrl;
+    private bool _hasExistingWebhookToken;
+    private bool _hasExistingPagerDutyKey;
+    private bool _hasExistingServiceNowUser;
+    private bool _hasExistingServiceNowPass;
+    private bool _hasExistingWhatsAppToken;
+
+    // Status
+    private string? _statusMessage;
+    private bool _statusSuccess;
+    private bool _showOAuth2Help;
+    private bool _testingSmtp;
+    private bool _testingTeams;
+    private bool _testingSlack;
+    private bool _testingWebhook;
+    private bool _testingPagerDuty;
+    private bool _testingServiceNow;
+    private bool _testingWhatsApp;
+
+    // Extended Events
+    private List<XEventSessionInfo>? _xesSessions;
+    private bool _xesLoading;
+    private string? _xesStatusMessage;
+    private bool _xesStatusOk;
+
+    // Operational Windows
+    private AlertWindowConfig _windows = new();
+    private int _maintenanceNowMinutes = 15;
+    private string? _windowsStatusMessage;
+    private bool _windowsStatusOk;
+
+    private record DayItem(string Label, WindowDays Flag);
+    private static readonly DayItem[] _allDays =
+    [
+        new("Mon", WindowDays.Monday),
+        new("Tue", WindowDays.Tuesday),
+        new("Wed", WindowDays.Wednesday),
+        new("Thu", WindowDays.Thursday),
+        new("Fri", WindowDays.Friday),
+        new("Sat", WindowDays.Saturday),
+        new("Sun", WindowDays.Sunday),
+    ];
+
+    private string? GetCurrentConnectionString()
+    {
+        var server = ConnectionManager.CurrentServer;
+        if (server == null) return null;
+        var name = server.ServerNames.Split(',')[0].Trim();
+        return server.GetConnectionString(name, "master");
+    }
+
+    private async Task RefreshXesSessions()
+    {
+        var connStr = GetCurrentConnectionString();
+        if (connStr == null) { _xesStatusMessage = "No server selected."; _xesStatusOk = false; return; }
+        _xesLoading = true;
+        _xesStatusMessage = null;
+        await InvokeAsync(StateHasChanged);
+        _xesSessions = await XEventService.GetAllSessionsAsync(connStr);
+        _xesLoading = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task StartXesSession(string name)
+    {
+        var connStr = GetCurrentConnectionString();
+        if (connStr == null) return;
+        var result = await XEventService.StartSessionAsync(connStr, name);
+        _xesStatusOk = !result.StartsWith("Error");
+        _xesStatusMessage = result;
+        await RefreshXesSessions();
+    }
+
+    private async Task StopXesSession(string name)
+    {
+        var connStr = GetCurrentConnectionString();
+        if (connStr == null) return;
+        var result = await XEventService.StopSessionAsync(connStr, name);
+        _xesStatusOk = !result.StartsWith("Error");
+        _xesStatusMessage = result;
+        await RefreshXesSessions();
+    }
+
+    private async Task ToggleStartupState(XEventSessionInfo ses, bool newValue)
+    {
+        var connStr = GetCurrentConnectionString();
+        if (connStr == null) return;
+        var result = await XEventService.SetStartupStateAsync(connStr, ses.Name, newValue);
+        _xesStatusOk = !result.StartsWith("Error");
+        _xesStatusMessage = result;
+        ses.StartupState = newValue; // optimistic update
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes >= 1_048_576) return $"{bytes / 1_048_576.0:F1} MB";
+        if (bytes >= 1_024)     return $"{bytes / 1_024.0:F1} KB";
+        return $"{bytes} B";
+    }
+
+    private void ToggleOperationalDay(WindowDays flag, bool on)
+    {
+        if (on) _windows.OperationalWindow.Days |= flag;
+        else    _windows.OperationalWindow.Days &= ~flag;
+    }
+
+    private void ToggleMaintenanceDay(WindowDays flag, bool on)
+    {
+        if (on) _windows.MaintenanceWindow.Days |= flag;
+        else    _windows.MaintenanceWindow.Days &= ~flag;
+    }
+
+    private void StartMaintenanceNow()
+    {
+        _windows.MaintenanceActiveUntil = DateTime.Now.AddMinutes(_maintenanceNowMinutes);
+        ChannelService.UpdateAlertWindows(_windows);
+        _windowsStatusOk = true;
+        _windowsStatusMessage = $"Maintenance mode active for {_maintenanceNowMinutes} min — all alerts suppressed until {_windows.MaintenanceActiveUntil.Value:HH:mm}.";
+        StateHasChanged();
+    }
+
+    private void EndMaintenanceNow()
+    {
+        _windows.MaintenanceActiveUntil = null;
+        ChannelService.UpdateAlertWindows(_windows);
+        _windowsStatusOk = true;
+        _windowsStatusMessage = "Maintenance mode ended.";
+        StateHasChanged();
+    }
+
+    private void SaveWindowConfig()
+    {
+        ChannelService.UpdateAlertWindows(_windows);
+        _windowsStatusOk = true;
+        _windowsStatusMessage = "Window configuration saved.";
+        StateHasChanged();
+    }
+
+    protected override void OnInitialized()
+    {
+        var config = ChannelService.Config;
+
+        // Deep copy SMTP config
+        _smtp = new SmtpChannelConfig
+        {
+            Enabled = config.Smtp.Enabled,
+            Host = config.Smtp.Host,
+            Port = config.Smtp.Port,
+            UseTls = config.Smtp.UseTls,
+            Username = config.Smtp.Username,
+            FromAddress = config.Smtp.FromAddress,
+            FromName = config.Smtp.FromName,
+            ReplyToAddress = config.Smtp.ReplyToAddress,
+            MinimumSeverity = config.Smtp.MinimumSeverity,
+            ToAddresses = new List<string>(config.Smtp.ToAddresses),
+            UseOAuth2 = config.Smtp.UseOAuth2,
+            TenantId = config.Smtp.TenantId,
+            ClientId = config.Smtp.ClientId
+        };
+        _hasExistingSmtpPassword = !string.IsNullOrEmpty(config.Smtp.Password);
+        _hasExistingSmtpClientSecret = !string.IsNullOrEmpty(config.Smtp.ClientSecret);
+        _smtpToAddresses = string.Join(", ", _smtp.ToAddresses);
+
+        // Deep copy Teams config
+        _teams = new TeamsWebhookChannelConfig
+        {
+            Enabled = config.TeamsWebhook.Enabled,
+            MinimumSeverity = config.TeamsWebhook.MinimumSeverity
+        };
+        _hasExistingTeamsUrl = !string.IsNullOrEmpty(config.TeamsWebhook.WebhookUrl);
+
+        // Deep copy Slack config
+        _slack = new SlackChannelConfig
+        {
+            Enabled = config.Slack.Enabled,
+            Channel = config.Slack.Channel,
+            Username = config.Slack.Username,
+            MinimumSeverity = config.Slack.MinimumSeverity
+        };
+        _hasExistingSlackUrl = !string.IsNullOrEmpty(config.Slack.WebhookUrl);
+
+        // Deep copy Webhook config
+        _webhook = new WebhookChannelConfig
+        {
+            Enabled = config.Webhook.Enabled,
+            CustomHeaders = config.Webhook.CustomHeaders,
+            MinimumSeverity = config.Webhook.MinimumSeverity
+        };
+        _hasExistingWebhookUrl = !string.IsNullOrEmpty(config.Webhook.Url);
+        _hasExistingWebhookToken = !string.IsNullOrEmpty(config.Webhook.AuthToken);
+
+        // Deep copy PagerDuty config
+        _pagerDuty = new PagerDutyChannelConfig
+        {
+            Enabled = config.PagerDuty.Enabled,
+            MinimumSeverity = config.PagerDuty.MinimumSeverity
+        };
+        _hasExistingPagerDutyKey = !string.IsNullOrEmpty(config.PagerDuty.RoutingKey);
+
+        // Deep copy ServiceNow config
+        _serviceNow = new ServiceNowChannelConfig
+        {
+            Enabled = config.ServiceNow.Enabled,
+            InstanceUrl = config.ServiceNow.InstanceUrl,
+            Table = config.ServiceNow.Table,
+            AssignmentGroup = config.ServiceNow.AssignmentGroup,
+            CallerId = config.ServiceNow.CallerId,
+            MinimumSeverity = config.ServiceNow.MinimumSeverity
+        };
+        _hasExistingServiceNowUser = !string.IsNullOrEmpty(config.ServiceNow.Username);
+        _hasExistingServiceNowPass = !string.IsNullOrEmpty(config.ServiceNow.Password);
+
+        // Deep copy WhatsApp config
+        _whatsApp = new WhatsAppChannelConfig
+        {
+            Enabled = config.WhatsApp.Enabled,
+            PhoneNumberId = config.WhatsApp.PhoneNumberId,
+            TemplateName = config.WhatsApp.TemplateName,
+            TemplateLanguage = config.WhatsApp.TemplateLanguage,
+            MinimumSeverity = config.WhatsApp.MinimumSeverity,
+            RecipientNumbers = new List<string>(config.WhatsApp.RecipientNumbers)
+        };
+        _hasExistingWhatsAppToken = !string.IsNullOrEmpty(config.WhatsApp.AccessToken);
+        _whatsAppRecipients = string.Join(", ", _whatsApp.RecipientNumbers);
+
+        // Load window config
+        var wc = config.AlertWindows;
+        _windows = new AlertWindowConfig
+        {
+            OperationalWindow = new AlertTimeWindow
+            {
+                Enabled = wc.OperationalWindow.Enabled,
+                StartTime = wc.OperationalWindow.StartTime,
+                EndTime = wc.OperationalWindow.EndTime,
+                Days = wc.OperationalWindow.Days
+            },
+            MaintenanceWindow = new AlertTimeWindow
+            {
+                Enabled = wc.MaintenanceWindow.Enabled,
+                StartTime = wc.MaintenanceWindow.StartTime,
+                EndTime = wc.MaintenanceWindow.EndTime,
+                Days = wc.MaintenanceWindow.Days
+            },
+            MaintenanceActiveUntil = wc.MaintenanceActiveUntil
+        };
+
+        ChannelService.OnConfigChanged += OnConfigChanged;
+    }
+
+    private void SaveConfig()
+    {
+        // Parse To addresses
+        _smtp.ToAddresses = _smtpToAddresses
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(a => !string.IsNullOrWhiteSpace(a))
+            .ToList();
+
+        // ── SMTP password ──
+        if (!string.IsNullOrEmpty(_smtpPassword))
+            _smtp.Password = CredentialProtector.Encrypt(_smtpPassword);
+        else if (_hasExistingSmtpPassword)
+            _smtp.Password = ChannelService.Config.Smtp.Password;
+
+        // ── OAuth2 client secret ──
+        if (!string.IsNullOrEmpty(_smtpClientSecret))
+            _smtp.ClientSecret = CredentialProtector.Encrypt(_smtpClientSecret);
+        else if (_hasExistingSmtpClientSecret)
+            _smtp.ClientSecret = ChannelService.Config.Smtp.ClientSecret;
+
+        // ── Teams webhook URL ──
+        if (!string.IsNullOrEmpty(_teamsWebhookUrl))
+            _teams.WebhookUrl = CredentialProtector.Encrypt(_teamsWebhookUrl);
+        else if (_hasExistingTeamsUrl)
+            _teams.WebhookUrl = ChannelService.Config.TeamsWebhook.WebhookUrl;
+
+        // ── Slack webhook URL ──
+        if (!string.IsNullOrEmpty(_slackWebhookUrl))
+            _slack.WebhookUrl = CredentialProtector.Encrypt(_slackWebhookUrl);
+        else if (_hasExistingSlackUrl)
+            _slack.WebhookUrl = ChannelService.Config.Slack.WebhookUrl;
+
+        // ── Generic Webhook URL + auth token ──
+        if (!string.IsNullOrEmpty(_webhookUrl))
+            _webhook.Url = CredentialProtector.Encrypt(_webhookUrl);
+        else if (_hasExistingWebhookUrl)
+            _webhook.Url = ChannelService.Config.Webhook.Url;
+
+        if (!string.IsNullOrEmpty(_webhookAuthToken))
+            _webhook.AuthToken = CredentialProtector.Encrypt(_webhookAuthToken);
+        else if (_hasExistingWebhookToken)
+            _webhook.AuthToken = ChannelService.Config.Webhook.AuthToken;
+
+        // ── PagerDuty routing key ──
+        if (!string.IsNullOrEmpty(_pagerDutyRoutingKey))
+            _pagerDuty.RoutingKey = CredentialProtector.Encrypt(_pagerDutyRoutingKey);
+        else if (_hasExistingPagerDutyKey)
+            _pagerDuty.RoutingKey = ChannelService.Config.PagerDuty.RoutingKey;
+
+        // ── ServiceNow credentials ──
+        if (!string.IsNullOrEmpty(_serviceNowUsername))
+            _serviceNow.Username = CredentialProtector.Encrypt(_serviceNowUsername);
+        else if (_hasExistingServiceNowUser)
+            _serviceNow.Username = ChannelService.Config.ServiceNow.Username;
+
+        if (!string.IsNullOrEmpty(_serviceNowPassword))
+            _serviceNow.Password = CredentialProtector.Encrypt(_serviceNowPassword);
+        else if (_hasExistingServiceNowPass)
+            _serviceNow.Password = ChannelService.Config.ServiceNow.Password;
+
+        // ── WhatsApp access token + recipients ──
+        _whatsApp.RecipientNumbers = _whatsAppRecipients
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(n => !string.IsNullOrWhiteSpace(n))
+            .ToList();
+
+        if (!string.IsNullOrEmpty(_whatsAppAccessToken))
+            _whatsApp.AccessToken = CredentialProtector.Encrypt(_whatsAppAccessToken);
+        else if (_hasExistingWhatsAppToken)
+            _whatsApp.AccessToken = ChannelService.Config.WhatsApp.AccessToken;
+
+        var config = new NotificationChannelConfig
+        {
+            Smtp = _smtp,
+            TeamsWebhook = _teams,
+            Slack = _slack,
+            Webhook = _webhook,
+            PagerDuty = _pagerDuty,
+            ServiceNow = _serviceNow,
+            WhatsApp = _whatsApp
+        };
+
+        ChannelService.UpdateConfig(config);
+
+        _hasExistingSmtpPassword = !string.IsNullOrEmpty(_smtp.Password);
+        _hasExistingSmtpClientSecret = !string.IsNullOrEmpty(_smtp.ClientSecret);
+        _hasExistingTeamsUrl = !string.IsNullOrEmpty(_teams.WebhookUrl);
+        _hasExistingSlackUrl = !string.IsNullOrEmpty(_slack.WebhookUrl);
+        _hasExistingWebhookUrl = !string.IsNullOrEmpty(_webhook.Url);
+        _hasExistingWebhookToken = !string.IsNullOrEmpty(_webhook.AuthToken);
+        _hasExistingPagerDutyKey = !string.IsNullOrEmpty(_pagerDuty.RoutingKey);
+        _hasExistingServiceNowUser = !string.IsNullOrEmpty(_serviceNow.Username);
+        _hasExistingServiceNowPass = !string.IsNullOrEmpty(_serviceNow.Password);
+        _hasExistingWhatsAppToken = !string.IsNullOrEmpty(_whatsApp.AccessToken);
+
+        _smtpPassword = "";
+        _smtpClientSecret = "";
+        _teamsWebhookUrl = "";
+        _slackWebhookUrl = "";
+        _webhookUrl = "";
+        _webhookAuthToken = "";
+        _pagerDutyRoutingKey = "";
+        _serviceNowUsername = "";
+        _serviceNowPassword = "";
+        _whatsAppAccessToken = "";
+
+        _statusSuccess = true;
+        _statusMessage = "Configuration saved successfully.";
+        StateHasChanged();
+    }
+
+    private async Task TestSmtp()
+    {
+        _testingSmtp = true;
+        _statusMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            // Save first so the service has current config
+            SaveConfig();
+
+            var (success, message) = await ChannelService.TestSmtpAsync();
+            _statusSuccess = success;
+            _statusMessage = message;
+        }
+        catch (Exception ex)
+        {
+            _statusSuccess = false;
+            _statusMessage = $"SMTP test error: {ex.Message}";
+        }
+        finally
+        {
+            _testingSmtp = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task TestTeams()
+    {
+        _testingTeams = true;
+        _statusMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            SaveConfig();
+
+            var (success, message) = await ChannelService.TestTeamsAsync();
+            _statusSuccess = success;
+            _statusMessage = message;
+        }
+        catch (Exception ex)
+        {
+            _statusSuccess = false;
+            _statusMessage = $"Teams test error: {ex.Message}";
+        }
+        finally
+        {
+            _testingTeams = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task TestSlack()
+    {
+        _testingSlack = true; _statusMessage = null; StateHasChanged();
+        try { SaveConfig(); var (s, m) = await ChannelService.TestSlackAsync(); _statusSuccess = s; _statusMessage = m; }
+        catch (Exception ex) { _statusSuccess = false; _statusMessage = $"Slack test error: {ex.Message}"; }
+        finally { _testingSlack = false; StateHasChanged(); }
+    }
+
+    private async Task TestWebhook()
+    {
+        _testingWebhook = true; _statusMessage = null; StateHasChanged();
+        try { SaveConfig(); var (s, m) = await ChannelService.TestWebhookAsync(); _statusSuccess = s; _statusMessage = m; }
+        catch (Exception ex) { _statusSuccess = false; _statusMessage = $"Webhook test error: {ex.Message}"; }
+        finally { _testingWebhook = false; StateHasChanged(); }
+    }
+
+    private async Task TestPagerDuty()
+    {
+        _testingPagerDuty = true; _statusMessage = null; StateHasChanged();
+        try { SaveConfig(); var (s, m) = await ChannelService.TestPagerDutyAsync(); _statusSuccess = s; _statusMessage = m; }
+        catch (Exception ex) { _statusSuccess = false; _statusMessage = $"PagerDuty test error: {ex.Message}"; }
+        finally { _testingPagerDuty = false; StateHasChanged(); }
+    }
+
+    private async Task TestServiceNow()
+    {
+        _testingServiceNow = true; _statusMessage = null; StateHasChanged();
+        try { SaveConfig(); var (s, m) = await ChannelService.TestServiceNowAsync(); _statusSuccess = s; _statusMessage = m; }
+        catch (Exception ex) { _statusSuccess = false; _statusMessage = $"ServiceNow test error: {ex.Message}"; }
+        finally { _testingServiceNow = false; StateHasChanged(); }
+    }
+
+    private async Task TestWhatsApp()
+    {
+        _testingWhatsApp = true; _statusMessage = null; StateHasChanged();
+        try { SaveConfig(); var (s, m) = await ChannelService.TestWhatsAppAsync(); _statusSuccess = s; _statusMessage = m; }
+        catch (Exception ex) { _statusSuccess = false; _statusMessage = $"WhatsApp test error: {ex.Message}"; }
+        finally { _testingWhatsApp = false; StateHasChanged(); }
+    }
+
+    private void OnConfigChanged()
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        ChannelService.OnConfigChanged -= OnConfigChanged;
+    }
+}

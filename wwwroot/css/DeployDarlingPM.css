@@ -1,0 +1,185 @@
+/* Styles extracted to wwwroot/css/DeployDarlingPM.css 2026-05-11 (CLAUDE.md convention). */
+.pm-deploy-page {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.deploy-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 16px;
+}
+
+.pm-deploy-page .form-group {
+    margin-bottom: 12px;
+}
+
+.pm-deploy-page .form-group label {
+    display: block;
+    margin-bottom: 4px;
+    font-weight: 500;
+    font-size: 13px;
+}
+
+.checkbox-group label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: normal;
+    cursor: pointer;
+}
+
+.pm-deploy-page .form-input {
+    width: 100%;
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--input-bg);
+    color: var(--text);
+    font-size: 13px;
+}
+
+.warning-banner {
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid var(--red);
+    border-radius: 4px;
+    padding: 10px 14px;
+    color: var(--red);
+    margin-bottom: 12px;
+    font-size: 13px;
+}
+
+.files-found, .files-missing {
+    padding: 8px 14px;
+    border-radius: 4px;
+    margin-bottom: 12px;
+    font-size: 13px;
+}
+
+.files-found {
+    background: rgba(33, 201, 122, 0.1);
+    border: 1px solid var(--green);
+    color: var(--green);
+}
+
+.files-missing {
+    background: rgba(251, 191, 36, 0.1);
+    border: 1px solid var(--yellow, #fbbf24);
+    color: var(--yellow, #fbbf24);
+}
+
+.deploy-actions {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+
+.pm-deploy-page .btn {
+    padding: 9px 18px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+    font-size: 13px;
+    transition: opacity 0.15s;
+}
+
+.pm-deploy-page .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.pm-deploy-page .btn-primary   { background: var(--primary); color: #fff; }
+.pm-deploy-page .btn-success   { background: var(--green); color: #fff; }
+.pm-deploy-page .btn-secondary { background: var(--surface); border: 1px solid var(--border); color: var(--text); }
+
+.progress-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.progress-bar-outer {
+    flex: 1;
+    height: 8px;
+    background: var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.progress-bar-inner {
+    height: 100%;
+    background: var(--primary, #2eaef1);
+    border-radius: 4px;
+    transition: width 0.2s ease;
+}
+
+.progress-label {
+    font-size: 12px;
+    min-width: 34px;
+    text-align: right;
+    color: var(--text-muted);
+}
+
+.log-output {
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px 12px;
+    font-family: Consolas, 'Cascadia Code', monospace;
+    font-size: 12px;
+    max-height: 400px;
+    overflow-y: auto;
+    line-height: 1.5;
+}
+
+.log-line     { color: #e0e0e0; white-space: pre-wrap; }
+.log-success  { color: var(--green); }
+.log-error    { color: var(--red); }
+.log-warning  { color: var(--orange); }
+.log-info     { color: #e0e0e0; }
+
+.pm-deploy-page .btn-danger { background: var(--red); color: #fff; }
+
+.nav-warning-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.nav-warning-dialog {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 28px 32px;
+    max-width: 400px;
+    width: 90%;
+    text-align: center;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+
+.nav-warning-icon { font-size: 2.5rem; margin-bottom: 10px; }
+
+.nav-warning-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.nav-warning-body {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    margin-bottom: 20px;
+}
+
+.nav-warning-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}

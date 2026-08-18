@@ -1,0 +1,316 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/maintenance-recommendations"
+<PageTitle>SQLTriage - Maintenance Recommendations</PageTitle>
+@inject MaintenanceScriptService MaintenanceSvc
+@inject ServerConnectionManager ConnectionManager
+@inject AuditLogService AuditLog
+@inject IJSRuntime JS
+@inject AppUserState UserState
+@using SQLTriage.Data.Services
+
+@if (!RbacService.HasPermission(UserState.Role, "run_scripts"))
+{
+    <div style="padding: 32px;">
+        <AccessDenied RequiredRole="Operator" Message="Maintenance Recommendations requires Operator or Admin role." />
+    </div>
+    return;
+}
+
+<div class="settings-page">
+    <div class="settings-header">
+        <h2><i class="fa-solid fa-wrench"></i> Maintenance Recommendations</h2>
+        <p class="text-app-text-secondary" style="margin-top:4px;">
+            Generate ready-to-review T-SQL maintenance scripts from live DMV data.
+            <strong>Review carefully — scripts are never executed automatically.</strong>
+        </p>
+    </div>
+
+    <!-- Server picker -->
+    <div class="settings-group">
+        <div class="settings-group-header">Target Server</div>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 0;">
+            <label class="text-xs text-app-text-secondary" style="flex-shrink:0;">Server:</label>
+            @* .server-select removed — replaced by shared <ServerSelector> component *@
+            <ServerSelector Servers="_servers"
+                            Selected="@_selectedServer"
+                            SelectedChanged="@(v => { _selectedServer = v ?? string.Empty; StateHasChanged(); })" />
+            <label class="text-xs text-app-text-secondary" style="flex-shrink:0;">Frag threshold:</label>
+            <input type="number" @bind="_fragThreshold" min="10" max="90" step="5"
+                   class="dba-param-input" style="width:70px;" title="Rebuild threshold %" />
+            <span class="text-xs text-app-text-secondary">%</span>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_errorMessage))
+    {
+        <div class="maint-alert maint-alert-danger">
+            <i class="fa-solid fa-circle-xmark"></i> @_errorMessage
+        </div>
+    }
+
+    <!-- Generation buttons -->
+    <div class="settings-group">
+        <div class="settings-group-header">Generate Scripts</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;padding:12px 0;">
+            <button class="btn btn-primary" @onclick="GenerateIndexScript"
+                    disabled="@(string.IsNullOrEmpty(_selectedServer) || _busy)">
+                @if (_busyIndex)
+                {
+                    <span><i class="fa-solid fa-spinner fa-spin"></i> Analysing indexes…</span>
+                }
+                else
+                {
+                    <span><i class="fa-solid fa-table-list"></i> Index Maintenance</span>
+                }
+            </button>
+
+            <button class="btn btn-primary" @onclick="GenerateStatsScript"
+                    disabled="@(string.IsNullOrEmpty(_selectedServer) || _busy)">
+                @if (_busyStats)
+                {
+                    <span><i class="fa-solid fa-spinner fa-spin"></i> Analysing statistics…</span>
+                }
+                else
+                {
+                    <span><i class="fa-solid fa-chart-bar"></i> Update Statistics</span>
+                }
+            </button>
+
+            <button class="btn btn-primary" @onclick="GenerateCheckDbScript"
+                    disabled="@(string.IsNullOrEmpty(_selectedServer) || _busy)">
+                @if (_busyCheckDb)
+                {
+                    <span><i class="fa-solid fa-spinner fa-spin"></i> Building CHECKDB script…</span>
+                }
+                else
+                {
+                    <span><i class="fa-solid fa-shield-halved"></i> DBCC CHECKDB</span>
+                }
+            </button>
+
+            @if (_indexScript is not null || _statsScript is not null || _checkDbScript is not null)
+            {
+                <button class="btn btn-secondary" @onclick="ExportAll"
+                        disabled="@_busy" title="Download all generated scripts as a single .sql file">
+                    <i class="fa-solid fa-file-export"></i> Export All
+                </button>
+            }
+        </div>
+    </div>
+
+    <!-- Index Maintenance output -->
+    @if (_indexScript is not null)
+    {
+        <div class="settings-group">
+            <div class="settings-group-header" style="display:flex;justify-content:space-between;align-items:center;">
+                <span><i class="fa-solid fa-table-list"></i> Index Maintenance Script</span>
+                <button class="btn btn-sm btn-secondary" @onclick='() => CopyToClipboard(_indexScript.SqlScript, "index")'>
+                    <i class='fa-solid @(_copyState == "index" ? "fa-check" : "fa-copy")'></i>
+                    @(_copyState == "index" ? "Copied!" : "Copy")
+                </button>
+            </div>
+            <p class="text-xs text-app-text-secondary" style="padding:8px 0 4px;">@_indexScript.Explanation</p>
+            <pre class="maint-script-block">@_indexScript.SqlScript</pre>
+            <details class="maint-advisory">
+                <summary><i class="fa-solid fa-triangle-exclamation"></i> Risk &amp; Rollback</summary>
+                <div class="maint-advisory-body">
+                    <p><strong>Risk:</strong> @_indexScript.RiskNote</p>
+                    <p><strong>Rollback:</strong> @_indexScript.RollbackGuidance</p>
+                </div>
+            </details>
+        </div>
+    }
+
+    <!-- Update Statistics output -->
+    @if (_statsScript is not null)
+    {
+        <div class="settings-group">
+            <div class="settings-group-header" style="display:flex;justify-content:space-between;align-items:center;">
+                <span><i class="fa-solid fa-chart-bar"></i> Update Statistics Script</span>
+                <button class="btn btn-sm btn-secondary" @onclick='() => CopyToClipboard(_statsScript.SqlScript, "stats")'>
+                    <i class='fa-solid @(_copyState == "stats" ? "fa-check" : "fa-copy")'></i>
+                    @(_copyState == "stats" ? "Copied!" : "Copy")
+                </button>
+            </div>
+            <p class="text-xs text-app-text-secondary" style="padding:8px 0 4px;">@_statsScript.Explanation</p>
+            <pre class="maint-script-block">@_statsScript.SqlScript</pre>
+            <details class="maint-advisory">
+                <summary><i class="fa-solid fa-triangle-exclamation"></i> Risk &amp; Rollback</summary>
+                <div class="maint-advisory-body">
+                    <p><strong>Risk:</strong> @_statsScript.RiskNote</p>
+                    <p><strong>Rollback:</strong> @_statsScript.RollbackGuidance</p>
+                </div>
+            </details>
+        </div>
+    }
+
+    <!-- DBCC CHECKDB output -->
+    @if (_checkDbScript is not null)
+    {
+        <div class="settings-group">
+            <div class="settings-group-header" style="display:flex;justify-content:space-between;align-items:center;">
+                <span><i class="fa-solid fa-shield-halved"></i> DBCC CHECKDB Script</span>
+                <button class="btn btn-sm btn-secondary" @onclick='() => CopyToClipboard(_checkDbScript.SqlScript, "checkdb")'>
+                    <i class='fa-solid @(_copyState == "checkdb" ? "fa-check" : "fa-copy")'></i>
+                    @(_copyState == "checkdb" ? "Copied!" : "Copy")
+                </button>
+            </div>
+            <p class="text-xs text-app-text-secondary" style="padding:8px 0 4px;">@_checkDbScript.Explanation</p>
+            <pre class="maint-script-block">@_checkDbScript.SqlScript</pre>
+            <details class="maint-advisory">
+                <summary><i class="fa-solid fa-triangle-exclamation"></i> Risk &amp; Rollback</summary>
+                <div class="maint-advisory-body">
+                    <p><strong>Risk:</strong> @_checkDbScript.RiskNote</p>
+                    <p><strong>Rollback:</strong> @_checkDbScript.RollbackGuidance</p>
+                </div>
+            </details>
+        </div>
+    }
+</div>
+
+@code {
+    // ── State ────────────────────────────────────────────────────────────────
+    private List<string> _servers = new();
+    private string _selectedServer = string.Empty;
+    private int _fragThreshold = 30;
+    private string? _errorMessage;
+    private string? _copyState;
+
+    private bool _busyIndex;
+    private bool _busyStats;
+    private bool _busyCheckDb;
+    private bool _busy => _busyIndex || _busyStats || _busyCheckDb;
+
+    private MaintenanceScriptService.MaintenanceScript? _indexScript;
+    private MaintenanceScriptService.MaintenanceScript? _statsScript;
+    private MaintenanceScriptService.MaintenanceScript? _checkDbScript;
+
+    // ── Lifecycle ────────────────────────────────────────────────────────────
+    protected override void OnInitialized()
+    {
+        _servers = ConnectionManager.GetEnabledConnections()
+            .SelectMany(c => c.GetServerList())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(s => s)
+            .ToList();
+
+        if (_servers.Count > 0)
+            _selectedServer = _servers[0];
+    }
+
+    // ── Generate handlers ────────────────────────────────────────────────────
+    private async Task GenerateIndexScript()
+    {
+        _errorMessage = null;
+        _busyIndex = true;
+        _indexScript = null;
+        StateHasChanged();
+        try
+        {
+            _indexScript = await MaintenanceSvc.GenerateIndexMaintenanceScriptAsync(_selectedServer, _fragThreshold);
+            AuditLog.LogConfigurationChange("MaintenanceScript", "GenerateIndex",
+                $"Server={_selectedServer} Threshold={_fragThreshold}%");
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Index script generation failed: {ex.Message}";
+        }
+        finally
+        {
+            _busyIndex = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task GenerateStatsScript()
+    {
+        _errorMessage = null;
+        _busyStats = true;
+        _statsScript = null;
+        StateHasChanged();
+        try
+        {
+            _statsScript = await MaintenanceSvc.GenerateStatisticsUpdateScriptAsync(_selectedServer);
+            AuditLog.LogConfigurationChange("MaintenanceScript", "GenerateStats",
+                $"Server={_selectedServer}");
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Statistics script generation failed: {ex.Message}";
+        }
+        finally
+        {
+            _busyStats = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task GenerateCheckDbScript()
+    {
+        _errorMessage = null;
+        _busyCheckDb = true;
+        _checkDbScript = null;
+        StateHasChanged();
+        try
+        {
+            _checkDbScript = await MaintenanceSvc.GenerateCheckDbScriptAsync(_selectedServer);
+            AuditLog.LogConfigurationChange("MaintenanceScript", "GenerateCheckDb",
+                $"Server={_selectedServer}");
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"CHECKDB script generation failed: {ex.Message}";
+        }
+        finally
+        {
+            _busyCheckDb = false;
+            StateHasChanged();
+        }
+    }
+
+    // ── Export all ───────────────────────────────────────────────────────────
+    private async Task ExportAll()
+    {
+        var parts = new List<string>();
+        if (_indexScript is not null)
+        {
+            parts.Add("-- ============================================================");
+            parts.Add("-- SECTION 1: Index Maintenance");
+            parts.Add("-- ============================================================");
+            parts.Add(_indexScript.SqlScript);
+        }
+        if (_statsScript is not null)
+        {
+            parts.Add("-- ============================================================");
+            parts.Add("-- SECTION 2: Update Statistics");
+            parts.Add("-- ============================================================");
+            parts.Add(_statsScript.SqlScript);
+        }
+        if (_checkDbScript is not null)
+        {
+            parts.Add("-- ============================================================");
+            parts.Add("-- SECTION 3: DBCC CHECKDB");
+            parts.Add("-- ============================================================");
+            parts.Add(_checkDbScript.SqlScript);
+        }
+
+        var bundle = string.Join(Environment.NewLine, parts);
+        var fileName = $"maintenance_{_selectedServer.Replace('\\', '_')}_{DateTime.UtcNow:yyyyMMdd_HHmm}.sql";
+
+        AuditLog.LogConfigurationChange("MaintenanceScript", "ExportAll",
+            $"Server={_selectedServer} File={fileName}");
+
+        await JS.InvokeVoidAsync("downloadFile", fileName, bundle, "text/plain;charset=utf-8");
+    }
+
+    // ── Copy to clipboard ────────────────────────────────────────────────────
+    private async Task CopyToClipboard(string text, string key)
+    {
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+        _copyState = key;
+        StateHasChanged();
+        await Task.Delay(2000);
+        _copyState = null;
+        StateHasChanged();
+    }
+}

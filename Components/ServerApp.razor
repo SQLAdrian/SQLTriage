@@ -1,0 +1,43 @@
+@* Server-mode root component — equivalent of wwwroot/index.html for Blazor Server *@
+@using Microsoft.AspNetCore.Components.Web
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SQLTriage — Compliance Platform</title>
+    <base href="/" />
+    <link rel="icon" type="image/x-icon" href="favicon.ico" />
+    <link href="css/app.css" rel="stylesheet" />
+    <link href="css/qp.css" rel="stylesheet" />
+    <link href="css/qp_icons_v2.css" rel="stylesheet" />
+    <link href="fontawesome/css/all.min.css" rel="stylesheet" />
+    <link href="_content/Radzen.Blazor/css/dark-base.css" rel="stylesheet" />
+    <HeadOutlet @rendermode="RenderMode.InteractiveServer" />
+</head>
+<body>
+    <div id="app">
+        <SQLTriage.Components.Layout.MainLayout @rendermode="RenderMode.InteractiveServer" />
+    </div>
+
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="" class="reload">Reload</a>
+        <a class="dismiss">Dismiss</a>
+    </div>
+
+    <script src="_framework/blazor.web.js"></script>
+    <script src="_content/Radzen.Blazor/Radzen.Blazor.js"></script>
+    <script src="scripts/error-handler.js"></script>
+    <script src="scripts/download.js"></script>
+    <script src="scripts/qp.js"></script>
+    <script src="scripts/queryPlan.js"></script>
+    <script src="scripts/queryPlanV2.js"></script>
+    <script src="scripts/environmentView.js"></script>
+    <script src="scripts/bubbleDrag.js"></script>
+    <script src="scripts/themes.js"></script>
+    <script src="scripts/codeHotspots.js"></script>
+    <script src="scripts/ambientBg.js"></script>
+    <script src="scripts/parallaxBg.js"></script>
+</body>
+</html>

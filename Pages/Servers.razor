@@ -1,0 +1,1111 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/servers"
+<PageTitle>SQLTriage - Server Management</PageTitle>
+@inject ServerConnectionManager ConnectionManager
+@inject SQLTriage.Data.Services.IServerContextService ServerContext
+@inject SQLTriage.Data.Services.AppUserState UserState
+@inject SQLTriage.Data.Services.BuildCatalogueService BuildCatalogue
+@inject SQLTriage.Data.Services.LicensingEstimator LicensingEstimator
+@inject AuditLogService AuditLog
+@inject SQLTriage.Data.Services.ExecutiveHealthService HealthService
+@inject NavigationManager Navigation
+@using Microsoft.Data.SqlClient
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+
+@if (!RbacService.HasPermission(UserState.Role, "manage_servers"))
+{
+    <div style="padding: 32px;">
+        <AccessDenied RequiredRole="Admin" Message="Server management is restricted to Admin users." />
+    </div>
+}
+else
+{
+
+<div class="servers-page">
+    <h2>Server Management</h2>
+
+    @{
+        var totalServers   = Connections.Count;
+        var connectedCount = Connections.Count(c => c.IsConnected);
+    }
+    <div class="servers-hero">
+        <div class="servers-hero-stat">
+            <span class="hero-number">@totalServers</span>
+            <span class="hero-number-unit">@(totalServers == 1 ? "Server" : "Servers")</span>
+        </div>
+        <div class="servers-hero-stat servers-hero-stat--sub">
+            <span class="hero-number" style="font-size:32px;color:var(--green);">@connectedCount</span>
+            <span class="hero-number-unit">Connected</span>
+        </div>
+        @if (totalServers - connectedCount > 0)
+        {
+            <div class="servers-hero-stat servers-hero-stat--sub">
+                <span class="hero-number" style="font-size:32px;color:var(--red);">@(totalServers - connectedCount)</span>
+                <span class="hero-number-unit">Offline</span>
+            </div>
+        }
+    </div>
+
+    <div class="servers-toolbar">
+        <button class="btn btn-primary" @onclick="ShowAddDialog"><i class="fa-solid fa-plus"></i> Add Server</button>
+        <button class="btn btn-secondary" @onclick="RefreshAllConnections"><i class="fa-solid fa-rotate"></i> Refresh All</button>
+        <button class="btn btn-danger" @onclick="DeleteAllDisconnected"><i class="fa-solid fa-trash"></i> Delete Disconnected</button>
+    </div>
+
+    @if (_allTags.Count > 0 || _allEnvironments.Count > 0)
+    {
+        <div class="servers-filter-bar">
+            @if (_allEnvironments.Count > 0)
+            {
+                <div class="filter-group">
+                    <span class="filter-label">Environment:</span>
+                    <button class="filter-chip @(_filterEnvironment == null ? "active" : "")" @onclick="@(() => { _filterEnvironment = null; })">All</button>
+                    @foreach (var env in _allEnvironments)
+                    {
+                        <button class="filter-chip @(_filterEnvironment == env ? "active" : "")" @onclick="@(() => { _filterEnvironment = _filterEnvironment == env ? null : env; })">@env</button>
+                    }
+                </div>
+            }
+            @if (_allTags.Count > 0)
+            {
+                <div class="filter-group">
+                    <span class="filter-label">Tag:</span>
+                    <button class="filter-chip @(_filterTag == null ? "active" : "")" @onclick="@(() => { _filterTag = null; })">All</button>
+                    @foreach (var tag in _allTags)
+                    {
+                        <button class="filter-chip @(_filterTag == tag ? "active" : "")" @onclick="@(() => { _filterTag = _filterTag == tag ? null : tag; })">@tag</button>
+                    }
+                </div>
+            }
+        </div>
+    }
+
+    @if (StatusMessage != null)
+    {
+        <div class="status-message @(IsSuccess ? "success" : "error")" role="status">
+            @StatusMessage
+        </div>
+    }
+
+    <div class="servers-grid" style="display: flex; flex-direction: column; gap: 12px;">
+        @foreach (var conn in _pagedConnections)
+        {
+            <div class="server-card-row card-glass @(conn.IsConnected ? "connected" : "disconnected")" style="padding: 16px; border-radius: 8px; display: grid; grid-template-columns: 2fr 1fr 1.5fr 100px; align-items: center; gap: 16px;">
+                <div class="sr-identity" style="display:flex; flex-direction:column; gap:6px;">
+                    <div style="font-size: 16px; font-weight: 700; display:flex; align-items:center; gap:8px;">
+                        @if (conn.SuccessfulServers != null && conn.SuccessfulServers.Count > 0)
+                        {
+                            var serverCount = conn.GetServerCount();
+                            if (conn.SuccessfulServers.Count == serverCount)
+                            {
+                                <i class="fa-solid fa-circle" style="color:var(--green); font-size:12px;"></i>
+                            }
+                            else
+                            {
+                                <i class="fa-solid fa-circle-half-stroke" style="color:var(--orange); font-size:12px;"></i>
+                            }
+                        }
+                        else
+                        {
+                            <i class="fa-solid fa-circle-xmark" style="color:var(--red); font-size:12px;"></i>
+                        }
+                        @conn.ServerNames
+                    </div>
+                    <div style="display:flex; gap:8px; font-size:12px; color:var(--text-secondary);">
+                        <span><i class="fa-solid fa-database"></i> @conn.Database</span>
+                        @if (!string.IsNullOrEmpty(conn.Environment))
+                        {
+                            <span class="env-badge env-@(conn.Environment?.ToLower())">@conn.Environment</span>
+                        }
+                        @if (conn.Tags != null && conn.Tags.Count > 0)
+                        {
+                            <span style="display:flex; gap:4px;">
+                                @foreach(var t in conn.Tags) { <span class="tag-pill" style="padding:2px 6px; font-size:10px;">@t</span> }
+                            </span>
+                        }
+                    </div>
+                </div>
+
+                <div class="sr-health">
+                    @if (conn.IsConnected && conn.SuccessfulServers?.Count > 0)
+                    {
+                        var srv = conn.SuccessfulServers.First();
+                        if (_serverScores.TryGetValue(srv, out var score))
+                        {
+                            var color = score.Score >= 80 ? "var(--green)" : score.Score >= 60 ? "var(--orange)" : "var(--red)";
+                            <div style="display:flex; flex-direction:column; align-items:center;">
+                                <div style="font-size:20px; font-weight:800; color:@color; text-shadow: 0 0 8px @(color)40;">@score.Score.ToString("F0")</div>
+                                <div style="font-size:10px; text-transform:uppercase; color:var(--text-secondary);">Health</div>
+                            </div>
+                        }
+                    }
+                </div>
+
+                <div class="sr-patching" style="font-size:12px;">
+                    @if (BuildCatalogue.IsAvailable && conn.SuccessfulServers?.Count > 0)
+                    {
+                        var srvName = conn.SuccessfulServers.First();
+                        if (_buildStatusByServer.TryGetValue(srvName, out var bs) && bs != null)
+                        {
+                            var statusClass = bs.LifecycleStatus.ToString().ToLowerInvariant();
+                            <div class="server-build-row @statusClass" @onclick="() => ShowPatchesModal(srvName, bs)" style="cursor:pointer; margin:0; padding:8px;" title="Click for missed-patch detail">
+                                <span class="server-build-version">SQL @bs.MajorVersion</span>
+                                <span class="server-build-patches">
+                                    @if (bs.PatchesBehind == 0)
+                                    {
+                                        <i class="fa-solid fa-check"></i> <text>Current</text>
+                                    }
+                                    else
+                                    {
+                                        <text>@bs.PatchesBehind CUs behind</text>
+                                    }
+                                </span>
+                            </div>
+                        }
+                        else
+                        {
+                            <div style="color:var(--text-muted);"><i class="fa-solid fa-spinner fa-spin"></i> Probing...</div>
+                        }
+                    }
+                </div>
+
+                <div class="server-actions" style="justify-self: end;">
+                    @if (conn.SuccessfulServers?.Count > 0)
+                    {
+                        var baselineSrv = conn.SuccessfulServers.First();
+                        <button class="btn-icon" @onclick="() => GoToBaseline(baselineSrv)" title="Progress since baseline"><i class="fa-solid fa-flag-checkered"></i></button>
+                    }
+                    <button class="btn-icon" @onclick="() => TestConnection(conn)" title="Test"><i class="fa-solid fa-link"></i></button>
+                    <button class="btn-icon" @onclick="() => EditConnection(conn)" title="Edit"><i class="fa-solid fa-pen"></i></button>
+                    <button class="btn-icon" @onclick="() => DeleteConnection(conn)" title="Delete"><i class="fa-solid fa-trash"></i></button>
+                </div>
+            </div>
+        }
+
+        @if (FilteredConnections.Any())
+        {
+            <div class="servers-pagination" style="display:flex; justify-content:center; gap:8px; margin-top:16px;">
+                <button class="btn btn-secondary" disabled="@(_currentPage == 1)" @onclick="() => _currentPage--">Previous</button>
+                <span style="align-self:center; color:var(--text-secondary); font-size:14px;">Page @_currentPage of @_totalPages</span>
+                <button class="btn btn-secondary" disabled="@(_currentPage == _totalPages)" @onclick="() => _currentPage++">Next</button>
+            </div>
+        }
+
+        @if (Connections.Count == 0)
+        {
+            <div class="empty-state">
+                <p>No servers configured. Click "Add Server" to add your first server.</p>
+                <button class="btn btn-primary" @onclick="ShowAddDialog"><i class="fa-solid fa-plus"></i> Add Your First Server</button>
+            </div>
+        }
+    </div>
+
+    <!-- Add/Edit Dialog -->
+    @if (ShowDialog)
+    {
+        <div class="dialog-overlay" @onclick="CloseDialog">
+            <div class="dialog-content" @onclick:stopPropagation="true">
+                <h3>@(IsEditing ? "Edit Server" : "Add Server")</h3>
+                
+                <div class="form-group">
+                    <label>Server Name(s)</label>
+                    <textarea @bind="EditingConnection.ServerNames" rows="4" placeholder="Enter server names, one per line (each line becomes a separate connection)"></textarea>
+                    <small>Enter one server per line. Each line will create a separate connection entry.</small>
+                </div>
+
+                <div class="form-group">
+                    <label>Database</label>
+                    <input type="text" @bind="EditingConnection.Database" placeholder="master" />
+                    <small>Use 'master' for quick checks, 'SQLWATCH' for dashboards (if SQLWATCH is installed)</small>
+                </div>
+
+                <div class="form-group">
+                    <label>Authentication</label>
+                    <div class="auth-options">
+                        <label class="auth-option">
+                            <input type="radio" name="authType" value="@AuthenticationTypes.Windows"
+                                   checked="@(EditingAuthType == AuthenticationTypes.Windows)"
+                                   @onchange="@(() => SetAuthType(AuthenticationTypes.Windows))" />
+                            Windows Authentication
+                        </label>
+                        <label class="auth-option">
+                            <input type="radio" name="authType" value="@AuthenticationTypes.SqlServer"
+                                   checked="@(EditingAuthType == AuthenticationTypes.SqlServer)"
+                                   @onchange="@(() => SetAuthType(AuthenticationTypes.SqlServer))" />
+                            SQL Server Authentication
+                        </label>
+                        <label class="auth-option">
+                            <input type="radio" name="authType" value="@AuthenticationTypes.EntraMFA"
+                                   checked="@(EditingAuthType == AuthenticationTypes.EntraMFA)"
+                                   @onchange="@(() => SetAuthType(AuthenticationTypes.EntraMFA))" />
+                            Microsoft Entra MFA
+                        </label>
+                    </div>
+                </div>
+
+                @if (EditingAuthType == AuthenticationTypes.SqlServer)
+                {
+                    <div class="form-group">
+                        <label>Username</label>
+                        <input type="text" @bind="EditingConnection.Username" />
+                    </div>
+
+                    <div class="form-group">
+                        <label>Password</label>
+                        <input type="password" @bind="EditingPassword" />
+                    </div>
+                }
+                else if (EditingAuthType == AuthenticationTypes.EntraMFA)
+                {
+                    <div class="form-group">
+                        <label>Email / Username (optional)</label>
+                        <input type="text" @bind="EditingConnection.Username" placeholder="user@domain.com" />
+                        <small>Pre-fills the login hint. Leave blank to be prompted.</small>
+                    </div>
+                    <div class="form-group mfa-info">
+                        <small><i class="fa-solid fa-lock"></i> A browser window will open for interactive MFA authentication when you connect.</small>
+                    </div>
+                }
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" @bind="EditingConnection.TrustServerCertificate" />
+                        Trust Server Certificate
+                    </label>
+                </div>
+
+                <div class="form-group">
+                    <label>Connection Timeout (seconds)</label>
+                    <input type="number" @bind="EditingConnection.ConnectionTimeout" min="1" max="60" />
+                </div>
+
+                <div class="form-group">
+                    <label>Environment</label>
+                    <select @bind="EditingConnection.Environment">
+                        <option value="">— None —</option>
+                        <option value="Production">Production</option>
+                        <option value="Staging">Staging</option>
+                        <option value="Development">Development</option>
+                        <option value="Test">Test</option>
+                        <option value="QA">QA</option>
+                        <option value="DR">DR</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Tags</label>
+                    <input type="text" @bind="_editingTagsText" placeholder="e.g. finance, critical, east-us (comma-separated)" />
+                    <small>Comma-separated tags for grouping and filtering servers</small>
+                </div>
+
+                <div class="dialog-actions">
+                    <button class="btn btn-secondary" @onclick="CloseDialog">Cancel</button>
+                    <button class="btn btn-primary" @onclick="SaveConnection">Save</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Delete Confirmation Dialog -->
+    @if (ShowDeleteConfirm)
+    {
+        <div class="dialog-overlay" @onclick="CancelDelete">
+            <div class="dialog-content" @onclick:stopPropagation="true">
+                <h3>Confirm Delete</h3>
+                <p>Are you sure you want to delete the server connection for:</p>
+                <p><strong>@ConnectionToDelete?.ServerNames</strong></p>
+                <div class="dialog-actions">
+                    <button class="btn btn-secondary" @onclick="CancelDelete">Cancel</button>
+                    <button class="btn btn-danger" @onclick="ConfirmDelete">Delete</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (_showPatchesModal && _modalStatus != null)
+    {
+        <div class="dialog-overlay" @onclick="ClosePatchesModal">
+            <div class="dialog-content" @onclick:stopPropagation="true" style="max-width:680px;">
+                <h3><i class="fa-solid fa-shield-halved"></i> Patch &amp; lifecycle &mdash; @_modalServerName</h3>
+
+                <div class="patches-modal-summary">
+                    <div class="patches-modal-row">
+                        <span class="patches-modal-label">Installed:</span>
+                        <span><strong>@_modalStatus.InstalledBuild</strong> @(_modalStatus.InstalledLabel ?? "") (@_modalStatus.InstalledReleaseDate?.ToString("yyyy-MM-dd"))</span>
+                    </div>
+                    <div class="patches-modal-row">
+                        <span class="patches-modal-label">Latest:</span>
+                        <span><strong>@_modalStatus.LatestBuild</strong> (@_modalStatus.LatestReleaseDate?.ToString("yyyy-MM-dd"))</span>
+                    </div>
+                    <div class="patches-modal-row">
+                        <span class="patches-modal-label">Behind by:</span>
+                        <span>@_modalStatus.PatchesBehind CUs · @_modalStatus.DaysBehind days · approx @_modalStatus.AgeYears years old</span>
+                    </div>
+                    <div class="patches-modal-row">
+                        <span class="patches-modal-label">Support status:</span>
+                        <span class="patches-modal-lifecycle patches-modal-lifecycle-@_modalStatus.LifecycleStatus.ToString().ToLowerInvariant()">@_modalStatus.LifecycleLabel</span>
+                    </div>
+                    @if (_modalStatus.MainstreamSupportEnds.HasValue)
+                    {
+                        <div class="patches-modal-row">
+                            <span class="patches-modal-label">Mainstream ends:</span>
+                            <span>@_modalStatus.MainstreamSupportEnds.Value.ToString("yyyy-MM-dd")</span>
+                        </div>
+                    }
+                    @if (_modalStatus.ExtendedSupportEnds.HasValue)
+                    {
+                        <div class="patches-modal-row">
+                            <span class="patches-modal-label">Extended ends:</span>
+                            <span>@_modalStatus.ExtendedSupportEnds.Value.ToString("yyyy-MM-dd")</span>
+                        </div>
+                    }
+                </div>
+
+                <h4 style="margin-top:18px;">Risk story</h4>
+                <p style="color:var(--text-secondary);font-size:13px;line-height:1.55;">
+                    @PatchRiskStory(_modalStatus)
+                </p>
+
+                @if (_modalStatus.MissedPatchesSample.Count > 0)
+                {
+                    <h4 style="margin-top:18px;">Sample of missed CUs</h4>
+                    <div class="patches-modal-list">
+                        @foreach (var p in _modalStatus.MissedPatchesSample)
+                        {
+                            <div class="patches-modal-patch">
+                                <span class="patches-modal-patch-build">@p.Build</span>
+                                <span class="patches-modal-patch-label">@p.Label</span>
+                                <span class="patches-modal-patch-date">@p.ReleaseDate?.ToString("yyyy-MM-dd")</span>
+                                @if (!string.IsNullOrEmpty(p.Kb))
+                                {
+                                    <span class="patches-modal-patch-kb">@p.Kb</span>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+
+                <div class="dialog-actions" style="margin-top:18px;">
+                    <button class="btn btn-secondary" @onclick="ClosePatchesModal">Close</button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+} @* end RBAC else *@
+
+@code {
+    private List<ServerConnection> Connections = new();
+    private Dictionary<string, ExecutiveHealthScore> _serverScores = new(StringComparer.OrdinalIgnoreCase);
+    private int _currentPage = 1;
+    private int _pageSize = 15;
+    private int _totalPages => Math.Max(1, (int)Math.Ceiling(FilteredConnections.Count() / (double)_pageSize));
+    private IEnumerable<ServerConnection> _pagedConnections => FilteredConnections.Skip((_currentPage - 1) * _pageSize).Take(_pageSize);
+    private Dictionary<string, bool> SqlWatchStatus = new();
+    private Dictionary<string, bool> PerformanceMonitorStatus = new();
+    private Dictionary<string, BuildStatus?> _buildStatusByServer = new(StringComparer.OrdinalIgnoreCase);
+    private bool _showPatchesModal;
+    private BuildStatus? _modalStatus;
+    private string? _modalServerName;
+    private string? StatusMessage;
+    private bool IsSuccess;
+    private bool ShowDialog;
+    private bool IsEditing;
+    private bool ShowDeleteConfirm;
+    private ServerConnection? ConnectionToDelete;
+    private ServerConnection EditingConnection = new();
+    private string EditingAuthType = AuthenticationTypes.Windows;
+    private string EditingPassword = "";
+    private string _editingTagsText = "";
+    private bool _isTestingAll = false;
+    private string[] Instances = Array.Empty<string>();
+
+    // Filtering
+    private string? _filterEnvironment;
+    private string? _filterTag;
+    private HashSet<string> _allTags = new();
+    private HashSet<string> _allEnvironments = new();
+
+    private IEnumerable<ServerConnection> FilteredConnections => Connections.Where(c =>
+        (_filterEnvironment == null || string.Equals(c.Environment, _filterEnvironment, StringComparison.OrdinalIgnoreCase)) &&
+        (_filterTag == null || (c.Tags != null && c.Tags.Contains(_filterTag, StringComparer.OrdinalIgnoreCase))));
+
+    private void SetAuthType(string authType)
+    {
+        EditingAuthType = authType;
+        StateHasChanged();
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        LoadConnections();
+        _serverScores = await HealthService.GetAllHealthScoresAsync();
+    }
+
+    private void ShowPatchesModal(string serverName, BuildStatus status)
+    {
+        _showPatchesModal = true;
+        _modalStatus = status;
+        _modalServerName = serverName;
+    }
+
+    private void ClosePatchesModal()
+    {
+        _showPatchesModal = false;
+        _modalStatus = null;
+        _modalServerName = null;
+    }
+
+    private async Task ProbeServerBuildAsync(string serverName)
+    {
+        if (_buildStatusByServer.ContainsKey(serverName)) return;
+        try
+        {
+            var facts = await LicensingEstimator.ProbeServerAsync(serverName);
+            if (facts == null || string.IsNullOrEmpty(facts.ProductVersion))
+            {
+                _buildStatusByServer[serverName] = null;
+                return;
+            }
+            _buildStatusByServer[serverName] = BuildCatalogue.Lookup(facts.ProductVersion);
+        }
+        catch
+        {
+            _buildStatusByServer[serverName] = null;
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static string PatchRiskStory(BuildStatus s)
+    {
+        var parts = new List<string>();
+        if (s.LifecycleStatus == LifecycleStatusKind.OutOfSupport)
+            parts.Add("Out of Microsoft support entirely — no security patches, no fixes, no escalation path with Microsoft.");
+        else if (s.LifecycleStatus == LifecycleStatusKind.ExtendedSupportOnly)
+            parts.Add("In Extended Support only — security patches still issued, but no feature work or design changes.");
+        else if (s.LifecycleStatus == LifecycleStatusKind.MainstreamEndingSoon)
+            parts.Add("Mainstream support ends within 12 months.");
+
+        if (s.PatchesBehind > 0)
+            parts.Add($"Missing {s.PatchesBehind} cumulative updates, including potentially security and performance fixes released over the last {s.DaysBehind} days.");
+        if (s.AgeYears is > 5)
+            parts.Add($"The installed version is approximately {s.AgeYears} years old.");
+
+        if (parts.Count == 0)
+            return "Build is current. Continue scheduled patching cadence.";
+
+        return string.Join(" ", parts);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Auto-open dialog if no servers exist
+            if (Connections.Count == 0)
+            {
+                await ShowAddDialog();
+                StateHasChanged();
+            }
+            else if (!_isTestingAll)
+            {
+                _isTestingAll = true;
+                await TestAllConnectionsSilently();
+
+                // After connection tests resolve, probe each successful server for build status
+                if (BuildCatalogue.IsAvailable)
+                {
+                    foreach (var conn in Connections)
+                    {
+                        foreach (var srv in conn.SuccessfulServers)
+                        {
+                            _ = ProbeServerBuildAsync(srv);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private void LoadConnections()
+    {
+        Connections = ConnectionManager.GetConnections();
+        RebuildFilterOptions();
+
+    }
+
+    private void RebuildFilterOptions()
+    {
+        _allTags = Connections.Where(c => c.Tags != null).SelectMany(c => c.Tags).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(t => t).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        _allEnvironments = Connections.Where(c => !string.IsNullOrEmpty(c.Environment)).Select(c => c.Environment!).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(e => e).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private async Task ShowAddDialog()
+    {
+        // Pre-fill Server Name(s) with locally discovered SQL instances
+        // when no servers are configured yet — saves a manual lookup for
+        // the first-add case. Honest-UX: best-effort discovery; user
+        // edits the list before Save. Registry returns instantly;
+        // SqlDataSourceEnumerator (network broadcast) is capped at 2 s
+        // so the dialog opens within ~2 s instead of the old 45 s.
+        var prefilledNames = string.Empty;
+        if (Connections.Count == 0 && OperatingSystem.IsWindows())
+        {
+            try
+            {
+                // Registry returns immediately; SqlDataSourceEnumerator (network
+                // broadcast) is capped at 2 s. On timeout we still get the registry list.
+                var locals = await SQLTriage.Data.Services.LocalSqlInstanceDiscoverer
+                    .DiscoverLocalAsync(TimeSpan.FromSeconds(2));
+                if (locals.Count > 0) prefilledNames = string.Join("\n", locals);
+            }
+            catch { /* swallow — UX defaulting only */ }
+        }
+
+        EditingConnection = new ServerConnection
+        {
+            ServerNames = prefilledNames,
+            Database = "master",
+            UseWindowsAuthentication = true,
+            AuthenticationType = AuthenticationTypes.Windows,
+            TrustServerCertificate = true,
+            ConnectionTimeout = 15
+        };
+        EditingAuthType = AuthenticationTypes.Windows;
+        EditingPassword = "";
+        _editingTagsText = "";
+        IsEditing = false;
+        ShowDialog = true;
+    }
+
+    private void EditConnection(ServerConnection conn)
+    {
+        EditingConnection = new ServerConnection
+        {
+            Id = conn.Id,
+            ServerNames = conn.ServerNames,
+            Database = conn.Database,
+            UseWindowsAuthentication = conn.UseWindowsAuthentication,
+            AuthenticationType = conn.AuthenticationType,
+            Username = conn.Username,
+            TrustServerCertificate = conn.TrustServerCertificate,
+            ConnectionTimeout = conn.ConnectionTimeout,
+            IsConnected = conn.IsConnected,
+            IsEnabled = conn.IsEnabled,
+            Environment = conn.Environment,
+            Tags = new List<string>(conn.Tags),
+            SuccessfulServers = new List<string>(conn.SuccessfulServers),
+            LastConnected = conn.LastConnected
+        };
+        EditingAuthType = conn.EffectiveAuthType;
+        EditingPassword = "";
+        _editingTagsText = conn.Tags != null ? string.Join(", ", conn.Tags) : "";
+        IsEditing = true;
+        ShowDialog = true;
+    }
+
+    private void CloseDialog()
+    {
+        ShowDialog = false;
+    }
+
+    private async Task SaveConnection()
+    {
+        try
+        {
+            await Task.CompletedTask;
+            if (string.IsNullOrWhiteSpace(EditingConnection.ServerNames))
+            {
+                StatusMessage = "Server name is required";
+                IsSuccess = false;
+                return;
+            }
+
+            // Sync auth type from radio selection
+            EditingConnection.AuthenticationType = EditingAuthType;
+            EditingConnection.UseWindowsAuthentication = EditingAuthType == AuthenticationTypes.Windows;
+
+            // Parse tags from comma-separated text
+            EditingConnection.Tags = string.IsNullOrWhiteSpace(_editingTagsText)
+                ? new List<string>()
+                : _editingTagsText.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Where(t => !string.IsNullOrWhiteSpace(t))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+            // Set password if provided (SQL auth only)
+            if (!string.IsNullOrEmpty(EditingPassword))
+            {
+                EditingConnection.SetPassword(EditingPassword);
+            }
+
+            // Split server names by newline to create separate connections
+            var serverNames = EditingConnection.ServerNames
+                .Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(s => s.Trim())
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .ToList();
+
+            if (serverNames.Count == 0)
+            {
+                StatusMessage = "Server name is required";
+                IsSuccess = false;
+                return;
+            }
+
+            if (IsEditing)
+            {
+                // For edit, update as single connection — no duplicate check needed
+                var priorEnv = ConnectionManager.GetConnection(EditingConnection.Id)?.Environment;
+                EditingConnection.ServerNames = string.Join("\n", serverNames);
+                ConnectionManager.UpdateConnection(EditingConnection);
+
+                // Audit the environment change whenever it differs from the prior value
+                var newEnv = EditingConnection.Environment;
+                if (!string.Equals(priorEnv, newEnv, StringComparison.OrdinalIgnoreCase))
+                {
+                    AuditLog.LogConfigurationChange(
+                        "ServerConnection",
+                        "EnvironmentTagChanged",
+                        string.IsNullOrEmpty(priorEnv) ? "(none)" : priorEnv,
+                        string.IsNullOrEmpty(newEnv)   ? "(none)" : newEnv,
+                        System.Environment.UserName);
+                }
+
+                StatusMessage = "Server connection updated successfully";
+            }
+            else
+            {
+                // Get all existing server names to check for duplicates
+                var existingServerNames = Connections
+                    .SelectMany(c => c.GetServerList())
+                    .Select(s => s.ToLowerInvariant())
+                    .ToHashSet();
+
+                // Filter out servers that already exist
+                var newServerNames = serverNames
+                    .Where(s => !existingServerNames.Contains(s.ToLowerInvariant()))
+                    .ToList();
+
+                var skippedCount = serverNames.Count - newServerNames.Count;
+
+                if (newServerNames.Count == 0)
+                {
+                    StatusMessage = skippedCount > 0
+                        ? $"All {skippedCount} server(s) already exist - nothing to add"
+                        : "Server name is required";
+                    IsSuccess = skippedCount > 0;
+                    return;
+                }
+
+                // For new, create separate connection for each server name on separate line
+                var addedConnections = new List<ServerConnection>();
+
+                if (newServerNames.Count == 1)
+                {
+                    // Single server - create one connection
+                    EditingConnection.ServerNames = newServerNames[0];
+                    ConnectionManager.AddConnection(EditingConnection);
+                    addedConnections.Add(EditingConnection);
+                    StatusMessage = skippedCount > 0
+                        ? $"Added 1 server ({skippedCount} skipped - already exists)"
+                        : "Server connection added successfully";
+                }
+                else
+                {
+                    // Multiple servers on separate lines - create separate connections
+                    foreach (var serverName in newServerNames)
+                    {
+                        var newConn = new ServerConnection
+                        {
+                            ServerNames = serverName,
+                            Database = EditingConnection.Database,
+                            AuthenticationType = EditingConnection.AuthenticationType,
+                            UseWindowsAuthentication = EditingConnection.UseWindowsAuthentication,
+                            Username = EditingConnection.Username,
+                            Password = EditingConnection.Password,
+                            TrustServerCertificate = EditingConnection.TrustServerCertificate,
+                            ConnectionTimeout = EditingConnection.ConnectionTimeout,
+                            IsEnabled = EditingConnection.IsEnabled,
+                            Environment = EditingConnection.Environment,
+                            Tags = new List<string>(EditingConnection.Tags ?? new List<string>())
+                        };
+                        ConnectionManager.AddConnection(newConn);
+                        addedConnections.Add(newConn);
+                    }
+                    StatusMessage = skippedCount > 0
+                        ? $"Added {newServerNames.Count} servers ({skippedCount} skipped - already exist)"
+                        : $"Added {newServerNames.Count} server connections";
+                }
+
+                IsSuccess = true;
+                // On first add (nothing selected yet), make the new connection the
+                // current server so the top-bar "Connected to:" reflects it immediately
+                // instead of waiting for the next re-init / showing a transient (None).
+                if (addedConnections.Count > 0 && string.IsNullOrEmpty(ServerContext.CurrentServerId))
+                    await ServerContext.SetServerAsync(addedConnections[0].Id);
+                LoadConnections();
+                CloseDialog();
+
+                // Auto-test every newly added connection
+                foreach (var conn in addedConnections)
+                    await TestConnection(conn);
+
+                return;
+            }
+
+            IsSuccess = true;
+            LoadConnections();
+            CloseDialog();
+
+            // Edit path — test the updated connection
+            if (IsEditing)
+            {
+                await TestConnection(EditingConnection);
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Error saving connection: {ex.Message}";
+            IsSuccess = false;
+        }
+    }
+
+    private void DeleteConnection(ServerConnection conn)
+    {
+        ConnectionToDelete = conn;
+        ShowDeleteConfirm = true;
+    }
+
+    private void CancelDelete()
+    {
+        ShowDeleteConfirm = false;
+        ConnectionToDelete = null;
+    }
+
+    private void ConfirmDelete()
+    {
+        if (ConnectionToDelete != null)
+        {
+            ConnectionManager.RemoveConnection(ConnectionToDelete.Id);
+            StatusMessage = "Server connection deleted";
+            IsSuccess = true;
+            LoadConnections();
+        }
+        ShowDeleteConfirm = false;
+        ConnectionToDelete = null;
+    }
+
+    private void GoToBaseline(string serverName)
+        => Navigation.NavigateTo($"/servers/baseline?server={Uri.EscapeDataString(serverName)}");
+
+    private async Task TestConnection(ServerConnection conn)
+    {
+        var isMfa = conn.EffectiveAuthType == AuthenticationTypes.EntraMFA;
+
+        StatusMessage = isMfa
+            ? "Testing connection — please complete authentication in the browser popup..."
+            : "Testing connection...";
+        IsSuccess = false;
+        StateHasChanged();
+
+        try
+        {
+            // Serialise MFA attempts so only one browser popup appears at a time
+            if (isMfa) await MfaAuthenticationHelper.MfaAuthLock.WaitAsync();
+
+            try
+            {
+                var serverList = conn.GetServerList();
+                var successfulServers = new List<string>();
+
+                foreach (var serverName in serverList)
+                {
+                    // Use master database for connection test to allow testing before SQLWATCH is deployed
+                    var connectionString = conn.GetConnectionString(serverName, "master");
+                    using var connection = new SqlConnection(connectionString);
+                    await connection.OpenAsync();
+                    successfulServers.Add(serverName);
+                }
+
+                ConnectionManager.UpdateSuccessfulServers(conn.Id, successfulServers);
+                await CheckSqlWatchDatabase(conn);
+                await CheckPerformanceMonitorDatabase(conn);
+                LoadConnections();
+
+                StatusMessage = successfulServers.Count == serverList.Count
+                    ? "Successfully connected"
+                    : $"Connected to {successfulServers.Count} of {serverList.Count} servers";
+                IsSuccess = true;
+            }
+            finally
+            {
+                if (isMfa) MfaAuthenticationHelper.MfaAuthLock.Release();
+            }
+        }
+        catch (Exception ex)
+        {
+            if (isMfa && MfaAuthenticationHelper.IsMfaCancelledException(ex))
+            {
+                StatusMessage = "MFA authentication was cancelled.";
+            }
+            else
+            {
+                StatusMessage = $"Connection failed: {ex.Message}";
+                if (ex.Message.Contains("Integrated authentication only", StringComparison.OrdinalIgnoreCase))
+                {
+                    StatusMessage += "\n\nThe SQL Server instance is configured for Windows Authentication only. " +
+                        "To use SQL Authentication, enable Mixed Mode in SQL Server Management Studio: " +
+                        "Server Properties > Security > Server Authentication > SQL Server and Windows Authentication mode, then restart the SQL Server service.";
+                }
+            }
+            IsSuccess = false;
+            ConnectionManager.UpdateSuccessfulServers(conn.Id, new List<string>());
+            LoadConnections();
+        }
+    }
+
+
+    /// <summary>
+    /// Tests all connections silently on page load without showing status messages.
+    /// Only non-MFA connections are tested automatically to avoid unexpected browser popups.
+    /// </summary>
+    private async Task TestAllConnectionsSilently()
+    {
+        var connsToTest = Connections
+            .Where(c => c.IsEnabled && c.EffectiveAuthType != AuthenticationTypes.EntraMFA)
+            .ToList();
+
+        foreach (var conn in connsToTest)
+        {
+            try
+            {
+                var serverList = conn.GetServerList();
+                var successfulServers = new List<string>();
+
+                foreach (var serverName in serverList)
+                {
+                    try
+                    {
+                        // Use master database for connection test to allow testing before SQLWATCH is deployed
+                        var connectionString = conn.GetConnectionString(serverName, "master");
+                        using var connection = new SqlConnection(connectionString);
+                        await connection.OpenAsync();
+                        successfulServers.Add(serverName);
+                    }
+                    catch
+                    {
+                        // Individual server failed — don't stop testing others
+                    }
+                }
+
+                ConnectionManager.UpdateSuccessfulServers(conn.Id, successfulServers);
+            }
+            catch
+            {
+                ConnectionManager.UpdateSuccessfulServers(conn.Id, new List<string>());
+            }
+        }
+
+        LoadConnections();
+        await CheckAllDatabaseStatuses();
+        await InvokeAsync(StateHasChanged);
+        _isTestingAll = false;
+    }
+
+    private async Task CheckSqlWatchDatabase(ServerConnection conn)
+    {
+        try
+        {
+            var serverList = conn.GetServerList();
+            foreach (var serverName in serverList)
+            {
+                // Always use master database for testing to avoid connection failures
+                // when SQLWATCH database doesn't exist yet
+                var connectionString = conn.GetConnectionString(serverName, "master");
+                using var connection = new SqlConnection(connectionString);
+                await connection.OpenAsync();
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = "SELECT COUNT(*) FROM sys.databases WHERE name = 'SQLWATCH'";
+                var result = (int)await cmd.ExecuteScalarAsync();
+                SqlWatchStatus[conn.Id] = result > 0;
+                break; // Check first server only
+            }
+        }
+        catch
+        {
+            SqlWatchStatus[conn.Id] = false;
+        }
+    }
+
+    private async Task RefreshAllConnections()
+    {
+        StatusMessage = "Refreshing all connections...";
+        var totalConnections = Connections.Count;
+        var successfulConnections = 0;
+        var totalServers = 0;
+        var successfulServers = 0;
+
+        // Build list of all server connections to test (connection object + server name)
+        var allServersToTest = new List<(ServerConnection conn, string serverName)>();
+        foreach (var conn in Connections)
+        {
+            var serverList = conn.GetServerList();
+            totalServers += serverList.Count;
+            foreach (var serverName in serverList)
+            {
+                allServersToTest.Add((conn, serverName));
+            }
+        }
+
+        // Process in batches of 10 servers in parallel
+        const int batchSize = 10;
+        const int refreshTimeout = 5; // 5 seconds timeout for refresh all
+        
+        for (int i = 0; i < allServersToTest.Count; i += batchSize)
+        {
+            var batch = allServersToTest.Skip(i).Take(batchSize).ToList();
+            var tasks = batch.Select(async item =>
+            {
+                var (conn, serverName) = item;
+                var successfulForThisConn = new List<string>();
+                var isMfa = conn.EffectiveAuthType == AuthenticationTypes.EntraMFA;
+                
+                try
+                {
+                    if (isMfa) await MfaAuthenticationHelper.MfaAuthLock.WaitAsync();
+                    
+                    try
+                    {
+                        // Use master database for connection test with 5-second timeout
+                        var connectionString = conn.GetConnectionString(serverName, "master");
+                        // Override timeout to 5 seconds for refresh all
+                        connectionString = connectionString.Replace("Connect Timeout=", "Connection Timeout=");
+                        if (!connectionString.Contains("Connection Timeout=") && !connectionString.Contains("Connect Timeout="))
+                        {
+                            connectionString += $";Connection Timeout={refreshTimeout}";
+                        }
+                        else
+                        {
+                            // Replace existing timeout with 5 seconds
+                            connectionString = System.Text.RegularExpressions.Regex.Replace(
+                                connectionString, 
+                                @"(Connection|Connect) Timeout=\d+", 
+                                $"Connection Timeout={refreshTimeout}");
+                        }
+                        
+                        using var connection = new SqlConnection(connectionString);
+                        await connection.OpenAsync();
+                        return (serverName, true);
+                    }
+                    finally
+                    {
+                        if (isMfa) MfaAuthenticationHelper.MfaAuthLock.Release();
+                    }
+                }
+                catch
+                {
+                    return (serverName, false);
+                }
+            });
+            
+            var results = await Task.WhenAll(tasks);
+            
+            // Group results by connection and update
+            var groupedByConn = results.GroupBy(r => batch.First(b => b.serverName == r.serverName).conn);
+            foreach (var group in groupedByConn)
+            {
+                var conn = group.Key;
+                var successfulForThisConn = group.Where(r => r.Item2).Select(r => r.serverName).ToList();
+                ConnectionManager.UpdateSuccessfulServers(conn.Id, successfulForThisConn);
+                
+                var serverList = conn.GetServerList();
+                if (successfulForThisConn.Count == serverList.Count)
+                {
+                    successfulConnections++;
+                }
+                successfulServers += successfulForThisConn.Count;
+            }
+            
+            // Update UI periodically
+            LoadConnections();
+            await InvokeAsync(StateHasChanged);
+        }
+
+        LoadConnections();
+
+        if (successfulConnections == totalConnections && successfulServers == totalServers)
+        {
+            StatusMessage = totalServers == 1
+                ? "Successfully connected"
+                : $"Successfully connected to all {totalServers} servers";
+            IsSuccess = true;
+        }
+        else if (successfulServers > 0)
+        {
+            StatusMessage = $"Connected to {successfulServers} of {totalServers} servers";
+            IsSuccess = true;
+        }
+        else
+        {
+            StatusMessage = "Failed to connect to any servers";
+            IsSuccess = false;
+        }
+    }
+
+    private async Task CheckPerformanceMonitorDatabase(ServerConnection conn)
+    {
+        try
+        {
+            var serverList = conn.GetServerList();
+            foreach (var serverName in serverList)
+            {
+                var connectionString = conn.GetConnectionString(serverName, "master");
+                using var connection = new SqlConnection(connectionString);
+                await connection.OpenAsync();
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = "SELECT COUNT(*) FROM sys.databases WHERE name = 'PerformanceMonitor'";
+                var result = (int)await cmd.ExecuteScalarAsync();
+                PerformanceMonitorStatus[conn.Id] = result > 0;
+                break; // Check first server only
+            }
+        }
+        catch
+        {
+            PerformanceMonitorStatus[conn.Id] = false;
+        }
+    }
+
+    private async Task CheckAllDatabaseStatuses()
+    {
+        foreach (var conn in Connections.Where(c => c.SuccessfulServers.Count > 0))
+        {
+            await CheckSqlWatchDatabase(conn);
+            await CheckPerformanceMonitorDatabase(conn);
+        }
+    }
+
+    private void DeleteAllDisconnected()
+    {
+        var disconnectedConnections = Connections.Where(c => !c.IsConnected).ToList();
+        
+        if (disconnectedConnections.Count == 0)
+        {
+            StatusMessage = "No disconnected servers to delete";
+            IsSuccess = true;
+            return;
+        }
+        
+        foreach (var conn in disconnectedConnections)
+        {
+            ConnectionManager.RemoveConnection(conn.Id);
+        }
+        
+        LoadConnections();
+        StatusMessage = $"Deleted {disconnectedConnections.Count} disconnected server(s)";
+        IsSuccess = true;
+    }
+}

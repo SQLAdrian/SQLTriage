@@ -1,0 +1,299 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->@using System.IO
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@inject IDbConnectionFactory ConnectionFactory
+@inject NavigationManager Navigation
+@inject AutoRefreshService AutoRefreshService
+@inject Microsoft.Extensions.Configuration.IConfiguration Configuration
+@inject UserSettingsService UserSettings
+@inject GlobalInstanceSelector InstanceSelector
+@inject ServerConnectionManager ConnectionManager
+@inject IServerContextService ServerContext
+@inject PrintService PrintSvc
+@inject ToastService Toast
+@inject IJSRuntime JSRuntime
+
+<PdfExportModal @ref="_pdfModal"
+    Title="Export Dashboard to PDF"
+    DefaultLandscape="true"
+    DefaultBackgrounds="true"
+    OnConfirm="OnPdfConfirmed" />
+
+<div class="toolbar">
+    <div class="toolbar-group">
+        <label class="toolbar-label">Refresh:</label>
+        <select class="toolbar-select" @onchange="OnRefreshIntervalChanged">
+            <option value="5" selected="@(RefreshIntervalSeconds == 5)">5 sec</option>
+            <option value="10" selected="@(RefreshIntervalSeconds == 10)">10 sec</option>
+            <option value="15" selected="@(RefreshIntervalSeconds == 15)">15 sec</option>
+            <option value="30" selected="@(RefreshIntervalSeconds == 30)">30 sec</option>
+            <option value="60" selected="@(RefreshIntervalSeconds == 60)">60 sec</option>
+        </select>
+    </div>
+
+    <div class="toolbar-group">
+        <label class="toolbar-label">Time Range:</label>
+        <select class="toolbar-select" @onchange="OnTimeRangeChanged">
+            <option value="5" selected="@(TimeRangeMinutes == 5)">Last 5 min</option>
+            <option value="15" selected="@(TimeRangeMinutes == 15)">Last 15 min</option>
+            <option value="60" selected="@(TimeRangeMinutes == 60)">Last 1 hour</option>
+            <option value="360" selected="@(TimeRangeMinutes == 360)">Last 6 hours</option>
+            <option value="1440" selected="@(TimeRangeMinutes == 1440)">Last 24 hours</option>
+            <option value="10080" selected="@(TimeRangeMinutes == 10080)">Last 7 days</option>
+        </select>
+    </div>
+
+
+   <!-- <div class="toolbar-group">
+        <label class="toolbar-label">Source:</label>
+        <select class="toolbar-select" @onchange="OnDataSourceChanged">
+            <option value="sqlwatch" selected=@(DataSource == "sqlwatch")>SQLWATCH</option>
+            <option value="pm" selected=@(DataSource == "pm")>Performance Monitor</option>
+        </select>
+    </div>
+     -->
+
+    <div class="toolbar-group">
+        <button class="toolbar-btn @(AutoRefresh ? "active" : "")" @onclick="ToggleAutoRefresh">
+            @if (AutoRefresh) { <i class="fa-solid fa-pause"></i> <text>Pause</text> } else { <i class="fa-solid fa-play"></i> <text>Auto-Refresh</text> }
+        </button>
+        <button class="toolbar-btn" @onclick="() => OnRefreshRequested.InvokeAsync()">
+            <i class="fa-solid fa-rotate"></i> Refresh
+        </button>
+        <button class="toolbar-btn @(_pdfExporting ? "active" : "")" @onclick="OpenPdfModal" disabled="@_pdfExporting" title="Export dashboard to PDF">
+            @if (_pdfExporting)
+            {
+                <i class="fa-solid fa-spinner fa-spin"></i>
+            }
+            else
+            {
+                <i class="fa-solid fa-file-pdf"></i>
+            }
+            @(_pdfExporting ? " Saving..." : " PDF")
+        </button>
+        <button class="toolbar-btn @(ShowBaseline ? "active" : "")" @onclick="() => OnBaselineToggled.InvokeAsync()"
+                title="Show baseline comparison (7 days ago)">
+            <i class="fa-solid fa-chart-line"></i> Baseline
+        </button>
+    </div>
+
+    @if (ServerConnections.Count > 1)
+    {
+        <div class="toolbar-group">
+            <label class="toolbar-label">Instance:</label>
+            <select class="toolbar-select" value="@SelectedServerId" @onchange="OnServerConnectionChanged">
+                @foreach (var conn in ServerConnections)
+                {
+                    <option value="@conn.Id">@conn.ServerNames.Split('\n', ',')[0].Trim()</option>
+                }
+            </select>
+        </div>
+    }
+
+    @if (IsLoading)
+    {
+        <div class="toolbar-loading">
+            <div class="toolbar-loading-track">
+                @if (TotalPanels > 0)
+                {
+                    <div class="toolbar-loading-fill" style="width: @(Math.Min(LoadedPanels * 100 / TotalPanels, 100))%"></div>
+                }
+                else
+                {
+                    <div class="toolbar-loading-fill indeterminate"></div>
+                }
+            </div>
+            <span class="toolbar-loading-label">
+                @if (TotalPanels > 0)
+                {
+                    @($"Loading {LoadedPanels}/{TotalPanels}")
+                }
+                else
+                {
+                    <span>Loading...</span>
+                }
+            </span>
+        </div>
+    }
+
+</div>
+
+@code {
+    [Parameter] public int TimeRangeMinutes { get; set; } = 60;
+    [Parameter] public EventCallback<int> TimeRangeMinutesChanged { get; set; }
+    [Parameter] public bool AutoRefresh { get; set; } = true;
+    [Parameter] public EventCallback<bool> AutoRefreshChanged { get; set; }
+    [Parameter] public EventCallback OnRefreshRequested { get; set; }
+    [Parameter] public EventCallback OnServerChanged { get; set; }
+    [Parameter] public string DataSource { get; set; } = "master";
+    [Parameter] public EventCallback<string> DataSourceChanged { get; set; }
+    [Parameter] public bool IsLoading { get; set; }
+    [Parameter] public int LoadedPanels { get; set; }
+    [Parameter] public int TotalPanels { get; set; }
+    [Parameter] public string DashboardName { get; set; } = "Dashboard";
+    [Parameter] public bool ShowBaseline { get; set; }
+    [Parameter] public EventCallback OnBaselineToggled { get; set; }
+
+    private PdfExportModal _pdfModal = default!;
+    private string ServerDisplayName = "SqlServer";
+    private bool _pdfExporting = false;
+    private int RefreshIntervalSeconds = 35;
+
+    // Server connection dropdown state
+    private List<ServerConnection> ServerConnections = new();
+    private string SelectedServerId = "";
+
+    protected override void OnInitialized()
+    {
+        // Extract server name for display without exposing the full connection string
+        if (ConnectionFactory is SqlServerConnectionFactory sqlFactory)
+        {
+            var serverName = sqlFactory.ServerName;
+            if (!string.IsNullOrEmpty(serverName))
+                ServerDisplayName = serverName;
+        }
+
+        // Load refresh interval from user settings and sync to the timer service
+        RefreshIntervalSeconds = UserSettings.GetRefreshInterval();
+        AutoRefreshService.SetInterval(RefreshIntervalSeconds);
+
+        // Load data source from user settings
+        DataSource = UserSettings.GetDataSource();
+
+        // Populate server connection list from the manager
+        ServerConnections = ConnectionManager.GetEnabledConnections();
+
+        // Select the current server, or the first enabled one
+        var current = ConnectionManager.CurrentServer;
+        if (current != null)
+        {
+            SelectedServerId = current.Id;
+        }
+        else if (ServerConnections.Count > 0)
+        {
+            SelectedServerId = ServerConnections[0].Id;
+            ConnectionManager.SetCurrentServer(SelectedServerId);
+        }
+
+        // Keep display name in sync with selected server
+        UpdateServerDisplayName();
+    }
+
+    private void UpdateServerDisplayName()
+    {
+        var conn = ConnectionManager.CurrentServer;
+        if (conn != null && !string.IsNullOrWhiteSpace(conn.ServerNames))
+        {
+            ServerDisplayName = conn.ServerNames.Split('\n', ',')[0].Trim();
+        }
+        else if (ConnectionFactory is SqlServerConnectionFactory sqlFactory)
+        {
+            var sn = sqlFactory.ServerName;
+            if (!string.IsNullOrEmpty(sn))
+                ServerDisplayName = sn;
+        }
+    }
+
+    private async Task OnServerConnectionChanged(ChangeEventArgs e)
+    {
+        var serverId = e.Value?.ToString() ?? "";
+        if (serverId == SelectedServerId) return;
+
+        SelectedServerId = serverId;
+        // Route through the context service (single front door) so the top-bar
+        // "Connected to:" selector and the query connection stay in sync — it
+        // also sets ConnectionManager.CurrentServer.
+        await ServerContext.SetServerAsync(serverId);
+        UpdateServerDisplayName();
+
+        // Notify the parent dashboard to reload data with the new connection context
+        await OnServerChanged.InvokeAsync();
+    }
+
+    private async Task OnRefreshIntervalChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var seconds))
+        {
+            RefreshIntervalSeconds = seconds;
+            AutoRefreshService.SetInterval(seconds);
+            UserSettings.SetRefreshInterval(seconds);
+        }
+        await Task.CompletedTask;
+    }
+
+    private async Task OnTimeRangeChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var minutes))
+        {
+            TimeRangeMinutes = minutes;
+            UserSettings.SetDefaultTimeRange(minutes);
+            await TimeRangeMinutesChanged.InvokeAsync(minutes);
+        }
+    }
+
+    private async Task OnDataSourceChanged(ChangeEventArgs e)
+    {
+        var source = e.Value?.ToString() ?? "sqlwatch";
+        DataSource = source;
+        UserSettings.SetDataSource(source);
+        await DataSourceChanged.InvokeAsync(source);
+    }
+
+    private async Task ToggleAutoRefresh()
+    {
+        AutoRefresh = !AutoRefresh;
+        await AutoRefreshChanged.InvokeAsync(AutoRefresh);
+    }
+
+    private void OpenPdfModal()
+    {
+        var safeName = SanitizeName(DashboardName);
+        var stem = $"{safeName}_{DateTime.Now:yyyyMMdd_HHmmss}";
+        _pdfModal.Show(stem);
+    }
+
+    private async Task OnPdfConfirmed(PdfExportSettings settings)
+    {
+        // Allow the modal to fully disappear from the DOM before WebView2 captures the page
+        await Task.Delay(350);
+        _pdfExporting = true;
+        StateHasChanged();
+        try
+        {
+            if (!PrintSvc.IsAvailable)
+            {
+                await PrintSvc.PrintViaBrowserAsync(JSRuntime);
+                Toast.ShowInfo("Browser print dialog opened — use 'Save as PDF' to export.");
+                return;
+            }
+
+            var orientation = settings.LandscapeOrientation
+                ? Microsoft.Web.WebView2.Core.CoreWebView2PrintOrientation.Landscape
+                : Microsoft.Web.WebView2.Core.CoreWebView2PrintOrientation.Portrait;
+            var (success, path, error) = await PrintSvc.PrintToPdfAsync(settings.FileName,
+                printBackgrounds: settings.PrintBackgrounds,
+                orientation: orientation);
+            if (success) Toast.ShowSuccess($"PDF saved: {System.IO.Path.GetFileName(path)}");
+            else         Toast.ShowError($"PDF export failed: {error}");
+        }
+        finally
+        {
+            _pdfExporting = false;
+            StateHasChanged();
+        }
+    }
+
+    private static string SanitizeName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "Dashboard";
+        var invalid = System.IO.Path.GetInvalidFileNameChars();
+        var cleaned = new string(name.Where(c => !invalid.Contains(c)).ToArray());
+        return System.Text.RegularExpressions.Regex.Replace(cleaned, @"[\s]+", "_").Trim('_');
+    }
+
+    private void OpenSettings()
+    {
+        Navigation.NavigateTo(RouteConstants.Settings);
+    }
+}

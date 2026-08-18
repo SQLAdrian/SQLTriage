@@ -1,0 +1,1507 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/alerts"
+<PageTitle>SQLTriage - Alerts</PageTitle>
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@using Microsoft.AspNetCore.Components
+@using Serilog
+@inject AlertDefinitionService Definitions
+@inject AlertEvaluationService Engine
+@inject AlertHistoryService History
+@inject AlertingService Alerting
+@inject AlertTemplateService Templates
+@inject NotificationChannelService ChannelService
+@inject ToastService Toast
+@inject ServerConnectionManager ConnectionManager
+@inject XEventService XEventService
+@inject IJSRuntime JS
+@inject AlertBaselineService Baseline
+@inject SQLTriage.Data.Services.AppUserState UserState
+@using System.Data
+@using Microsoft.Data.SqlClient
+@implements IDisposable
+
+<div class="settings-page" style="max-width: 1400px;">
+
+<!-- Styles extracted to wwwroot/css/Alerts.css 2026-05-11 (CLAUDE.md convention). -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h2 style="margin: 0;">Alerts</h2>
+        <div style="display: flex; gap: 8px; align-items: center;">
+            @if (_dryRun)
+            {
+                <span class="severity-badge severity-warning" style="font-size: 12px; padding: 4px 10px;">
+                    DRY RUN
+                </span>
+            }
+            <span class="severity-badge @(Engine.IsRunning ? "severity-info" : "")"
+                  style="font-size: 12px; padding: 4px 10px;">
+                @(Engine.IsRunning ? "Engine Running" : "Engine Stopped")
+            </span>
+            <label class="toggle-label" style="font-size: 12px;">
+                <input type="checkbox" checked="@_dryRun" @onchange="ToggleDryRun" />
+                Dry Run
+            </label>
+            <button class="settings-btn" @onclick="ToggleEngine">
+                @(Engine.IsRunning ? "Stop" : "Start")
+            </button>
+            <button class="settings-btn" @onclick="RunNow" disabled="@(!Engine.IsRunning)">
+                Run Now
+            </button>
+        </div>
+    </div>
+
+    <BaselineSeedingProgress />
+
+    <!-- Tab Navigation -->
+    <div style="display: flex; gap: 2px; margin-bottom: 16px; border-bottom: 1px solid var(--border);">
+        <button class="alert-tab @(_activeTab == "active" ? "active" : "")" @onclick='() => _activeTab = "active"'>
+            Active Alerts
+            @if (_activeAlertCount > 0)
+            {
+                <span class="alert-badge">@_activeAlertCount</span>
+            }
+        </button>
+        <button class="alert-tab @(_activeTab == "config" ? "active" : "")" @onclick='() => _activeTab = "config"'>
+            Configuration
+        </button>
+        <button class="alert-tab @(_activeTab == "history" ? "active" : "")" @onclick='() => _activeTab = "history"'>
+            History
+        </button>
+        <button class="alert-tab @(_activeTab == "definitions" ? "active" : "")" @onclick='() => _activeTab = "definitions"'>
+            Alert Definitions
+        </button>
+        <button class="alert-tab @(_activeTab == "templates" ? "active" : "")" @onclick='() => _activeTab = "templates"'>
+            Templates
+        </button>
+    </div>
+
+    <!-- Active Alerts Tab -->
+    @if (_activeTab == "active")
+    {
+        <div class="settings-group">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h3 style="margin: 0;">Active Alerts (@_activeAlertCount)</h3>
+                @if (_activeAlertCount > 0)
+                {
+                    <button class="settings-btn" style="font-size: 12px; padding: 4px 12px;"
+                            @onclick="AcknowledgeAll">Acknowledge All</button>
+                }
+            </div>
+
+            @if (_activeAlerts.Count == 0)
+            {
+                <p style="color: var(--text-muted); text-align: center; padding: 40px 0;">
+                    No active alerts. All monitored conditions are within thresholds.
+                </p>
+            }
+            else
+            {
+                <table class="results-table" style="width: 100%;">
+                    <thead>
+                        <tr>
+                            <th style="width: 50px;">Sev</th>
+                            <th>Alert</th>
+                            <th>Server</th>
+                            <th>Value</th>
+                            <th>Hits</th>
+                            <th>First Seen</th>
+                            <th>Last Seen</th>
+                            <th style="width: 100px;">Status</th>
+                            <th style="width: 60px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var alert in PagedAlerts)
+                        {
+                            <tr class="alert-row alert-row-@alert.Severity.ToLower() @(alert.Severity == "Critical" ? "pulse" : "")">
+                                <td>
+                                    <span class="severity-badge severity-@(alert.Severity.ToLower())"
+                                          style="font-size: 10px; padding: 2px 6px;">
+                                        @alert.Severity.Substring(0,1)
+                                    </span>
+                                </td>
+                                <td>
+                                    <div style="font-weight: 500;">@alert.AlertName</div>
+                                    <div style="font-size: 11px; color: var(--text-muted);">@alert.Message</div>
+                                </td>
+                                <td style="font-family: monospace; font-size: 12px;">@alert.ServerName</td>
+                                <td style="font-family: monospace;">@alert.LastValue.ToString("N1")</td>
+                                <td style="text-align: center;">@alert.HitCount</td>
+                                <td style="font-size: 12px;">@alert.FirstTriggered.ToLocalTime().ToString("MM/dd HH:mm")</td>
+                                <td style="font-size: 12px;">@alert.LastTriggered.ToLocalTime().ToString("MM/dd HH:mm")</td>
+                                <td>@GetStatusIcon(alert.Status.ToString())</td>
+                                <td>
+                                    @if (alert.Status == AlertStatus.Active)
+                                    {
+                                        <button class="settings-btn" style="font-size: 10px; padding: 2px 8px;"
+                                                @onclick="() => AcknowledgeOne(alert)">Ack</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+
+    <!-- Configuration Tab -->
+    @if (_activeTab == "config")
+    {
+        <!-- Global Settings -->
+        <div class="settings-group" style="margin-bottom: 16px;">
+            <h3 style="margin-top: 0;">Global Settings</h3>
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;">
+                <div class="settings-field" style="flex-direction: column; gap: 4px;">
+                    <label>Cooldown (min)</label>
+                    <input type="number" min="1" max="60" @bind="_globalDefaults.CooldownMinutes" @bind:after="SaveGlobalDefaults" />
+                </div>
+                <div class="settings-field" style="flex-direction: column; gap: 4px;">
+                    <label>Auto-Ack (hrs)</label>
+                    <input type="number" min="1" max="168" @bind="_globalDefaults.AutoAcknowledgeHours" @bind:after="SaveGlobalDefaults" />
+                </div>
+                <div class="settings-field" style="flex-direction: column; gap: 4px;">
+                    <label>Retention (days)</label>
+                    <input type="number" min="30" max="730" @bind="_globalDefaults.RetentionDays" @bind:after="SaveGlobalDefaults" />
+                </div>
+                <div class="settings-field" style="flex-direction: column; gap: 4px;">
+                    <label>Enabled</label>
+                    <label class="toggle-label">
+                        <input type="checkbox" @bind="_globalDefaults.Enabled" @bind:after="SaveGlobalDefaults" />
+                        <span>@(_globalDefaults.Enabled ? "Active" : "Disabled")</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Extended Events Settings -->
+        <div class="settings-group" style="margin-bottom: 16px;">
+            <h3 style="margin-top: 0;">Extended Events (Optional)</h3>
+            <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">Deploy pre-configured Extended Event sessions for real-time monitoring. Sessions capture events like deadlocks and errors without polling.</p>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button class="settings-btn" @onclick="DeployComprehensiveSession">Deploy Comprehensive Session</button>
+                <button class="settings-btn" @onclick="DeployDeadlockSession">Deploy Deadlock Session</button>
+                <button class="settings-btn" @onclick="DeployErrorSession">Deploy Error Session</button>
+                <button class="settings-btn" @onclick="ViewSessions">View Active Sessions</button>
+            </div>
+            <div style="margin-top: 12px;">
+                <label class="toggle-label">
+                    <input type="checkbox" @bind="_useXEForAlerts" />
+                    <span>Use XE for eligible alerts (deadlocks, errors)</span>
+                </label>
+            </div>
+        </div>
+
+        <!-- Filter by category -->
+        <div style="display: flex; gap: 4px; margin-bottom: 12px; flex-wrap: wrap;">
+            <button class="alert-filter-btn @(_selectedCategory == null ? "active" : "")"
+                    @onclick="() => _selectedCategory = null">
+                All (@_allAlerts.Count)
+            </button>
+            @foreach (var cat in _categories)
+            {
+                var count = _allAlerts.Count(a => a.Category == cat.Id);
+                <button class="alert-filter-btn @(_selectedCategory == cat.Id ? "active" : "")"
+                        @onclick="() => _selectedCategory = cat.Id">
+                    @cat.Name (@count)
+                </button>
+            }
+        </div>
+
+        <!-- Alert definitions table -->
+        <div class="settings-group">
+            <table class="results-table" style="width: 100%;">
+                <thead>
+                    <tr>
+                        <th style="width: 40px;">On</th>
+                        <th>Alert Name</th>
+                        <th style="width: 100px;">Category</th>
+                        <th style="width: 80px;">Severity</th>
+                        <th style="width: 80px;">Warning</th>
+                        <th style="width: 80px;">Critical</th>
+                        <th style="width: 60px;">Unit</th>
+                        <th style="width: 90px;">Frequency</th>
+                        <th style="width: 50px;"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var alert in FilteredAlerts)
+                    {
+                        <tr style="opacity: @(alert.Enabled ? "1" : "0.5");">
+                            <td>
+                                <input type="checkbox" checked="@alert.Enabled"
+                                       @onchange="e => ToggleAlert(alert, (bool)e.Value!)" />
+                            </td>
+                            <td>
+                                <div style="font-weight: 500;">@alert.Name</div>
+                                <div style="font-size: 11px; color: var(--text-muted); max-width: 350px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                    @alert.Description
+                                </div>
+                            </td>
+                            <td style="font-size: 12px;">@GetCategoryName(alert.Category)</td>
+                            <td>
+                                <span class="severity-badge severity-@(alert.Severity.ToLower())"
+                                      style="font-size: 10px; padding: 2px 6px;">
+                                    @alert.Severity
+                                </span>
+                            </td>
+                            <td style="font-family: monospace; font-size: 12px;">
+                                @(alert.Thresholds.Warning?.ToString("N0") ?? "—")
+                            </td>
+                            <td style="font-family: monospace; font-size: 12px;">
+                                @(alert.Thresholds.Critical?.ToString("N0") ?? "—")
+                            </td>
+                            <td style="font-size: 11px; color: var(--text-muted);">@FormatUnit(alert.Unit)</td>
+                            <td style="font-size: 12px;">@FormatFrequency(alert.FrequencySeconds)</td>
+                            <td>
+                                <button class="settings-btn" style="font-size: 10px; padding: 2px 8px;"
+                                        @onclick="() => EditAlert(alert)">Edit</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    <!-- History Tab -->
+    @if (_activeTab == "history")
+    {
+        <div class="settings-group">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h3 style="margin: 0;">Alert History</h3>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <select @bind="_historyFilter" @bind:after="LoadHistory">
+                        <option value="all">All Statuses</option>
+                        <option value="active">Active</option>
+                        <option value="acknowledged">Acknowledged</option>
+                        <option value="resolved">Resolved</option>
+                    </select>
+                    <button class="settings-btn" style="font-size: 12px;" @onclick="LoadHistory">Refresh</button>
+                </div>
+            </div>
+
+            @if (_historyRecords.Count == 0)
+            {
+                <p style="color: var(--text-muted); text-align: center; padding: 40px 0;">
+                    No alert history records found.
+                </p>
+            }
+            else
+            {
+                <table class="results-table" style="width: 100%;">
+                    <thead>
+                        <tr>
+                            <th style="width: 50px;">Sev</th>
+                            <th>Alert</th>
+                            <th>Server</th>
+                            <th>Value</th>
+                            <th>Hits</th>
+                            <th>First Triggered</th>
+                            <th>Last Triggered</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var record in _historyRecords)
+                        {
+                            <tr style="border-left: 3px solid @GetSeverityColor(record.Severity);">
+                                <td>
+                                    <span class="severity-badge severity-@(record.Severity.ToLower())"
+                                          style="font-size: 10px; padding: 2px 6px;">
+                                        @record.Severity.Substring(0,1)
+                                    </span>
+                                </td>
+                                <td>
+                                    <div style="font-weight: 500;">@record.AlertName</div>
+                                    <div style="font-size: 11px; color: var(--text-muted);">@record.Message</div>
+                                </td>
+                                <td style="font-family: monospace; font-size: 12px;">@record.ServerName</td>
+                                <td style="font-family: monospace;">@record.Value.ToString("N1")</td>
+                                <td style="text-align: center;">@record.HitCount</td>
+                                <td style="font-size: 12px;">@record.FirstTriggered.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                                <td style="font-size: 12px;">@record.LastTriggered.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                                <td>
+                                    <span class="severity-badge @GetStatusBadgeClass(record.Status)"
+                                          style="font-size: 10px; padding: 2px 6px;">
+                                        @record.Status
+                                    </span>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+    <!-- Alert Definitions Tab -->
+    @if (_activeTab == "definitions")
+    {
+        <div class="settings-group">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <h3 style="margin: 0;">Alert Definitions</h3>
+                <div style="display: flex; gap: 8px; align-items: center;">
+                    <input type="text" placeholder="Search alerts..." @bind="_definitionsSearch" @bind:event="oninput" style="width: 240px; padding: 4px 8px; font-size: 12px;" />
+                    <select @bind="_definitionsCategoryFilter" style="width: 160px; font-size: 12px;">
+                        <option value="">All Categories</option>
+                        @foreach (var cat in _categories)
+                        {
+                            <option value="@cat.Name">@cat.Name</option>
+                        }
+                    </select>
+                    <button class="settings-btn" style="font-size: 11px; padding: 4px 12px;" @onclick="ReloadDefinitions">
+                        <i class="fa-solid fa-rotate" style="margin-right: 4px;"></i> Reload
+                    </button>
+                </div>
+            </div>
+
+            <table class="results-table" style="width: 100%; font-size: 12px;">
+                <thead>
+                        <tr>
+                            <th style="width: 50px; padding: 6px 8px; cursor: pointer;" @onclick="() => SortDefinitions(nameof(AlertDefinition.Enabled))">
+                                On
+                                @if (_definitionsSortColumn == nameof(AlertDefinition.Enabled))
+                                {
+                                    <span style="margin-left: 4px;">@(_definitionsSortAscending ? "▲" : "▼")</span>
+                                }
+                            </th>
+                            <th style="padding: 6px 8px; cursor: pointer;" @onclick="() => SortDefinitions(nameof(AlertDefinition.Name))">
+                                Alert Name
+                                @if (_definitionsSortColumn == nameof(AlertDefinition.Name))
+                                {
+                                    <span style="margin-left: 4px;">@(_definitionsSortAscending ? "▲" : "▼")</span>
+                                }
+                            </th>
+                            <th style="width: 110px; padding: 6px 8px; cursor: pointer;" @onclick="() => SortDefinitions(nameof(AlertDefinition.Category))">
+                                Category
+                                @if (_definitionsSortColumn == nameof(AlertDefinition.Category))
+                                {
+                                    <span style="margin-left: 4px;">@(_definitionsSortAscending ? "▲" : "▼")</span>
+                                }
+                            </th>
+                            <th style="width: 80px; padding: 6px 8px; cursor: pointer;" @onclick="() => SortDefinitions(nameof(AlertDefinition.Severity))">
+                                Sev
+                                @if (_definitionsSortColumn == nameof(AlertDefinition.Severity))
+                                {
+                                    <span style="margin-left: 4px;">@(_definitionsSortAscending ? "▲" : "▼")</span>
+                                }
+                            </th>
+                            <th style="width: 70px; padding: 6px 8px; text-align: right;">Warn</th>
+                            <th style="width: 70px; padding: 6px 8px; text-align: right;">Crit</th>
+                            <th style="width: 85px; padding: 6px 8px; text-align: right;">Freq</th>
+                            <th style="width: 75px; padding: 6px 8px; text-align: right;">Delay</th>
+                            <th style="width: 46px; padding: 6px 8px; text-align: center;" title="Send email when triggered"><i class="fa-solid fa-envelope" style="font-size: 11px;"></i></th>
+                            <th style="width: 50px; padding: 6px 8px;"></th>
+                        </tr>
+                </thead>
+                <tbody>
+                    @foreach (var alert in FilteredDefinitions)
+                    {
+                        <tr>
+                            <td>
+                                <label style="cursor: pointer;">
+                                    <input type="checkbox" checked="@alert.Enabled" @onchange="(e) => { ToggleAlert(alert, (bool)e.Value!); }" style="width: auto;" />
+                                </label>
+                            </td>
+                            <td style="font-weight: 500;">
+                                <div style="display: flex; align-items: center; gap: 6px;">
+                                    @alert.Name
+                                    @if (alert.AlwaysAlert)
+                                    {
+                                        <i class="fa-solid fa-exclamation-triangle" style="color: var(--yellow); font-size: 11px;" title="Always Alert (ignores maintenance windows)"></i>
+                                    }
+                                    @if (alert.Escalate)
+                                    {
+                                        <i class="fa-solid fa-arrow-up-right-dots" style="color: var(--accent); font-size: 11px;" title="Escalation enabled"></i>
+                                    }
+                                    @if (alert.BaselineDeviationPercent > 0)
+                                    {
+                                        <i class="fa-solid fa-chart-line" style="color: var(--green); font-size: 11px;" title="Baseline deviation enabled"></i>
+                                    }
+                                </div>
+                                <div style="font-size: 10px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 300px;">
+                                    @alert.Description
+                                </div>
+                            </td>
+                            <td>
+                                <span class="severity-badge" style="font-size: 10px; padding: 2px 6px; background: var(--bg-tertiary);">@alert.Category</span>
+                            </td>
+                            <td style="padding: 4px 6px;">
+                                <select value="@alert.Severity" @onchange="(e) => OnSeverityChanged(alert, e)" class="table-input-select" style="width: 80px;">
+                                    <option value="Info">Info</option>
+                                    <option value="Low">Low</option>
+                                    <option value="Medium">Medium</option>
+                                    <option value="High">High</option>
+                                    <option value="Critical">Critical</option>
+                                </select>
+                            </td>
+                            <td style="padding: 4px 6px;">
+                                <input type="number" value="@alert.Thresholds.Warning" 
+                                       @onchange="(e) => { alert.Thresholds.Warning = double.TryParse(e.Value?.ToString(), out var val) ? val : null; Definitions.UpdateAlert(alert); }" 
+                                       class="table-input-number" style="width: 60px; text-align: right;"
+                                       placeholder="-" step="0.1" />
+                            </td>
+                            <td style="padding: 4px 6px;">
+                                <input type="number" value="@alert.Thresholds.Critical" 
+                                       @onchange="(e) => { alert.Thresholds.Critical = double.TryParse(e.Value?.ToString(), out var val) ? val : null; Definitions.UpdateAlert(alert); }" 
+                                       class="table-input-number" style="width: 60px; text-align: right;"
+                                       placeholder="-" step="0.1" />
+                            </td>
+                            <td style="padding: 4px 6px;">
+                                <div style="display: flex; align-items: center; justify-content: flex-end; gap: 2px;">
+                                    <input type="number" value="@alert.FrequencySeconds" 
+                                           @onchange="(e) => { alert.FrequencySeconds = int.TryParse(e.Value?.ToString(), out var val) ? val : 300; Definitions.UpdateAlert(alert); }" 
+                                           class="table-input-number" style="width: 60px; text-align: right;" min="10" />
+                                    <span style="font-size: 10px; color: var(--text-muted);">s</span>
+                                </div>
+                            </td>
+                            <td style="padding: 4px 6px;">
+                                <div style="display: flex; align-items: center; justify-content: flex-end; gap: 2px;">
+                                    <input type="number" value="@(alert.NextAlertDelayMinutes ?? alert.CooldownMinutes ?? 0)" 
+                                           @onchange="(e) => { alert.NextAlertDelayMinutes = int.TryParse(e.Value?.ToString(), out var val) ? val : 0; Definitions.UpdateAlert(alert); }" 
+                                           class="table-input-number" style="width: 50px; text-align: right;" min="0" />
+                                    <span style="font-size: 10px; color: var(--text-muted);">m</span>
+                                </div>
+                            </td>
+                            <td style="text-align: center; padding: 4px 6px;">
+                                <input type="checkbox" checked="@alert.SendEmail"
+                                       @onchange="(e) => { alert.SendEmail = (bool)e.Value!; Definitions.UpdateAlert(alert); }"
+                                       style="width: auto;" title="@(alert.SendEmail ? "Email on trigger — click to disable" : "No email on trigger — click to enable")" />
+                            </td>
+                            <td style="text-align: right;">
+                                <button class="settings-btn" style="font-size: 10px; padding: 2px 6px;" @onclick="() => EditAlert(alert)" title="Full Edit">
+                                    <i class="fa-solid fa-expand"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 11px; color: var(--text-muted);">
+                <span>Showing @FilteredDefinitions.Count of @_allAlerts.Count alerts</span>
+                <div style="display: flex; gap: 10px;">
+                    <span><i class="fa-solid fa-exclamation-triangle" style="color: var(--yellow);"></i> Always Alert</span>
+                    <span><i class="fa-solid fa-arrow-up-right-dots" style="color: var(--accent);"></i> Escalate</span>
+                    <span><i class="fa-solid fa-chart-line" style="color: var(--green);"></i> Baseline</span>
+                    <span><i class="fa-solid fa-envelope" style="color: var(--text-muted);"></i> Email on trigger</span>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Templates Tab -->
+    @if (_activeTab == "templates")
+    {
+        <div class="settings-group">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <div>
+                    <h3 style="margin: 0;">Notification Templates</h3>
+                    <p style="margin: 4px 0 0; font-size: 12px; color: var(--text-muted);">
+                        Customise the message sent to each channel. Use tokens like <code>{{alert_name}}</code>, <code>{{severity}}</code>, <code>{{server}}</code>, <code>{{current_value}}</code>, <code>{{threshold}}</code>, <code>{{message}}</code>, <code>{{triggered_at}}</code>, <code>{{hit_count}}</code>.
+                    </p>
+                </div>
+            </div>
+
+            @* Channel cards *@
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
+                @foreach (var card in _templateCards)
+                {
+                    <div style="border: 1px solid var(--border); border-radius: 6px; padding: 14px; background: var(--bg-secondary);">
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                            <i class="fa-solid @card.Icon" style="color: @card.Color; font-size: 15px;"></i>
+                            <strong style="font-size: 13px;">@card.Label</strong>
+                            @if (!card.IsEnabled)
+                            {
+                                <span style="font-size: 10px; color: var(--text-muted); margin-left: auto;">not configured</span>
+                            }
+                        </div>
+                        <p style="font-size: 11px; color: var(--text-muted); margin: 0 0 10px;">@card.Description</p>
+                        <button class="settings-btn" style="font-size: 11px; padding: 3px 10px;"
+                                @onclick="() => OpenTemplateEditor(card.ChannelKey)">
+                            <i class="fa-solid fa-pen-to-square" style="margin-right: 4px;"></i>Edit Template
+                        </button>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    <!-- Template Editor Modal -->
+    @if (_editingTemplate != null)
+    {
+        <div class="modal-overlay" @onclick="CloseTemplateEditor">
+            <div class="modal-dialog" style="max-width: 860px;" @onclick:stopPropagation="true">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 4px;">
+                    <i class="fa-solid @(_templateCards.FirstOrDefault(c => c.ChannelKey == _editingTemplateKey)?.Icon ?? "fa-bell")"
+                       style="color: @(_templateCards.FirstOrDefault(c => c.ChannelKey == _editingTemplateKey)?.Color ?? "var(--accent)"); font-size: 16px;"></i>
+                    <h3 style="margin: 0; flex: 1;">@(_templateCards.FirstOrDefault(c => c.ChannelKey == _editingTemplateKey)?.Label ?? _editingTemplateKey) Template</h3>
+                    <div style="font-size: 11px; color: var(--text-muted);">
+                        Tokens: @string.Join("  ", SQLTriage.Data.Models.ChannelTemplate.Tokens.Take(6))…
+                    </div>
+                </div>
+                <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 16px;">
+                    @(_templateCards.FirstOrDefault(c => c.ChannelKey == _editingTemplateKey)?.Description ?? "")
+                </p>
+
+                <div class="settings-field" style="flex-direction: column; gap: 4px; margin-bottom: 12px;">
+                    <label>Subject / Title</label>
+                    <input type="text" @bind="_editingTemplate.Subject" style="width: 100%;" />
+                </div>
+
+                <div class="settings-field" style="flex-direction: column; gap: 4px; margin-bottom: 12px;">
+                    <label>
+                        Body
+                        @if (_editingTemplateKey == "email")
+                        {
+                            <span style="font-size: 10px; color: var(--text-muted); margin-left: 8px;">HTML supported</span>
+                        }
+                    </label>
+                    <textarea rows="18" style="font-family: monospace; font-size: 11px; width: 100%;
+                              background: var(--bg-secondary); color: var(--text-primary);
+                              border: 1px solid var(--border); border-radius: 4px;
+                              padding: 8px; resize: vertical; line-height: 1.5;"
+                              @bind="_editingTemplate.Body"></textarea>
+                </div>
+
+                @* Token reference *@
+                <div style="margin-bottom: 16px; padding: 8px 12px; background: var(--bg-secondary);
+                             border-radius: 4px; border: 1px solid var(--border);">
+                    <div style="font-size: 10px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px;">AVAILABLE TOKENS</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                        @foreach (var token in SQLTriage.Data.Models.ChannelTemplate.Tokens)
+                        {
+                            <code style="font-size: 10px; background: var(--bg-tertiary); padding: 2px 6px;
+                                         border-radius: 3px; cursor: pointer; color: var(--accent);"
+                                  title="Click to copy" @onclick="() => CopyToken(token)">@token</code>
+                        }
+                        @if (_editingTemplateKey == "email")
+                        {
+                            <code style="font-size: 10px; background: var(--bg-tertiary); padding: 2px 6px;
+                                         border-radius: 3px; color: var(--green);">{{severity_color}}</code>
+                        }
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <button class="settings-btn" style="font-size: 11px;" @onclick="ResetTemplateToDefault">
+                        <i class="fa-solid fa-rotate-left" style="margin-right: 4px;"></i>Reset to Default
+                    </button>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="settings-btn" @onclick="CloseTemplateEditor">Cancel</button>
+                        <button class="settings-btn" style="background: var(--accent); color: var(--text-primary);" @onclick="SaveTemplate">Save</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Edit Alert Modal -->
+    @if (_editingAlert != null)
+    {
+        <div class="modal-overlay" @onclick="CancelEdit">
+            <div class="modal-dialog" style="max-width: 780px;" @onclick:stopPropagation="true">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 4px;">
+                    <h3 style="margin: 0; flex: 1;">@_editingAlert.Name</h3>
+                    <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); cursor: pointer; user-select: none;">
+                        <input type="checkbox" @bind="_showAllFields" style="width: auto;" />
+                        All fields
+                    </label>
+                </div>
+                <p style="color: var(--text-muted); font-size: 12px; margin-bottom: 16px;">@_editingAlert.Description</p>
+
+                @* ── Thresholds & timing ── *@
+                <div style="font-size: 11px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase;
+                             letter-spacing: 0.05em; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border);">
+                    Thresholds &amp; Timing
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 14px;">
+                    <div class="settings-field" style="flex-direction: column; gap: 4px;">
+                        <label>Severity</label>
+                        <select @bind="_editingAlert.Severity">
+                            <option value="Info">Info</option>
+                            <option value="Low">Low</option>
+                            <option value="Medium">Medium</option>
+                            <option value="High">High</option>
+                            <option value="Critical">Critical</option>
+                        </select>
+                    </div>
+                    <div class="settings-field" style="flex-direction: column; gap: 4px;">
+                        <label>Operator</label>
+                        <select @bind="_editingAlert.Operator">
+                            <option value="greater_than">Greater Than</option>
+                            <option value="less_than">Less Than</option>
+                        </select>
+                    </div>
+                    <div class="settings-field" style="flex-direction: column; gap: 4px;">
+                        <label>Unit</label>
+                        <select @bind="_editingAlert.Unit">
+                            <option value="percent">%</option>
+                            <option value="count">#</option>
+                            <option value="seconds">sec</option>
+                            <option value="milliseconds">ms</option>
+                            <option value="megabytes">MB</option>
+                            <option value="per_second">/s</option>
+                            <option value="per_minute">/min</option>
+                            <option value="event">event</option>
+                        </select>
+                    </div>
+                    <div class="settings-field" style="flex-direction: column; gap: 4px;">
+                        <label>Warning Threshold</label>
+                        <input type="number" step="any" @bind="_editWarning" />
+                    </div>
+                    <div class="settings-field" style="flex-direction: column; gap: 4px;">
+                        <label>Critical Threshold</label>
+                        <input type="number" step="any" @bind="_editCritical" />
+                    </div>
+                    <div class="settings-field" style="flex-direction: column; gap: 4px;">
+                        <label>Frequency (sec)</label>
+                        <input type="number" min="10" @bind="_editingAlert.FrequencySeconds" />
+                    </div>
+                    <div class="settings-field" style="flex-direction: column; gap: 4px;">
+                        <label>Cooldown / Next Alert Delay (min)</label>
+                        <input type="number" min="1" @bind="_editNextAlertDelayMinutes"
+                               placeholder="blank = global (@(_globalDefaults.CooldownMinutes)min)" />
+                    </div>
+                    @if (_showAllFields)
+                    {
+                        <div class="settings-field" style="flex-direction: column; gap: 4px;">
+                            <label>Sustain duration (sec)</label>
+                            <input type="number" min="0" @bind="_editingAlert.DurationSeconds" />
+                            <small style="color: var(--text-muted); font-size: 10px;">Must stay over threshold for this long before firing. 0 = immediate.</small>
+                        </div>
+                    }
+                </div>
+
+                @* ── Notification & routing ── *@
+                <div style="font-size: 11px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase;
+                             letter-spacing: 0.05em; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border);">
+                    Notification &amp; Routing
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px;">
+                    <div class="settings-field" style="flex-direction: column; gap: 4px;">
+                        <label>Primary Channel</label>
+                        <select @bind="_editingAlert.PrimaryChannel">
+                            <option value="">Global default</option>
+                            @foreach (var ch in _enabledChannels)
+                            {
+                                <option value="@ch.Key">@ch.Value</option>
+                            }
+                        </select>
+                        @if (!_enabledChannels.Any())
+                        {
+                            <small style="color: var(--text-muted); font-size: 10px;">No channels enabled — configure in Alerting Config</small>
+                        }
+                    </div>
+                    <div class="settings-field" style="flex-direction: column; gap: 4px; justify-content: flex-end;">
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                            <input type="checkbox" @bind="_editingAlert.SendEmail" style="width: auto;" />
+                            <span>Send email on trigger</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                            <input type="checkbox" @bind="_editingAlert.AlwaysAlert" style="width: auto;" />
+                            <span>Always alert (fires outside operational hours)</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                            <input type="checkbox" @bind="_editingAlert.IncludeInDailySummary" style="width: auto;" />
+                            <span>Include in daily summary email</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                            <input type="checkbox" @bind="_editingAlert.Escalate" style="width: auto;" />
+                            <span>Escalate if unacknowledged</span>
+                        </label>
+                    </div>
+                </div>
+
+                @if (_editingAlert.Escalate)
+                {
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 14px; padding: 12px; background: var(--bg-secondary); border-radius: 6px; border: 1px solid var(--border);">
+                        <div class="settings-field" style="flex-direction: column; gap: 4px;">
+                            <label>Escalation trigger</label>
+                            <select @bind="_editEscalationMode">
+                                <option value="time">After X minutes unacknowledged</option>
+                                <option value="events">After N events in Y minutes</option>
+                            </select>
+                        </div>
+                        @if (_editEscalationMode == "time")
+                        {
+                            <div class="settings-field" style="flex-direction: column; gap: 4px;">
+                                <label>Escalate after (min)</label>
+                                <input type="number" min="1" @bind="_editingAlert.EscalationAfterMinutes" />
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="settings-field" style="flex-direction: column; gap: 4px;">
+                                <label>Event count</label>
+                                <input type="number" min="1" @bind="_editingAlert.EscalationThresholdEvents" />
+                            </div>
+                            <div class="settings-field" style="flex-direction: column; gap: 4px;">
+                                <label>Within (min)</label>
+                                <input type="number" min="1" @bind="_editingAlert.EscalationWindowMinutes" />
+                            </div>
+                        }
+                        <div class="settings-field" style="flex-direction: column; gap: 4px;">
+                            <label>Escalation channel</label>
+                            <select @bind="_editingAlert.EscalationChannel">
+                                <option value="">Same as primary</option>
+                                @foreach (var ch in _enabledChannels)
+                                {
+                                    <option value="@ch.Key">@ch.Value</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+                }
+
+                @if (_showAllFields)
+                {
+
+                    @* ── Baseline deviation ── *@
+                    <div style="font-size: 11px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase;
+                                 letter-spacing: 0.05em; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border);">
+                        Baseline Deviation
+                        <span style="font-size: 10px; font-weight: normal; text-transform: none; margin-left: 6px; color: var(--text-muted);">
+                            Fire when current value is N% above its 7-day average
+                        </span>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 14px;">
+                        <div class="settings-field" style="flex-direction: column; gap: 4px;">
+                            <label>Deviation threshold (%)</label>
+                            <input type="number" min="0" step="5" @bind="_editingAlert.BaselineDeviationPercent"
+                                   placeholder="0 = disabled" />
+                            <small style="color: var(--text-muted); font-size: 10px;">0 = disabled</small>
+                        </div>
+                        <div class="settings-field" style="flex-direction: column; gap: 4px;">
+                            <label>Baseline query ID</label>
+                            <input type="text" @bind="_editingAlert.BaselineQueryId"
+                                   placeholder="e.g. live.cpu" />
+                            <small style="color: var(--text-muted); font-size: 10px;">Must match a cached time-series queryId</small>
+                        </div>
+                        <div class="settings-field" style="flex-direction: column; gap: 4px;">
+                            <label>Series filter (optional)</label>
+                            <input type="text" @bind="_editingAlert.BaselineSeries"
+                                   placeholder="e.g. CPU % (blank = all)" />
+                        </div>
+                    </div>
+                }
+
+                @* ── T-SQL Query ── *@
+                <div style="font-size: 11px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase;
+                             letter-spacing: 0.05em; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border);">
+                    Query
+                </div>
+                <div class="settings-field" style="flex-direction: column; gap: 4px; margin-bottom: 14px;">
+                    <textarea rows="4" style="font-family: monospace; font-size: 11px; width: 100%;
+                              background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border);
+                              border-radius: 4px; padding: 8px; resize: vertical;"
+                              @bind="_editingAlert.Query"></textarea>
+                    <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+                        <button class="settings-btn" style="font-size: 11px; padding: 3px 10px;"
+                                @onclick="TestQuery" disabled="@(_testingQuery || string.IsNullOrWhiteSpace(_editingAlert?.Query))">
+                            <i class="fa-solid fa-play" style="margin-right: 4px;"></i>
+                            @(_testingQuery ? "Running..." : "Test Query")
+                        </button>
+                        @if (ConnectionManager.CurrentServer != null)
+                        {
+                            <span style="font-size: 11px; color: var(--text-muted);">
+                                on @ConnectionManager.CurrentServer.ServerNames
+                            </span>
+                        }
+                        else
+                        {
+                            <span style="font-size: 11px; color: var(--orange);">
+                                <i class="fa-solid fa-triangle-exclamation" style="margin-right: 2px;"></i> No server selected
+                            </span>
+                        }
+                    </div>
+                </div>
+
+                @if (_testQueryResult != null || _testQueryError != null)
+                {
+                    <div style="margin-bottom: 10px; border: 1px solid var(--border); border-radius: 4px; overflow: hidden;">
+                        @if (_testQueryError != null)
+                        {
+                            <div style="padding: 8px 12px; font-size: 11px; color: var(--red); background: var(--bg-secondary); font-family: monospace; white-space: pre-wrap; max-height: 120px; overflow-y: auto;">@_testQueryError</div>
+                        }
+                        else if (_testQueryResult != null)
+                        {
+                            <div style="padding: 4px 8px; font-size: 11px; color: var(--text-muted); background: var(--bg-secondary); border-bottom: 1px solid var(--border);">
+                                @_testQueryResult.Rows.Count row(s) returned in @_testQueryElapsed
+                            </div>
+                            <div style="max-height: 200px; overflow: auto;">
+                                <table class="results-table" style="width: 100%; font-size: 11px;">
+                                    <thead>
+                                        <tr>
+                                            @foreach (DataColumn col in _testQueryResult.Columns)
+                                            {
+                                                <th style="padding: 4px 8px; white-space: nowrap; position: sticky; top: 0; background: var(--bg-tertiary);">@col.ColumnName</th>
+                                            }
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (DataRow row in _testQueryResult.Rows)
+                                        {
+                                            <tr>
+                                                @foreach (DataColumn col in _testQueryResult.Columns)
+                                                {
+                                                    <td style="padding: 4px 8px; white-space: nowrap;">@(row[col]?.ToString() ?? "")</td>
+                                                }
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                    </div>
+                }
+
+                <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px;">
+                    <button class="settings-btn" @onclick="CancelEdit">Cancel</button>
+                    <button class="settings-btn" style="background: var(--accent); color: var(--text-primary);" @onclick="SaveEdit">Save</button>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<!-- Styles extracted to wwwroot/css/Alerts.css 2026-05-11 (CLAUDE.md convention). -->
+
+@code {
+    private string _activeTab = "active";
+    private string? _selectedCategory;
+    private string _historyFilter = "all";
+    private int _activeAlertCount;
+
+    private int _alertPage = 1;
+    private int _alertPageSize = 20;
+
+    private IEnumerable<AlertState> PagedAlerts => _activeAlerts.Skip((_alertPage - 1) * _alertPageSize).Take(_alertPageSize);
+
+    private int AlertTotalPages => (int)Math.Ceiling((double)_activeAlerts.Count / _alertPageSize);
+
+    private AlertGlobalDefaults _globalDefaults = new();
+    private List<AlertCategory> _categories = new();
+    private List<AlertDefinition> _allAlerts = new();
+    private List<AlertState> _activeAlerts = new();
+    private List<AlertHistoryRecord> _historyRecords = new();
+
+    // Enabled channels (populated in OnInitialized, used for dropdowns)
+    private List<KeyValuePair<string, string>> _enabledChannels = new();
+
+    // Template tab state
+    private ChannelTemplate? _editingTemplate;
+    private string _editingTemplateKey = "";
+
+    private record TemplateCard(string ChannelKey, string Label, string Icon, string Color, string Description, bool IsEnabled);
+    private List<TemplateCard> _templateCards = new();
+
+    // Edit modal state
+    private AlertDefinition? _editingAlert;
+    private double? _editWarning;
+    private double? _editCritical;
+    private int? _editCooldown;          // kept for compat — mapped to NextAlertDelayMinutes
+    private int? _editNextAlertDelayMinutes;
+    private string _editEscalationMode = "time"; // "time" or "events"
+    private bool _showAllFields = false;
+
+    // Test query state
+    private bool _testingQuery;
+    private DataTable? _testQueryResult;
+    private string? _testQueryError;
+    private string? _testQueryElapsed;
+
+    // XE state
+    private bool _useXEForAlerts;
+
+    // Dry-run state (mirrors Engine.DryRun)
+    private bool _dryRun;
+
+    private List<AlertDefinition> FilteredAlerts =>
+        _selectedCategory == null
+            ? _allAlerts
+            : _allAlerts.Where(a => a.Category == _selectedCategory).ToList();
+
+    // Alert Definitions tab state
+    private string _definitionsSearch = "";
+    private string _definitionsCategoryFilter = "";
+    private string _definitionsSortColumn = nameof(AlertDefinition.Name);
+    private bool _definitionsSortAscending = true;
+
+    private List<AlertDefinition> FilteredDefinitions
+    {
+        get
+        {
+            var results = _allAlerts.AsEnumerable();
+            
+            if (!string.IsNullOrWhiteSpace(_definitionsSearch))
+            {
+                var search = _definitionsSearch.Trim().ToLowerInvariant();
+                results = results.Where(a => 
+                    a.Name.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                    a.Description.Contains(search, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!string.IsNullOrWhiteSpace(_definitionsCategoryFilter))
+            {
+                results = results.Where(a => a.Category == _definitionsCategoryFilter);
+            }
+
+            results = _definitionsSortColumn switch
+            {
+                nameof(AlertDefinition.Enabled) => _definitionsSortAscending 
+                    ? results.OrderBy(a => a.Enabled) 
+                    : results.OrderByDescending(a => a.Enabled),
+                nameof(AlertDefinition.Name) => _definitionsSortAscending 
+                    ? results.OrderBy(a => a.Name) 
+                    : results.OrderByDescending(a => a.Name),
+                nameof(AlertDefinition.Category) => _definitionsSortAscending 
+                    ? results.OrderBy(a => a.Category).ThenBy(a => a.Name) 
+                    : results.OrderByDescending(a => a.Category).ThenBy(a => a.Name),
+                nameof(AlertDefinition.Severity) => _definitionsSortAscending 
+                    ? results.OrderBy(a => a.Severity) 
+                    : results.OrderByDescending(a => a.Severity),
+                _ => results.OrderBy(a => a.Name)
+            };
+
+            return results.ToList();
+        }
+    }
+
+    private void ReloadDefinitions()
+    {
+        _allAlerts = Definitions.GetAllAlerts();
+        _definitionsSearch = "";
+        _definitionsCategoryFilter = "";
+        StateHasChanged();
+    }
+
+    private void SortDefinitions(string column)
+    {
+        if (_definitionsSortColumn == column)
+        {
+            _definitionsSortAscending = !_definitionsSortAscending;
+        }
+        else
+        {
+            _definitionsSortColumn = column;
+            _definitionsSortAscending = true;
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        _dryRun = Engine.DryRun;
+        LoadData();
+        LoadEnabledChannels();
+        LoadTemplateCards();
+        Engine.OnAlertsChanged += OnEngineChanged;
+    }
+
+    private void LoadEnabledChannels()
+    {
+        var cfg = ChannelService.Config;
+        _enabledChannels = new List<KeyValuePair<string, string>>();
+        if (cfg.Smtp.Enabled)          _enabledChannels.Add(new("smtp",        "Email (SMTP)"));
+        if (cfg.TeamsWebhook.Enabled)  _enabledChannels.Add(new("teams",       "Microsoft Teams"));
+        if (cfg.Slack.Enabled)         _enabledChannels.Add(new("slack",       "Slack"));
+        if (cfg.Webhook.Enabled)       _enabledChannels.Add(new("webhook",     "Webhook"));
+        if (cfg.PagerDuty.Enabled)     _enabledChannels.Add(new("pagerduty",   "PagerDuty"));
+        if (cfg.ServiceNow.Enabled)    _enabledChannels.Add(new("servicenow",  "ServiceNow"));
+        if (cfg.WhatsApp.Enabled)      _enabledChannels.Add(new("whatsapp",    "WhatsApp"));
+    }
+
+    private void LoadTemplateCards()
+    {
+        var cfg = ChannelService.Config;
+        var t   = Templates.Config;
+        _templateCards = new List<TemplateCard>
+        {
+            new("email",      "Email (SMTP)",      "fa-envelope",     "var(--accent)",  t.Email.Description,      cfg.Smtp.Enabled),
+            new("teams",      "Microsoft Teams",   "fa-brands fa-microsoft", "#7b83eb",  t.Teams.Description,      cfg.TeamsWebhook.Enabled),
+            new("slack",      "Slack",             "fa-brands fa-slack",     "#4a154b",  t.Slack.Description,      cfg.Slack.Enabled),
+            new("webhook",    "Webhook",           "fa-arrow-up-right-from-square", "var(--green)", t.Webhook.Description, cfg.Webhook.Enabled),
+            new("pagerduty",  "PagerDuty",         "fa-bell",         "var(--red)",     t.PagerDuty.Description,  cfg.PagerDuty.Enabled),
+            new("servicenow", "ServiceNow",        "fa-ticket",       "var(--orange)",  t.ServiceNow.Description, cfg.ServiceNow.Enabled),
+        };
+    }
+
+    private void OpenTemplateEditor(string channelKey)
+    {
+        var t = Templates.Config;
+        _editingTemplate = channelKey switch
+        {
+            "email"      => Clone(t.Email),
+            "teams"      => Clone(t.Teams),
+            "slack"      => Clone(t.Slack),
+            "webhook"    => Clone(t.Webhook),
+            "pagerduty"  => Clone(t.PagerDuty),
+            "servicenow" => Clone(t.ServiceNow),
+            _ => new ChannelTemplate()
+        };
+        _editingTemplateKey = channelKey;
+    }
+
+    private static ChannelTemplate Clone(ChannelTemplate src)
+        => new() { Subject = src.Subject, Body = src.Body, Description = src.Description };
+
+    private void CloseTemplateEditor()
+    {
+        _editingTemplate = null;
+        _editingTemplateKey = "";
+    }
+
+    private void SaveTemplate()
+    {
+        if (_editingTemplate == null) return;
+        var t = Templates.Config;
+        switch (_editingTemplateKey)
+        {
+            case "email":      t.Email      = _editingTemplate; break;
+            case "teams":      t.Teams      = _editingTemplate; break;
+            case "slack":      t.Slack      = _editingTemplate; break;
+            case "webhook":    t.Webhook    = _editingTemplate; break;
+            case "pagerduty":  t.PagerDuty  = _editingTemplate; break;
+            case "servicenow": t.ServiceNow = _editingTemplate; break;
+        }
+        Templates.Update(t);
+        Toast.ShowSuccess($"{_templateCards.FirstOrDefault(c => c.ChannelKey == _editingTemplateKey)?.Label ?? _editingTemplateKey} template saved.");
+        CloseTemplateEditor();
+    }
+
+    private void ResetTemplateToDefault()
+    {
+        _editingTemplate = _editingTemplateKey switch
+        {
+            "email"      => ChannelTemplate.DefaultEmail(),
+            "teams"      => ChannelTemplate.DefaultTeams(),
+            "slack"      => ChannelTemplate.DefaultSlack(),
+            "webhook"    => ChannelTemplate.DefaultWebhook(),
+            "pagerduty"  => ChannelTemplate.DefaultPagerDuty(),
+            "servicenow" => ChannelTemplate.DefaultServiceNow(),
+            _ => new ChannelTemplate()
+        };
+    }
+
+    private async Task CopyToken(string token)
+    {
+        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", token); }
+        catch { /* clipboard not available in all environments */ }
+    }
+
+    private void LoadData()
+    {
+        _globalDefaults = Definitions.GetGlobalDefaults();
+        _categories = Definitions.GetCategories();
+        _allAlerts = Definitions.GetAllAlerts();
+        _activeAlerts = Engine.ActiveAlerts.ToList();
+        _activeAlertCount = Engine.ActiveCount;
+        LoadHistory();
+    }
+
+    private void LoadHistory()
+    {
+        _historyRecords = _historyFilter switch
+        {
+            "active" => History.GetActiveAlerts().Where(r => r.Status == "Active").ToList(),
+            "acknowledged" => History.GetActiveAlerts().Where(r => r.Status == "Acknowledged").ToList(),
+            "resolved" => History.GetRecentHistory(200).Where(r => r.Status == "Resolved").ToList(),
+            _ => History.GetRecentHistory(200)
+        };
+    }
+
+    private async void OnEngineChanged()
+    {
+        try
+        {
+            _activeAlerts = Engine.ActiveAlerts.ToList();
+            _activeAlertCount = Engine.ActiveCount;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "OnEngineChanged failed in Alerts");
+        }
+    }
+
+    private void ToggleDryRun(ChangeEventArgs e)
+    {
+        _dryRun = (bool)(e.Value ?? false);
+        Engine.DryRun = _dryRun;
+        Toast.ShowInfo(_dryRun
+            ? "Dry Run enabled — alerts evaluate but no notifications or history writes"
+            : "Dry Run disabled — alerts will notify and persist");
+    }
+
+    private void OnSeverityChanged(AlertDefinition alert, ChangeEventArgs e)
+    {
+        alert.Severity = e.Value?.ToString() ?? "Medium";
+        Definitions.UpdateAlert(alert);
+    }
+
+    private void ToggleEngine()
+    {
+        if (Engine.IsRunning)
+            Engine.Stop();
+        else
+            Engine.Start();
+    }
+
+    private async Task RunNow()
+    {
+        Toast.ShowInfo("Running alert evaluation...");
+        await Engine.EvaluateAllAsync();
+        LoadData();
+        Toast.ShowSuccess("Alert evaluation complete");
+    }
+
+    private void ToggleAlert(AlertDefinition alert, bool enabled)
+    {
+        Definitions.SetAlertEnabled(alert.Id, enabled);
+        alert.Enabled = enabled;
+    }
+
+    private void EditAlert(AlertDefinition alert)
+    {
+        // Clone for editing
+        _editingAlert = new AlertDefinition
+        {
+            Id = alert.Id,
+            Name = alert.Name,
+            Description = alert.Description,
+            Category = alert.Category,
+            Enabled = alert.Enabled,
+            Severity = alert.Severity,
+            Thresholds = new AlertThresholds { Warning = alert.Thresholds.Warning, Critical = alert.Thresholds.Critical },
+            Unit = alert.Unit,
+            Operator = alert.Operator,
+            DurationSeconds = alert.DurationSeconds,
+            FrequencySeconds = alert.FrequencySeconds,
+            CooldownMinutes = alert.CooldownMinutes,
+            Query = alert.Query,
+            QueryMode = alert.QueryMode,
+            Remediation = alert.Remediation,
+            AlwaysAlert = alert.AlwaysAlert,
+            PrimaryChannel = alert.PrimaryChannel,
+            SendEmail = alert.SendEmail,
+            NextAlertDelayMinutes = alert.NextAlertDelayMinutes,
+            IncludeInDailySummary = alert.IncludeInDailySummary,
+            Escalate = alert.Escalate,
+            EscalationThresholdEvents = alert.EscalationThresholdEvents,
+            EscalationWindowMinutes = alert.EscalationWindowMinutes,
+            EscalationAfterMinutes = alert.EscalationAfterMinutes,
+            EscalationChannel = alert.EscalationChannel,
+            BaselineDeviationPercent = alert.BaselineDeviationPercent,
+            BaselineQueryId = alert.BaselineQueryId,
+            BaselineSeries = alert.BaselineSeries,
+        };
+        _editWarning = alert.Thresholds.Warning;
+        _editCritical = alert.Thresholds.Critical;
+        _editNextAlertDelayMinutes = alert.NextAlertDelayMinutes ?? alert.CooldownMinutes;
+        _editEscalationMode = alert.EscalationThresholdEvents > 0 ? "events" : "time";
+        _testQueryResult = null;
+        _testQueryError = null;
+        _showAllFields = false;
+    }
+
+    private void SaveEdit()
+    {
+        if (_editingAlert == null) return;
+        _editingAlert.Thresholds.Warning = _editWarning;
+        _editingAlert.Thresholds.Critical = _editCritical;
+        _editingAlert.NextAlertDelayMinutes = _editNextAlertDelayMinutes;
+        _editingAlert.CooldownMinutes = _editNextAlertDelayMinutes; // keep legacy field in sync
+        if (_editEscalationMode == "time") { _editingAlert.EscalationThresholdEvents = 0; _editingAlert.EscalationWindowMinutes = 0; }
+        Definitions.UpdateAlert(_editingAlert);
+        _allAlerts = Definitions.GetAllAlerts();
+        _editingAlert = null;
+        Toast.ShowSuccess("Alert definition saved");
+    }
+
+    private void CancelEdit()
+    {
+        _editingAlert = null;
+        _testQueryResult = null;
+        _testQueryError = null;
+    }
+
+    private async Task TestQuery()
+    {
+        if (_editingAlert == null || string.IsNullOrWhiteSpace(_editingAlert.Query)) return;
+
+        var server = ConnectionManager.CurrentServer;
+        if (server == null)
+        {
+            Toast.ShowWarning("No server selected — go to Servers and connect first");
+            return;
+        }
+
+        _testingQuery = true;
+        _testQueryResult = null;
+        _testQueryError = null;
+        StateHasChanged();
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var connString = server.GetConnectionString(server.ServerNames, "master");
+            var dt = new DataTable();
+
+            await Task.Run(async () =>
+            {
+                using var conn = new SqlConnection(connString);
+                await conn.OpenAsync();
+                using var cmd = new SqlCommand(_editingAlert.Query, conn) { CommandTimeout = 15 };
+                using var reader = await cmd.ExecuteReaderAsync();
+                dt.Load(reader);
+            });
+
+            sw.Stop();
+            _testQueryElapsed = sw.ElapsedMilliseconds < 1000
+                ? $"{sw.ElapsedMilliseconds}ms"
+                : $"{sw.Elapsed.TotalSeconds:F1}s";
+
+            // Limit to 50 rows for display
+            if (dt.Rows.Count > 50)
+            {
+                var trimmed = dt.Clone();
+                for (int i = 0; i < 50; i++)
+                    trimmed.ImportRow(dt.Rows[i]);
+                _testQueryResult = trimmed;
+                _testQueryElapsed += " (showing first 50)";
+            }
+            else
+            {
+                _testQueryResult = dt;
+            }
+        }
+        catch (SqlException ex)
+        {
+            sw.Stop();
+            _testQueryError = $"SQL Error {ex.Number}: {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            _testQueryError = ex.Message;
+        }
+        finally
+        {
+            _testingQuery = false;
+            StateHasChanged();
+        }
+    }
+
+    private void AcknowledgeOne(AlertState alert)
+    {
+        if (!RbacService.HasPermission(UserState.Role, "acknowledge_alerts"))
+        { Toast.ShowWarning("Insufficient permissions. Operator role required."); return; }
+        Engine.AcknowledgeAlert(alert.AlertId, alert.ServerName);
+        _activeAlerts = Engine.ActiveAlerts.ToList();
+        _activeAlertCount = Engine.ActiveCount;
+    }
+
+    private void AcknowledgeAll()
+    {
+        if (!RbacService.HasPermission(UserState.Role, "acknowledge_alerts"))
+        { Toast.ShowWarning("Insufficient permissions. Operator role required."); return; }
+        Engine.AcknowledgeAll();
+        _activeAlerts = Engine.ActiveAlerts.ToList();
+        _activeAlertCount = Engine.ActiveCount;
+    }
+
+    private void SaveGlobalDefaults()
+    {
+        Definitions.UpdateGlobalDefaults(_globalDefaults);
+        Toast.ShowSuccess("Global alert settings saved");
+    }
+
+    private static string GetSeverityColor(string severity) => severity.ToLower() switch
+    {
+        "critical" => "var(--red)",
+        "high" => "var(--orange)",
+        "warning" or "medium" => "var(--yellow)",
+        _ => "var(--accent)"
+    };
+
+    private static string GetStatusBadgeClass(string status) => status switch
+    {
+        "Active" => "severity-warning",
+        "Acknowledged" => "severity-info",
+        "Resolved" => "",
+        _ => ""
+    };
+
+    private string GetCategoryName(string categoryId) =>
+        _categories.FirstOrDefault(c => c.Id == categoryId)?.Name ?? categoryId;
+
+    private static string FormatUnit(string unit) => unit switch
+    {
+        "percent" => "%",
+        "seconds" => "sec",
+        "milliseconds" => "ms",
+        "megabytes" => "MB",
+        "hours" => "hrs",
+        "minutes" => "min",
+        "count" => "#",
+        "per_second" => "/s",
+        "per_minute" => "/m",
+        "event" => "evt",
+        _ => unit
+    };
+
+    private static string FormatFrequency(int seconds)
+    {
+        if (seconds < 60) return $"{seconds}s";
+        if (seconds < 3600) return $"{seconds / 60}m";
+        if (seconds < 86400) return $"{seconds / 3600}h";
+        return $"{seconds / 86400}d";
+    }
+
+    private async Task DeployComprehensiveSession()
+    {
+        var connection = ConnectionManager.GetConnections().FirstOrDefault();
+        if (connection == null)
+        {
+            Toast.ShowError("No server connection configured");
+            return;
+        }
+
+        try
+        {
+            var connStr = connection.GetConnectionString(connection.ServerNames, "master");
+            var result = await XEventService.CreateSessionAsync(connStr, "ComprehensiveMonitor", "error_reported", "severity >= 17");
+            if (result.StartsWith("Error"))
+            {
+                Toast.ShowError(result);
+            }
+            else
+            {
+                Toast.ShowSuccess("Comprehensive XE session deployed");
+                await XEventService.StartSessionAsync(connStr, "ComprehensiveMonitor");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to deploy session: {ex.Message}");
+        }
+    }
+
+    private async Task DeployDeadlockSession()
+    {
+        var connection = ConnectionManager.GetConnections().FirstOrDefault();
+        if (connection == null)
+        {
+            Toast.ShowError("No server connection configured");
+            return;
+        }
+
+        try
+        {
+            var connStr = connection.GetConnectionString(connection.ServerNames, "master");
+            var result = await XEventService.CreateSessionAsync(connStr, "DeadlockMonitor", "xml_deadlock_report");
+            if (result.StartsWith("Error"))
+            {
+                Toast.ShowError(result);
+            }
+            else
+            {
+                Toast.ShowSuccess("Deadlock XE session deployed");
+                await XEventService.StartSessionAsync(connStr, "DeadlockMonitor");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to deploy session: {ex.Message}");
+        }
+    }
+
+    private async Task DeployErrorSession()
+    {
+        var connection = ConnectionManager.GetConnections().FirstOrDefault();
+        if (connection == null)
+        {
+            Toast.ShowError("No server connection configured");
+            return;
+        }
+
+        try
+        {
+            var connStr = connection.GetConnectionString(connection.ServerNames, "master");
+            var result = await XEventService.CreateSessionAsync(connStr, "ErrorMonitor", "error_reported", "severity >= 17");
+            if (result.StartsWith("Error"))
+            {
+                Toast.ShowError(result);
+            }
+            else
+            {
+                Toast.ShowSuccess("Error XE session deployed");
+                await XEventService.StartSessionAsync(connStr, "ErrorMonitor");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to deploy session: {ex.Message}");
+        }
+    }
+
+    private async Task ViewSessions()
+    {
+        var connection = ConnectionManager.GetConnections().FirstOrDefault();
+        if (connection == null)
+        {
+            Toast.ShowError("No server connection configured");
+            return;
+        }
+
+        try
+        {
+            var sessions = await XEventService.GetSessionsAsync(connection.GetConnectionString(connection.ServerNames, "master"));
+            var message = string.Join("\n", sessions.Select(s => $"{s.Name}: {(s.IsEnabled ? "Running" : "Stopped")}"));
+            Toast.ShowInfo($"Active XE Sessions:\n{message}");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"Failed to load sessions: {ex.Message}");
+        }
+    }
+
+    private MarkupString GetStatusIcon(string status)
+    {
+        return status switch
+        {
+            "Active" => new MarkupString("<i class='fas fa-play' style='color:green; font-size:12px;'></i>"),
+            "Inactive" => new MarkupString("<i class='fas fa-pause' style='color:orange; font-size:12px;'></i>"),
+            "Acknowledged" => new MarkupString("<i class='fas fa-check' style='color:blue; font-size:12px;'></i>"),
+            _ => new MarkupString(status)
+        };
+    }
+
+    private string GetBackgroundColor(string severity)
+    {
+        return severity switch
+        {
+            "Critical" => "rgba(220, 38, 38, 0.1)",
+            "High" => "rgba(245, 158, 11, 0.1)",
+            "Medium" => "rgba(59, 130, 246, 0.1)",
+            "Low" => "rgba(34, 197, 94, 0.1)",
+            _ => "transparent"
+        };
+    }
+
+    private void NextAlertPage()
+    {
+        _alertPage = Math.Min(_alertPage + 1, AlertTotalPages);
+    }
+
+    private void PrevAlertPage()
+    {
+        _alertPage = Math.Max(_alertPage - 1, 1);
+    }
+
+    public void Dispose()
+    {
+        Engine.OnAlertsChanged -= OnEngineChanged;
+    }
+}

@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "_doc": "Community-edition build profile - single source of truth for which feature modules ship in a community build (dotnet build/publish -p:SQLTriageProfile=community). Read by buildprofile.targets (build-time page/asset exclusion) and by BuildProfileStore \u002B Pages/BuildProfile.razor (authoring UI, dev builds only). States: ship = always in community; on/off = build-profile toggle; absent/never = compiled out of every community build (fail-closed in buildprofile.targets regardless of this file). Module membership is documented in the internal page inventory and mirrored in buildprofile.targets.",
+  "modules": {
+    "core": "ship",
+    "assessment": "ship",
+    "governance": "ship",
+    "reporting-basic": "ship",
+    "operations": "on",
+    "live-monitoring": "off",
+    "premium": "absent",
+    "dev-tools": "never"
+  },
+  "updatedUtc": "2026-06-17T16:22:12.7590128Z"
+}

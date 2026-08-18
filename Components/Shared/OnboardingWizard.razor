@@ -1,0 +1,164 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using Microsoft.AspNetCore.Components.Routing
+
+@inject NavigationManager Navigation
+
+@if (IsVisible)
+{
+    <div class="modal-backdrop" style="z-index:9000;"></div>
+    <div style="position:fixed; inset:0; z-index:9001; display:flex; align-items:center; justify-content:center; pointer-events:none;">
+        <div class="onboarding-wizard" style="pointer-events:all;">
+
+            <!-- Header -->
+            <div class="onboarding-header">
+                <span class="onboarding-logo"><i class="fa-solid fa-heart-pulse"></i></span>
+                <div>
+                    <div class="onboarding-title">Welcome to SQLTriage</div>
+                    <div class="onboarding-subtitle">Let's get you set up in three quick steps</div>
+                </div>
+                <button class="modal-close" style="margin-left:auto;" @onclick="Dismiss" title="Skip setup">×</button>
+            </div>
+
+            <!-- Step indicators -->
+            <div class="onboarding-steps">
+                @for (int i = 1; i <= 3; i++)
+                {
+                    var step = i;
+                    <div class="onboarding-step-dot @(step == _step ? "active" : step < _step ? "done" : "")">
+                        @if (step < _step)
+                        { <i class="fa-solid fa-circle-check" style="font-size:9px;"></i> }
+                        else
+                        { @step }
+                    </div>
+                    @if (i < 3)
+                    { <div class="onboarding-step-line @(step < _step ? "done" : "")"></div> }
+                }
+            </div>
+
+            <!-- Step content -->
+            <div class="onboarding-body">
+                @if (_step == 1)
+                {
+                    <div class="onboarding-step-content">
+                        <div class="onboarding-step-icon" style="color:var(--accent);">
+                            <i class="fa-solid fa-server"></i>
+                        </div>
+                        <h3>Step 1 — Add Your First Server</h3>
+                        <p>
+                            Connect to a SQL Server instance. You'll need the server name or IP address
+                            and credentials (Windows Auth or SQL login).
+                        </p>
+                        <p style="color:var(--text-muted); font-size:13px;">
+                            Multiple servers and named instances are supported. You can add more servers later in Settings.
+                        </p>
+                        <button class="settings-btn settings-btn-primary" @onclick="GoToServers">
+                            <i class="fa-solid fa-plus"></i> Add a Server
+                        </button>
+                    </div>
+                }
+                else if (_step == 2)
+                {
+                    <div class="onboarding-step-content">
+                        <div class="onboarding-step-icon" style="color:var(--yellow);">
+                            <i class="fa-solid fa-bolt-lightning"></i>
+                        </div>
+                        <h3>Step 2 — Run Audit Assessment</h3>
+                        <p>
+                            Audit Assessment runs the SQL check corpus (including sp_Blitz®) against
+                            your servers and gives you an instant prioritised list of configuration,
+                            performance, and security issues.
+                        </p>
+                        <p style="color:var(--text-muted); font-size:13px;">
+                            Results are colour-coded by priority. Critical findings appear at the top.
+                        </p>
+                        <button class="settings-btn settings-btn-primary" @onclick="GoToQuickCheck">
+                            <i class="fa-solid fa-bolt-lightning"></i> Run Audit Assessment
+                        </button>
+                    </div>
+                }
+                else if (_step == 3)
+                {
+                    <div class="onboarding-step-content">
+                        <div class="onboarding-step-icon" style="color:var(--green);">
+<i class="fa-solid fa-shield-halved"></i>
+                        </div>
+                        <h3>Step 3 — View Your Diagnostics Roadmap</h3>
+                        <p>
+                            The Diagnostics Roadmap maps your Audit Assessment results to five SQL Server
+                            maturity levels, showing exactly what to fix to move up each level.
+                        </p>
+                        <p style="color:var(--text-muted); font-size:13px;">
+                            Export as PDF to share with your team or management.
+                        </p>
+                        <button class="settings-btn settings-btn-primary" @onclick="GoToRoadmap">
+                            <i class="fa-solid fa-road"></i> View Roadmap
+                        </button>
+                    </div>
+                }
+            </div>
+
+            <!-- Footer -->
+            <div class="onboarding-footer">
+                @if (_step > 1)
+                {
+                    <button class="settings-btn" @onclick="Back">
+                        <i class="fa-solid fa-chevron-left"></i> Back
+                    </button>
+                }
+                else
+                {
+                    <span></span>
+                }
+                <div style="display:flex; gap:8px;">
+                    <button class="settings-btn" style="color:var(--text-muted);" @onclick="Dismiss">
+                        Skip for now
+                    </button>
+                    @if (_step < 3)
+                    {
+                        <button class="settings-btn settings-btn-primary" @onclick="Next">
+                            Next <i class="fa-solid fa-chevron-right"></i>
+                        </button>
+                    }
+                    else
+                    {
+                        <button class="settings-btn settings-btn-primary" @onclick="Finish">
+                            <i class="fa-solid fa-circle-check"></i> Done
+                        </button>
+                    }
+                </div>
+            </div>
+
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public EventCallback OnComplete { get; set; }
+
+    private int _step = 1;
+
+    private void Next()  { if (_step < 3) _step++; }
+    private void Back()  { if (_step > 1) _step--; }
+
+    private async Task Dismiss() => await OnComplete.InvokeAsync();
+    private async Task Finish()  => await OnComplete.InvokeAsync();
+
+    private async Task GoToServers()
+    {
+        await OnComplete.InvokeAsync();
+        Navigation.NavigateTo(RouteConstants.Servers);
+    }
+
+    private async Task GoToQuickCheck()
+    {
+        await OnComplete.InvokeAsync();
+        Navigation.NavigateTo(RouteConstants.QuickCheck);
+    }
+
+    private async Task GoToRoadmap()
+    {
+        await OnComplete.InvokeAsync();
+        Navigation.NavigateTo(RouteConstants.DiagnosticsRoadmap);
+    }
+}

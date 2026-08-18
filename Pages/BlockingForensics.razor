@@ -1,0 +1,406 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/blocking-forensics"
+@using SQLTriage.Components.Shared
+
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@using System.Text
+
+@inject BlockingHistoryService BlockingHistory
+@inject BlockingForensicsService Forensics
+@inject ServerConnectionManager ConnectionManager
+@inject AuditLogService AuditLog
+@inject IJSRuntime JS
+@inject UserSettingsService UserSettings
+
+<PageTitle>Blocking Forensics - SQLTriage</PageTitle>
+
+<div class="bf-page">
+
+    <div class="page-header">
+        <div>
+            <h2><i class="fa-solid fa-link-slash"></i> Blocking Forensics</h2>
+            <p class="page-description">
+                Live blocking, deadlocks (from <code>system_health</code>) and Query Store lock-wait
+                history, queried directly from the selected server. A background collector also
+                captures blocking and deadlocks across all enabled servers continuously.
+            </p>
+        </div>
+    </div>
+
+    <!-- ── Filters ─────────────────────────────────────────────── -->
+    <div class="bf-filter-bar">
+        <div class="bf-filter-field">
+            <label>Server / instance</label>
+            <select @bind="_selectedServer" class="bf-select">
+                <option value="">— select —</option>
+                @foreach (var inst in _instances)
+                {
+                    <option value="@inst">@inst</option>
+                }
+            </select>
+        </div>
+        <div class="bf-filter-field">
+            <label>Time range</label>
+            <select @bind="_rangeHours" class="bf-select">
+                <option value="1">Last 1 h</option>
+                <option value="6">Last 6 h</option>
+                <option value="24">Last 24 h</option>
+                <option value="168">Last 7 d</option>
+            </select>
+        </div>
+        <div class="bf-filter-field">
+            <label>Blocker login</label>
+            <input @bind="_filterLogin" placeholder="any" class="bf-input" />
+        </div>
+        <div class="bf-filter-field">
+            <label>Wait type</label>
+            <input @bind="_filterWaitType" placeholder="any" class="bf-input" />
+        </div>
+        <div class="bf-filter-field">
+            <label>Database</label>
+            <input @bind="_filterDatabase" placeholder="any" class="bf-input" />
+        </div>
+        <div class="bf-filter-actions">
+            <button class="btn btn-primary" @onclick="QueryServerNowAsync" disabled="@(_busy || string.IsNullOrEmpty(_selectedServer))">
+                <i class="fa-solid fa-bolt"></i> Query server now
+            </button>
+            <button class="btn btn-secondary" @onclick="LoadAsync" disabled="@(_busy || string.IsNullOrEmpty(_selectedServer))">
+                <i class="fa-solid fa-clock-rotate-left"></i> Load history
+            </button>
+            <button class="btn btn-secondary" @onclick="ResetFilters">Reset</button>
+            <button class="btn btn-secondary" @onclick="ExportCsv" disabled="@(_events.Count == 0)">
+                <i class="fa-solid fa-file-csv"></i> Export CSV
+            </button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_statusMsg))
+    {
+        <div class="bf-status" style="padding:6px 12px;color:var(--text-muted);font-size:12px;">
+            <i class="fa-solid fa-circle-info"></i> @_statusMsg
+        </div>
+    }
+
+    @if (_busy)
+    {
+        <LoadingSpinner Message="Querying server…" />
+    }
+    else if (!string.IsNullOrEmpty(_selectedServer))
+    {
+        <!-- ── Tabs ─────────────────────────────────────────────── -->
+        <div class="bf-tabs" style="display:flex;gap:4px;border-bottom:1px solid var(--border);margin:8px 0 12px;">
+            @foreach (var tab in _tabs)
+            {
+                <button class="bf-tab @(_activeTab == tab ? "bf-tab-active" : "")"
+                        style="padding:8px 16px;background:none;border:none;border-bottom:2px solid @(_activeTab == tab ? "var(--accent)" : "transparent");color:@(_activeTab == tab ? "var(--accent)" : "var(--text-muted)");cursor:pointer;font-size:13px;"
+                        @onclick="() => _activeTab = tab">
+                    @TabLabel(tab)
+                </button>
+            }
+        </div>
+
+        @if (_activeTab == "live")
+        {
+            <div class="bf-section">
+                @if (_liveBlocking.Count == 0)
+                {
+                    <div class="bf-empty">No active blocking on @_selectedServer right now. Click <strong>Query server now</strong> to re-check.</div>
+                }
+                else
+                {
+                    <table class="bf-table">
+                        <thead>
+                            <tr><th>Blocker SPID / login</th><th>Blocked SPID / login</th><th>Wait type</th><th>Blocked DB</th><th>Wait</th><th>Blocker SQL</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var b in _liveBlocking)
+                            {
+                                <tr>
+                                    <td><span class="bf-spid">@b.BlockingSPID</span> <span class="bf-login">@b.BlockerLogin</span></td>
+                                    <td><span class="bf-spid">@b.BlockedSPID</span> <span class="bf-login">@b.BlockedLogin</span></td>
+                                    <td>@(b.WaitType ?? "—")</td>
+                                    <td>@(b.BlockedDatabase ?? "—")</td>
+                                    <td>@FormatDuration((int)(b.WaitDurationMs / 1000))</td>
+                                    <td class="bf-sql-excerpt" title="@b.BlockerSqlText">@(Excerpt(b.BlockerSqlText) ?? "—")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        }
+        else if (_activeTab == "deadlocks")
+        {
+            <div class="bf-section">
+                <h3><i class="fa-solid fa-skull-crossbones"></i> Deadlocks
+                    <span class="bf-count">@_deadlocks.Rows.Count in range</span></h3>
+                <DeadlockViewer DeadlockEvents="@_deadlocks" />
+            </div>
+        }
+        else if (_activeTab == "querystore")
+        {
+            <div class="bf-section">
+                <h3><i class="fa-solid fa-database"></i> Query Store — top Lock waits
+                    @if (_qsWaits.Count > 0) { <span class="bf-count">@_qsWaits.Count quer@(_qsWaits.Count == 1 ? "y" : "ies")</span> }
+                </h3>
+                @if (_qsWaits.Count == 0)
+                {
+                    <div class="bf-empty">
+                        No Query Store lock-wait data. Click <strong>Query server now</strong>; this needs
+                        Query Store enabled (SQL 2017+) on one or more databases.
+                    </div>
+                }
+                else
+                {
+                    <table class="bf-table">
+                        <thead>
+                            <tr><th>Database</th><th>Query ID</th><th>Total lock wait</th><th>Avg lock wait</th><th>SQL excerpt</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var q in _qsWaits)
+                            {
+                                <tr>
+                                    <td>@q.Database</td>
+                                    <td>@q.QueryId</td>
+                                    <td>@FormatMs(q.TotalLockWaitMs)</td>
+                                    <td>@FormatMs(q.AvgLockWaitMs)</td>
+                                    <td class="bf-sql-excerpt" title="@q.SqlText">@(q.SqlText ?? "—")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        }
+        else // history
+        {
+            @if (_offenders.Count > 0)
+            {
+                <div class="bf-section">
+                    <h3><i class="fa-solid fa-user-slash"></i> Top Blocking Offenders</h3>
+                    <table class="bf-table">
+                        <thead>
+                            <tr><th>Blocker login</th><th>Events</th><th>Total blocked time</th><th>SQL excerpt</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var o in _offenders)
+                            {
+                                <tr>
+                                    <td>@(o.BlockerLogin ?? "—")</td>
+                                    <td>@o.EventCount</td>
+                                    <td>@FormatDuration(o.TotalDurationSeconds)</td>
+                                    <td class="bf-sql-excerpt" title="@o.SqlExcerpt">@(o.SqlExcerpt ?? "—")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+
+            <div class="bf-section">
+                <h3>
+                    <i class="fa-solid fa-timeline"></i> Blocking History
+                    @if (_events.Count > 0) { <span class="bf-count">@_events.Count event@(_events.Count == 1 ? "" : "s")</span> }
+                </h3>
+
+                @if (_events.Count == 0)
+                {
+                    <div class="bf-empty">
+                        No blocking events recorded for the selected filters. The background collector
+                        captures blocking automatically; use <strong>Query server now</strong> to force a check.
+                    </div>
+                }
+                else
+                {
+                    <table class="bf-table bf-timeline-table">
+                        <thead>
+                            <tr>
+                                <th>Time (UTC)</th><th>Blocker SPID / login</th><th>Blocked SPID / login</th>
+                                <th>Wait type</th><th>Database</th><th>Duration</th><th>SQL</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var ev in _events)
+                            {
+                                <tr>
+                                    <td class="bf-time">@ev.CapturedUtc.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                    <td><span class="bf-spid">@ev.BlockerSpid</span>
+                                        @if (!string.IsNullOrEmpty(ev.BlockerLogin)) { <span class="bf-login"> @ev.BlockerLogin</span> }</td>
+                                    <td><span class="bf-spid">@ev.BlockedSpid</span>
+                                        @if (!string.IsNullOrEmpty(ev.BlockedLogin)) { <span class="bf-login"> @ev.BlockedLogin</span> }</td>
+                                    <td>@(ev.WaitType ?? "—")</td>
+                                    <td>@(ev.BlockerDatabase ?? "—")</td>
+                                    <td>@FormatDuration(ev.DurationSeconds)</td>
+                                    <td class="bf-sql-cell">
+                                        @if (!string.IsNullOrWhiteSpace(ev.BlockerSqlText))
+                                        {
+                                            var excerpt = ev.BlockerSqlText.Length > 100 ? ev.BlockerSqlText[..100] + "…" : ev.BlockerSqlText;
+                                            <span class="bf-sql-excerpt" title="@ev.BlockerSqlText">@excerpt</span>
+                                            @if (ev.BlockerSqlText.Length > 100)
+                                            {
+                                                <button class="bf-expand-btn" @onclick="() => ToggleExpand(ev.Id)" title="Toggle full SQL">
+                                                    <i class="fa-solid @(_expanded.Contains(ev.Id) ? "fa-compress" : "fa-expand")"></i>
+                                                </button>
+                                                @if (_expanded.Contains(ev.Id)) { <pre class="bf-sql-full">@ev.BlockerSqlText</pre> }
+                                            }
+                                        }
+                                        else { <span class="bf-na">—</span> }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+        }
+    }
+    else
+    {
+        <div class="bf-empty">Select a server / instance, then <strong>Query server now</strong> (live + deadlocks + Query Store) or <strong>Load history</strong>.</div>
+    }
+</div>
+
+@code {
+    private List<string> _instances = new();
+    private List<BlockingEvent> _events = new();
+    private List<BlockingOffender> _offenders = new();
+    private List<BlockingInfo> _liveBlocking = new();
+    private List<QueryStoreLockWait> _qsWaits = new();
+    private System.Data.DataTable _deadlocks = new();
+    private HashSet<long> _expanded = new();
+
+    private readonly string[] _tabs = { "live", "deadlocks", "querystore", "history" };
+    private string _activeTab = "live";
+
+    private string _selectedServer = "";
+    private int _rangeHours = 24;
+    private string _filterLogin = "";
+    private string _filterWaitType = "";
+    private string _filterDatabase = "";
+    private bool _busy;
+    private string _statusMsg = "";
+
+    private static string TabLabel(string t) => t switch
+    {
+        "live" => "Live blocking",
+        "deadlocks" => "Deadlocks",
+        "querystore" => "Query Store",
+        _ => "History"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (UserSettings.GetFastAppLoad()) await Task.Yield();
+        // Resolved instances (HOST or HOST\INSTANCE) — the key the collector records under.
+        _instances = ConnectionManager.GetConnections()
+            .Where(c => c.IsEnabled)
+            .SelectMany(c => c.GetServerList())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (_instances.Count == 1) _selectedServer = _instances[0];
+    }
+
+    // Active pull: live blocking + deadlocks (system_health) + Query Store, then refresh history.
+    private async Task QueryServerNowAsync()
+    {
+        if (string.IsNullOrEmpty(_selectedServer)) return;
+        _busy = true; _statusMsg = ""; StateHasChanged();
+        try
+        {
+            var newDl = await Forensics.PullDeadlocksAsync(_selectedServer);
+            _liveBlocking = await Forensics.GetLiveBlockingAsync(_selectedServer);
+            _qsWaits = await Forensics.GetQueryStoreLockWaitsAsync(_selectedServer);
+            await LoadHistoryInternal();
+            _statusMsg = $"{_liveBlocking.Count} active blocking pair(s), {newDl} new deadlock(s) captured, "
+                       + $"{_deadlocks.Rows.Count} deadlock(s) in range, {_qsWaits.Count} Query Store lock-wait quer(ies).";
+            AuditLog.LogSecurityEvent($"Blocking forensics: queried {_selectedServer} on demand", AuditSeverity.Info);
+        }
+        catch (Exception ex) { _statusMsg = $"Query failed: {ex.Message}"; }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private async Task LoadAsync()
+    {
+        if (string.IsNullOrEmpty(_selectedServer)) return;
+        _busy = true; StateHasChanged();
+        try { await LoadHistoryInternal(); }
+        finally { _busy = false; StateHasChanged(); }
+    }
+
+    private async Task LoadHistoryInternal()
+    {
+        var toUtc = DateTime.UtcNow;
+        var fromUtc = toUtc.AddHours(-_rangeHours);
+
+        var allEvents = await BlockingHistory.GetEventsAsync(_selectedServer, fromUtc, toUtc);
+        _offenders = await BlockingHistory.GetTopOffendersAsync(_selectedServer, fromUtc);
+        _deadlocks = await BlockingHistory.GetDeadlocksAsync(_selectedServer, fromUtc, toUtc);
+
+        _events = allEvents
+            .Where(e =>
+                (string.IsNullOrEmpty(_filterLogin)    || string.Equals(e.BlockerLogin,    _filterLogin,    StringComparison.OrdinalIgnoreCase)) &&
+                (string.IsNullOrEmpty(_filterWaitType) || string.Equals(e.WaitType,        _filterWaitType, StringComparison.OrdinalIgnoreCase)) &&
+                (string.IsNullOrEmpty(_filterDatabase) || string.Equals(e.BlockerDatabase, _filterDatabase, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+        _expanded.Clear();
+    }
+
+    private void ResetFilters()
+    {
+        _filterLogin = ""; _filterWaitType = ""; _filterDatabase = "";
+        _events.Clear(); _offenders.Clear(); _liveBlocking.Clear(); _qsWaits.Clear();
+        _deadlocks = new System.Data.DataTable();
+        _statusMsg = "";
+    }
+
+    private void ToggleExpand(long id)
+    {
+        if (!_expanded.Remove(id)) _expanded.Add(id);
+    }
+
+    private async Task ExportCsv()
+    {
+        AuditLog.LogExportOperation("BlockingForensicsCSV", $"{_selectedServer} ({_rangeHours}h, {_events.Count} rows)", true);
+
+        var sb = new StringBuilder();
+        sb.AppendLine("captured_utc,blocker_spid,blocker_login,blocked_spid,blocked_login,wait_type,wait_resource,blocker_database,blocked_database,duration_seconds,blocker_sql_text");
+        foreach (var ev in _events)
+        {
+            sb.AppendLine(string.Join(",",
+                CsvEsc(ev.CapturedUtc.ToString("o")), ev.BlockerSpid, CsvEsc(ev.BlockerLogin),
+                ev.BlockedSpid, CsvEsc(ev.BlockedLogin), CsvEsc(ev.WaitType), CsvEsc(ev.WaitResource),
+                CsvEsc(ev.BlockerDatabase), CsvEsc(ev.BlockedDatabase), ev.DurationSeconds, CsvEsc(ev.BlockerSqlText)));
+        }
+        var b64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(sb.ToString()));
+        var filename = $"blocking_forensics_{_selectedServer.Replace("\\", "_")}_{DateTime.UtcNow:yyyyMMddHHmm}.csv";
+        await JS.InvokeVoidAsync("downloadFile", filename, b64, "text/csv;charset=utf-8");
+    }
+
+    private static string CsvEsc(string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return "";
+        value = value.Replace("\"", "\"\"");
+        return value.Contains(',') || value.Contains('"') || value.Contains('\n') ? $"\"{value}\"" : value;
+    }
+
+    private static string? Excerpt(string? s) =>
+        string.IsNullOrEmpty(s) ? null : (s.Length > 100 ? s[..100] + "…" : s);
+
+    private static string FormatDuration(int seconds)
+    {
+        if (seconds < 60)  return $"{seconds}s";
+        if (seconds < 3600) return $"{seconds / 60}m {seconds % 60}s";
+        return $"{seconds / 3600}h {(seconds % 3600) / 60}m";
+    }
+
+    private static string FormatMs(double ms)
+    {
+        if (ms < 1000) return $"{ms:0}ms";
+        var secs = ms / 1000.0;
+        if (secs < 60) return $"{secs:0.0}s";
+        return $"{(int)(secs / 60)}m {(int)(secs % 60)}s";
+    }
+}

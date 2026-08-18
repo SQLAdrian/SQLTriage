@@ -1,0 +1,60 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@*
+ RbacGuard — wraps UI that requires a specific RBAC permission.
+ Shows ChildContent when the current user has permission; shows AccessDenied otherwise.
+ In WPF desktop mode, AppUserState.Role is always "admin" so all guards pass.
+
+ Usage:
+   <RbacGuard Permission="acknowledge_alerts">
+       <button @onclick="Ack">Acknowledge</button>
+   </RbacGuard>
+
+   <RbacGuard Permission="settings" HideWhenDenied>
+       <!-- invisible to viewer -->
+   </RbacGuard>
+*@
+
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@inject AppUserState UserState
+
+@if (_permitted)
+{
+    @ChildContent
+}
+else if (!HideWhenDenied)
+{
+    <AccessDenied RequiredRole="@_requiredRole" Message="@DeniedMessage" />
+}
+
+@code {
+    /// <summary>RBAC permission key — matched against RbacService.HasPermission.</summary>
+    [Parameter, EditorRequired] public string Permission { get; set; } = "";
+
+    /// <summary>Content rendered when the user has permission.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>
+    /// When true, renders nothing (instead of AccessDenied) if the user lacks permission.
+    /// Use this to hide entire buttons/sections rather than show a lock icon.
+    /// </summary>
+    [Parameter] public bool HideWhenDenied { get; set; } = false;
+
+    /// <summary>Optional override message for the AccessDenied component.</summary>
+    [Parameter] public string DeniedMessage { get; set; } = "";
+
+    private bool _permitted;
+    private string _requiredRole = "Operator";
+
+    protected override void OnParametersSet()
+    {
+        _permitted = RbacService.HasPermission(UserState.Role, Permission);
+
+        // Derive a human-friendly role name for the denied message
+        _requiredRole = Permission switch
+        {
+            "settings" or "manage_servers" or "manage_users" or "manage_alerts" => "Admin",
+            _ => "Operator"
+        };
+    }
+}

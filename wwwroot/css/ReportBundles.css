@@ -1,0 +1,278 @@
+/* In the name of God, the Merciful, the Compassionate */
+
+/* ── Report Bundles page ─────────────────────────────────────────────── */
+
+.report-bundles-container {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 24px 16px;
+}
+
+.report-bundles-header {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+.report-bundles-header h1 {
+    font-size: 22px;
+    font-weight: 700;
+    margin: 0;
+    color: var(--text);
+}
+
+.rb-server-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 28px;
+}
+
+.rb-server-row label {
+    font-weight: 600;
+    font-size: 13px;
+    white-space: nowrap;
+    color: var(--text);
+}
+
+.rb-server-row select {
+    flex: 1;
+    max-width: 360px;
+    height: 32px;
+    padding: 0 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 13px;
+}
+
+.rb-allservers-btn {
+    height: 32px;
+    padding: 0 14px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background .15s, border-color .15s, color .15s;
+}
+
+.rb-allservers-btn:hover {
+    border-color: var(--accent);
+}
+
+.rb-allservers-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+
+/* ── Acknowledgement tone toggle ──────────────────────────────────────── */
+
+.rb-ack-tone {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 4px 0 10px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.rb-tone-btn {
+    height: 24px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.rb-tone-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+
+/* ── Bundle cards ─────────────────────────────────────────────────────── */
+
+.rb-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+}
+
+.rb-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transition: box-shadow 0.15s;
+}
+
+.rb-card:hover {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.10);
+}
+
+.rb-card-icon {
+    font-size: 24px;
+    color: var(--accent);
+    margin-bottom: 2px;
+}
+
+.rb-card-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    margin: 0;
+}
+
+.rb-card-desc {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.5;
+    flex: 1;
+}
+
+.rb-card-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    min-height: 16px;
+}
+
+.rb-card-result {
+    font-size: 11px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    background: var(--surface-alt, var(--surface));
+    border: 1px solid var(--border);
+    word-break: break-all;
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+}
+
+.rb-card-result.rb-success {
+    border-color: var(--green);
+    background: color-mix(in srgb, var(--green) 8%, transparent);
+}
+
+.rb-card-result.rb-error {
+    border-color: var(--red);
+    background: color-mix(in srgb, var(--red) 8%, transparent);
+}
+
+.rb-card-result .rb-path {
+    flex: 1;
+    font-family: 'Consolas', monospace;
+    font-size: 10px;
+    word-break: break-all;
+}
+
+.rb-open-btn {
+    font-size: 11px;
+    padding: 2px 8px;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    background: var(--surface);
+    color: var(--accent);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.rb-open-btn:hover {
+    background: var(--accent);
+    color: #fff;
+}
+
+/* Generate button */
+.rb-gen-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    background: var(--accent);
+    color: #fff;
+    transition: opacity 0.15s;
+}
+
+.rb-gen-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.rb-gen-btn:hover:not(:disabled) {
+    opacity: 0.88;
+}
+
+/* Button group — HTML + PDF buttons side by side */
+.rb-btn-group {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.rb-btn-group .rb-gen-btn {
+    flex: 1 1 auto;
+}
+
+/* PDF variant — uses a muted accent so it reads as secondary */
+.rb-pdf-btn {
+    background: var(--surface-2, var(--bg-card));
+    color: var(--accent);
+    border: 1.5px solid var(--accent);
+}
+
+.rb-pdf-btn:hover:not(:disabled) {
+    background: var(--accent);
+    color: #fff;
+    opacity: 1;
+}
+
+/* Print iframe — hidden from view, used by PrintService */
+.rb-print-frame {
+    position: fixed;
+    left: -9999px;
+    top: -9999px;
+    width: 1px;
+    height: 1px;
+    border: none;
+    visibility: hidden;
+}
+
+/* Generating spinner state */
+.rb-spinning {
+    animation: rb-spin 1s linear infinite;
+    display: inline-block;
+}
+
+@keyframes rb-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+
+/* ── DRAFT watermark UX notice ─────────────────────────────────────────── */
+.rb-watermark-notice {
+    margin: 0 0 16px;
+    padding: 8px 14px;
+    border-left: 3px solid var(--orange);
+    background: var(--orange-faint);
+    border-radius: 0 6px 6px 0;
+    font-size: 12px;
+    color: var(--text-secondary);
+}

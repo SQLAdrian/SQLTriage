@@ -1,0 +1,609 @@
+@*/* In the name of God, the Merciful, the Compassionate */*@
+@page "/remediation"
+@using System
+@using System.Linq
+@using SQLTriage.Data
+@using SQLTriage.Data.Services
+@using SQLTriage.Data.Services.Remediation
+@implements IDisposable
+@inject SQLTriage.Data.Services.IFeatureGate Gate
+@inject IRemediationCapability Capability
+@inject RemediationRunner Runner
+@inject RemediationTemplateStore Templates
+@inject IRemediationCreditLedger Ledger
+@inject IServerConnectionManager Connections
+@inject IServerContextService ServerContext
+@inject PowerEstimateService Power
+@inject AuditLogService Audit
+@inject MissingIndexService MissingIndex
+@inject SQLTriage.Data.Services.Remediation.RemediationGrantStore Grants
+
+@* Production gated remediation surface. Every shipped Configuration fix is listed as its own
+   row; each keeps the full gated flow (preview → approve → apply → verify → ledger) via the DI
+   RemediationRunner. The page operates on the server selected in the top bar ("Connected to:")
+   — there is no per-page server picker. The five gates live in the runner; this page only
+   renders the human decision. The approval gate shows the RELATIVE power-saving band (cached
+   watts only, never a live probe that blocks the UI). *@
+
+<PageTitle>Remediation - SQLTriage</PageTitle>
+
+@if (!Capability.IsGranted)
+{
+    <div class="settings-page" style="max-width:760px; padding:32px;">
+        <h2 style="margin:0 0 8px;"><i class="fa-solid fa-lock"></i> Remediation not enabled in this build</h2>
+        <p style="color:var(--text-muted); font-size:13px;">
+            Applying remediations is not enabled in this build, so it stays read-only for changes.
+            Diagnosis, assessment and reporting are unaffected.
+        </p>
+    </div>
+    return;
+}
+
+<div class="settings-page" style="max-width:980px; padding:24px;">
+    <h2><i class="fa-solid fa-screwdriver-wrench"></i> Remediation
+        <span style="font-size:12px;color:var(--text-muted);">(preview → approve → apply → verify)</span></h2>
+    <p style="color:var(--text-muted);font-size:13px;margin:4px 0 16px;">
+        Every apply is gated, bounded, reversible, and recorded in the HMAC-chained audit ledger.
+        Preview shows the exact T-SQL that will run; nothing changes until you approve.
+    </p>
+
+    @{
+        var server = OperatingServer;
+        var bd = string.IsNullOrWhiteSpace(server) ? default : Ledger.GetBreakdown(server);
+    }
+    @if (string.IsNullOrWhiteSpace(server))
+    {
+        <p style="font-size:13px;color:var(--text-muted);margin:8px 0;">
+            <i class="fa-solid fa-circle-info"></i>
+            Select a server in the top bar (<strong>Connected to:</strong>) to preview and apply fixes.
+        </p>
+    }
+    else
+    {
+        <div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin:4px 0 12px;padding:10px 14px;border:1px solid var(--border);border-radius:8px;background:rgba(255,255,255,0.02);">
+            <div style="font-size:13px;">Operating on <strong>@server</strong></div>
+            <div style="display:flex;gap:16px;font-size:12px;color:var(--text-muted);align-items:center;">
+                <span title="Per-server change credits available to this build"><i class="fa-solid fa-coins"></i> Credits <strong style="color:var(--text-primary)">@bd.Allocation</strong></span>
+                <span title="Credits consumed by applied changes">Committed <strong style="color:var(--text-primary)">@bd.Committed</strong></span>
+                @if (bd.Outstanding > 0)
+                {
+                    <span title="In-flight reservations (apply in progress)">Reserved <strong style="color:var(--text-primary)">@bd.Outstanding</strong></span>
+                }
+                <span title="Available to apply now (1 credit per applied change; preview is free)">Available <strong style="color:@(bd.Available > 0 ? "var(--green)" : "var(--orange)")">@bd.Available</strong></span>
+            </div>
+        </div>
+        @if (bd.Available <= 0)
+        {
+            <div role="note" style="margin:0 0 14px;padding:10px 14px;border:1px solid var(--orange);border-radius:8px;background:rgba(230,150,30,0.08);font-size:13px;">
+                <i class="fa-solid fa-triangle-exclamation" style="color:var(--orange);margin-right:6px;"></i>
+                Out of change credits for <strong>@server</strong>. Applies are blocked until more are added —
+                add more change credits below. Preview and diagnosis remain available.
+            </div>
+        }
+
+        @* ── Redeem a signed allocation (adds credits; verified against the licensing key) ── *@
+        <div style="margin:0 0 14px;">
+            <button class="btn btn-secondary" @onclick="() => _redeemOpen = !_redeemOpen">
+                <i class="fa-solid fa-key" style="margin-right:6px;"></i>@(_redeemOpen ? "Hide" : "Add") credits
+            </button>
+            @if (_redeemOpen)
+            {
+                <div style="margin-top:10px;padding:12px 14px;border:1px solid var(--border);border-radius:8px;background:rgba(255,255,255,0.02);">
+                    <p style="font-size:12px;color:var(--text-muted);margin:0 0 8px;">
+                        Paste a change-credit grant file. It is verified against the embedded key
+                        (the app can verify but never issue grants) and adds change credits to the
+                        server named in the file. Each grant can be redeemed once.
+                    </p>
+                    <textarea @bind="_redeemJson" rows="5" style="width:100%;font-family:monospace;font-size:12px;"
+                              placeholder='{ "server": "...", "credits": 50, "issuedUtc": "...", "expiresUtc": "...", "nonce": "...", "signature": "..." }'></textarea>
+                    <div style="margin-top:8px;">
+                        <button class="btn btn-primary" @onclick="RedeemAsync" disabled="@_redeemBusy">
+                            @if (_redeemBusy) { <i class="fa-solid fa-spinner rb-spinning"></i><span> Verifying…</span> }
+                            else { <i class="fa-solid fa-check"></i><span> Verify &amp; redeem</span> }
+                        </button>
+                    </div>
+                    @if (!string.IsNullOrEmpty(_redeemMessage))
+                    {
+                        <p style="margin-top:8px;font-size:13px;color:@(_redeemOk ? "var(--green)" : "#ff8a8a");">@_redeemMessage</p>
+                    }
+                </div>
+            }
+        </div>
+
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead>
+                <tr style="text-align:left;color:var(--text-muted);border-bottom:1px solid var(--border);">
+                    <th style="padding:6px 8px;">Fix</th>
+                    <th style="padding:6px 8px;width:110px;">Target</th>
+                    <th style="padding:6px 8px;width:120px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in _rows)
+                {
+                    var op = row.Template.Operation!;
+                    <tr style="border-bottom:1px solid var(--border);">
+                        <td style="padding:8px;">
+                            <div style="font-weight:600;">@row.Template.DisplayName</div>
+                            <div style="color:var(--text-muted);font-size:12px;">@op.ConfigName</div>
+                        </td>
+                        <td style="padding:8px;">
+                            <input type="number" min="@op.MinValue" max="@op.MaxValue" @bind="row.Value"
+                                   class="form-control" style="width:90px;" />
+                        </td>
+                        <td style="padding:8px;">
+                            <button class="btn btn-secondary" @onclick="() => ProposeAsync(row)" disabled="@row.Busy">
+                                1 · Preview
+                            </button>
+                            @if (row.Result is null && row.HistoryPreChange is int hv)
+                            {
+                                <div style="margin-top:6px;">
+                                    <button class="btn btn-secondary" style="font-size:12px;padding:2px 8px;"
+                                            @onclick="() => RevertFromHistoryAsync(row)" disabled="@row.Busy"
+                                            title="Re-apply the value captured before this fix's last applied change (gated apply; debits 1 credit)">
+                                        <i class="fa-solid fa-clock-rotate-left"></i> Revert to @hv (history)
+                                    </button>
+                                </div>
+                            }
+                        </td>
+                    </tr>
+                    @if (row.Proposal is not null || row.Result is not null)
+                    {
+                        <tr>
+                            <td colspan="3" style="padding:0 8px 12px;">
+                                <div style="padding:12px 14px;border:1px solid var(--border);border-radius:8px;background:rgba(255,255,255,0.02);">
+                                    @if (row.Proposal is not null)
+                                    {
+                                        <h4 style="margin:0 0 8px;">Preview</h4>
+                                        @if (row.Proposal.IsRefused)
+                                        {
+                                            <pre style="color:#ff8a8a;white-space:pre-wrap;">Refused at gate: @row.Proposal.Refusal — @row.Proposal.Message</pre>
+                                        }
+                                        else
+                                        {
+                                            <pre style="white-space:pre-wrap;font-size:12px;">@row.Proposal.Preview?.WhatIfText</pre>
+                                            @RenderPowerBand(row, atApproval: true)
+                                            <div style="margin-top:12px;display:flex;gap:10px;align-items:center;">
+                                                <button class="btn btn-primary" @onclick="() => ApplyAsync(row)" disabled="@row.Busy">
+                                                    2 · Approve &amp; Apply
+                                                </button>
+                                                <span style="font-size:12px;color:var(--text-muted);">
+                                                    Applies as <strong>@System.Environment.UserName</strong> and debits 1 credit.
+                                                </span>
+                                            </div>
+                                        }
+                                    }
+
+                                    @if (row.Result is not null)
+                                    {
+                                        <div style="margin-top:@(row.Proposal is not null ? "12px" : "0");">
+                                            <h4 style="margin:0 0 8px;">Result</h4>
+                                            @if (row.Result.IsRefused)
+                                            {
+                                                <pre style="color:#ff8a8a;white-space:pre-wrap;">Refused at gate: @row.Result.Refusal — @row.Result.Message</pre>
+                                            }
+                                            else
+                                            {
+                                                <pre style="color:@OutcomeColor(row.Result.Outcome);white-space:pre-wrap;">Outcome: @row.Result.Outcome
+@(row.Result.Message)</pre>
+                                                <p style="font-size:12px;color:var(--text-muted);">
+                                                    Recorded in the audit ledger (RemediationProposed / Approved / Applied@(row.Result.RolledBack ? " / RolledBack" : "")).
+                                                </p>
+                                                @RenderPowerBand(row, atApproval: false)
+                                                @if (row.Result.Outcome == RemediationOutcome.AppliedVerified && row.Result.PreChangeValue is int oldv)
+                                                {
+                                                    <div style="margin-top:10px;">
+                                                        <button class="btn btn-secondary" @onclick="() => UndoAsync(row)" disabled="@row.Busy">
+                                                            <i class="fa-solid fa-rotate-left"></i> Undo — revert to @oldv
+                                                        </button>
+                                                        <span style="font-size:12px;color:var(--text-muted);margin-left:8px;">
+                                                            Re-applies the pre-change value (a gated apply; debits 1 credit).
+                                                        </span>
+                                                    </div>
+                                                }
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+
+        @* ── Add missing index (gated CREATE INDEX, DROP-on-rollback) ───────────── *@
+        <div style="margin-top:24px;border-top:1px solid var(--border);padding-top:16px;">
+            <button class="btn btn-secondary" @onclick="ToggleIndexSection">
+                <i class="fa-solid fa-layer-group" style="margin-right:6px;"></i>@(_indexOpen ? "Hide" : "Add") missing indexes
+            </button>
+            @if (_indexOpen)
+            {
+                <p style="color:var(--text-muted);font-size:12px;margin:10px 0;">
+                    Recommendations from <code>sys.dm_db_missing_index_*</code>. Each apply is the gated CREATE INDEX
+                    (preview → approve → apply → verify); a verify failure auto-drops the index. The exact columns ship
+                    from the DMV — nothing is synthesised. Behaviour-changing: an index adds write overhead, so review impact.
+                </p>
+                <button class="btn btn-secondary" @onclick="LoadIndexCandidatesAsync" disabled="@_indexLoading">
+                    @if (_indexLoading) { <i class="fa-solid fa-spinner rb-spinning"></i><span> Scanning…</span> }
+                    else { <i class="fa-solid fa-rotate"></i><span> Scan for candidates</span> }
+                </button>
+
+                @if (_indexRows.Count > 0)
+                {
+                    <table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:12px;">
+                        <thead>
+                            <tr style="text-align:left;color:var(--text-muted);border-bottom:1px solid var(--border);">
+                                <th style="padding:6px 8px;">Database</th>
+                                <th style="padding:6px 8px;">Table</th>
+                                <th style="padding:6px 8px;">Key / Include</th>
+                                <th style="padding:6px 8px;width:90px;">Impact</th>
+                                <th style="padding:6px 8px;width:120px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var ix in _indexRows)
+                            {
+                                var c = ix.Candidate;
+                                <tr style="border-bottom:1px solid var(--border);">
+                                    <td style="padding:8px;">@c.Database</td>
+                                    <td style="padding:8px;">@c.Schema.@c.Table</td>
+                                    <td style="padding:8px;">
+                                        <div><strong>Key:</strong> @string.Join(", ", c.KeyColumns)</div>
+                                        @if (c.IncludedColumns.Count > 0)
+                                        {
+                                            <div style="color:var(--text-muted);"><strong>Include:</strong> @string.Join(", ", c.IncludedColumns)</div>
+                                        }
+                                    </td>
+                                    <td style="padding:8px;">@c.AvgImpact.ToString("F0")% · @c.UserSeeks seeks</td>
+                                    <td style="padding:8px;">
+                                        <button class="btn btn-secondary" @onclick="() => ProposeIndexAsync(ix)" disabled="@ix.Busy">1 · Preview</button>
+                                    </td>
+                                </tr>
+                                @if (ix.Proposal is not null || ix.Result is not null)
+                                {
+                                    <tr>
+                                        <td colspan="5" style="padding:0 8px 12px;">
+                                            <div style="padding:12px 14px;border:1px solid var(--border);border-radius:8px;background:rgba(255,255,255,0.02);">
+                                                @if (ix.Proposal is not null)
+                                                {
+                                                    <h4 style="margin:0 0 8px;">Preview</h4>
+                                                    @if (ix.Proposal.IsRefused)
+                                                    {
+                                                        <pre style="color:#ff8a8a;white-space:pre-wrap;">Refused at gate: @ix.Proposal.Refusal — @ix.Proposal.Message</pre>
+                                                    }
+                                                    else
+                                                    {
+                                                        <pre style="white-space:pre-wrap;font-size:12px;">@ix.Proposal.Preview?.WhatIfText</pre>
+                                                        <div style="margin-top:12px;">
+                                                            <button class="btn btn-primary" @onclick="() => ApplyIndexAsync(ix)" disabled="@ix.Busy">2 · Approve &amp; Apply</button>
+                                                            <span style="font-size:12px;color:var(--text-muted);margin-left:8px;">Applies as <strong>@System.Environment.UserName</strong> and debits 1 credit.</span>
+                                                        </div>
+                                                    }
+                                                }
+                                                @if (ix.Result is not null)
+                                                {
+                                                    <div style="margin-top:@(ix.Proposal is not null ? "12px" : "0");">
+                                                        <h4 style="margin:0 0 8px;">Result</h4>
+                                                        @if (ix.Result.IsRefused)
+                                                        {
+                                                            <pre style="color:#ff8a8a;white-space:pre-wrap;">Refused at gate: @ix.Result.Refusal — @ix.Result.Message</pre>
+                                                        }
+                                                        else
+                                                        {
+                                                            <pre style="color:@OutcomeColor(ix.Result.Outcome);white-space:pre-wrap;">Outcome: @ix.Result.Outcome
+@(ix.Result.Message)</pre>
+                                                            <p style="font-size:12px;color:var(--text-muted);">Recorded in the audit ledger@(ix.Result.RolledBack ? " (verify failed → index dropped)" : "").</p>
+                                                        }
+                                                    </div>
+                                                }
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                }
+                else if (_indexScanned)
+                {
+                    <p style="color:var(--text-muted);font-size:12px;margin-top:10px;">No missing-index recommendations for this server (the DMVs are empty or were recently cleared).</p>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    // Per-fix row state — each row carries its own gated preview/apply/undo lifecycle so the
+    // whole shipped fix set is actionable at once without weakening the per-change gating.
+    private sealed class FixRow
+    {
+        public RemediationTemplate Template { get; init; } = default!;
+        public int Value { get; set; }
+        public bool Busy { get; set; }
+        public RemediationProposal? Proposal { get; set; }
+        public RemediationResult? Result { get; set; }
+        public FixPowerSaving? Saving { get; set; }
+        /// <summary>Pre-change value of this fix's last verified apply on the current server, read from the audit ledger (cross-session revert target).</summary>
+        public int? HistoryPreChange { get; set; }
+    }
+
+    private List<FixRow> _rows = new();
+
+    // The server is whatever the top bar ("Connected to:") points at — resolve the selected
+    // connection id to its instance name. No per-page server picker.
+    private string? OperatingServer
+    {
+        get
+        {
+            var id = ServerContext.CurrentServerId;
+            if (string.IsNullOrEmpty(id)) return null;
+            return Connections.GetConnection(id)?.GetServerList().FirstOrDefault();
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        _rows = Templates.All()
+            .Where(t => t.Kind == RemediationKind.Configuration && t.Operation is not null)
+            .OrderBy(t => t.DisplayName)
+            .Select(t => new FixRow { Template = t, Value = t.Operation!.MinValue })
+            .ToList();
+        LoadHistory();
+        ServerContext.OnServerChanged += OnServerChanged;
+    }
+
+    public void Dispose() => ServerContext.OnServerChanged -= OnServerChanged;
+
+    // New target server: clear every row's preview/result so nothing stale carries over,
+    // and refresh the cross-session revert targets for the new server.
+    private void OnServerChanged()
+    {
+        foreach (var r in _rows) { r.Proposal = null; r.Result = null; r.Saving = null; }
+        _indexRows.Clear(); _indexScanned = false;
+        LoadHistory();
+        InvokeAsync(StateHasChanged);
+    }
+
+    // Populate each row's cross-session revert target from the HMAC-chained audit ledger:
+    // the pre-change value of the fix's most recent verified apply on the current server.
+    private void LoadHistory()
+    {
+        var server = OperatingServer;
+        // Single ledger scan for the whole fix set (avoids rescanning the log files per row).
+        var history = string.IsNullOrWhiteSpace(server)
+            ? new Dictionary<string, string>()
+            : Audit.GetLatestRemediationPreChanges(server);
+        foreach (var r in _rows)
+        {
+            r.HistoryPreChange = history.TryGetValue(r.Template.Key, out var pv) && int.TryParse(pv, out var v)
+                ? v : (int?)null;
+        }
+    }
+
+    private static Dictionary<string, string> ParamsFor(FixRow row) =>
+        new() { [row.Template.Operation!.ValueParam] = row.Value.ToString() };
+
+    private async Task ProposeAsync(FixRow row)
+    {
+        var server = OperatingServer;
+        if (string.IsNullOrWhiteSpace(server)) return;
+        row.Busy = true; row.Result = null; row.Saving = null;
+        try { row.Proposal = await Runner.ProposeAsync(row.Template.Key, server, ParamsFor(row)); }
+        finally { row.Busy = false; }
+    }
+
+    private async Task ApplyAsync(FixRow row)
+    {
+        var server = OperatingServer;
+        if (string.IsNullOrWhiteSpace(server)) return;
+        row.Busy = true; row.Saving = null;
+        try
+        {
+            row.Result = await Runner.ApplyAsync(
+                row.Template.Key, server, approved: true, approvedBy: System.Environment.UserName, ParamsFor(row));
+
+            // Post-apply probe is acceptable; record the modelled saving only for a VERIFIED apply
+            // (an AppliedVerifyFailed was rolled back, so a saving there would overstate + pollute the ledger).
+            if (row.Result?.Outcome is RemediationOutcome.AppliedVerified && row.Template.ShowPowerBand)
+            {
+                row.Saving = await Power.EstimateFixSavingAsync(server, row.Template.Type);
+                if (row.Saving is { } s)
+                    Audit.LogRemediationPowerEstimate(row.Template.Key, server, s.LowPct, s.HighPct, s.WattsLow, s.WattsHigh);
+            }
+        }
+        finally { row.Busy = false; }
+    }
+
+    // Session-scoped undo: re-apply the captured pre-change value through the normal gated path
+    // (itself previewed-free / approved / audited / credit-debited). Not cross-session history.
+    private async Task UndoAsync(FixRow row)
+    {
+        var server = OperatingServer;
+        if (row.Result?.PreChangeValue is not int old || string.IsNullOrWhiteSpace(server)) return;
+        row.Busy = true; row.Saving = null;
+        try
+        {
+            var p = new Dictionary<string, string> { [row.Template.Operation!.ValueParam] = old.ToString() };
+            row.Result = await Runner.ApplyAsync(row.Template.Key, server, approved: true,
+                approvedBy: System.Environment.UserName, p);
+            row.Value = old; // reflect the reverted value in the input
+        }
+        finally { row.Busy = false; }
+    }
+
+    // Cross-session revert: re-apply the pre-change value of this fix's last verified apply,
+    // read from the audit ledger (not in-session memory). Same gated path as a normal apply —
+    // previewed-free / approved / audited / credit-debited. Available when there is no live
+    // in-session result but the ledger holds a recoverable prior value.
+    private async Task RevertFromHistoryAsync(FixRow row)
+    {
+        var server = OperatingServer;
+        if (row.HistoryPreChange is not int old || string.IsNullOrWhiteSpace(server)) return;
+        row.Busy = true; row.Saving = null;
+        try
+        {
+            var p = new Dictionary<string, string> { [row.Template.Operation!.ValueParam] = old.ToString() };
+            row.Result = await Runner.ApplyAsync(row.Template.Key, server, approved: true,
+                approvedBy: System.Environment.UserName, p);
+            row.Value = old;
+            LoadHistory(); // this revert is now itself the latest applied state
+        }
+        finally { row.Busy = false; }
+    }
+
+    // ── Add missing index (gated CREATE INDEX) ───────────────────────────────
+    private sealed class IndexFixRow
+    {
+        public MissingIndexCandidate Candidate { get; init; } = default!;
+        public bool Busy { get; set; }
+        public RemediationProposal? Proposal { get; set; }
+        public RemediationResult? Result { get; set; }
+    }
+
+    private const string AddIndexKey = "ADDMISSINGINDEX";
+    private bool _indexOpen;
+    private bool _indexLoading;
+    private bool _indexScanned;
+    private List<IndexFixRow> _indexRows = new();
+
+    private void ToggleIndexSection() => _indexOpen = !_indexOpen;
+
+    private async Task LoadIndexCandidatesAsync()
+    {
+        var server = OperatingServer;
+        if (string.IsNullOrWhiteSpace(server) || _indexLoading) return;
+        _indexLoading = true;
+        _indexRows.Clear();
+        StateHasChanged();
+        try
+        {
+            var candidates = await MissingIndex.GetCandidatesAsync(server, top: 25);
+            _indexRows = candidates.Select(c => new IndexFixRow { Candidate = c }).ToList();
+            _indexScanned = true;
+        }
+        finally { _indexLoading = false; StateHasChanged(); }
+    }
+
+    // ── Redeem a signed allocation (adds change credits) ─────────────────────
+    private bool _redeemOpen;
+    private string _redeemJson = string.Empty;
+    private bool _redeemBusy;
+    private bool _redeemOk;
+    private string? _redeemMessage;
+
+    private async Task RedeemAsync()
+    {
+        _redeemBusy = true; _redeemMessage = null;
+        StateHasChanged();
+        try
+        {
+            var now = DateTime.UtcNow;
+            var result = SignedAllocationVerifier.Verify(_redeemJson, now);
+            if (!result.Valid || result.Allocation is null)
+            {
+                _redeemOk = false;
+                _redeemMessage = "Rejected: " + (result.Error ?? "invalid allocation.");
+                return;
+            }
+            var a = result.Allocation;
+            var err = Grants.Redeem(a, now); // null on success; replay/error string otherwise
+            if (err != null) { _redeemOk = false; _redeemMessage = "Rejected: " + err; return; }
+            _redeemOk = true;
+            _redeemMessage = $"Redeemed {a.Credits} change credits for '{a.Server}' (valid until {a.ExpiresUtc:u}).";
+            _redeemJson = string.Empty;
+            await Task.CompletedTask;
+        }
+        catch (Exception ex) { _redeemOk = false; _redeemMessage = "Error: " + ex.Message; }
+        finally { _redeemBusy = false; StateHasChanged(); }
+    }
+
+    private static Dictionary<string, string> ParamsForIndex(MissingIndexCandidate c) => new()
+    {
+        [RemediationOpRenderer.IndexDatabaseParam] = c.Database,
+        [RemediationOpRenderer.IndexSchemaParam] = c.Schema,
+        [RemediationOpRenderer.IndexTableParam] = c.Table,
+        [RemediationOpRenderer.IndexNameParam] = c.SuggestedName,
+        [RemediationOpRenderer.IndexKeyColumnsParam] = string.Join(",", c.KeyColumns),
+        [RemediationOpRenderer.IndexIncludedColumnsParam] = string.Join(",", c.IncludedColumns),
+    };
+
+    private async Task ProposeIndexAsync(IndexFixRow ix)
+    {
+        var server = OperatingServer;
+        if (string.IsNullOrWhiteSpace(server)) return;
+        ix.Busy = true; ix.Result = null;
+        try { ix.Proposal = await Runner.ProposeAsync(AddIndexKey, server, ParamsForIndex(ix.Candidate)); }
+        finally { ix.Busy = false; }
+    }
+
+    private async Task ApplyIndexAsync(IndexFixRow ix)
+    {
+        var server = OperatingServer;
+        if (string.IsNullOrWhiteSpace(server)) return;
+        ix.Busy = true;
+        try
+        {
+            ix.Result = await Runner.ApplyAsync(AddIndexKey, server, approved: true,
+                approvedBy: System.Environment.UserName, ParamsForIndex(ix.Candidate));
+        }
+        finally { ix.Busy = false; }
+    }
+
+    // The power band. At the APPROVAL gate we never probe — relative %-band always, plus a watt
+    // band ONLY if an estimate is already cached (physical host). Post-apply we use the probed
+    // saving captured in ApplyAsync.
+    private RenderFragment RenderPowerBand(FixRow row, bool atApproval) => builder =>
+    {
+        var t = row.Template;
+        if (!t.ShowPowerBand) return;
+        var server = OperatingServer;
+        if (string.IsNullOrWhiteSpace(server)) return;
+
+        int lowPct, highPct;
+        int? wattsLow = null, wattsHigh = null;
+
+        if (atApproval)
+        {
+            (lowPct, highPct) = PowerEstimateService.ReductionBand(t.Type);
+            if (Power.TryGetCached(server, out var est) && est is not null)
+            {
+                var fs = PowerEstimateService.SavingFrom(est, t.Type);
+                wattsLow = fs.WattsLow; wattsHigh = fs.WattsHigh;
+            }
+        }
+        else
+        {
+            if (row.Saving is not { } fs) return;
+            lowPct = fs.LowPct; highPct = fs.HighPct; wattsLow = fs.WattsLow; wattsHigh = fs.WattsHigh;
+        }
+
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "style", "margin:10px 0 0;padding:10px 12px;background:rgba(74,222,128,0.08);border:1px solid rgba(74,222,128,0.25);border-radius:6px;font-size:13px;");
+        builder.AddMarkupContent(2, "<i class=\"fa-solid fa-leaf\" style=\"color:#4ade80;\"></i> ");
+        builder.AddMarkupContent(3, "<strong>Tuning headroom:</strong> ");
+        builder.AddContent(4, $"this fix class could cut ~{lowPct}–{highPct}% of this server's SQL CPU work");
+        if (wattsLow.HasValue)
+        {
+            builder.AddContent(5, $" (≈{wattsLow}–{wattsHigh} W on a physical host).");
+        }
+        else
+        {
+            builder.AddContent(6, ".");
+        }
+        builder.OpenElement(7, "div");
+        builder.AddAttribute(8, "style", "color:var(--text-muted);font-size:12px;margin-top:4px;");
+        builder.AddContent(9, "Modelled estimate, not a measurement; illustrative for this fix class, not a per-server promise; realisable only if freed capacity is reclaimed.");
+        builder.CloseElement();
+        builder.CloseElement();
+    };
+
+    private static string OutcomeColor(RemediationOutcome? o) => o switch
+    {
+        RemediationOutcome.AppliedVerified => "#8aff8a",
+        RemediationOutcome.NoOp => "#8ad7ff",
+        RemediationOutcome.AppliedVerifyFailed => "#ffcc66",
+        _ => "#ff8a8a"
+    };
+}

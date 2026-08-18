@@ -1,0 +1,111 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/installation-helper"
+@using SQLTriage.Data
+@using SQLTriage.Data.Services
+@inject ServerConnectionManager ConnectionManager
+@inject IDocumentationService DocumentationService
+
+<PageTitle>SQLTriage - Installation Helper</PageTitle>
+
+<div class="page-content">
+    <div class="page-header">
+        <h1><i class="fa-solid fa-screwdriver-wrench"></i> Installation Helper</h1>
+        <p class="text-app-text-secondary">
+            Validate your SQL Server installation against a hardening checklist — configuration settings,
+            security posture, and best-practice flags — with pass/fail status and remediation guidance.
+        </p>
+    </div>
+
+    @* ── Coming-soon banner ────────────────────────────────────────────────── *@
+    <div class="alert-info-banner" style="margin-bottom:1.5rem; padding:14px 18px; border-radius:8px;
+        background:rgba(var(--blue-rgb, 59,130,246),0.08); border:1px solid rgba(var(--blue-rgb,59,130,246),0.25);">
+        <i class="fa-solid fa-flask" style="margin-right:6px; color:var(--blue,#3b82f6);"></i>
+        <strong>Coming in v2</strong> — implementation pending.
+        See <code>docs/design/documentation-generator.md</code> for the pickup guide.
+    </div>
+
+    @* ── Server picker ─────────────────────────────────────────────────────── *@
+    <div class="section-card" style="margin-bottom:1rem; padding:16px 20px;">
+        <h3 style="margin-bottom:10px;">Select Server</h3>
+        <select class="form-control" style="max-width:320px;" disabled>
+            <option value="">-- choose a server --</option>
+            @foreach (var conn in _connections)
+            {
+                <option value="@conn.Id">@conn.ServerNames</option>
+            }
+        </select>
+    </div>
+
+    @* ── Action button ─────────────────────────────────────────────────────── *@
+    <div style="margin-bottom:1.5rem;">
+        <button class="btn btn-primary"
+                disabled
+                title="v2: implementation pending — see docs/design/documentation-generator.md step 3">
+            <i class="fa-solid fa-list-check"></i> Run Checklist
+        </button>
+    </div>
+
+    @* ── Placeholder checklist preview ─────────────────────────────────────── *@
+    <div class="section-card" style="padding:16px 20px; opacity:0.5;">
+        <h3 style="margin-bottom:12px;"><i class="fa-solid fa-list-check"></i> Checklist Results (Preview)</h3>
+        <table style="width:100%; border-collapse:collapse; font-size:13px;">
+            <thead>
+                <tr style="border-bottom:1px solid var(--border); text-align:left;">
+                    <th style="padding:6px 8px;">Status</th>
+                    <th style="padding:6px 8px;">Category</th>
+                    <th style="padding:6px 8px;">Check</th>
+                    <th style="padding:6px 8px;">Current</th>
+                    <th style="padding:6px 8px;">Recommended</th>
+                    <th style="padding:6px 8px;">Guidance</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in _placeholderItems)
+                {
+                    <tr style="border-bottom:1px solid var(--border);">
+                        <td style="padding:6px 8px;">
+                            <i class="fa-solid @(item.Passed ? "fa-circle-check" : "fa-circle-xmark")"
+                               style="color:var(@(item.Passed ? "--green" : "--red"))"></i>
+                        </td>
+                        <td style="padding:6px 8px; color:var(--text-secondary);">@item.Category</td>
+                        <td style="padding:6px 8px;">@item.CheckName</td>
+                        <td style="padding:6px 8px; font-family:monospace;">@item.CurrentValue</td>
+                        <td style="padding:6px 8px; font-family:monospace;">@item.RecommendedValue</td>
+                        <td style="padding:6px 8px; color:var(--text-muted);">@item.Guidance</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    private List<ServerConnection> _connections = new();
+
+    // Placeholder rows to illustrate the expected output structure
+    private static readonly List<InstallationHelperItem> _placeholderItems = new()
+    {
+        new() { CheckName = "Max Degree of Parallelism", Category = "Performance", Passed = false,
+                CurrentValue = "0 (default)", RecommendedValue = "NUMA-based cap",
+                Guidance = "Set MAXDOP to logical CPU count / NUMA node, max 8" },
+        new() { CheckName = "Cost Threshold for Parallelism", Category = "Performance", Passed = false,
+                CurrentValue = "5", RecommendedValue = "50",
+                Guidance = "Default 5 causes excessive parallelism on fast hardware" },
+        new() { CheckName = "Backup Compression Default", Category = "Setup", Passed = true,
+                CurrentValue = "1 (enabled)", RecommendedValue = "1",
+                Guidance = "Compressed backups use less disk and often complete faster" },
+        new() { CheckName = "xp_cmdshell", Category = "Security", Passed = true,
+                CurrentValue = "0 (disabled)", RecommendedValue = "0",
+                Guidance = "Should be disabled unless specifically required" },
+        new() { CheckName = "SA Login Disabled", Category = "Security", Passed = false,
+                CurrentValue = "Enabled", RecommendedValue = "Disabled or renamed",
+                Guidance = "SA is a high-value attack target; disable or rename it" },
+    };
+
+    protected override void OnInitialized()
+    {
+        _connections = ConnectionManager.GetConnections()
+            .Where(c => c.IsEnabled)
+            .ToList();
+    }
+}

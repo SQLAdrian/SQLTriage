@@ -1,0 +1,50 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/login"
+<PageTitle>SQLTriage - Sign In</PageTitle>
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@using SQLTriage.Data
+@inject NavigationManager Nav
+@inject ServerModeService ServerMode
+@inject RbacService RbacService
+@inject AuditLogService AuditLog
+
+@code {
+    protected override void OnInitialized()
+    {
+        AuditLog.LogSessionEvent("login");
+        if (ServerMode.IsRunning && RbacService.Config.Enabled)
+        {
+            // Hand off to the raw auth endpoint which shows OAuth provider buttons
+            Nav.NavigateTo("/auth/login", forceLoad: true);
+        }
+    }
+}
+
+<div style="display:flex;align-items:center;justify-content:center;min-height:60vh;">
+    <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;padding:40px 48px;max-width:420px;width:100%;text-align:center;">
+        <i class="fa-solid fa-lock" style="font-size:36px;color:var(--accent);margin-bottom:16px;"></i>
+        <h2 style="margin:0 0 8px;font-size:18px;">Sign In Required</h2>
+
+        @if (ServerMode.IsRunning && RbacService.Config.Enabled)
+        {
+            <p style="color:var(--text-muted);font-size:13px;margin-bottom:24px;">Redirecting to authentication&hellip;</p>
+        }
+        else if (ServerMode.IsRunning && !RbacService.Config.Enabled)
+        {
+            <p style="color:var(--text-muted);font-size:13px;margin-bottom:24px;">
+                RBAC is not enabled. Enable it in
+                <a href="RouteConstants.Settings" style="color:var(--accent);">Settings → Access Control</a>.
+            </p>
+        }
+        else
+        {
+            <p style="color:var(--text-muted);font-size:13px;margin-bottom:24px;">
+                This application is running in desktop (WPF) mode. Authentication is managed by Windows.
+            </p>
+            <a href="/" style="display:inline-block;padding:8px 20px;background:var(--accent);color:var(--text-primary);border-radius:6px;text-decoration:none;font-size:13px;">
+                Go to Dashboard
+            </a>
+        }
+    </div>
+</div>

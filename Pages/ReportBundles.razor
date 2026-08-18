@@ -1,0 +1,643 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/reports"
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@using System.IO
+@using Microsoft.Extensions.Logging
+@inject ReportBundleService ReportBundleSvc
+@inject ServerConnectionManager ConnectionManager
+@inject SQLTriage.Data.Services.AppUserState UserState
+@inject SQLTriage.Data.Services.RbacService RbacService
+@inject ILogger<ReportBundles> Logger
+<PageTitle>Report Bundles - SQLTriage</PageTitle>
+
+<div class="report-bundles-container">
+    <div class="report-bundles-header">
+        <h1><i class="fa-solid fa-file-export" style="margin-right:8px;color:var(--accent)"></i>Diagnostic Report Bundles</h1>
+    </div>
+
+    <div class="rb-server-row">
+        <label>Server</label>
+        @* Shared ServerSelector (name mode) — consistent with VA/FullAudit/etc. *@
+        <ServerSelector Servers="_serverNames"
+                        Selected="@_selectedServer"
+                        SelectedChanged="@(v => { _selectedServer = v; _allServers = false; StateHasChanged(); })" />
+        <button class="rb-allservers-btn @(_allServers ? "active" : "")"
+                title="Roll up every scanned server into one estate report (Audit Evidence ships a per-server zip)"
+                @onclick="@(() => { _allServers = !_allServers; if (_allServers) _selectedServer = null; StateHasChanged(); })">
+            <i class="fa-solid fa-layer-group" style="margin-right:6px;"></i>All Servers
+        </button>
+    </div>
+
+    @if (_allServers)
+    {
+        <div class="rb-watermark-notice" role="note">
+            <i class="fa-solid fa-layer-group" style="color:var(--accent);margin-right:6px;"></i>
+            Estate mode: findings are rolled up by check with a <strong>servers-impacted</strong> count.
+            Audit Evidence produces a <strong>per-server PDF zip</strong> (one attestation each).
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(_selectedServer) && _selectedServerRequiresWatermark)
+    {
+        <div class="rb-watermark-notice" role="note">
+            <i class="fa-solid fa-triangle-exclamation" style="color:var(--orange);margin-right:6px;"></i>
+            This report will be marked <strong>DRAFT</strong> because the selected server is tagged non-Production or unset.
+        </div>
+    }
+
+    <div class="rb-cards">
+
+        @* ── Executive Summary ──────────────────────────────────────────── *@
+        <div class="rb-card">
+            <div class="rb-card-icon"><i class="fa-solid fa-chart-pie"></i></div>
+            <div class="rb-card-title">Executive Summary</div>
+            <div class="rb-card-desc">
+                1-page snapshot for non-technical stakeholders: health score, top 5 risks, and 30-day context.
+                Suitable for board reports and management briefings.
+            </div>
+            <div class="rb-card-meta">
+                @if (ReportBundleSvc.GetLastGenerated(_selectedServer ?? "", "ExecutiveSummary") is DateTime dt1)
+                {
+                    <span>Last generated: @dt1.ToString("yyyy-MM-dd HH:mm")</span>
+                }
+            </div>
+            @if (_results.TryGetValue("ExecutiveSummary", out var r1))
+            {
+                <div class="rb-card-result @(r1.Success ? "rb-success" : "rb-error")">
+                    @if (r1.Success)
+                    {
+                        <span class="rb-path">@r1.Path</span>
+                        <button class="rb-open-btn" @onclick="() => OpenInExplorer(r1.Path!)">
+                            <i class="fa-solid fa-folder-open"></i> Open
+                        </button>
+                    }
+                    else
+                    {
+                        <span style="color:var(--red)"><i class="fa-solid fa-circle-exclamation"></i> @r1.Error</span>
+                    }
+                </div>
+            }
+            <div class="rb-btn-group">
+                <button class="rb-gen-btn" disabled="@(!CanGenerate)"
+                        @onclick='() => GenerateAsync("ExecutiveSummary")'>
+                    @if (_generating && _generatingType == "ExecutiveSummary")
+                    {
+                        <i class="fa-solid fa-spinner rb-spinning"></i>
+                        <span>Generating…</span>
+                    }
+                    else
+                    {
+                        <i class="fa-solid fa-file-code"></i>
+                        <span>Save as HTML</span>
+                    }
+                </button>
+                <button class="rb-gen-btn rb-pdf-btn" disabled="@(!CanGenerate)"
+                        title="Save as PDF"
+                        @onclick='() => GeneratePdfAsync("ExecutiveSummary")'>
+                    @if (_generating && _generatingType == "ExecutiveSummary_pdf")
+                    {
+                        <i class="fa-solid fa-spinner rb-spinning"></i>
+                        <span>Exporting…</span>
+                    }
+                    else
+                    {
+                        <i class="fa-solid fa-file-pdf"></i>
+                        <span>Save as PDF</span>
+                    }
+                </button>
+            </div>
+        </div>
+
+        @* ── DBA Handoff Package ────────────────────────────────────────── *@
+        <div class="rb-card">
+            <div class="rb-card-icon"><i class="fa-solid fa-screwdriver-wrench"></i></div>
+            <div class="rb-card-title">DBA Handoff Package</div>
+            <div class="rb-card-desc">
+                Multi-page PDF: server inventory, all VA findings, known issues, and failed checks.
+                For the incoming DBA or support handoff.
+            </div>
+            <div class="rb-card-meta">
+                @if (ReportBundleSvc.GetLastGenerated(_selectedServer ?? "", "DbaHandoff") is DateTime dt2)
+                {
+                    <span>Last generated: @dt2.ToString("yyyy-MM-dd HH:mm")</span>
+                }
+            </div>
+            @if (_results.TryGetValue("DbaHandoff", out var r2))
+            {
+                <div class="rb-card-result @(r2.Success ? "rb-success" : "rb-error")">
+                    @if (r2.Success)
+                    {
+                        <span class="rb-path">@r2.Path</span>
+                        <button class="rb-open-btn" @onclick="() => OpenInExplorer(r2.Path!)">
+                            <i class="fa-solid fa-folder-open"></i> Open
+                        </button>
+                    }
+                    else
+                    {
+                        <span style="color:var(--red)"><i class="fa-solid fa-circle-exclamation"></i> @r2.Error</span>
+                    }
+                </div>
+            }
+            <div class="rb-btn-group">
+                <button class="rb-gen-btn" disabled="@(!CanGenerate)"
+                        @onclick='() => GenerateAsync("DbaHandoff")'>
+                    @if (_generating && _generatingType == "DbaHandoff")
+                    {
+                        <i class="fa-solid fa-spinner rb-spinning"></i>
+                        <span>Generating…</span>
+                    }
+                    else
+                    {
+                        <i class="fa-solid fa-file-code"></i>
+                        <span>Save as HTML</span>
+                    }
+                </button>
+                <button class="rb-gen-btn rb-pdf-btn" disabled="@(!CanGenerate)"
+                        title="Save as PDF"
+                        @onclick='() => GeneratePdfAsync("DbaHandoff")'>
+                    @if (_generating && _generatingType == "DbaHandoff_pdf")
+                    {
+                        <i class="fa-solid fa-spinner rb-spinning"></i>
+                        <span>Exporting…</span>
+                    }
+                    else
+                    {
+                        <i class="fa-solid fa-file-pdf"></i>
+                        <span>Save as PDF</span>
+                    }
+                </button>
+            </div>
+        </div>
+
+        @* ── Audit Evidence ─────────────────────────────────────────────── *@
+        <div class="rb-card">
+            <div class="rb-card-icon"><i class="fa-solid fa-scale-balanced"></i></div>
+            <div class="rb-card-title">Audit Evidence</div>
+            <div class="rb-card-desc">
+                Compliance-ready PDF: VA findings with framework tags, audit log summary,
+                HMAC chain status, and SHA-256 integrity hash.
+            </div>
+            <div class="rb-card-meta">
+                @if (ReportBundleSvc.GetLastGenerated(_selectedServer ?? "", "AuditEvidence") is DateTime dt3)
+                {
+                    <span>Last generated: @dt3.ToString("yyyy-MM-dd HH:mm")</span>
+                }
+            </div>
+            @if (_results.TryGetValue("AuditEvidence", out var r3))
+            {
+                <div class="rb-card-result @(r3.Success ? "rb-success" : "rb-error")">
+                    @if (r3.Success)
+                    {
+                        <span class="rb-path">@r3.Path</span>
+                        <button class="rb-open-btn" @onclick="() => OpenInExplorer(r3.Path!)">
+                            <i class="fa-solid fa-folder-open"></i> Open
+                        </button>
+                    }
+                    else
+                    {
+                        <span style="color:var(--red)"><i class="fa-solid fa-circle-exclamation"></i> @r3.Error</span>
+                    }
+                </div>
+            }
+            <div class="rb-btn-group">
+                <button class="rb-gen-btn" disabled="@(!CanGenerate)"
+                        @onclick='() => GenerateAsync("AuditEvidence")'>
+                    @if (_generating && _generatingType == "AuditEvidence")
+                    {
+                        <i class="fa-solid fa-spinner rb-spinning"></i>
+                        <span>Generating…</span>
+                    }
+                    else
+                    {
+                        <i class="fa-solid fa-file-code"></i>
+                        <span>Save as HTML</span>
+                    }
+                </button>
+                <button class="rb-gen-btn rb-pdf-btn" disabled="@(!CanGenerate)"
+                        title="Save as PDF"
+                        @onclick='() => GeneratePdfAsync("AuditEvidence")'>
+                    @if (_generating && _generatingType == "AuditEvidence_pdf")
+                    {
+                        <i class="fa-solid fa-spinner rb-spinning"></i>
+                        <span>Exporting…</span>
+                    }
+                    else
+                    {
+                        <i class="fa-solid fa-file-pdf"></i>
+                        <span>Save as PDF</span>
+                    }
+                </button>
+            </div>
+        </div>
+
+        @* ── Risk Register ──────────────────────────────────────────────── *@
+        <div class="rb-card">
+            <div class="rb-card-icon"><i class="fa-solid fa-clipboard-list"></i></div>
+            <div class="rb-card-title">Risk Register</div>
+            <div class="rb-card-desc">
+                The living ledger of bad-state risks, in plain English a manager can read:
+                what is wrong, how serious, and the business impact if left unaddressed.
+            </div>
+            <div class="rb-card-meta"></div>
+            @if (_results.TryGetValue("RiskRegister", out var r4))
+            {
+                <div class="rb-card-result @(r4.Success ? "rb-success" : "rb-error")">
+                    @if (r4.Success)
+                    {
+                        <span class="rb-path">@r4.Path</span>
+                        <button class="rb-open-btn" @onclick="() => OpenInExplorer(r4.Path!)"><i class="fa-solid fa-folder-open"></i> Open</button>
+                    }
+                    else
+                    {
+                        <span style="color:var(--red)"><i class="fa-solid fa-circle-exclamation"></i> @r4.Error</span>
+                    }
+                </div>
+            }
+            <div class="rb-btn-group">
+                <button class="rb-gen-btn" disabled="@(!CanGenerate)" @onclick='() => GenerateAsync("RiskRegister")'>
+                    @if (_generating && _generatingType == "RiskRegister") { <i class="fa-solid fa-spinner rb-spinning"></i><span>Generating…</span> }
+                    else { <i class="fa-solid fa-file-code"></i><span>Save as HTML</span> }
+                </button>
+                <button class="rb-gen-btn rb-pdf-btn" disabled="@(!CanGenerate)" title="Save as PDF" @onclick='() => GeneratePdfAsync("RiskRegister")'>
+                    @if (_generating && _generatingType == "RiskRegister_pdf") { <i class="fa-solid fa-spinner rb-spinning"></i><span>Exporting…</span> }
+                    else { <i class="fa-solid fa-file-pdf"></i><span>Save as PDF</span> }
+                </button>
+            </div>
+        </div>
+
+        @* ── Risk Acknowledgement ───────────────────────────────────────── *@
+        <div class="rb-card">
+            <div class="rb-card-icon"><i class="fa-solid fa-file-signature"></i></div>
+            <div class="rb-card-title">Risk Acknowledgement</div>
+            <div class="rb-card-desc">
+                The Risk Register as a sign-off sheet: hand it to your manager to approve the
+                work — or to formally accept the risk. Either way, the decision is on record.
+            </div>
+            <div class="rb-ack-tone">
+                <span>Tone:</span>
+                <button class="rb-tone-btn @(_ackFormalTone ? "active" : "")" @onclick="() => _ackFormalTone = true">Formal</button>
+                <button class="rb-tone-btn @(!_ackFormalTone ? "active" : "")" @onclick="() => _ackFormalTone = false">Plain</button>
+            </div>
+            @if (_results.TryGetValue("RiskAck", out var r5))
+            {
+                <div class="rb-card-result @(r5.Success ? "rb-success" : "rb-error")">
+                    @if (r5.Success)
+                    {
+                        <span class="rb-path">@r5.Path</span>
+                        <button class="rb-open-btn" @onclick="() => OpenInExplorer(r5.Path!)"><i class="fa-solid fa-folder-open"></i> Open</button>
+                    }
+                    else
+                    {
+                        <span style="color:var(--red)"><i class="fa-solid fa-circle-exclamation"></i> @r5.Error</span>
+                    }
+                </div>
+            }
+            <div class="rb-btn-group">
+                <button class="rb-gen-btn" disabled="@(!CanGenerate)" @onclick='() => GenerateAsync("RiskAck")'>
+                    @if (_generating && _generatingType == "RiskAck") { <i class="fa-solid fa-spinner rb-spinning"></i><span>Generating…</span> }
+                    else { <i class="fa-solid fa-file-code"></i><span>Save as HTML</span> }
+                </button>
+                <button class="rb-gen-btn rb-pdf-btn" disabled="@(!CanGenerate)" title="Save as PDF" @onclick='() => GeneratePdfAsync("RiskAck")'>
+                    @if (_generating && _generatingType == "RiskAck_pdf") { <i class="fa-solid fa-spinner rb-spinning"></i><span>Exporting…</span> }
+                    else { <i class="fa-solid fa-file-pdf"></i><span>Save as PDF</span> }
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <p style="margin-top:24px;font-size:11px;color:var(--text-muted)">
+        <strong>Save as PDF</strong> produces a deterministic, print-ready PDF in the app's <code>output</code> folder.
+        <strong>Save as HTML</strong> saves a portable file you can open in any browser and print manually.
+        Scheduled generation and email delivery are deferred to v2.
+    </p>
+
+    @* ── Risk Register: assign owners + review dates (persisted) ───────────── *@
+    <div class="rb-owner-editor" style="margin-top:20px;border-top:1px solid var(--border);padding-top:16px;">
+        <button class="rb-allservers-btn @(_ownerEditorOpen ? "active" : "")" @onclick="ToggleOwnerEditor">
+            <i class="fa-solid fa-user-tag" style="margin-right:6px;"></i>@(_ownerEditorOpen ? "Hide owner assignment" : "Assign risk owners & review dates")
+        </button>
+
+        @if (_ownerEditorOpen)
+        {
+            @if (!RbacService.HasPermission(UserState.Role, "settings"))
+            {
+                <div class="rb-watermark-notice" role="note" style="margin-top:12px;">
+                    <i class="fa-solid fa-lock" style="color:var(--orange);margin-right:6px;"></i>
+                    Assigning owners is restricted to Admin users.
+                </div>
+            }
+            else if (!CanGenerate)
+            {
+                <div class="rb-watermark-notice" role="note" style="margin-top:12px;">
+                    Pick a server (or <strong>All Servers</strong>) above, then load its risk register.
+                </div>
+            }
+            else
+            {
+                <div style="margin:12px 0;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                    <button class="rb-gen-btn" @onclick="LoadOwnerRowsAsync" disabled="@_ownerLoading">
+                        @if (_ownerLoading) { <i class="fa-solid fa-spinner rb-spinning"></i><span>Loading…</span> }
+                        else { <i class="fa-solid fa-rotate"></i><span>Load risk register</span> }
+                    </button>
+                    <span style="font-size:11px;color:var(--text-muted)">
+                        Owners persist across scans (keyed by server + check) and flow into every Risk Register and Audit Evidence report.
+                        @if (_allServers) { <text>Estate mode assigns an estate-wide default owner.</text> }
+                    </span>
+                </div>
+
+                @if (_ownerRows.Count > 0)
+                {
+                    <div style="overflow-x:auto;">
+                        <table class="rb-owner-table" style="width:100%;border-collapse:collapse;font-size:13px;">
+                            <thead>
+                                <tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-muted);">
+                                    <th style="padding:6px 8px;">Severity</th>
+                                    <th style="padding:6px 8px;">Risk</th>
+                                    <th style="padding:6px 8px;">Owner</th>
+                                    <th style="padding:6px 8px;">Review by</th>
+                                    <th style="padding:6px 8px;"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in _ownerRows)
+                                {
+                                    <tr style="border-bottom:1px solid var(--border-subtle,var(--border));">
+                                        <td style="padding:6px 8px;white-space:nowrap;">@row.Severity</td>
+                                        <td style="padding:6px 8px;"><code style="font-size:11px;color:var(--text-muted)">@row.CheckId</code> @row.Risk</td>
+                                        <td style="padding:6px 8px;"><input type="text" @bind="row.Owner" placeholder="Unassigned" style="width:160px;" /></td>
+                                        <td style="padding:6px 8px;"><input type="date" @bind="row.ReviewBy" style="width:150px;" /></td>
+                                        <td style="padding:6px 8px;white-space:nowrap;">
+                                            <button class="rb-gen-btn" style="padding:4px 10px;" disabled="@row.Saving" @onclick="() => SaveOwnerRowAsync(row)">
+                                                @if (row.Saving) { <i class="fa-solid fa-spinner rb-spinning"></i> }
+                                                else if (row.Saved) { <i class="fa-solid fa-check" style="color:var(--green)"></i><span>Saved</span> }
+                                                else { <i class="fa-solid fa-floppy-disk"></i><span>Save</span> }
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                else if (_ownerLoaded)
+                {
+                    <div class="rb-watermark-notice" role="note" style="margin-top:8px;">
+                        No fundable risks for this scope — nothing to assign.
+                    </div>
+                }
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private string? _selectedServer;
+    private List<string> _serverNames = new();
+    private bool _allServers;
+    private bool _ackFormalTone = true;
+    private bool _generating;
+    private string? _generatingType;
+
+    /// <summary>A bundle can be generated when a single server is picked OR estate mode is on.</summary>
+    private bool CanGenerate => !_generating && (_allServers || !string.IsNullOrEmpty(_selectedServer));
+
+    // Key: bundleType → result record
+    private readonly Dictionary<string, (bool Success, string? Path, string? Error)> _results = new();
+
+    /// <summary>True when the selected server is non-production or unset (watermark will be applied).</summary>
+    private bool _selectedServerRequiresWatermark =>
+        !string.IsNullOrEmpty(_selectedServer) &&
+        ServerEnvironment.RequiresWatermark(
+            ConnectionManager.GetConnections()
+                .Where(c => c.GetServerList().Any(n =>
+                    string.Equals(n, _selectedServer, StringComparison.OrdinalIgnoreCase)))
+                .Select(c => c.Environment));
+
+    protected override void OnInitialized()
+    {
+        _serverNames = ConnectionManager.GetEnabledServerNames().ToList();
+        if (_serverNames.Count == 1)
+            _selectedServer = _serverNames[0];
+    }
+
+    // ── Owner / review-by assignment editor ──────────────────────────────
+    private bool _ownerEditorOpen;
+    private bool _ownerLoading;
+    private bool _ownerLoaded;
+    private readonly List<OwnerEditRow> _ownerRows = new();
+
+    private sealed class OwnerEditRow
+    {
+        public string CheckId = "";
+        public string Severity = "";
+        public string Risk = "";
+        public string Owner = "";
+        public DateTime ReviewBy = DateTime.UtcNow.Date.AddDays(90);
+        public bool Saving;
+        public bool Saved;
+    }
+
+    private void ToggleOwnerEditor() => _ownerEditorOpen = !_ownerEditorOpen;
+
+    private async Task LoadOwnerRowsAsync()
+    {
+        if (_ownerLoading) return;
+        _ownerLoading = true;
+        _ownerLoaded = false;
+        _ownerRows.Clear();
+        StateHasChanged();
+        try
+        {
+            var bundle = await Task.Run(() => ReportBundleSvc.GetRiskRegister(_allServers ? null : _selectedServer));
+            foreach (var r in bundle.Rows)
+            {
+                _ownerRows.Add(new OwnerEditRow
+                {
+                    CheckId = r.Id,
+                    Severity = r.Severity,
+                    Risk = r.Risk,
+                    Owner = r.Owner ?? "",
+                    ReviewBy = r.ReviewByUtc ?? DateTime.UtcNow.Date.AddDays(90),
+                });
+            }
+            _ownerLoaded = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load risk register for owner assignment");
+        }
+        finally
+        {
+            _ownerLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SaveOwnerRowAsync(OwnerEditRow row)
+    {
+        row.Saving = true;
+        row.Saved = false;
+        StateHasChanged();
+        try
+        {
+            await Task.Run(() => ReportBundleSvc.AssignOwner(
+                _allServers ? null : _selectedServer,
+                row.CheckId,
+                row.Owner,
+                row.ReviewBy,
+                Environment.UserName));
+            row.Saved = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to save owner assignment for {CheckId}", row.CheckId);
+        }
+        finally
+        {
+            row.Saving = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task GenerateAsync(string bundleType)
+    {
+        var server = _selectedServer;
+        if (!CanGenerate) return;
+        if (!_allServers && string.IsNullOrEmpty(server)) return;
+
+        // Audit Evidence has no single-document estate HTML — it ships a per-server PDF zip.
+        if (_allServers && bundleType == "AuditEvidence")
+        {
+            _results[bundleType] = (false, null, "Estate Audit Evidence is a per-server zip — use Save as PDF.");
+            StateHasChanged();
+            return;
+        }
+
+        _generating = true;
+        _generatingType = bundleType;
+        _results.Remove(bundleType);
+        StateHasChanged();
+
+        try
+        {
+            string html = (_allServers, bundleType) switch
+            {
+                (true,  "ExecutiveSummary") => await ReportBundleSvc.PrepareExecutiveSummaryEstateHtmlAsync(),
+                (true,  "DbaHandoff")       => await ReportBundleSvc.PrepareDbaHandoffEstateHtmlAsync(),
+                (false, "ExecutiveSummary") => await ReportBundleSvc.PrepareExecutiveSummaryHtmlAsync(server!),
+                (false, "DbaHandoff")       => await ReportBundleSvc.PrepareDbaHandoffHtmlAsync(server!),
+                (false, "AuditEvidence")    => await ReportBundleSvc.PrepareAuditEvidenceHtmlAsync(server!),
+                (_,     "RiskRegister")     => await ReportBundleSvc.PrepareRiskRegisterHtmlAsync(_allServers ? null : server, acknowledgement: false, formalTone: _ackFormalTone, preparedBy: ""),
+                (_,     "RiskAck")          => await ReportBundleSvc.PrepareRiskRegisterHtmlAsync(_allServers ? null : server, acknowledgement: true, formalTone: _ackFormalTone, preparedBy: ""),
+                _                           => throw new InvalidOperationException($"Unknown bundle type: {bundleType}")
+            };
+
+            var nameForFile = _allServers ? "AllServers" : server!;
+            var outputPath = GetOutputPath(nameForFile, bundleType);
+            Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+            await File.WriteAllTextAsync(outputPath, html);
+
+            ReportBundleSvc.RecordSuccess(nameForFile, bundleType, outputPath);
+            _results[bundleType] = (true, outputPath, null);
+        }
+        catch (Exception ex)
+        {
+            var scope = _allServers ? "AllServers" : server!;
+            Logger.LogError(ex, "Report bundle generation failed for {BundleType}/{Server}", bundleType, scope);
+            ReportBundleSvc.RecordFailure(scope, bundleType, ex.Message);
+            _results[bundleType] = (false, null, ex.Message);
+        }
+        finally
+        {
+            _generating = false;
+            _generatingType = null;
+            StateHasChanged();
+        }
+    }
+
+    private async Task GeneratePdfAsync(string bundleType)
+    {
+        var server = _selectedServer;
+        if (!CanGenerate) return;
+        if (!_allServers && string.IsNullOrEmpty(server)) return;
+
+        var pdfKey = $"{bundleType}_pdf";
+        _generating = true;
+        _generatingType = pdfKey;
+        _results.Remove(bundleType);
+        StateHasChanged();
+
+        try
+        {
+            // In estate mode there's no single selected server; watermark only when a single
+            // non-prod server is picked. (Per-server watermarking inside the zip is future work.)
+            var watermark = !_allServers && _selectedServerRequiresWatermark;
+            var ext = "pdf";
+            byte[] bytes = (_allServers, bundleType) switch
+            {
+                (true,  "ExecutiveSummary") => await ReportBundleSvc.BuildExecutiveSummaryEstatePdfAsync(watermark),
+                (true,  "DbaHandoff")       => await ReportBundleSvc.BuildDbaHandoffEstatePdfAsync(watermark),
+                (true,  "AuditEvidence")    => Zip(await ReportBundleSvc.BuildAuditEvidenceEstateZipAsync(watermark), ref ext),
+                (false, "ExecutiveSummary") => await ReportBundleSvc.BuildExecutiveSummaryPdfAsync(server!, watermark),
+                (false, "DbaHandoff")       => await ReportBundleSvc.BuildDbaHandoffPdfAsync(server!, watermark),
+                (false, "AuditEvidence")    => await ReportBundleSvc.BuildAuditEvidencePdfAsync(server!, watermark),
+                (_,     "RiskRegister")     => await ReportBundleSvc.BuildRiskRegisterPdfAsync(_allServers ? null : server, acknowledgement: false, formalTone: _ackFormalTone, preparedBy: "", watermark),
+                (_,     "RiskAck")          => await ReportBundleSvc.BuildRiskRegisterPdfAsync(_allServers ? null : server, acknowledgement: true, formalTone: _ackFormalTone, preparedBy: "", watermark),
+                _                           => throw new InvalidOperationException($"Unknown bundle type: {bundleType}")
+            };
+
+            // Save next to the exe in .\output, matching the other QuestPDF exports.
+            var dir = Path.Combine(AppContext.BaseDirectory, "output");
+            Directory.CreateDirectory(dir);
+            var nameForFile = _allServers ? "AllServers" : server!;
+            var safeName = nameForFile.Replace("\\", "_").Replace("/", "_").Replace(":", "_");
+            var outputPath = Path.Combine(dir, $"{safeName}_{bundleType}_{DateTime.Now:yyyy-MM-dd-HHmmss}.{ext}");
+            await File.WriteAllBytesAsync(outputPath, bytes);
+
+            ReportBundleSvc.RecordSuccess(nameForFile, bundleType, outputPath);
+            _results[bundleType] = (true, outputPath, null);
+        }
+        catch (Exception ex)
+        {
+            var scope = _allServers ? "AllServers" : server!;
+            Logger.LogError(ex, "PDF report bundle generation failed for {BundleType}/{Server}", bundleType, scope);
+            ReportBundleSvc.RecordFailure(scope, bundleType, ex.Message);
+            _results[bundleType] = (false, null, ex.Message);
+        }
+        finally
+        {
+            _generating = false;
+            _generatingType = null;
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>Pass-through that flips the output extension to .zip for batch (estate Audit Evidence) bundles.</summary>
+    private static byte[] Zip(byte[] bytes, ref string ext) { ext = "zip"; return bytes; }
+
+    private static string GetOutputPath(string serverName, string bundleType, string extension = ".html")
+    {
+        var downloads = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var downloadsDir = Path.Combine(downloads, "Downloads");
+        var safeName = serverName.Replace("\\", "_").Replace("/", "_").Replace(":", "_");
+        var timestamp = DateTime.Now.ToString("yyyy-MM-dd-HHmmss");
+        return Path.Combine(downloadsDir, $"{safeName}_{bundleType}_{timestamp}{extension}");
+    }
+
+    private Task OpenInExplorer(string filePath)
+    {
+        try
+        {
+            _ = Task.Run(() =>
+                System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{filePath}\""));
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "OpenInExplorer failed for {Path}", filePath);
+        }
+        return Task.CompletedTask;
+    }
+}

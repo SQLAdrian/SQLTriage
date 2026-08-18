@@ -1,0 +1,107 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/documentation"
+@using SQLTriage.Data
+@using SQLTriage.Data.Services
+@inject ServerConnectionManager ConnectionManager
+@inject IDocumentationService DocumentationService
+
+<PageTitle>SQLTriage - Server Documentation</PageTitle>
+
+<div class="page-content">
+    <div class="page-header">
+        <h1><i class="fa-solid fa-file-lines"></i> Server Documentation Generator</h1>
+        <p class="text-app-text-secondary">
+            Generate a complete server configuration snapshot — instance settings, hardware, AG status,
+            backup history, and security findings — ready for export to PDF.
+        </p>
+    </div>
+
+    @* ── Coming-soon banner ────────────────────────────────────────────────── *@
+    <div class="alert-info-banner" style="margin-bottom:1.5rem; padding:14px 18px; border-radius:8px;
+        background:rgba(var(--blue-rgb, 59,130,246),0.08); border:1px solid rgba(var(--blue-rgb,59,130,246),0.25);">
+        <i class="fa-solid fa-flask" style="margin-right:6px; color:var(--blue,#3b82f6);"></i>
+        <strong>Coming in v2</strong> — implementation pending.
+        See <code>docs/design/documentation-generator.md</code> for the pickup guide.
+    </div>
+
+    @* ── Server picker ─────────────────────────────────────────────────────── *@
+    <div class="section-card" style="margin-bottom:1rem; padding:16px 20px;">
+        <h3 style="margin-bottom:10px;">Select Server</h3>
+        <select class="form-control" style="max-width:320px;" disabled>
+            <option value="">-- choose a server --</option>
+            @foreach (var conn in _connections)
+            {
+                <option value="@conn.Id">@conn.ServerNames</option>
+            }
+        </select>
+    </div>
+
+    @* ── Action button ─────────────────────────────────────────────────────── *@
+    <div style="margin-bottom:1.5rem;">
+        <button class="btn btn-primary"
+                disabled
+                title="v2: implementation pending — see docs/design/documentation-generator.md">
+            <i class="fa-solid fa-file-export"></i> Generate Documentation
+        </button>
+        <button class="btn btn-secondary" style="margin-left:8px;"
+                disabled
+                title="v2: PDF export via PrintService.PrintHtmlToPdfAsync — see design doc step 5">
+            <i class="fa-solid fa-file-pdf"></i> Export PDF
+        </button>
+    </div>
+
+    @* ── Placeholder structure preview ─────────────────────────────────────── *@
+    <div class="results-placeholder">
+        <div class="section-card placeholder-section" style="padding:16px 20px; margin-bottom:1rem; opacity:0.5;">
+            <h3><i class="fa-solid fa-server"></i> Instance Configuration</h3>
+            <p class="text-app-text-secondary">sp_configure values that differ from defaults will appear here.</p>
+            <div class="placeholder-row"></div>
+            <div class="placeholder-row short"></div>
+        </div>
+        <div class="section-card placeholder-section" style="padding:16px 20px; margin-bottom:1rem; opacity:0.5;">
+            <h3><i class="fa-solid fa-memory"></i> Hardware Summary</h3>
+            <p class="text-app-text-secondary">CPU count, RAM, SQL Server version, and logical disk volumes.</p>
+            <div class="placeholder-row"></div>
+            <div class="placeholder-row short"></div>
+        </div>
+        <div class="section-card placeholder-section" style="padding:16px 20px; margin-bottom:1rem; opacity:0.5;">
+            <h3><i class="fa-solid fa-server"></i> Availability Group Status</h3>
+            <p class="text-app-text-secondary">AG replica roles and synchronisation state per group.</p>
+            <div class="placeholder-row"></div>
+        </div>
+        <div class="section-card placeholder-section" style="padding:16px 20px; margin-bottom:1rem; opacity:0.5;">
+            <h3><i class="fa-solid fa-database"></i> Backup History</h3>
+            <p class="text-app-text-secondary">Most recent Full / Differential / Log backup per database.</p>
+            <div class="placeholder-row"></div>
+            <div class="placeholder-row short"></div>
+        </div>
+        <div class="section-card placeholder-section" style="padding:16px 20px; margin-bottom:1rem; opacity:0.5;">
+            <h3><i class="fa-solid fa-shield-halved"></i> Security Findings</h3>
+            <p class="text-app-text-secondary">SA login state, mixed auth mode, xp_cmdshell, sysadmin count.</p>
+            <div class="placeholder-row"></div>
+            <div class="placeholder-row short"></div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .placeholder-row {
+        height: 14px;
+        border-radius: 4px;
+        background: var(--border);
+        margin: 6px 0;
+        width: 80%;
+    }
+    .placeholder-row.short { width: 45%; }
+</style>
+
+@code {
+    private List<ServerConnection> _connections = new();
+
+    protected override void OnInitialized()
+    {
+        _connections = ConnectionManager.GetConnections()
+            .Where(c => c.IsEnabled)
+            .ToList();
+    }
+}

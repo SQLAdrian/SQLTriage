@@ -1,0 +1,109 @@
+/* Styles extracted to wwwroot/css/Alerts.css 2026-05-11 (CLAUDE.md convention). */
+.table-input-select,
+.table-input-number {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    font-size: 11px;
+    padding: 3px 6px;
+    color: var(--text);
+    font-family: inherit;
+    transition: border 0.1s;
+}
+
+.table-input-select:hover,
+.table-input-number:hover {
+    border-color: var(--accent);
+}
+
+.table-input-select:focus,
+.table-input-number:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(45, 212, 191, 0.15);
+}
+
+.table-input-select {
+    padding: 2px 4px;
+    min-height: 22px;
+}
+
+.table-input-number {
+    min-height: 22px;
+    box-sizing: border-box;
+}
+
+.table-input-number::placeholder {
+    color: var(--text-muted);
+    opacity: 0.5;
+}
+
+.results-table td input,
+.results-table td select {
+    margin: 0;
+}
+
+.alert-tab {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    padding: 8px 16px;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    font-size: 14px;
+    transition: all 0.2s;
+}
+.alert-tab:hover { color: var(--text-primary); }
+.alert-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+.alert-badge {
+    background: var(--red);
+    color: #fff;
+    border-radius: 10px;
+    padding: 1px 6px;
+    font-size: 11px;
+    margin-left: 4px;
+}
+.alert-filter-btn {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s;
+}
+.alert-filter-btn:hover { border-color: var(--accent); color: var(--text-primary); }
+.alert-filter-btn.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+}
+.toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    font-size: 13px;
+}
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+.modal-dialog {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 24px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+}

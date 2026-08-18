@@ -1,0 +1,241 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/compare"
+<PageTitle>SQLTriage - Server Comparison</PageTitle>
+@using SQLTriage.Data.Services
+@using SQLTriage.Data.Models
+@inject ServerConnectionManager ConnectionManager
+@inject ExecutiveHealthService HealthService
+@inject CheckExecutionService CheckExecutor
+@inject IGovernanceService GovernanceService
+@inject NavigationManager Navigation
+@inject ToastService Toast
+@inject UserSettingsService UserSettings
+
+<div class="compare-page">
+    <div class="comp-header">
+        <i class="fa-solid fa-code-compare" style="color:var(--accent);"></i>
+        <div>
+            <h1 class="comp-title">Server Comparison</h1>
+            <p class="comp-subtitle">Side-by-side governance, health, and findings across servers</p>
+        </div>
+    </div>
+
+    <!-- Server selector -->
+    <div class="comp-selector">
+        @foreach (var server in _allServers)
+        {
+            var isSelected = _selectedServers.Contains(server);
+            var maxedOut = _selectedServers.Count >= 3 && !isSelected;
+            <button class="comp-server-btn @(isSelected ? "comp-server-btn-selected" : "")"
+                    disabled="@(maxedOut)"
+                    @onclick="() => ToggleServer(server)">
+                @server
+                @if (isSelected) { <i class="fa-solid fa-check"></i> }
+            </button>
+        }
+        @if (_selectedServers.Count > 0)
+        {
+            <button class="comp-server-btn comp-server-btn-clear" @onclick="ClearServers">
+                <i class="fa-solid fa-xmark"></i> Clear
+            </button>
+        }
+    </div>
+
+    @if (_isLoading)
+    {
+        <PageLoadingSpinner Message="Loading metrics..." />
+    }
+    else if (_selectedServers.Count < 2)
+    {
+        <div class="comp-empty">
+            <i class="fa-solid fa-arrow-up comp-empty-icon"></i>
+            <p>Select 2-3 servers above to compare</p>
+        </div>
+    }
+    else
+    {
+        <!-- Governance Score Comparison -->
+        <div class="comp-section">
+            <h2 class="comp-section-title"><i class="fa-solid fa-scale-balanced"></i> Governance Scores</h2>
+            <div class="comp-score-grid">
+                @foreach (var server in _selectedServers)
+                {
+                    var score = _scores.GetValueOrDefault(server);
+                    <div class="comp-score-card">
+                        <div class="comp-score-server">@server</div>
+                        <div class="comp-score-value" style="color:@ScoreColor(score?.Overall ?? 0)">@(score?.Overall.ToString("F0") ?? "--")</div>
+                        <div class="comp-score-band">@(score?.Band.ToString() ?? "")</div>
+                        <div class="comp-score-detail">
+                            @if (score?.Categories != null)
+                            {
+                                foreach (var cat in score.Categories.Values.OrderByDescending(c => c.Weight))
+                                {
+                                    <div class="comp-score-bar-wrap">
+                                        <span class="comp-score-bar-label">@(cat.Dimension[..3].ToUpper())</span>
+                                        <div class="comp-score-bar-track">
+                                            <div class="comp-score-bar-fill" style="width:@cat.CappedScore%; background:@CategoryColor(cat.PassRate)"></div>
+                                        </div>
+                                        <span style="font-size:10px">@cat.CappedScore.ToString("F0")</span>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Health Metrics Comparison -->
+        <div class="comp-section">
+            <h2 class="comp-section-title"><i class="fa-solid fa-heart-pulse"></i> Health Status</h2>
+            <div class="comp-score-grid">
+                @foreach (var server in _selectedServers)
+                {
+                    var hs = _health.GetValueOrDefault(server);
+                    var sevColor = hs?.Severity switch
+                    {
+                        HealthSeverity.Healthy => "var(--green)",
+                        HealthSeverity.Warning => "var(--yellow)",
+                        HealthSeverity.Critical => "var(--red)",
+                        _ => "var(--text-muted)"
+                    };
+                    <div class="comp-score-card">
+                        <div class="comp-score-server">@server</div>
+                        <div class="comp-score-value" style="color:@sevColor">@(hs?.Score.ToString("F0") ?? "--")</div>
+                        <div class="comp-score-band" style="color:@sevColor">@(hs?.Severity.ToString() ?? "Unknown")</div>
+                        <div class="comp-score-message" style="margin-top:8px;font-size:12px;color:var(--text-muted)">
+                            @if (hs?.Trend == HealthTrend.Improving)
+                            { <span style="color:var(--green)"><i class="fa-solid fa-arrow-trend-up"></i> Improving</span> }
+                            else if (hs?.Trend == HealthTrend.Degrading)
+                            { <span style="color:var(--red)"><i class="fa-solid fa-arrow-trend-down"></i> Degrading</span> }
+                            else
+                            { <span style="color:var(--yellow)"><i class="fa-solid fa-minus"></i> Stable</span> }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Cross-Server Findings -->
+        <div class="comp-section">
+            <h2 class="comp-section-title"><i class="fa-solid fa-triangle-exclamation"></i> Cross-Server Findings</h2>
+            @foreach (var server in _selectedServers)
+            {
+                var findings = _findings.GetValueOrDefault(server, new());
+                var critical = findings.Where(f => f.Severity?.Equals("Critical", StringComparison.OrdinalIgnoreCase) == true).Take(3).ToList();
+                if (critical.Count > 0)
+                {
+                    <div class="comp-finding-group">
+                        <div class="comp-finding-server">@server</div>
+                        @foreach (var f in critical)
+                        {
+                            <div class="comp-finding-item">
+                                <span class="comp-finding-severity severity-critical">CRIT</span>
+                                <span class="comp-finding-name">@f.CheckName</span>
+                            </div>
+                        }
+                    </div>
+                }
+            }
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="comp-actions">
+            <button class="cio-action-btn" @onclick='() => Navigation.NavigateTo("/cio")'>
+                <i class="fa-solid fa-crown"></i> CIO Dashboard
+            </button>
+            <button class="cio-action-btn-secondary" @onclick='() => Navigation.NavigateTo("/audit")'>
+                <i class="fa-solid fa-bolt-lightning"></i> Run Quick Check
+            </button>
+        </div>
+    }
+</div>
+
+@code {
+    private List<string> _selectedServers = new();
+    private List<string> _allServers = new();
+    private Dictionary<string, GovernanceScore> _scores = new();
+    private Dictionary<string, ExecutiveHealthScore> _health = new();
+    private Dictionary<string, List<CheckResult>> _findings = new();
+    private bool _isLoading;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (UserSettings.GetFastAppLoad()) await Task.Yield();
+        _allServers = ConnectionManager.GetEnabledConnections()
+            .SelectMany(c => c.GetServerList())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        // Load from query string if present
+        var uri = new Uri(Navigation.Uri);
+        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        var servers = query["servers"];
+        if (!string.IsNullOrEmpty(servers))
+        {
+            _selectedServers = servers.Split(',').ToList();
+            await LoadMetrics();
+        }
+    }
+
+    private async Task ToggleServer(string server)
+    {
+        if (_selectedServers.Contains(server))
+            _selectedServers.Remove(server);
+        else if (_selectedServers.Count < 3)
+            _selectedServers.Add(server);
+
+        if (_selectedServers.Count >= 2)
+            await LoadMetrics();
+        else
+            StateHasChanged();
+    }
+
+    private void ClearServers()
+    {
+        _selectedServers.Clear();
+        _scores.Clear();
+        _health.Clear();
+        _findings.Clear();
+        StateHasChanged();
+    }
+
+    private async Task LoadMetrics()
+    {
+        _isLoading = true;
+        StateHasChanged();
+
+        _scores.Clear();
+        _health.Clear();
+        _findings.Clear();
+
+        foreach (var server in _selectedServers)
+        {
+            try
+            {
+                var results = CheckExecutor.GetResults(server, 500);
+                if (results.Count > 0)
+                {
+                    var score = await GovernanceService.ComputeIndicativeAsync(results);
+                    _scores[server] = score;
+                    _findings[server] = results;
+                }
+            }
+            catch { /* server offline or no results */ }
+
+            try
+            {
+                var hs = await HealthService.GetHealthScoreAsync(server);
+                if (hs != null)
+                    _health[server] = hs;
+            }
+            catch { }
+        }
+
+        _isLoading = false;
+        StateHasChanged();
+    }
+
+    private static string ScoreColor(double score) => score >= 80 ? "var(--green)" : score >= 50 ? "var(--yellow)" : "var(--red)";
+    private static string CategoryColor(double passRate) => passRate >= 80 ? "var(--green)" : passRate >= 50 ? "var(--yellow)" : "var(--red)";
+}

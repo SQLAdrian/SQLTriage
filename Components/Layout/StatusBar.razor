@@ -1,0 +1,88 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using SQLTriage.Components.Shared
+@inject SQLTriage.Data.UserSettingsService UserSettings
+@inject IJSRuntime JS
+
+@* Bottom status bar (Phase 0). Persistent app chrome: brand/build on the left;
+   quick toggles + consolidated Feedback + a static GitHub star link on the right.
+   The selected-server power/green chip lands here in Phase 1. *@
+<footer class="app-status-bar" role="contentinfo" aria-label="Status bar">
+    <div class="status-bar-left">
+        <i class="fa-solid fa-heart-pulse status-bar-brand-icon" aria-hidden="true"></i>
+        <span class="status-bar-brand">SQLTriage</span>
+        <span class="status-bar-sep" aria-hidden="true">&middot;</span>
+        <span class="status-bar-dim">@SQLTriage.Data.BuildMode.Current build</span>
+        <PowerChip />
+    </div>
+
+    <div class="status-bar-right">
+        <button class="status-bar-btn" @onclick="ToggleThemeAsync" title="Toggle theme" aria-label="Toggle theme">
+            <i class="fa-solid fa-palette" aria-hidden="true"></i>
+        </button>
+
+        <button class="status-bar-btn @(_animations ? "" : "status-bar-btn-off")"
+                @onclick="ToggleAnimationsAsync"
+                title="@(_animations ? "Animations on — click to disable" : "Animations off — click to enable")"
+                aria-pressed="@_animations.ToString().ToLower()">
+            <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+        </button>
+
+        <div class="status-bar-feedback" style="position:relative;">
+            <button class="status-bar-btn" @onclick="() => _showFeedback = !_showFeedback" title="Send feedback">
+                <i class="fa-solid fa-comment-dots" aria-hidden="true"></i>
+                <span class="status-bar-btn-label">Feedback</span>
+            </button>
+            @if (_showFeedback)
+            {
+                <div class="status-bar-popover" @onclick:stopPropagation role="menu">
+                    <a class="status-bar-popover-item" role="menuitem" target="_blank" rel="noopener"
+                       href="https://github.com/SQLAdrian/SQLTriage/issues/new" @onclick="() => _showFeedback = false">
+                        <i class="fa-brands fa-github" aria-hidden="true"></i> <span>Report a bug</span>
+                    </a>
+                    <a class="status-bar-popover-item" role="menuitem" target="_blank" rel="noopener"
+                       href="https://github.com/SQLAdrian/SQLTriage/discussions/new?category=ideas" @onclick="() => _showFeedback = false">
+                        <i class="fa-solid fa-lightbulb" aria-hidden="true"></i> <span>Feature request</span>
+                    </a>
+                </div>
+            }
+        </div>
+
+        <a class="status-bar-btn status-bar-star" target="_blank" rel="noopener"
+           href="https://github.com/SQLAdrian/SQLTriage" title="Star SQLTriage on GitHub">
+            <i class="fa-solid fa-star" aria-hidden="true"></i>
+            <span class="status-bar-btn-label">Star on GitHub</span>
+        </a>
+
+        <span class="status-bar-vsep" aria-hidden="true"></span>
+        @* Docked here instead of floating; CSS un-floats it and pops its panel upward. *@
+        <ServerModeToggle />
+    </div>
+</footer>
+
+@code {
+    private bool _showFeedback = false;
+    private bool _animations = true;
+
+    protected override void OnInitialized()
+    {
+        _animations = UserSettings.GetEnableAnimations();
+    }
+
+    private async Task ToggleThemeAsync()
+    {
+        try { await JS.InvokeVoidAsync("toggleTheme"); } catch { /* pre-render / JS not ready */ }
+    }
+
+    private async Task ToggleAnimationsAsync()
+    {
+        _animations = !_animations;
+        UserSettings.SetEnableAnimations(_animations);
+        // Mirror MainLayout: drive the global body class so the change applies immediately.
+        try
+        {
+            await JS.InvokeVoidAsync("eval",
+                $"document.body.classList.toggle('no-animations', {(!_animations).ToString().ToLower()});");
+        }
+        catch { /* JS not ready */ }
+    }
+}

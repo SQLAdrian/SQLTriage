@@ -1,0 +1,553 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/deploydarlingPM"
+<PageTitle>SQLTriage - Deploy Darling Performance Monitor</PageTitle>
+@using System.IO
+@using System.Diagnostics
+@using SQLTriage.Data.Services
+@inject ServerConnectionManager ConnectionManager
+@inject AdminAuthService AdminAuth
+@inject NavigationManager NavigationManager
+@implements IDisposable
+
+@if (_navWarningVisible)
+{
+    <div class="nav-warning-overlay">
+        <div class="nav-warning-dialog">
+            <div class="nav-warning-icon"><i class="fa-solid fa-triangle-exclamation"></i>️</div>
+            <div class="nav-warning-title">Installation in progress</div>
+            <div class="nav-warning-body">Navigating away will cancel the installation. Are you sure?</div>
+            <div class="nav-warning-actions">
+                <button class="btn btn-danger" @onclick="ConfirmLeave">Leave anyway</button>
+                <button class="btn btn-primary" @onclick="CancelLeave">Stay on page</button>
+            </div>
+        </div>
+    </div>
+}
+
+<AdminGuard>
+<div class="pm-deploy-page">
+    <h2>Deploy Darling Performance Monitor</h2>
+
+    @* ── Connection ── *@
+    <div class="deploy-section">
+        <h3>SQL Server Connection</h3>
+
+        <div class="form-group">
+            <label>Select Existing Server:</label>
+            <select class="form-input" @onchange="OnExistingServerChanged">
+                <option value="">-- Select a configured server --</option>
+                @foreach (var s in _existingServers)
+                {
+                    <option value="@s.ServerNames">@s.ServerNames</option>
+                }
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>Server Name:</label>
+            <input class="form-input" type="text" @bind="_server" placeholder="localhost\INSTANCE" />
+        </div>
+
+        <div class="form-group">
+            <label>Authentication:</label>
+            <select class="form-input" @onchange="OnAuthTypeChanged">
+                <option value="windows">Windows Authentication</option>
+                <option value="sql">SQL Server Authentication</option>
+            </select>
+        </div>
+
+        @if (_authType == "sql")
+        {
+            <div class="form-group">
+                <label>Username:</label>
+                <input class="form-input" type="text" @bind="_username" placeholder="sa" />
+            </div>
+            <div class="form-group">
+                <label>Password:</label>
+                <input class="form-input" type="password" @bind="_password" />
+            </div>
+        }
+
+        <div class="form-group">
+            <label>Encryption:</label>
+            <select class="form-input" @bind="_encryption">
+                <option value="Mandatory">Mandatory (recommended)</option>
+                <option value="Optional">Optional</option>
+                <option value="Strict">Strict</option>
+            </select>
+        </div>
+
+        <div class="form-group checkbox-group">
+            <label><input type="checkbox" @bind="_trustCert" /> Trust Server Certificate</label>
+        </div>
+    </div>
+
+    @* ── Options ── *@
+    <div class="deploy-section">
+        <h3>Install Options</h3>
+
+        @if (_cleanInstall)
+        {
+            <div class="warning-banner">
+                ⚠️ <strong>WARNING:</strong> Clean install will DROP the PerformanceMonitor database and ALL collected data. This cannot be undone.
+            </div>
+        }
+
+        @if (_installedVersion != null)
+        {
+            <div class="form-group checkbox-group">
+                <label><input type="checkbox" @bind="_upgradeOnly" /> Upgrade Only (skip full install, run upgrade scripts only)</label>
+            </div>
+        }
+
+        @if (!_upgradeOnly)
+        {
+            <div class="form-group checkbox-group">
+                <label><input type="checkbox" @bind="_cleanInstall" /> Clean Install (drop existing database)</label>
+            </div>
+            <div class="form-group checkbox-group">
+                <label><input type="checkbox" @bind="_resetSchedule" /> Reset collection schedule to defaults</label>
+            </div>
+            <div class="form-group checkbox-group">
+                <label><input type="checkbox" @bind="_runValidation" /> Run validation after install</label>
+            </div>
+            <div class="form-group checkbox-group">
+                <label><input type="checkbox" @bind="_installDependencies" /> Install community dependencies (sp_WhoIsActive, DarlingData, First Responder Kit)</label>
+            </div>
+        }
+    </div>
+
+    @* ── SQL Files status ── *@
+    @if (_sqlFileCount > 0)
+    {
+        <div class="files-found">
+            ✅ Found <strong>@_sqlFileCount</strong> install scripts in Deploy/PerformanceMonitor_db
+        </div>
+    }
+    else
+    {
+        <div class="files-missing">
+            ⚠️ No install scripts found in Deploy/PerformanceMonitor_db/install/. Please ensure scripts are deployed.
+        </div>
+    }
+
+    @* ── Actions ── *@
+    <div class="deploy-actions">
+        <button class="btn btn-primary" @onclick="TestConnection" disabled="@_busy">
+            @(_testingConnection ? "Testing..." : "Test Connection")
+        </button>
+        <button class="btn btn-success" @onclick="Install"
+                disabled="@(_busy || !_connectionTested || (!_upgradeOnly && _sqlFileCount == 0))">
+            @if (_installing)
+            {
+                <span>Installing...</span>
+            }
+            else
+            {
+                <span><i class="fa-solid fa-rocket"></i> Install</span>
+            }
+        </button>
+        <button class="btn btn-secondary" @onclick="RunTroubleshoot"
+                disabled="@(_busy || !_troubleshootEnabled)">
+            <i class="fa-solid fa-magnifying-glass"></i> Troubleshoot
+        </button>
+        @if (_reportPath != null)
+        {
+            <button class="btn btn-secondary" @onclick="OpenReport">
+                <i class="fa-solid fa-file"></i> View Report
+            </button>
+        }
+    </div>
+
+    @* ── Progress ── *@
+    @if (_busy || _log.Count > 0)
+    {
+        <div class="deploy-section">
+            <div class="progress-row">
+                <div class="progress-bar-outer">
+                    <div class="progress-bar-inner" style="width: @_progressPct%;"></div>
+                </div>
+                <span class="progress-label">@_progressPct%</span>
+            </div>
+
+            <div class="log-output">
+                @foreach (var entry in _log)
+                {
+                    <div class="log-line @entry.CssClass">@entry.Message</div>
+                }
+            </div>
+        </div>
+    }
+</div>
+</AdminGuard>
+
+@code {
+    // ── state ──────────────────────────────────────────────────────
+    private string _server      = "localhost";
+    private string _authType    = "windows";
+    private string _username    = "";
+    private string _password    = "";
+    private string _encryption  = "Mandatory";
+    private bool   _trustCert   = false;
+    private bool   _cleanInstall        = false;
+    private bool   _resetSchedule       = false;
+    private bool   _runValidation       = true;
+    private bool   _installDependencies = true;
+    private bool   _upgradeOnly         = false;
+
+    private bool _busy               = false;
+    private bool _testingConnection  = false;
+    private bool _installing         = false;
+    private bool _connectionTested   = false;
+    private bool _troubleshootEnabled = false;
+
+    private int    _progressPct   = 0;
+    private int    _sqlFileCount  = 0;
+    private string? _reportPath   = null;
+
+    private string?     _connString;
+    private string?     _sqlDirectory;
+    private string?     _monitorRootDir;
+    private List<string> _sqlFiles    = new();
+    private PMServerInfo? _serverInfo;
+    private string?      _installedVersion;
+
+    private List<ServerConnection> _existingServers = new();
+    private PMInstallationService? _service;
+    private IDisposable? _navHandler;
+    private bool _navWarningVisible = false;
+    private string? _pendingNavUri;
+
+    record LogEntry(string Message, string CssClass);
+    private List<LogEntry> _log = new();
+
+    // ── lifecycle ──────────────────────────────────────────────────
+    protected override void OnInitialized()
+    {
+        _existingServers = ConnectionManager.GetEnabledConnections();
+        _service = new PMInstallationService();
+
+        // Discover install scripts
+        var (sqlDir, monitorRoot, files) = PMInstallationService.FindInstallationFiles();
+        _sqlDirectory   = sqlDir;
+        _monitorRootDir = monitorRoot;
+        _sqlFiles       = files;
+        _sqlFileCount   = files.Count;
+        _navHandler = NavigationManager.RegisterLocationChangingHandler(OnLocationChanging);
+    }
+
+    private ValueTask OnLocationChanging(LocationChangingContext context)
+    {
+        if (!_installing) return ValueTask.CompletedTask;
+        context.PreventNavigation();
+        _pendingNavUri = context.TargetLocation;
+        _navWarningVisible = true;
+        InvokeAsync(StateHasChanged);
+        return ValueTask.CompletedTask;
+    }
+
+    private void ConfirmLeave()
+    {
+        _navWarningVisible = false;
+        _navHandler?.Dispose();
+        _navHandler = null;
+        var uri = _pendingNavUri ?? "/";
+        _pendingNavUri = null;
+        NavigationManager.NavigateTo(uri);
+    }
+
+    private void CancelLeave()
+    {
+        _navWarningVisible = false;
+        _pendingNavUri = null;
+    }
+
+    public void Dispose()
+    {
+        _navHandler?.Dispose();
+        _service?.Dispose();
+    }
+
+    // ── helpers ────────────────────────────────────────────────────
+    private void OnExistingServerChanged(ChangeEventArgs e)
+    {
+        var name = e.Value?.ToString() ?? "";
+        if (string.IsNullOrEmpty(name)) return;
+        var sc = _existingServers.FirstOrDefault(s => s.ServerNames == name);
+        if (sc == null) return;
+        _server   = sc.GetServerList().FirstOrDefault() ?? "";
+        _authType = sc.UseWindowsAuthentication ? "windows" : "sql";
+        _username = sc.Username ?? "";
+        _password = "";
+        _trustCert = sc.TrustServerCertificate;
+        InvalidateConnection();
+    }
+
+    private void OnAuthTypeChanged(ChangeEventArgs e)
+    {
+        _authType = e.Value?.ToString() ?? "windows";
+        if (_authType == "windows") { _username = ""; _password = ""; }
+        InvalidateConnection();
+    }
+
+    private void InvalidateConnection()
+    {
+        _connectionTested    = false;
+        _connString          = null;
+        _serverInfo          = null;
+        _installedVersion    = null;
+        _troubleshootEnabled = false;
+        _upgradeOnly         = false;
+    }
+
+    private string BuildConnectionString() =>
+        PMInstallationService.BuildConnectionString(
+            _server, _authType == "windows", _username, _password, _encryption, _trustCert);
+
+    private void Log(string message, string status = "Info")
+    {
+        string css = status switch
+        {
+            "Success" => "log-success",
+            "Error"   => "log-error",
+            "Warning" => "log-warning",
+            _         => "log-info"
+        };
+        _log.Add(new LogEntry(message, css));
+    }
+
+    private IProgress<PMInstallationProgress> MakeProgress() =>
+        new Progress<PMInstallationProgress>(p =>
+        {
+            Log(p.Message, p.Status);
+            if (p.ProgressPercent.HasValue) _progressPct = p.ProgressPercent.Value;
+            InvokeAsync(StateHasChanged);
+        });
+
+    // ── actions ────────────────────────────────────────────────────
+    private async Task TestConnection()
+    {
+        if (string.IsNullOrWhiteSpace(_server)) return;
+
+        _busy = _testingConnection = true;
+        _log.Clear();
+        _progressPct = 0;
+        InvalidateConnection();
+        StateHasChanged();
+
+        try
+        {
+            string cs = BuildConnectionString();
+            Log("Testing connection...");
+            _serverInfo = await PMInstallationService.TestConnectionAsync(cs);
+
+            if (_serverInfo.IsConnected)
+            {
+                _connString = cs;
+                Log($"Connected to: {_serverInfo.ServerName}", "Success");
+                Log($"Edition: {_serverInfo.SqlServerEdition}");
+                Log(_serverInfo.SqlServerVersion.Split('\n', '\r').FirstOrDefault() ?? "");
+
+                _installedVersion = await PMInstallationService.GetInstalledVersionAsync(cs);
+                if (_installedVersion != null)
+                {
+                    Log($"Installed version: {_installedVersion}", "Warning");
+                    if (_monitorRootDir != null)
+                    {
+                        var upgrades = PMInstallationService.GetApplicableUpgrades(
+                            _monitorRootDir, _installedVersion, "99.99.99");
+                        if (upgrades.Count > 0)
+                        {
+                            Log($"Found {upgrades.Count} upgrade(s) to apply:", "Warning");
+                            foreach (var u in upgrades)
+                                Log($"  - {u.FolderName}");
+                        }
+                    }
+                }
+                else
+                {
+                    Log("No existing installation detected (clean install)", "Info");
+                }
+
+                _connectionTested = true;
+            }
+            else
+            {
+                Log($"Connection failed: {_serverInfo.ErrorMessage}", "Error");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log($"Error: {ex.Message}", "Error");
+        }
+        finally
+        {
+            _busy = _testingConnection = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task Install()
+    {
+        if (_connString == null || _sqlFiles.Count == 0) return;
+
+        if (_cleanInstall)
+        {
+            // In Blazor we can't show a modal easily inline; rely on the visible warning banner.
+            // User has already seen the warning and clicked Install.
+        }
+
+        _busy = _installing = true;
+        _log.Clear();
+        _progressPct = 0;
+        _reportPath  = null;
+        _troubleshootEnabled = false;
+        StateHasChanged();
+
+        var progress = MakeProgress();
+        var cts = new System.Threading.CancellationTokenSource();
+
+        try
+        {
+            Log($"Performance Monitor Installer — SQLTriage");
+            Log($"Server: {_serverInfo?.ServerName}");
+            Log("");
+
+            if (_upgradeOnly && _monitorRootDir != null)
+            {
+                // Upgrade-only: run all upgrade folders/scripts, skip full install
+                Log("Mode: Upgrade Only");
+                Log("");
+                var (us, uf, uc) = await PMInstallationService.ExecuteAllUpgradeScriptsAsync(
+                    _monitorRootDir, _connString, progress, cts.Token);
+
+                Log("");
+                Log("================================================================================");
+                if (uf == 0)
+                {
+                    Log($"Upgrades completed: {us} script(s) applied across {uc} folder(s).", "Success");
+                    _troubleshootEnabled = true;
+                }
+                else
+                {
+                    Log($"Upgrades completed with {uf} error(s). {us} succeeded.", "Warning");
+                    _troubleshootEnabled = true;
+                }
+                _progressPct = 100;
+            }
+            else
+            {
+                // Upgrades before full install (skip on clean install)
+                if (!_cleanInstall && _monitorRootDir != null)
+                {
+                    var (us, uf, uc) = await PMInstallationService.ExecuteAllUpgradeScriptsAsync(
+                        _monitorRootDir, _connString, progress, cts.Token);
+                    if (uc > 0)
+                        Log($"Upgrades: {us} OK, {uf} failed", uf == 0 ? "Success" : "Warning");
+                }
+
+                // Installation
+                Func<Task>? preValidation = _installDependencies && _service != null
+                    ? () => _service.InstallDependenciesAsync(_connString, progress, cts.Token)
+                    : null;
+
+                var result = await PMInstallationService.ExecuteInstallationAsync(
+                    _connString, _sqlFiles, _cleanInstall, _resetSchedule,
+                    progress, preValidation, cts.Token);
+
+                // Validation
+                if (result.Success && _runValidation)
+                {
+                    Log("");
+                    await PMInstallationService.RunValidationAsync(_connString, progress, cts.Token);
+                }
+
+                // Report
+                if (_serverInfo != null)
+                {
+                    foreach (var (msg, st) in _log.Select(l => (l.Message, l.CssClass == "log-success" ? "Success"
+                        : l.CssClass == "log-error" ? "Error"
+                        : l.CssClass == "log-warning" ? "Warning" : "Info")))
+                        result.LogMessages.Add((msg, st));
+
+                    _reportPath = PMInstallationService.GenerateSummaryReport(
+                        _serverInfo.ServerName, _serverInfo.SqlServerVersion,
+                        _serverInfo.SqlServerEdition, "SQLTriage", result);
+
+                    Log($"Report saved: {_reportPath}");
+                }
+
+                Log("");
+                Log("================================================================================");
+                if (result.Success)
+                {
+                    Log("Installation completed successfully!", "Success");
+                    Log("Next steps:");
+                    Log("  1. Ensure SQL Server Agent is running");
+                    Log("  2. SELECT * FROM PerformanceMonitor.report.collection_health;");
+                    _troubleshootEnabled = true;
+                }
+                else
+                {
+                    Log($"Installation completed with {result.FilesFailed} error(s).", "Warning");
+                    _troubleshootEnabled = true;
+                }
+
+                _progressPct = 100;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            Log("Installation cancelled.", "Warning");
+        }
+        catch (Exception ex)
+        {
+            Log($"Installation failed: {ex.Message}", "Error");
+        }
+        finally
+        {
+            _busy = _installing = false;
+            cts.Dispose();
+            StateHasChanged();
+        }
+    }
+
+    private async Task RunTroubleshoot()
+    {
+        if (_connString == null || _sqlDirectory == null) return;
+
+        _busy = true;
+        Log("");
+        Log("================================================================================");
+        Log("Running Diagnostics");
+        Log("================================================================================");
+        StateHasChanged();
+
+        try
+        {
+            await PMInstallationService.RunTroubleshootingAsync(
+                _connString, _sqlDirectory, MakeProgress());
+        }
+        catch (Exception ex)
+        {
+            Log($"Diagnostics failed: {ex.Message}", "Error");
+        }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OpenReport()
+    {
+        if (_reportPath == null) return;
+        try
+        {
+            Process.Start(new ProcessStartInfo { FileName = _reportPath, UseShellExecute = true });
+        }
+        catch { }
+    }
+}
+
+<!-- Styles extracted to wwwroot/css/DeployDarlingPM.css 2026-05-11 (CLAUDE.md convention). -->

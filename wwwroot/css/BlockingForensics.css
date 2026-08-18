@@ -1,0 +1,195 @@
+/* In the name of God, the Merciful, the Compassionate */
+
+/* ── Blocking Forensics page ──────────────────────────────────────────────── */
+
+.bf-page {
+    padding: 24px;
+    max-width: 1600px;
+}
+
+/* Filter bar */
+.bf-filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: flex-end;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 20px;
+}
+
+.bf-filter-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 140px;
+}
+
+.bf-filter-field label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.bf-select,
+.bf-input {
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    font-size: 13px;
+    height: 34px;
+}
+
+.bf-filter-actions {
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+    padding-bottom: 0;
+}
+
+/* Section wrappers */
+.bf-section {
+    margin-bottom: 28px;
+}
+
+.bf-section h3 {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-primary);
+}
+
+.bf-count {
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--text-muted);
+    margin-left: 4px;
+}
+
+/* Tables */
+.bf-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.bf-table thead th {
+    text-align: left;
+    padding: 8px 10px;
+    background: var(--surface-2);
+    border-bottom: 2px solid var(--border);
+    font-weight: 600;
+    color: var(--text-muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+}
+
+.bf-table tbody tr:hover {
+    background: var(--surface-hover);
+}
+
+.bf-table tbody td {
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+}
+
+/* Time column */
+.bf-time {
+    white-space: nowrap;
+    font-family: var(--font-mono, monospace);
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+/* SPID / login badges */
+.bf-spid {
+    display: inline-block;
+    background: var(--surface-3);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-family: var(--font-mono, monospace);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.bf-login {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+/* SQL cells */
+.bf-sql-cell {
+    max-width: 360px;
+}
+
+.bf-sql-excerpt {
+    display: inline;
+    font-family: var(--font-mono, monospace);
+    font-size: 11px;
+    color: var(--text-secondary);
+    word-break: break-all;
+}
+
+.bf-sql-full {
+    margin-top: 6px;
+    padding: 8px;
+    background: var(--surface-3);
+    border-radius: 4px;
+    font-size: 11px;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 240px;
+    overflow-y: auto;
+}
+
+.bf-expand-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    padding: 0 4px;
+    font-size: 11px;
+    vertical-align: middle;
+}
+
+.bf-expand-btn:hover {
+    color: var(--text-primary);
+}
+
+.bf-na {
+    color: var(--text-muted);
+}
+
+/* Empty state */
+.bf-empty {
+    padding: 32px;
+    text-align: center;
+    color: var(--text-muted);
+    background: var(--surface-2);
+    border-radius: 8px;
+    border: 1px dashed var(--border);
+    font-size: 13px;
+}
+
+/* Loading */
+.bf-loading {
+    padding: 32px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 14px;
+}
+
+/* Colour-blind safe: never use literal red/green hex here.
+   Duration severity uses CSS variables mapped via Accessibility.css. */

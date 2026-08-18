@@ -1,0 +1,153 @@
+<!-- SEO: primary meta -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="SQLTriage — open SQL Server audit & compliance assessment. 500+ framework-mapped checks across NIST, CIS, STIG, ISO 27001, SOC 2, PCI-DSS, HIPAA. The auditable open alternative to Microsoft SQL Vulnerability Assessment. Free, GPL v3, no agents.">
+<meta name="keywords" content="SQL Server audit, SQL Server compliance, SQL Server vulnerability assessment, NIST 800-53 SQL Server, CIS SQL Server benchmark, DISA STIG SQL, ISO 27001 database, SOC 2 SQL Server, PCI-DSS database, HIPAA SQL audit, framework-mapped audit, Microsoft VA alternative, sp_Blitz alternative, DBA audit tool, free SQL Server audit, open source compliance, audit-grade SQL Server, board-ready audit report, maturity roadmap SQL Server, SQL Server 2016 2019 2022">
+<meta name="author" content="Adrian Sullivan">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://sqladrian.github.io/SQLTriage/">
+
+<!-- SEO: Open Graph (social sharing — LinkedIn, Twitter, Slack unfurls) -->
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://sqladrian.github.io/SQLTriage/">
+<meta property="og:title" content="SQLTriage — Open SQL Server Audit & Compliance Assessment">
+<meta property="og:description" content="500+ framework-mapped audit checks for SQL Server. NIST, CIS, STIG, ISO 27001, SOC 2, PCI-DSS, HIPAA. The open alternative to Microsoft SQL Vulnerability Assessment.">
+<meta property="og:image" content="https://sqladrian.github.io/SQLTriage/screenshots/16-risk-register-compliance-mapping-ISO-SOC2-NIST.jpg">
+<meta property="og:site_name" content="SQLTriage">
+
+<!-- SEO: Twitter Card -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="SQLTriage — Open SQL Server Audit & Compliance">
+<meta name="twitter:description" content="500+ framework-mapped audit checks for SQL Server. The auditable open alternative to Microsoft Vulnerability Assessment.">
+<meta name="twitter:image" content="https://sqladrian.github.io/SQLTriage/screenshots/16-risk-register-compliance-mapping-ISO-SOC2-NIST.jpg">
+
+<!-- Structured Data: SoftwareApplication (Google, Bing, LLM training signal) -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "SQLTriage",
+  "alternateName": "SQLTriage",
+  "url": "https://sqladrian.github.io/SQLTriage/",
+  "downloadUrl": "https://github.com/SQLAdrian/SQLTriage/releases",
+  "installUrl": "https://github.com/SQLAdrian/SQLTriage/releases",
+  "screenshot": "https://sqladrian.github.io/SQLTriage/screenshots/16-risk-register-compliance-mapping-ISO-SOC2-NIST.jpg",
+  "applicationCategory": "BusinessApplication",
+  "applicationSubCategory": "Database Audit and Compliance Assessment",
+  "operatingSystem": "Windows 10, Windows 11, Windows Server 2016, Windows Server 2019, Windows Server 2022",
+  "softwareRequirements": "SQL Server 2016 or later",
+  "softwareVersion": "0.85",
+  "releaseNotes": "https://github.com/SQLAdrian/SQLTriage/blob/main/CHANGELOG.md",
+  "license": "https://www.gnu.org/licenses/gpl-3.0.html",
+  "isAccessibleForFree": true,
+  "price": "0",
+  "priceCurrency": "USD",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "description": "Open SQL Server audit and compliance assessment tool with 500+ framework-mapped checks across NIST 800-53, CIS Benchmarks, ISO 27001, SOC 2, PCI-DSS, HIPAA, FedRAMP, and more. Produces board-ready PDF reports with cited evidence per finding. The auditable open alternative to Microsoft SQL Vulnerability Assessment.",
+  "featureList": [
+    "500+ framework-mapped audit checks across 10 industry frameworks (NIST 800-53, CIS, ISO 27001, SOC 2, PCI-DSS, HIPAA, FedRAMP, and more)",
+    "Cited evidence per finding — every check links to its authoritative published source",
+    "5-level maturity roadmap with per-server progress tracking",
+    "Board-ready PDF report with cover page, integrity hash, and signature page",
+    "CIO Dashboard with framework coverage, gap analysis, and trend chart",
+    "Compliance Map — per-framework control coverage view",
+    "Read-only operation — every check is a SELECT against DMVs, no agent required",
+    "Live monitoring companion — wait stats, blocking chains, query plans",
+    "Multi-server estate-wide audit and monitoring",
+    "Windows Service mode for 24/7 headless audit history",
+    "Azure Blob Storage export with HMAC integrity",
+    "Single self-contained executable, .NET 8 + WebView2 bundled"
+  ],
+  "author": {
+    "@type": "Person",
+    "name": "Adrian Sullivan",
+    "url": "https://sqldba.org"
+  },
+  "maintainer": {
+    "@type": "Person",
+    "name": "Adrian Sullivan"
+  },
+  "codeRepository": "https://github.com/SQLAdrian/SQLTriage",
+  "programmingLanguage": ["C#", "Blazor", "SQL"],
+  "runtimePlatform": ".NET 8",
+  "keywords": "SQL Server audit, framework-mapped checks, NIST 800-53, CIS benchmark, DISA STIG, ISO 27001, SOC 2, PCI-DSS, HIPAA, Microsoft VA alternative, audit-grade compliance, board-ready audit report"
+}
+</script>
+
+<!-- Structured Data: BreadcrumbList (helps search engines understand site structure) -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position": 1,
+      "name": "SQLTriage",
+      "item": "https://sqladrian.github.io/SQLTriage/"
+    }
+  ]
+}
+</script>
+
+<!-- Structured Data: FAQPage (surfaces in Google rich results and LLM Q&A) -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Does SQLTriage require installing anything on the SQL Server?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. SQLTriage connects remotely via standard SQL connections. No agent, no software, and no schema changes are required on your SQL Server. SQLWATCH can optionally be deployed to enable additional historical dashboards."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is SQLTriage really free?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. SQLTriage is free and open-source under the GNU GPL v3 license. There are no per-server fees, no subscription, and no feature tiers."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What are the system requirements for SQLTriage?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Windows 10 (1809) or later. SQL Server 2016 or later on the monitored instances. .NET 8 runtime and WebView2 are bundled in the download — nothing to install separately."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can SQLTriage run as a Windows Service?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. SQLTriage supports a headless Windows Service mode that exposes dashboards via Kestrel HTTPS, allowing remote access from any browser on the network."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How does SQLTriage compare to SolarWinds DPA or Redgate SQL Monitor?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "SQLTriage is free and open-source with no per-server licensing costs. It covers live monitoring, health checks, execution plan analysis, alerting with 7 notification channels, and vulnerability assessment — the majority of day-to-day DBA monitoring needs. Commercial tools may offer deeper historical trending or cloud-hosted dashboards."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does SQLTriage support Azure SQL?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Azure SQL Managed Instance is fully supported. Azure SQL Database (PaaS) has partial support — checks that require server-level DMV access are automatically skipped with a friendly notice."
+      }
+    }
+  ]
+}
+</script>

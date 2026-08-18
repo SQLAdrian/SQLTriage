@@ -1,0 +1,99 @@
+{
+  "alerts": [
+    {
+      "source": "SolarWinds SQL Sentry",
+      "category": "General",
+      "name": "CPU Utilization High",
+      "condition": "CPU usage > 80% for 5 minutes",
+      "severity": "Critical",
+      "description": "Triggers when the SQL Server CPU usage exceeds the defined threshold, indicating potential performance issues.",
+      "settings": {
+        "threshold": 80,
+        "durationMinutes": 5,
+        "evaluationIntervalSeconds": 60
+      },
+      "relatedConfigurations": [
+        "Response Ruleset: Restart SQL Service",
+        "Action: Send Email Notification"
+      ]
+    },
+    {
+      "source": "SolarWinds SQL Sentry",
+      "category": "Audit",
+      "name": "Login Failure",
+      "condition": "Failed login attempts > 5 within 10 minutes",
+      "severity": "Warning",
+      "description": "Detects possible brute‑force attacks or credential issues.",
+      "settings": {
+        "failureCount": 5,
+        "timeWindowMinutes": 10
+      },
+      "relatedConfigurations": [
+        "Action: Write to Audit Log",
+        "Action: Send SMS Alert"
+      ]
+    },
+    {
+      "source": "Redgate SQL Monitor",
+      "category": "Metric",
+      "name": "Long Running Query",
+      "condition": "Query duration > 30 seconds",
+      "severity": "Critical",
+      "description": "Alerts when a query runs longer than the configured threshold, which may impact overall performance.",
+      "settings": {
+        "durationSeconds": 30,
+        "dynamicThreshold": false
+      },
+      "relatedConfigurations": [
+        "Custom Metric: Query Duration",
+        "Action: Create Incident in ITSM"
+      ]
+    },
+    {
+      "source": "Redgate SQL Monitor",
+      "category": "Dynamic",
+      "name": "CPU Utilization (ML Adjusted)",
+      "condition": "CPU usage exceeds ML‑predicted baseline",
+      "severity": "Warning",
+      "description": "Uses machine‑learning to adjust thresholds based on historical patterns.",
+      "settings": {
+        "mlModel": "cpu_baseline_v1",
+        "sensitivity": "medium"
+      },
+      "relatedConfigurations": [
+        "Action: Send Teams Notification"
+      ]
+    },
+    {
+      "source": "IDERA SQL Diagnostic Manager",
+      "category": "Metric",
+      "name": "TempDB Space Low",
+      "condition": "Free space < 10%",
+      "severity": "Critical",
+      "description": "Warns when TempDB is running low on space, which can cause query failures.",
+      "settings": {
+        "freeSpacePercent": 10,
+        "evaluationIntervalMinutes": 5
+      },
+      "relatedConfigurations": [
+        "Alert Template: Storage Alerts",
+        "Action: Execute Cleanup Script"
+      ]
+    },
+    {
+      "source": "IDERA SQL Diagnostic Manager",
+      "category": "Custom",
+      "name": "User‑Defined Metric Alert",
+      "condition": "Custom T‑SQL expression returns true",
+      "severity": "Info",
+      "description": "Allows administrators to define arbitrary alerts using T‑SQL expressions.",
+      "settings": {
+        "tSqlExpression": "SELECT CASE WHEN EXISTS (SELECT 1 FROM sys.dm_exec_requests WHERE wait_type = 'LCK_M_X') THEN 1 ELSE 0 END",
+        "evaluationIntervalSeconds": 120
+      },
+      "relatedConfigurations": [
+        "Action: Log to Event Viewer"
+      ]
+    }
+  ]
+}

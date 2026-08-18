@@ -1,0 +1,501 @@
+<!-- In the name of God, the Merciful, the Compassionate -->
+<!-- Bismillah ar-Rahman ar-Raheem -->
+
+# SQLTriage - Deployment Guide
+
+## System Requirements
+
+### Minimum Requirements
+- **OS:** Windows 10 (1809+) or Windows Server 2019+
+- **RAM:** 4 GB
+- **Disk:** 500 MB free space
+- **.NET:** .NET 8.0 Runtime (included in installer)
+- **SQL Server:** SQL Server 2016+ (for monitoring)
+
+### Recommended Requirements
+- **OS:** Windows 11 or Windows Server 2022
+- **RAM:** 8 GB
+- **Disk:** 2 GB free space (for logs and cache)
+- **SQL Server:** SQL Server 2019+
+
+---
+
+## Installation Methods
+
+### Method 1: Standalone Executable (Recommended for Quick Start)
+
+1. **Download** the latest release from GitHub
+2. **Extract** the ZIP file to a folder (e.g., `C:\Program Files\SQLTriage`)
+3. **Run** `SQLTriage.exe`
+4. **Configure** connection string on first launch
+
+### Method 2: MSI Installer (Enterprise Deployment)
+
+1. **Download** `SQLTriage.msi`
+2. **Run** the installer with administrator privileges
+3. **Follow** the installation wizard
+4. **Configure** during installation or post-install
+
+**Silent Install:**
+```cmd
+msiexec /i SQLTriage.msi /quiet /qn /norestart
+```
+
+**Silent Install with Custom Path:**
+```cmd
+msiexec /i SQLTriage.msi INSTALLDIR="C:\CustomPath" /quiet /qn /norestart
+```
+
+---
+
+## Configuration
+
+### Connection String Configuration
+
+**Location:** `appsettings.json`
+
+```json
+{
+  "ConnectionStrings": {
+    "SqlServer": "Server=YOUR_SERVER;Database=SQLWATCH;Integrated Security=true;"
+  }
+}
+```
+
+**For SQL Authentication:**
+```json
+{
+  "ConnectionStrings": {
+    "SqlServer": "Server=YOUR_SERVER;Database=SQLWATCH;User Id=sa;Password=YOUR_PASSWORD;"
+  }
+}
+```
+
+**Security Best Practice:** Use encrypted connection strings
+```json
+{
+  "ConnectionStrings": {
+    "SqlServer": "enc:BASE64_ENCRYPTED_STRING"
+  }
+}
+```
+
+### Performance Configuration
+
+```json
+{
+  "QueryTimeoutSeconds": 60,
+  "MaxQueryRows": 10000,
+  "RefreshIntervalSeconds": 35,
+  "MaxCacheSizeMB": 500
+}
+```
+
+### Logging Configuration
+
+```json
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "SQLTriage": "Debug"
+    }
+  }
+}
+```
+
+### Update Subsystem Configuration
+
+The in-app auto-updater (and the script-update feature) is controlled by a single flag:
+
+```json
+{
+  "Updates": {
+    "Enabled": true
+  }
+}
+```
+
+- **`true` (default):** the app checks for, downloads, verifies, and applies signed updates.
+- **`false`:** the entire update subsystem is inert — no network checks, no downloads, no apply.
+  **Client and test builds should ship `false`** unless a signed release channel is in place.
+
+Updates are only ever applied if their signature verifies against the embedded public key
+(see *Software Update Integrity* in [SECURITY.md](SECURITY.md)). An unsigned or tampered update
+is rejected with no override.
+
+---
+
+## Enabling Signed Updates (Code-Signing Certificate Drop-In)
+
+Until a code-signing certificate is installed, the build ships a **placeholder** public key and
+all update verification fails closed (so updates must stay disabled via `Updates:Enabled=false`).
+To enable signed updates once you have the certificate (`.pfx`):
+
+1. **Embed the public key** (one-time, and again only if the cert changes):
+   ```powershell
+   .\tools\extract-update-pubkey.ps1 -Pfx C:\path\to\codesigning.pfx
+   ```
+   This writes the real public key to `Resources\update-signing-public.pem`. The verifier
+   auto-detects RSA or ECDSA, so any standard code-signing certificate works.
+
+2. **Rebuild** so the key is embedded into the assembly:
+   ```powershell
+   dotnet build SQLTriage.csproj -c Release
+   ```
+
+3. **Publish and sign the release** (signs `SQLTriage.exe` via signtool and produces the
+   detached `<zip>.sig`):
+   ```powershell
+   .\publish-release.ps1 -SigningPfx C:\path\to\codesigning.pfx -SigningPassword <pwd>
+   ```
+   `signtool` (Windows SDK) must be on `PATH` for exe signing.
+
+4. **Enable updates** by shipping `config/appsettings.json` with `"Updates": { "Enabled": true }`.
+
+The private key never leaves the signing machine; only the public key is embedded in the app.
+
+---
+
+## First-Time Setup
+
+### 1. Deploy SQLWATCH Database
+
+The application requires the SQLWATCH database on the target SQL Server.
+
+**Option A: Automatic Deployment (Recommended)**
+1. Navigate to **Database Deploy** page
+2. Select target server
+3. Click **Deploy SQLWATCH**
+4. Wait for completion
+
+**Option B: Manual Deployment**
+1. Locate `Dacpacs\SQLWATCH.dacpac`
+2. Use SQL Server Management Studio (SSMS)
+3. Right-click Databases → Deploy Data-tier Application
+4. Select `SQLWATCH.dacpac`
+
+### 2. Configure Server Connections
+
+> Before adding connections: create a least-privilege monitoring account on each SQL Server.
+> See [Minimum-Privilege SQL Login](docs/min-privilege-sql-login.md) for the T-SQL setup script and permissions table.
+
+1. Navigate to **Servers** page
+2. Click **+ Add Connection**
+3. Enter connection details:
+   - **Name:** Display name
+   - **Server Names:** Comma-separated list
+   - **Authentication:** Windows or SQL
+4. Click **Test Connection**
+5. Click **Save**
+
+### 3. Verify Installation
+
+1. Navigate to **Instance Overview**
+2. Select a server from dropdown
+3. Verify dashboards load data
+4. Check **Health** page for any issues
+
+---
+
+## Enterprise Deployment
+
+### Group Policy Deployment
+
+1. **Create** a GPO for software installation
+2. **Add** `SQLTriage.msi` to the package
+3. **Configure** installation options
+4. **Link** GPO to target OUs
+5. **Force** update: `gpupdate /force`
+
+### SCCM/Intune Deployment
+
+**SCCM:**
+1. Import MSI into SCCM
+2. Create application deployment
+3. Configure detection method
+4. Deploy to device collections
+
+**Intune:**
+1. Upload MSI to Intune
+2. Create Win32 app
+3. Configure requirements and detection
+4. Assign to groups
+
+### Centralized Configuration
+
+**Option 1: Shared Configuration File**
+```cmd
+mklink "C:\Program Files\SQLTriage\appsettings.json" "\\server\share\config\appsettings.json"
+```
+
+**Option 2: Environment Variables**
+```cmd
+setx SQLHEALTH_CONNECTIONSTRING "Server=PROD;Database=SQLWATCH;Integrated Security=true;"
+```
+
+---
+
+## Security Hardening
+
+### 1. Encrypt Connection Strings
+
+Run the encryption utility:
+```cmd
+SQLTriage.exe --encrypt-config
+```
+
+### 2. File System Permissions
+
+Restrict access to application folder:
+```cmd
+icacls "C:\Program Files\SQLTriage" /grant "Domain Users:(RX)" /T
+icacls "C:\Program Files\SQLTriage\appsettings.json" /grant "Administrators:(F)"
+```
+
+### 3. Audit Logging
+
+Enable comprehensive audit logging:
+```json
+{
+  "AuditLogRetention": {
+    "Enabled": true,
+    "RetentionDays": 90
+  }
+}
+```
+
+### 4. Network Security
+
+- Use encrypted connections: `Encrypt=true` in connection string
+- Validate SSL certificates: `TrustServerCertificate=false`
+- Use Windows Authentication when possible
+
+---
+
+## Troubleshooting
+
+### Application Won't Start
+
+**Check:**
+1. .NET 8.0 Runtime installed
+2. Windows Event Log for errors
+3. `logs\app-*.log` for details
+
+**Solution:**
+```cmd
+# Repair .NET installation
+dotnet-runtime-8.0.24-win-x64.exe /repair
+```
+
+### Connection Failures
+
+**Check:**
+1. SQL Server accessible from client
+2. Firewall allows port 1433
+3. SQL Server Browser running (for named instances)
+4. Connection string syntax
+
+**Test Connection:**
+```cmd
+sqlcmd -S SERVER_NAME -E -Q "SELECT @@VERSION"
+```
+
+### Performance Issues
+
+**Check:**
+1. Query timeout settings
+2. Network latency to SQL Server
+3. SQLite cache size
+4. Memory usage
+
+**Optimize:**
+```json
+{
+  "QueryTimeoutSeconds": 120,
+  "MaxCacheSizeMB": 1024,
+  "MaxQueryRows": 5000
+}
+```
+
+### High Memory Usage
+
+**Check:**
+1. Cache size configuration
+2. Number of concurrent queries
+3. Result set sizes
+
+**Solution:**
+```json
+{
+  "MaxCacheSizeMB": 256,
+  "CacheEvictionHours": 12,
+  "MaxQueryRows": 5000
+}
+```
+
+---
+
+## Maintenance
+
+### Log Rotation
+
+Logs automatically rotate daily. Retention:
+- **Application Logs:** 30 days (configurable)
+- **Audit Logs:** 90 days (configurable)
+
+**Manual Cleanup:**
+```cmd
+forfiles /p "C:\Program Files\SQLTriage\logs" /s /m *.log /d -30 /c "cmd /c del @path"
+```
+
+### Database Maintenance
+
+**SQLite Cache:**
+- Automatic VACUUM every 4 hours
+- Integrity check every 6 runs
+- Manual: Navigate to **Settings** → **Maintenance**
+
+**SQLWATCH Database:**
+- Built-in retention policies
+- Default: 30 days for metrics
+- Configure in SQLWATCH settings
+
+### Updates
+
+**Check for Updates:**
+1. Navigate to **About** page
+2. Click **Check for Updates**
+3. Download and install if available
+
+**Manual Update:**
+1. Backup `appsettings.json` and `dashboard-config.json`
+2. Stop application
+3. Extract new version over existing
+4. Restore configuration files
+5. Start application
+
+---
+
+## Backup and Recovery
+
+### Backup
+
+**Configuration:**
+```cmd
+xcopy "C:\Program Files\SQLTriage\*.json" "\\backup\sqlhealth\config\" /Y
+```
+
+**Audit Logs:**
+```cmd
+xcopy "C:\Program Files\SQLTriage\audit-logs\*" "\\backup\sqlhealth\audit\" /S /Y
+```
+
+**SQLite Cache:**
+```cmd
+copy "C:\Program Files\SQLTriage\SQLTriage.db" "\\backup\sqlhealth\cache\"
+```
+
+### Recovery
+
+**Restore Configuration:**
+```cmd
+xcopy "\\backup\sqlhealth\config\*.json" "C:\Program Files\SQLTriage\" /Y
+```
+
+**Restore Audit Logs:**
+```cmd
+xcopy "\\backup\sqlhealth\audit\*" "C:\Program Files\SQLTriage\audit-logs\" /S /Y
+```
+
+---
+
+## Uninstallation
+
+### MSI Installer
+
+**GUI:**
+1. Control Panel → Programs and Features
+2. Select "SQLTriage"
+3. Click Uninstall
+
+**Silent:**
+```cmd
+msiexec /x {PRODUCT_CODE} /quiet /qn /norestart
+```
+
+### Standalone
+
+1. Stop application
+2. Delete installation folder
+3. Remove shortcuts (if any)
+4. Clean registry (optional)
+
+**Clean Uninstall:**
+```cmd
+rd /s /q "C:\Program Files\SQLTriage"
+rd /s /q "%APPDATA%\SQLTriage"
+```
+
+---
+
+## Support
+
+### Documentation
+- [README](README.md) — project overview and quick start
+- [Changelog](CHANGELOG.md) — version history
+- [Contributing](CONTRIBUTING.md) — how to contribute
+
+### Logs Location
+- **Application:** `logs\app-YYYY-MM-DD.log`
+- **Audit:** `audit-logs\audit-YYYY-MM-DD.jsonl`
+
+### Getting Help
+- GitHub Issues: https://github.com/SQLAdrian/SQLTriage/issues
+
+---
+
+## Appendix
+
+### Firewall Rules
+
+**Inbound (if hosting web interface):**
+```cmd
+netsh advfirewall firewall add rule name="SQLTriage" dir=in action=allow protocol=TCP localport=5000
+```
+
+**Outbound (SQL Server):**
+```cmd
+netsh advfirewall firewall add rule name="SQL Server" dir=out action=allow protocol=TCP remoteport=1433
+```
+
+### Registry Keys
+
+**Installation Path:**
+```
+HKEY_LOCAL_MACHINE\SOFTWARE\SQLTriage
+```
+
+**User Settings:**
+```
+HKEY_CURRENT_USER\SOFTWARE\SQLTriage
+```
+
+### File Locations
+
+| Item | Location |
+|------|----------|
+| Executable | `C:\Program Files\SQLTriage\SQLTriage.exe` |
+| Configuration | `C:\Program Files\SQLTriage\appsettings.json` |
+| Dashboard Config | `C:\Program Files\SQLTriage\dashboard-config.json` |
+| Logs | `C:\Program Files\SQLTriage\logs\` |
+| Audit Logs | `C:\Program Files\SQLTriage\audit-logs\` |
+| Cache | `C:\Program Files\SQLTriage\SQLTriage.db` |
+| User Settings | `C:\Program Files\SQLTriage\user-settings.json` |
+
+---
+
+**Document Version:** 1.0
+**Last Updated:** 2026-03-23
+**Applies To:** SQLTriage v0.79.0+
+

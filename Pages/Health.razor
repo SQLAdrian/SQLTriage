@@ -1,0 +1,346 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/health"
+<PageTitle>SQLTriage - Server Health</PageTitle>
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@inject HealthCheckService HealthCheckService
+@inject ExecutiveHealthService ExecutiveHealth
+@inject GovernanceHistoryService HistoryService
+@inject IDbConnectionFactory ConnectionFactory
+@inject ServerConnectionManager ConnectionManager
+@inject UserSettingsService UserSettings
+@inject IGovernanceWeightsProvider GovWeights
+
+<div class="health-page">
+    <div class="health-page-header">
+        <h2 class="health-page-title">
+            <i class="fa-solid fa-heart-pulse"></i> Server Health &amp; Risk Score
+        </h2>
+        <button class="btn btn-primary health-refresh-btn" @onclick="RefreshHealth">
+            <i class="fa-solid fa-rotate @(_loading ? "fa-spin" : "")"></i> Refresh
+        </button>
+    </div>
+
+    @if (_loading)
+    {
+        <PageLoadingSpinner Message="Computing health score..." />
+    }
+    else if (_scores.Count == 0)
+    {
+        <div class="health-empty">
+            <i class="fa-solid fa-plug health-empty-icon"></i>
+            <p>No servers connected. <a href="/servers">Add a server</a> to see health scores.</p>
+        </div>
+    }
+    else
+    {
+        @foreach (var kvp in _scores)
+        {
+            var hs      = kvp.Value;
+            var bd      = hs.Breakdown;
+            var sevCls  = hs.Severity.ToString().ToLower();
+            var trendPoints = _trendData.TryGetValue(kvp.Key, out var tp) ? tp : null;
+
+            <div class="health-server-block">
+
+                <!-- ── Hero score card ─────────────────────────────────────── -->
+                <div class="health-hero sev-@sevCls">
+                    <div class="health-hero-left">
+                        <div class="health-hero-server">
+                            <i class="fa-solid fa-database"></i> @kvp.Key
+                        </div>
+                        <div class="health-hero-score">@hs.Score</div>
+                        <div class="health-hero-label">Health Score</div>
+                        <div class="health-hero-band">@ScoreBand(hs.Score)</div>
+                        @{ var measuredCount = bd.Dimensions.Count(d => d.HasData); }
+                        @if (measuredCount == 0)
+                        {
+                            <div style="font-size:11px;opacity:.7;margin-top:4px;" title="No dimension has collected data yet — the score is not meaningful until at least one is measured.">
+                                <i class="fa-solid fa-circle-info"></i> Not yet assessed
+                            </div>
+                        }
+                        else if (measuredCount < 5)
+                        {
+                            <div style="font-size:11px;opacity:.7;margin-top:4px;" title="The score reflects only the dimensions that have data. Dimensions shown as n/a below are excluded, not assumed healthy.">
+                                <i class="fa-solid fa-circle-info"></i> Indicative &mdash; @measuredCount of 5 dimensions measured
+                            </div>
+                        }
+                    </div>
+                    <div class="health-hero-right">
+                        <div class="health-hero-trend" title="Trend vs yesterday">
+                            @switch (hs.Trend)
+                            {
+                                case HealthTrend.Improving:
+                                    <i class="fa-solid fa-arrow-trend-up" style="color:var(--green);"></i>
+                                    <span class="health-trend-label">Improving</span>
+                                    break;
+                                case HealthTrend.Degrading:
+                                    <i class="fa-solid fa-arrow-trend-down" style="color:var(--red);"></i>
+                                    <span class="health-trend-label">Degrading</span>
+                                    break;
+                                default:
+                                    <i class="fa-solid fa-equals" style="color:var(--text-muted);"></i>
+                                    <span class="health-trend-label">Stable</span>
+                                    break;
+                            }
+                        </div>
+                        <div class="health-hero-updated">
+                            Updated @hs.LastUpdated.ToString("HH:mm")
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ── Dimension breakdown ────────────────────────────────── -->
+                <div class="health-breakdown-section">
+                    <h3 class="health-section-title">Score Breakdown</h3>
+                    <div class="health-breakdown-grid">
+                        @foreach (var dim in bd.Dimensions)
+                        {
+                            // No-data dimensions return a default Score of 100 but are EXCLUDED
+                            // from the composite. Render them as "n/a" (not 100/100) so the
+                            // breakdown never implies a healthy 100 the score didn't count.
+                            var measured = dim.HasData;
+                            var barPct   = measured ? Math.Max(2, dim.Score) : 0;
+                            var dimColor = measured ? DimColor(dim.Score) : "var(--text-muted)";
+                            <div class="health-dim-row" title="@(measured ? dim.Tooltip : dim.Name + ": no data collected yet — excluded from the score (not assumed healthy)")">
+                                <div class="health-dim-name">
+                                    <i class="@DimIcon(dim.Name)"></i>
+                                    @dim.Name
+                                    <span class="health-dim-weight">(@(Math.Round(dim.Weight * 100))%)</span>
+                                </div>
+                                <div class="health-dim-bar-track">
+                                    @if (measured)
+                                    {
+                                        <div class="health-dim-bar-fill"
+                                             style="width:@barPct%;background:@dimColor;">
+                                        </div>
+                                    }
+                                </div>
+                                <div class="health-dim-score" style="color:@dimColor;">
+                                    @if (measured)
+                                    {
+                                        @dim.Score<span class="health-dim-pts">/100</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="health-dim-pts">n/a</span>
+                                    }
+                                </div>
+                                <div class="health-dim-summary">@(measured ? dim.Summary : "Not measured — excluded from the score")</div>
+                            </div>
+                        }
+                    </div>
+                    <div class="health-breakdown-note">
+                        <i class="fa-solid fa-circle-info"></i>
+                        Hover any dimension row for a full tooltip explaining contribution.
+                        Weights sourced from <code>Config/governance-weights.json</code>.
+                    </div>
+                </div>
+
+                <!-- ── Trend sparkline (last 30 days) ────────────────────── -->
+                @if (trendPoints != null && trendPoints.Count > 1)
+                {
+                    <div class="health-trend-section">
+                        <h3 class="health-section-title">30-Day Score Trend</h3>
+                        <div class="health-trend-bars">
+                            @foreach (var pt in trendPoints)
+                            {
+                                var ht = Math.Max(4, pt.CompositeScore);
+                                var tc = DimColor(pt.CompositeScore);
+                                <div class="health-trend-bar-wrap"
+                                     title="@pt.RecordedDate: @pt.CompositeScore">
+                                    <div class="health-trend-bar-fill"
+                                         style="height:@ht%;background:@tc;">
+                                    </div>
+                                    <div class="health-trend-date-lbl">
+                                        @pt.RecordedDate[^2..]
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+
+                <!-- ── Legacy health grid ────────────────────────────────── -->
+                @if (_healthStatus.TryGetValue(kvp.Key, out var hs2) && hs2 != null)
+                {
+                    <details class="health-detail-toggle">
+                        <summary>Live Sensor Details</summary>
+                        <div class="health-grid" style="margin-top:12px;">
+
+                            <div class="health-card @GetSeverityClass(hs2.ConnectionSeverity)">
+                                <div class="card-header">
+                                    <span class="card-icon"><i class="fa-solid fa-plug"></i></span>
+                                    <span class="card-title">Connection</span>
+                                </div>
+                                <div class="card-value">@hs2.ConnectionStatusText</div>
+                                <div class="card-detail">@hs2.LastUpdatedDisplay</div>
+                                @if (!string.IsNullOrEmpty(hs2.ErrorMessage))
+                                { <div class="card-error">@hs2.ErrorMessage</div> }
+                            </div>
+
+                            <div class="health-card @GetSeverityClass(hs2.CpuSeverity)">
+                                <div class="card-header">
+                                    <span class="card-icon"><i class="fa-solid fa-microchip"></i></span>
+                                    <span class="card-title">CPU</span>
+                                </div>
+                                <div class="card-value">@hs2.CpuDisplayText</div>
+                                <div class="card-detail">SQL Server Process</div>
+                            </div>
+
+                            <div class="health-card @GetSeverityClass(hs2.MemorySeverity)">
+                                <div class="card-header">
+                                    <span class="card-icon"><i class="fa-solid fa-brain"></i></span>
+                                    <span class="card-title">Memory</span>
+                                </div>
+                                <div class="card-value">@hs2.MemoryDisplayText</div>
+                                <div class="card-detail">Buffer Pool</div>
+                            </div>
+
+                            <div class="health-card @GetSeverityClass(hs2.BlockingSeverity)">
+                                <div class="card-header">
+                                    <span class="card-icon"><i class="fa-solid fa-ban"></i></span>
+                                    <span class="card-title">Blocking</span>
+                                </div>
+                                <div class="card-value">@hs2.BlockingDisplayText</div>
+                                <div class="card-detail">@hs2.LongestBlockedSeconds.ToString("F0")s max</div>
+                            </div>
+
+                            <div class="health-card @GetSeverityClass(hs2.ThreadsSeverity)">
+                                <div class="card-header">
+                                    <span class="card-icon"><i class="fa-solid fa-threads"></i></span>
+                                    <span class="card-title">Threads</span>
+                                </div>
+                                <div class="card-value">@hs2.ThreadsDisplayText</div>
+                                <div class="card-detail">@hs2.AvailableThreads/@hs2.TotalThreads available</div>
+                            </div>
+
+                            <div class="health-card @GetSeverityClass(hs2.DeadlockSeverity)">
+                                <div class="card-header">
+                                    <span class="card-icon"><i class="fa-solid fa-skull"></i></span>
+                                    <span class="card-title">Deadlocks</span>
+                                </div>
+                                <div class="card-value">@hs2.DeadlockDisplayText</div>
+                                <div class="card-detail">Since last check</div>
+                            </div>
+
+                            <div class="health-card @GetSeverityClass(hs2.WaitSeverity)">
+                                <div class="card-header">
+                                    <span class="card-icon"><i class="fa-solid fa-hourglass"></i></span>
+                                    <span class="card-title">Top Wait</span>
+                                </div>
+                                <div class="card-value">@hs2.WaitDisplayText</div>
+                                <div class="card-detail">Wait Type</div>
+                            </div>
+
+                            <div class="health-card overall @GetSeverityClass(hs2.OverallSeverity)">
+                                <div class="card-header">
+                                    <span class="card-icon"><i class="fa-solid fa-heart"></i></span>
+                                    <span class="card-title">Overall Health</span>
+                                </div>
+                                <div class="card-value">@GetSeverityText(hs2.OverallSeverity)</div>
+                                <div class="card-detail">
+                                    @(hs2.LastUpdated.HasValue ? "Last updated: " + hs2.LastUpdatedDisplay : "")
+                                </div>
+                            </div>
+                        </div>
+                    </details>
+                }
+
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private bool _loading = true;
+    private Dictionary<string, ExecutiveHealthScore> _scores = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, ServerHealthStatus?>  _healthStatus = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, List<HealthScoreTrendPoint>> _trendData = new(StringComparer.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync() 
+    {
+        if (UserSettings.GetFastAppLoad()) await Task.Yield();
+        await RefreshHealth();
+    }
+
+    private async Task RefreshHealth()
+    {
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            var servers = ConnectionManager.GetEnabledConnections()
+                .SelectMany(c => c.GetServerList())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (servers.Count == 0)
+            {
+                // fall back to single-connection factory if multi-server manager has nothing
+                if (ConnectionFactory is SqlServerConnectionFactory f && f.ServerName != null)
+                    servers = new List<string> { f.ServerName };
+            }
+
+            foreach (var srv in servers)
+            {
+                try
+                {
+                    _scores[srv]      = await ExecutiveHealth.GetHealthScoreAsync(srv);
+                    _healthStatus[srv] = HealthCheckService.GetCachedHealth(srv);
+                    _trendData[srv]   = HistoryService.GetHealthScoreTrend(srv, 30);
+                }
+                catch
+                {
+                    _scores[srv] = new ExecutiveHealthScore
+                    {
+                        Score = 0, Severity = HealthSeverity.Unknown,
+                        Message = "Health data unavailable", Breakdown = new HealthScoreBreakdown()
+                    };
+                }
+            }
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    // Medal band from the shared governance-weights band config — same source as the CIO
+    // dashboard and the governance score, so all three surfaces can't drift.
+    private string ScoreBand(int score) => GovWeights.Current.BandFor(score);
+
+    private static string DimColor(int score) =>
+        score >= 80 ? "var(--green)"
+        : score >= 60 ? "var(--yellow)"
+        : score >= 40 ? "var(--orange)"
+        : "var(--red)";
+
+    private static string DimIcon(string name) => name switch
+    {
+        "Security"    => "fa-solid fa-shield-halved",
+        "Compliance"  => "fa-solid fa-clipboard-check",
+        "Performance" => "fa-solid fa-gauge-high",
+        "Resource"    => "fa-solid fa-microchip",
+        "Blocking"    => "fa-solid fa-ban",
+        _             => "fa-solid fa-circle-dot"
+    };
+
+    private static string GetSeverityClass(HealthSeverity sev) => sev switch
+    {
+        HealthSeverity.Critical => "severity-critical",
+        HealthSeverity.Warning  => "severity-warning",
+        HealthSeverity.Healthy  => "severity-healthy",
+        _                       => "severity-unknown"
+    };
+
+    private static string GetSeverityText(HealthSeverity sev) => sev switch
+    {
+        HealthSeverity.Critical => "Critical",
+        HealthSeverity.Warning  => "Warning",
+        HealthSeverity.Healthy  => "Healthy",
+        _                       => "Unknown"
+    };
+}

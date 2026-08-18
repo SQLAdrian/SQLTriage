@@ -1,0 +1,64 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using SQLTriage.Data
+@using SQLTriage.Data.Services
+@using System.Linq
+@implements IDisposable
+@inject IServerContextService ServerContext
+@inject ServerConnectionManager ConnectionManager
+@inject NavigationManager Navigation
+
+@if (_servers.Count > 0)
+{
+    <div class="global-server-selector" style="display:flex; align-items:center; gap:8px;">
+        <div class="gss-label" style="font-size:11px; font-weight:700; color:var(--text-muted); letter-spacing:0.05em; text-transform:uppercase;">Connected to:</div>
+        <select value="@SelectedServer" @onchange="OnServerChanged" class="gss-dropdown" style="background:transparent; border:none; color:var(--text-primary); font-weight:600; font-size:14px; cursor:pointer; outline:none;">
+            <option value="">(Select a server)</option>
+            @foreach (var srv in _servers)
+            {
+                <option value="@srv.Id">@srv.ServerNames</option>
+            }
+        </select>
+        @if (!string.IsNullOrEmpty(SelectedServer))
+        {
+            <span style="color:var(--text-secondary); font-size:14px; font-weight:600;">(@ServerContext.CurrentDatabase)</span>
+        }
+        <button class="nav-arrow-btn" title="Manage Servers" @onclick='() => Navigation.NavigateTo("/servers")' style="background:transparent; border:none; color:var(--text-secondary); cursor:pointer; margin-left: 8px;">
+            <i class="fa-solid fa-server"></i>
+        </button>
+    </div>
+}
+
+@code {
+    private List<SQLTriage.Data.Models.ServerConnection> _servers = new();
+
+    private string? SelectedServer => ServerContext.CurrentServerId;
+
+    private async Task OnServerChanged(ChangeEventArgs e)
+    {
+        var val = e.Value?.ToString();
+        await ServerContext.SetServerAsync(string.IsNullOrEmpty(val) ? null : val);
+    }
+
+    protected override void OnInitialized()
+    {
+        _servers = ConnectionManager.GetConnections();
+        ServerContext.OnServerChanged += RefreshState;
+        ServerContext.OnDatabaseChanged += RefreshState;
+
+        // Default to the first configured server instead of (None) — showing some
+        // data beats none. Only when nothing has been selected yet.
+        if (string.IsNullOrEmpty(ServerContext.CurrentServerId) && _servers.Count > 0)
+            _ = ServerContext.SetServerAsync(_servers[0].Id);
+    }
+
+    private void RefreshState()
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        ServerContext.OnServerChanged -= RefreshState;
+        ServerContext.OnDatabaseChanged -= RefreshState;
+    }
+}

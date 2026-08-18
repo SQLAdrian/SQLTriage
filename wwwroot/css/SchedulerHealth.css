@@ -1,0 +1,74 @@
+/* Styles extracted to wwwroot/css/SchedulerHealth.css 2026-05-11 (CLAUDE.md convention). */
+.page-container {
+    padding: 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.page-title {
+    font-size: 24px;
+    font-weight: 600;
+    margin-bottom: 24px;
+    color: var(--text-primary);
+}
+
+.card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 24px;
+}
+
+.card h2 {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0 0 16px 0;
+    color: var(--text-primary);
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.data-table th,
+.data-table td {
+    text-align: left;
+    padding: 10px 8px;
+    border-bottom: 1px solid var(--border);
+}
+
+.data-table th {
+    font-weight: 600;
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+}
+
+.data-table tr:hover {
+    background: var(--bg-hover);
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.status-ok {
+    background: var(--dark-green);
+    color: #d1fae5;
+}
+
+.status-warn {
+    background: #92400e;
+    color: #fef3c7;
+}
+
+.status-error {
+    background: #991b1b;
+    color: #fee2e2;
+}

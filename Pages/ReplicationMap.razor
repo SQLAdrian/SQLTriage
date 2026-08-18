@@ -1,0 +1,240 @@
+@* /* In the name of God, the Merciful, the Compassionate */ *@
+@page "/replication-map"
+<PageTitle>SQLTriage — Replication Map</PageTitle>
+
+@using System.Globalization
+@using System.Linq
+@using System.Data
+@using Microsoft.Data.SqlClient
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@inject ServerConnectionManager ConnectionManager
+@inject AuditLogService AuditLog
+
+@*
+    Replication Map (Phase 1 — READ ONLY) — a "live PCB" of transactional
+    replication: publications (left) wired to subscriptions (right), edges
+    coloured by distribution-agent health (green = flowing, amber = retry/lag,
+    red = failed, grey = unknown), with the current pulse travelling in the
+    replication direction.
+
+    Connects to the SELECTED server as the distributor and reads the distribution
+    database (MSdistribution_agents + latest MSdistribution_history). Degrades to
+    a clear empty state when the server is not a distributor or lacks permission.
+    The exact T-SQL is shown via "Show query" so it can be validated on-site.
+    "Sample data" renders a synthetic topology for preview without a live server.
+
+    No commands are sent here — remediation is Phase 2 (behind No-Pants + RBAC).
+*@
+
+<div class="rep-page">
+    <div class="rep-head">
+        <div>
+            <h2 class="rep-title"><i class="fa-solid fa-diagram-project"></i> Replication Map</h2>
+            <div class="rep-sub">
+                @if (_sample) { <span class="rep-badge rep-badge-sample">SAMPLE DATA</span> }
+                else if (_scanned && _edges.Count > 0) { <text>Distributor: <strong>@_distributor</strong> · @_pubNodes.Count publication(s) · @_subNodes.Count subscription(s) · @_edges.Count link(s)</text> }
+                else { <text>Transactional replication topology &amp; health (read-only).</text> }
+            </div>
+        </div>
+        <div class="rep-toolbar">
+            <select class="rep-select" @bind="_selected">
+                <option value="">— select distributor / server —</option>
+                @foreach (var t in _targets)
+                {
+                    <option value="@t.Key">@t.Display</option>
+                }
+            </select>
+            <button class="rep-btn rep-btn-primary" @onclick="ScanAsync" disabled="@(_scanning || string.IsNullOrEmpty(_selected))">
+                @if (_scanning) { <i class="fa-solid fa-spinner fa-spin"></i> <span>Scanning…</span> }
+                else { <i class="fa-solid fa-radar"></i> <span>Scan</span> }
+            </button>
+            <button class="rep-btn" @onclick="LoadSample" disabled="@_scanning" title="Render a synthetic topology to preview the map">
+                <i class="fa-solid fa-vial"></i> Sample
+            </button>
+            <button class="rep-btn" @onclick="() => _showSql = !_showSql">
+                <i class="fa-solid fa-code"></i> @(_showSql ? "Hide" : "Show") query
+            </button>
+            @if (_scanned || _sample)
+            {
+                <button class="rep-btn" @onclick="Clear"><i class="fa-solid fa-xmark"></i> Clear</button>
+            }
+        </div>
+    </div>
+
+    @if (_showSql)
+    {
+        <pre class="rep-sql">@ReplicationQuery</pre>
+    }
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="rep-alert"><i class="fa-solid fa-circle-exclamation"></i> @_error</div>
+    }
+
+    <div class="rep-legend">
+        <span><span class="rep-key s-ok"></span> Healthy / flowing</span>
+        <span><span class="rep-key s-warn"></span> Retry / latency</span>
+        <span><span class="rep-key s-bad"></span> Failed / stopped</span>
+        <span><span class="rep-key s-unknown"></span> Unknown</span>
+        <span class="rep-hint">Click a link for detail.</span>
+    </div>
+
+    @if (_edges.Count == 0)
+    {
+        @if (_scanned && string.IsNullOrEmpty(_error))
+        {
+            <div class="rep-empty">
+                <i class="fa-solid fa-diagram-project"></i>
+                <p>No replication found on <strong>@_distributor</strong>.</p>
+                <p class="rep-empty-sub">The server may not be a distributor, replication may not be configured, or the login may lack permission on the <code>distribution</code> database. Try the publisher/distributor instance, or use <strong>Sample</strong> to preview.</p>
+            </div>
+        }
+        else if (!_scanned && !_sample)
+        {
+            <div class="rep-empty">
+                <i class="fa-solid fa-diagram-project"></i>
+                <p>Select the distributor (or publisher) server and click <strong>Scan</strong>.</p>
+                <p class="rep-empty-sub">No live server? Click <strong>Sample</strong> to preview the map.</p>
+            </div>
+        }
+    }
+    else
+    {
+        <div class="rep-board">
+            <svg class="rep-svg @(_selEdge >= 0 ? "has-sel" : "")" viewBox="0 0 1400 @N(_vbH)"
+                 preserveAspectRatio="xMidYMin meet" role="img" aria-label="Replication topology map">
+                <rect x="0" y="0" width="1400" height="@N(_vbH)" fill="transparent" @onclick="() => _selEdge = -1"></rect>
+
+                @* ── edges (pub → sub), coloured by health ── *@
+                @for (int ei = 0; ei < _edges.Count; ei++)
+                {
+                    var e = _edges[ei];
+                    var idx = ei;
+                    var sel = _selEdge == idx ? " rep-sel" : (_selEdge >= 0 ? " rep-dim" : "");
+                    var traceCls = $"rep-trace s-{e.Status}{sel}";
+                    var curCls = $"rep-current s-{e.Status}{sel}";
+                    <path class="@traceCls" d="@e.D"></path>
+                    @if (e.Status != "bad")
+                    {
+                        <path class="@curCls" d="@e.D" pathLength="100"
+                              style="animation-delay:@N(e.Delay)s; animation-duration:@N(e.Dur)s"></path>
+                    }
+                    <path class="rep-hit" d="@e.D" @onclick="() => SelectEdge(idx)" @onclick:stopPropagation="true"></path>
+                }
+
+                @* ── publication nodes (left) ── *@
+                @foreach (var n in _pubNodes)
+                {
+                    <g class="rep-node">
+                        @((MarkupString)$"<rect class=\"rep-pub\" x=\"{N(PubX - 168)}\" y=\"{N(n.Y - 17)}\" width=\"168\" height=\"34\" rx=\"5\"></rect>")
+                        @((MarkupString)$"<text class=\"rep-n1\" x=\"{N(PubX - 156)}\" y=\"{N(n.Y - 2)}\">{Enc(n.Line1)}</text>")
+                        @((MarkupString)$"<text class=\"rep-n2\" x=\"{N(PubX - 156)}\" y=\"{N(n.Y + 11)}\">{Enc(n.Line2)}</text>")
+                        <circle class="rep-pin" cx="@N(PubX + 4)" cy="@N(n.Y)" r="4"></circle>
+                    </g>
+                }
+
+                @* ── subscription nodes (right) ── *@
+                @foreach (var n in _subNodes)
+                {
+                    <g class="rep-node">
+                        @((MarkupString)$"<rect class=\"rep-sub\" x=\"{N(SubX)}\" y=\"{N(n.Y - 17)}\" width=\"176\" height=\"34\" rx=\"5\"></rect>")
+                        @((MarkupString)$"<text class=\"rep-n1\" x=\"{N(SubX + 12)}\" y=\"{N(n.Y - 2)}\">{Enc(n.Line1)}</text>")
+                        @((MarkupString)$"<text class=\"rep-n2\" x=\"{N(SubX + 12)}\" y=\"{N(n.Y + 11)}\">{Enc(n.Line2)}</text>")
+                        <circle class="rep-pin" cx="@N(SubX - 4)" cy="@N(n.Y)" r="4"></circle>
+                    </g>
+                }
+            </svg>
+        </div>
+
+        @if (_selEdge >= 0 && _selEdge < _edges.Count)
+        {
+            var e = _edges[_selEdge];
+            <div class="rep-detail">
+                <div class="rep-detail-head">
+                    <span class="rep-dot s-@e.Status"></span>
+                    <strong>@e.PubLabel</strong> <i class="fa-solid fa-arrow-right-long"></i> <strong>@e.SubLabel</strong>
+                    <button class="rep-btn rep-btn-sm" @onclick="() => _selEdge = -1">✕</button>
+                </div>
+                <div class="rep-detail-grid">
+                    <div><span>Agent</span>@(string.IsNullOrEmpty(e.Agent) ? "—" : e.Agent)</div>
+                    <div><span>Status</span>@e.StatusText</div>
+                    <div><span>Latency</span>@(e.LatencyMs.HasValue ? $"{e.LatencyMs.Value / 1000.0:0.0}s" : "—")</div>
+                    <div><span>Last activity</span>@(e.LastActivity?.ToString("yyyy-MM-dd HH:mm:ss") ?? "—")</div>
+                    <div class="rep-detail-msg"><span>Last message</span>@(string.IsNullOrWhiteSpace(e.LastMessage) ? "—" : e.LastMessage)</div>
+                </div>
+                <div class="rep-detail-foot">Phase 2 will add remediation here (restart / reinitialize), behind No-Pants Mode + confirmation + audit.</div>
+            </div>
+        }
+    }
+</div>
+
+<style>
+    .rep-page { padding:18px 26px 30px; max-width:none; }
+    .rep-head { display:flex; justify-content:space-between; align-items:flex-end; gap:16px; flex-wrap:wrap; }
+    .rep-title { font-size:21px; font-weight:600; color:var(--text-primary); margin:0; }
+    .rep-title i { color:var(--accent,#2dd4bf); margin-right:6px; }
+    .rep-sub { color:var(--text-muted); font-size:12.5px; margin-top:4px; }
+    .rep-badge { font-size:10px; font-weight:700; letter-spacing:.05em; padding:2px 7px; border-radius:5px; }
+    .rep-badge-sample { background:rgba(245,158,11,.15); color:#f59e0b; border:1px solid rgba(245,158,11,.4); }
+    .rep-toolbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .rep-select { background:var(--bg-primary,#0b0f12); color:var(--text-primary); border:1px solid var(--border); border-radius:6px; padding:6px 10px; font-size:12.5px; min-width:240px; }
+    .rep-btn { background:rgba(20,31,38,.6); color:var(--text-secondary); border:1px solid var(--border); border-radius:6px; padding:6px 12px; cursor:pointer; font-size:12.5px; }
+    .rep-btn:hover:not(:disabled) { border-color:var(--accent,#2dd4bf); color:var(--text-primary); }
+    .rep-btn:disabled { opacity:.4; cursor:not-allowed; }
+    .rep-btn-primary { background:var(--accent,#2dd4bf); color:#06231f; border-color:var(--accent,#2dd4bf); font-weight:600; }
+    .rep-btn-sm { padding:1px 7px; margin-left:auto; }
+    .rep-sql { background:#0b0f12; border:1px solid var(--border); border-radius:8px; padding:12px 14px; color:var(--text-secondary); font-size:11.5px; font-family:ui-monospace,Consolas,monospace; overflow:auto; max-height:280px; white-space:pre; margin:10px 0; }
+    .rep-alert { background:rgba(239,68,68,.1); border:1px solid rgba(239,68,68,.35); color:#fca5a5; border-radius:8px; padding:10px 14px; margin:10px 0; font-size:13px; }
+    .rep-legend { display:flex; gap:18px; flex-wrap:wrap; margin:12px 0 14px; font-size:11.5px; color:var(--text-secondary); align-items:center; }
+    .rep-key { display:inline-block; width:14px; height:10px; vertical-align:middle; margin-right:5px; border-radius:2px; }
+    .rep-hint { color:var(--text-muted); font-style:italic; }
+
+    .rep-board { position:relative; border:1px solid var(--border); border-radius:12px; overflow:auto;
+        background:
+            linear-gradient(rgba(45,212,191,.045) 1px, transparent 1px) 0 0 / 26px 26px,
+            linear-gradient(90deg, rgba(45,212,191,.045) 1px, transparent 1px) 0 0 / 26px 26px,
+            radial-gradient(130% 90% at 50% -10%, rgba(45,212,191,.06), transparent 55%),
+            #0b0f12;
+        box-shadow: inset 0 0 60px rgba(0,0,0,.5); }
+    .rep-svg { width:100%; height:auto; display:block; }
+
+    /* status palette */
+    .s-ok      { --c:#34d399; } .s-warn { --c:#f59e0b; }
+    .s-bad     { --c:#ef4444; } .s-unknown { --c:#64748b; }
+    .rep-key.s-ok{background:#34d399;} .rep-key.s-warn{background:#f59e0b;}
+    .rep-key.s-bad{background:#ef4444;} .rep-key.s-unknown{background:#64748b;}
+    .rep-dot { display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--c);box-shadow:0 0 5px var(--c);margin-right:6px;vertical-align:middle; }
+
+    .rep-trace { fill:none; stroke:var(--c); stroke-width:1.8; opacity:.4; transition:opacity .15s; }
+    .rep-current { fill:none; stroke:var(--c); color:var(--c); stroke-width:2.6; stroke-dasharray:4 96; stroke-linecap:round;
+                   filter:drop-shadow(0 0 3px var(--c));
+                   animation-name:rep-flow; animation-timing-function:linear; animation-iteration-count:infinite; }
+    @@keyframes rep-flow { from { stroke-dashoffset:100; } to { stroke-dashoffset:0; } }
+    .rep-hit { fill:none; stroke:transparent; stroke-width:14; cursor:pointer; }
+    .rep-sel { opacity:1 !important; stroke-width:3.2; }
+    .rep-dim { opacity:.10 !important; }
+    .rep-trace.rep-sel { filter:drop-shadow(0 0 5px var(--c)); }
+
+    .rep-pub, .rep-sub { fill:rgba(20,31,38,.9); stroke:rgba(148,163,184,.35); stroke-width:1; }
+    .rep-n1 { fill:#e7edf2; font-size:12px; font-weight:600; font-family:ui-monospace,Consolas,monospace; }
+    .rep-n2 { fill:var(--text-muted); font-size:10px; font-family:ui-monospace,Consolas,monospace; }
+    .rep-pin { fill:var(--accent,#2dd4bf); }
+
+    .rep-empty { text-align:center; color:var(--text-muted); padding:50px 20px; }
+    .rep-empty i { font-size:34px; opacity:.5; display:block; margin-bottom:12px; }
+    .rep-empty-sub { font-size:12px; max-width:560px; margin:6px auto 0; }
+    .rep-empty code { font-family:ui-monospace,Consolas,monospace; color:var(--text-secondary); }
+
+    .rep-detail { margin-top:14px; border:1px solid var(--border); border-radius:10px; background:rgba(20,31,38,.5); padding:14px 16px; max-width:760px; }
+    .rep-detail-head { display:flex; align-items:center; gap:8px; color:var(--text-primary); font-size:14px; }
+    .rep-detail-head i { color:var(--text-muted); font-size:11px; }
+    .rep-detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px 24px; margin-top:12px; font-size:12.5px; color:var(--text-primary); }
+    .rep-detail-grid > div { display:flex; flex-direction:column; }
+    .rep-detail-grid span { color:var(--text-muted); font-size:10px; text-transform:uppercase; letter-spacing:.04em; margin-bottom:2px; }
+    .rep-detail-msg { grid-column:1 / -1; }
+    .rep-detail-foot { margin-top:12px; font-size:11px; color:var(--text-muted); font-style:italic; }
+
+    @@media (prefers-reduced-motion: reduce) { .rep-current { animation:none; stroke-dasharray:none; opacity:.7; } }
+</style>
+

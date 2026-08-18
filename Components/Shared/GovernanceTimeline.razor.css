@@ -1,0 +1,205 @@
+/* Governance Timeline Component CSS */
+
+.gt-wrapper {
+    margin: 2rem 0;
+    padding: 2rem 0 4rem;
+    background: rgba(10, 14, 20, 0.4);
+    border-radius: var(--r-md);
+    border: 1px solid var(--border-soft);
+    position: relative;
+    overflow: hidden;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.gt-scroll-area {
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 1rem;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+}
+
+.gt-scroll-area::-webkit-scrollbar {
+    height: 6px;
+}
+.gt-scroll-area::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+}
+
+.gt-timeline {
+    position: relative;
+    min-width: 900px;
+    height: 400px;
+    margin: 0 auto;
+}
+
+/* Framework Nodes Layer (Top) */
+.gt-frameworks-layer {
+    position: absolute;
+    top: 20px;
+    width: 100%;
+    height: 60px;
+}
+
+.gt-framework-node {
+    position: absolute;
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    letter-spacing: 0.05em;
+    background: var(--bg-panel);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+    transform: translateX(-50%);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    z-index: 10;
+}
+
+.gt-framework-node::after {
+    content: '';
+    position: absolute;
+    bottom: -60px;
+    left: 50%;
+    width: 2px;
+    height: 60px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.15), transparent);
+    z-index: -1;
+}
+
+/* Colored glowing styles for frameworks */
+.f-hipaa { border-color: rgba(45, 212, 191, 0.4); box-shadow: 0 0 10px rgba(45, 212, 191, 0.15); }
+.f-nist  { border-color: rgba(245, 158, 11, 0.4); box-shadow: 0 0 10px rgba(245, 158, 11, 0.15); }
+.f-soc2  { border-color: rgba(59, 130, 246, 0.4); box-shadow: 0 0 10px rgba(59, 130, 246, 0.15); }
+.f-pci   { border-color: rgba(168, 85, 247, 0.4); box-shadow: 0 0 10px rgba(168, 85, 247, 0.15); }
+
+/* Main Axis */
+.gt-main-axis {
+    position: absolute;
+    top: 100px;
+    left: 5%;
+    right: 5%;
+    height: 3px;
+    background: linear-gradient(90deg, 
+        rgba(45, 212, 191, 0), 
+        rgba(45, 212, 191, 0.8) 20%, 
+        rgba(45, 212, 191, 0.8) 80%, 
+        rgba(45, 212, 191, 0));
+    box-shadow: 0 0 15px rgba(45, 212, 191, 0.4);
+    border-radius: 2px;
+}
+
+/* Branches Layer (Bottom) */
+.gt-branches-layer {
+    position: absolute;
+    top: 100px;
+    width: 100%;
+    height: calc(100% - 100px);
+}
+
+.gt-branch {
+    position: absolute;
+    top: 0;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.gt-branch-node {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    transform: translateY(-10.5px); /* Align center with main axis */
+    z-index: 5;
+    background: var(--bg-primary);
+}
+
+.node-clean {
+    border: 2px solid var(--green);
+    color: var(--green);
+    box-shadow: 0 0 10px rgba(33, 201, 122, 0.3);
+}
+
+.node-warning {
+    border: 2px solid var(--orange);
+    color: var(--orange);
+    box-shadow: 0 0 10px rgba(245, 158, 11, 0.3);
+}
+
+.gt-branch-line {
+    width: 2px;
+    height: 30px;
+    background: rgba(255, 255, 255, 0.15);
+}
+
+/* Category Cards */
+.gt-card {
+    background: rgba(20, 25, 30, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 12px;
+    width: 220px;
+    margin-top: 5px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(8px);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.gt-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+    z-index: 20;
+}
+
+.card-clean { border-top: 3px solid var(--green); }
+.card-warning { border-top: 3px solid var(--orange); }
+
+.gt-card-header {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+}
+
+.gt-card-stats {
+    display: flex;
+    gap: 8px;
+    font-size: 0.75rem;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.stat-passed { color: var(--green); font-weight: 600; }
+.stat-failed { color: var(--red); font-weight: 600; }
+
+.gt-card-items {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.gt-card-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    font-size: 0.75rem;
+    line-height: 1.3;
+}
+
+.item-passed i { color: var(--green); font-size: 0.8rem; margin-top: 2px; }
+.item-failed i { color: var(--red); font-size: 0.8rem; margin-top: 2px; }
+
+.gt-item-text {
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

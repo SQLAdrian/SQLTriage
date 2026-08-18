@@ -1,0 +1,664 @@
+@* In the name of God, the Merciful, the Compassionate *@
+@using SQLTriage.Data.Models
+@using SQLTriage.Data
+@using System.Data
+@using Microsoft.Data.SqlClient
+@inject ServerConnectionManager ConnectionManager
+@inject ToastService Toast
+@implements IDisposable
+
+@if (IsVisible && _working != null)
+{
+    <div class="modal-overlay" @onclick="Cancel">
+    <div class="modal section-editor-modal" @onclick:stopPropagation>
+
+        <div class="modal-header">
+            <h3><i class="fa-solid fa-gear"></i> Configure Panel</h3>
+            <button class="modal-close" @onclick="Cancel"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+
+        @* ── Tab bar ──────────────────────────────────────────────────────── *@
+        <div class="sed-tabs">
+            <button class="sed-tab @(_tab == 0 ? "sed-tab--active" : "")" @onclick="() => _tab = 0">
+                <i class="fa-solid fa-table-columns"></i> Panel Config
+            </button>
+            <button class="sed-tab @(_tab == 1 ? "sed-tab--active" : "")" @onclick="() => _tab = 1">
+                <i class="fa-solid fa-code"></i> SQL Query
+            </button>
+        </div>
+
+        <div class="sed-body">
+
+            @* ── Tab 0: Panel display config ──────────────────────────────── *@
+            @if (_tab == 0)
+            {
+                <div class="form-section">
+                    <h4>Basic</h4>
+                    <div class="form-group">
+                        <label>Panel Title</label>
+                        <input type="text" @bind="_working.Title" @bind:event="oninput" placeholder="Panel title" />
+                    </div>
+                    <div class="form-group">
+                        <label>Description</label>
+                        <textarea @bind="_working.Description" @bind:event="oninput" rows="2" placeholder="Shown below chart"></textarea>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Default Database</label>
+                            <input type="text" @bind="_working.DefaultDatabase" @bind:event="oninput" placeholder="master" />
+                        </div>
+                        <div class="form-group" style="flex:0 0 auto; display:flex; align-items:center; gap:6px; padding-bottom:2px;">
+                            <input type="checkbox" @bind="_working.Enabled" id="ped-enabled" />
+                            <label for="ped-enabled" style="margin:0;">Enabled</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h4>Display</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Panel Type</label>
+                            <select @bind="_working.PanelType">
+                                <option value="TimeSeries">Time Series Chart</option>
+                                <option value="StatCard">Stat Card</option>
+                                <option value="DeltaStatCard">Delta Stat Card (per/sec)</option>
+                                <option value="BarGauge">Bar Gauge</option>
+                                <option value="DataGrid">Data Grid</option>
+                                <option value="CheckStatus">Check Status</option>
+                                <option value="TextCard">Text Card</option>
+                            </select>
+                        </div>
+                        @if (_working.PanelType == "TimeSeries")
+                        {
+                            <div class="form-group">
+                                <label>Chart Type</label>
+                                <select @bind="_working.ChartType">
+                                    <option value="Line">Line</option>
+                                    <option value="Bar">Bar</option>
+                                    <option value="Area">Area</option>
+                                </select>
+                            </div>
+                        }
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Height (px)</label>
+                            <input type="number" @bind="_working.Height" min="100" max="800" />
+                        </div>
+                        <div class="form-group">
+                            <label>Refresh (sec)</label>
+                            <input type="number" @bind="_working.RefreshIntervalSeconds" min="5" max="3600" placeholder="None" />
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h4>Layout</h4>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Column</label>
+                            <select @bind="_working.Layout.Column">
+                                <option value="0">Special (Stats / Gauges)</option>
+                                <option value="1">Left Column</option>
+                                <option value="2">Right Column</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label><input type="checkbox" @bind="_working.Layout.SpanColumns" /> Span Full Width</label>
+                    </div>
+                </div>
+
+                @if (_working.PanelType == "StatCard" || _working.PanelType == "DeltaStatCard")
+                {
+                    <div class="form-section">
+                        <h4>Stat Card Settings</h4>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Unit</label>
+                                <input type="text" @bind="_working.StatUnit" placeholder="%, MB, etc." />
+                            </div>
+                            <div class="form-group">
+                                <label>Threshold Key</label>
+                                <input type="text" @bind="_working.StatThresholdKey" placeholder="cpu, memory…" />
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Value Format</label>
+                            @ValueFormatSelect(_working)
+                        </div>
+                    </div>
+                }
+
+                @if (_working.PanelType == "BarGauge")
+                {
+                    <div class="form-section">
+                        <h4>Bar Gauge Settings</h4>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Threshold Key</label>
+                                <input type="text" @bind="_working.BarGaugeThresholdKey" />
+                            </div>
+                            <div class="form-group">
+                                <label>Unit Suffix</label>
+                                <input type="text" @bind="_working.BarGaugeUnitSuffix" placeholder="%" />
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Value Format</label>
+                            @ValueFormatSelect(_working)
+                        </div>
+                    </div>
+                }
+
+                @if (_working.PanelType == "DataGrid")
+                {
+                    <div class="form-section">
+                        <h4>Data Grid Settings</h4>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label><input type="checkbox" @bind="_working.DataGridIsClickable" /> Clickable Rows (query plan)</label>
+                            </div>
+                            <div class="form-group">
+                                <label>Max Rows</label>
+                                <input type="number" @bind="_working.DataGridMaxRows" min="10" max="10000" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-section">
+                        <h4 style="display: flex; justify-content: space-between; align-items: center;">
+                            Column Selection &amp; Order
+                            <button class="settings-btn" style="font-size: 10px; padding: 3px 8px;"
+                                    @onclick="DetectColumns" disabled="@_detectingColumns">
+                                <i class="fa-solid @(_detectingColumns ? "fa-spinner fa-spin" : "fa-wand-magic-sparkles")"></i>
+                                @(_detectingColumns ? "Detecting..." : "Detect from Query")
+                            </button>
+                        </h4>
+                        <small style="color: var(--text-muted); display: block; margin-bottom: 8px;">
+                            Select and reorder columns. When empty, all query columns are shown in query order.
+                        </small>
+
+                        @if (_availableColumns.Count > 0)
+                        {
+                            <div style="display: flex; gap: 12px;">
+                                @* Selected columns (ordered) *@
+                                <div style="flex: 1; border: 1px solid var(--border); border-radius: 4px; padding: 8px; background: var(--bg-primary);">
+                                    <div style="font-size: 10px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px;">Visible (drag to reorder)</div>
+                                    @if (_working?.DataGridColumns != null && _working.DataGridColumns.Count > 0)
+                                    {
+                                        @for (int i = 0; i < _working.DataGridColumns.Count; i++)
+                                        {
+                                            var idx = i;
+                                            var colName = _working.DataGridColumns[idx];
+                                            <div style="display: flex; align-items: center; gap: 4px; padding: 3px 6px; margin: 2px 0;
+                                                        background: var(--bg-secondary); border-radius: 3px; font-size: 11px;">
+                                                <button style="background: none; border: none; cursor: pointer; padding: 0 2px; color: var(--text-muted); font-size: 10px;"
+                                                        @onclick="() => MoveColumnUp(idx)" disabled="@(idx == 0)">
+                                                    <i class="fa-solid fa-chevron-up"></i>
+                                                </button>
+                                                <button style="background: none; border: none; cursor: pointer; padding: 0 2px; color: var(--text-muted); font-size: 10px;"
+                                                        @onclick="() => MoveColumnDown(idx)" disabled="@(idx == _working.DataGridColumns.Count - 1)">
+                                                    <i class="fa-solid fa-chevron-down"></i>
+                                                </button>
+                                                <span style="flex: 1; color: var(--text-primary);">@colName</span>
+                                                <button style="background: none; border: none; cursor: pointer; padding: 0 2px; color: var(--red); font-size: 10px;"
+                                                        @onclick="() => RemoveColumn(colName)" title="Remove">
+                                                    <i class="fa-solid fa-xmark"></i>
+                                                </button>
+                                            </div>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <div style="font-size: 10px; color: var(--text-muted); font-style: italic; padding: 4px;">
+                                            All columns shown (no filter)
+                                        </div>
+                                    }
+                                </div>
+
+                                @* Available columns *@
+                                <div style="flex: 1; border: 1px solid var(--border); border-radius: 4px; padding: 8px; background: var(--bg-primary);">
+                                    <div style="font-size: 10px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px;">Available</div>
+                                    @foreach (var col in _availableColumns)
+                                    {
+                                        var isSelected = _working?.DataGridColumns?.Contains(col) == true;
+                                        <div style="display: flex; align-items: center; gap: 4px; padding: 3px 6px; margin: 2px 0;
+                                                    border-radius: 3px; font-size: 11px;
+                                                    opacity: @(isSelected ? "0.4" : "1"); color: var(--text-primary);">
+                                            <button style="background: none; border: none; cursor: pointer; padding: 0 2px; color: var(--green); font-size: 10px;"
+                                                    @onclick="() => AddColumn(col)" disabled="@isSelected" title="Add column">
+                                                <i class="fa-solid fa-plus"></i>
+                                            </button>
+                                            <span>@col</span>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+
+                            <div style="margin-top: 6px; display: flex; gap: 6px;">
+                                <button class="settings-btn" style="font-size: 10px; padding: 3px 8px;" @onclick="SelectAllColumns">
+                                    <i class="fa-solid fa-check-double"></i> Select All
+                                </button>
+                                <button class="settings-btn" style="font-size: 10px; padding: 3px 8px;" @onclick="ClearColumnSelection">
+                                    <i class="fa-solid fa-eraser"></i> Clear (show all)
+                                </button>
+                            </div>
+                        }
+                        else
+                        {
+                            <div style="font-size: 11px; color: var(--text-muted); font-style: italic;">
+                                Click "Detect from Query" to discover available columns, or configure manually in dashboard-config.json.
+                            </div>
+                        }
+                    </div>
+                }
+            }
+
+            @* ── Tab 1: SQL query ─────────────────────────────────────────── *@
+            @if (_tab == 1)
+            {
+                <div class="form-section">
+                    <h4>SQL Server Query</h4>
+                    <div class="sed-query-hint">
+                        <i class="fa-solid fa-lightbulb"></i>
+                        Use <strong>@@SqlInstance</strong>, <strong>@@DateFrom</strong>, <strong>@@DateTo</strong> as parameters.
+                        The query should return data matching the selected panel type
+                        (e.g. a <strong>time</strong> column + metric columns for TimeSeries; a single value row for StatCard).
+                    </div>
+                    <div class="form-group">
+                        <textarea @bind="_working!.Query!.SqlServer" @bind:event="oninput"
+                                  rows="20" placeholder="SELECT ..."
+                                  style="font-family: 'Consolas', monospace; font-size: 12px; resize: vertical;"></textarea>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+                            <small>Query runs against the dashboard's default database context unless overridden above.</small>
+                            <button class="settings-btn" style="font-size: 11px; padding: 4px 10px;"
+                                    @onclick="TestQuery"
+                                    disabled="@(_testingQuery || string.IsNullOrWhiteSpace(_working?.Query?.SqlServer))">
+                                <i class="fa-solid @(_testingQuery ? "fa-spinner fa-spin" : "fa-vial")"></i>
+                                @(_testingQuery ? "Running..." : "Test Query")
+                            </button>
+                        </div>
+                    </div>
+
+                    @if (_testQueryError != null)
+                    {
+                        <div style="padding: 8px 12px; font-size: 11px; color: var(--red); background: var(--bg-secondary);
+                                    border: 1px solid var(--red); border-radius: 4px; font-family: monospace;
+                                    white-space: pre-wrap; max-height: 120px; overflow-y: auto; margin-top: 8px;">@_testQueryError</div>
+                    }
+                    else if (_testQueryResult != null)
+                    {
+                        <div style="margin-top: 8px; border: 1px solid var(--border); border-radius: 4px; overflow: hidden;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px;
+                                        background: var(--bg-tertiary); font-size: 11px; color: var(--text-secondary);">
+                                <span>@_testQueryResult.Rows.Count row(s) returned in @_testQueryElapsed</span>
+                                <button class="settings-btn" style="font-size: 10px; padding: 2px 6px;" @onclick="ClearTestResults">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </button>
+                            </div>
+                            <div style="max-height: 200px; overflow: auto;">
+                                <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+                                    <thead>
+                                        <tr>
+                                            @foreach (DataColumn col in _testQueryResult.Columns)
+                                            {
+                                                <th style="padding: 4px 8px; text-align: left; border-bottom: 1px solid var(--border);
+                                                           background: var(--bg-secondary); position: sticky; top: 0; font-weight: 600;">@col.ColumnName</th>
+                                            }
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (DataRow row in _testQueryResult.Rows)
+                                        {
+                                            <tr>
+                                                @foreach (DataColumn col in _testQueryResult.Columns)
+                                                {
+                                                    <td style="padding: 3px 8px; border-bottom: 1px solid var(--border); color: var(--text-secondary);
+                                                               white-space: nowrap; max-width: 300px; overflow: hidden; text-overflow: ellipsis;">@row[col]</td>
+                                                }
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+
+        </div>
+
+        <div class="modal-footer sed-footer">
+            <button class="btn btn-secondary" @onclick="Cancel">Cancel</button>
+            <button class="btn btn-primary" @onclick="Confirm">
+                <i class="fa-solid fa-check"></i> Save Panel
+            </button>
+        </div>
+    </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public PanelDefinition? Panel { get; set; }
+    [Parameter] public EventCallback<PanelDefinition> OnSave { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private PanelDefinition? _working;
+    private int _tab = 0;
+    private bool _testingQuery;
+    private DataTable? _testQueryResult;
+    private string? _testQueryError;
+    private string? _testQueryElapsed;
+    private bool _detectingColumns;
+    private List<string> _availableColumns = new();
+
+    protected override void OnParametersSet()
+    {
+        if (IsVisible && Panel != null && (_working == null || _working.Id != Panel.Id))
+        {
+            _working = Clone(Panel);
+            _tab = 0;
+            _availableColumns.Clear();
+            ClearTestResults();
+
+            // Pre-populate available columns from existing config
+            if (_working.DataGridColumns != null && _working.DataGridColumns.Count > 0)
+            {
+                _availableColumns = new List<string>(_working.DataGridColumns);
+            }
+        }
+    }
+
+    private async Task Confirm()
+    {
+        if (_working == null) return;
+        await OnSave.InvokeAsync(_working);
+    }
+
+    private async Task Cancel()
+    {
+        _working = null;
+        ClearTestResults();
+        await OnCancel.InvokeAsync();
+    }
+
+    private async Task TestQuery()
+    {
+        if (_working == null || string.IsNullOrWhiteSpace(_working.Query?.SqlServer)) return;
+
+        var server = ConnectionManager.CurrentServer;
+        if (server == null)
+        {
+            Toast.ShowWarning("No server selected — go to Servers and connect first");
+            return;
+        }
+
+        _testingQuery = true;
+        _testQueryResult?.Dispose();
+        _testQueryResult = null;
+        _testQueryError = null;
+        StateHasChanged();
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var db = !string.IsNullOrWhiteSpace(_working.DefaultDatabase) ? _working.DefaultDatabase : "master";
+            var connString = server.GetConnectionString(server.ServerNames, db);
+
+            // Replace dashboard parameters with sensible defaults for testing
+            var sql = _working.Query.SqlServer
+                .Replace("@SqlInstance", "@@SERVERNAME", StringComparison.OrdinalIgnoreCase)
+                .Replace("@DateFrom", "DATEADD(HOUR, -1, GETUTCDATE())", StringComparison.OrdinalIgnoreCase)
+                .Replace("@DateTo", "GETUTCDATE()", StringComparison.OrdinalIgnoreCase);
+
+            var dt = new DataTable();
+            await Task.Run(async () =>
+            {
+                using var conn = new SqlConnection(connString);
+                await conn.OpenAsync();
+                using var cmd = new SqlCommand(sql, conn) { CommandTimeout = 15 };
+                using var reader = await cmd.ExecuteReaderAsync();
+                dt.Load(reader);
+            });
+
+            sw.Stop();
+            _testQueryElapsed = sw.ElapsedMilliseconds < 1000
+                ? $"{sw.ElapsedMilliseconds}ms"
+                : $"{sw.Elapsed.TotalSeconds:F1}s";
+
+            if (dt.Rows.Count > 50)
+            {
+                var trimmed = dt.Clone();
+                for (int i = 0; i < 50; i++)
+                    trimmed.ImportRow(dt.Rows[i]);
+                dt.Dispose(); // dispose the full result — we only keep the trimmed copy
+                _testQueryResult = trimmed;
+                _testQueryElapsed += " (showing first 50)";
+            }
+            else
+            {
+                _testQueryResult = dt;
+            }
+        }
+        catch (SqlException ex)
+        {
+            sw.Stop();
+            _testQueryError = $"SQL Error {ex.Number}: {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            sw.Stop();
+            _testQueryError = ex.Message;
+        }
+        finally
+        {
+            _testingQuery = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ClearTestResults()
+    {
+        _testQueryResult?.Dispose();
+        _testQueryResult = null;
+        _testQueryError = null;
+        _testQueryElapsed = null;
+    }
+
+    private async Task DetectColumns()
+    {
+        if (_working == null || string.IsNullOrWhiteSpace(_working.Query?.SqlServer)) return;
+
+        var server = ConnectionManager.CurrentServer;
+        if (server == null)
+        {
+            Toast.ShowWarning("No server selected — connect to a server first");
+            return;
+        }
+
+        _detectingColumns = true;
+        StateHasChanged();
+
+        try
+        {
+            var db = !string.IsNullOrWhiteSpace(_working.DefaultDatabase) ? _working.DefaultDatabase : "master";
+            var connString = server.GetConnectionString(server.ServerNames, db);
+
+            var sql = _working.Query.SqlServer
+                .Replace("@SqlInstance", "@@SERVERNAME", StringComparison.OrdinalIgnoreCase)
+                .Replace("@DateFrom", "DATEADD(HOUR, -1, GETUTCDATE())", StringComparison.OrdinalIgnoreCase)
+                .Replace("@DateTo", "GETUTCDATE()", StringComparison.OrdinalIgnoreCase);
+
+            // Wrap in SET FMTONLY to get schema without executing (fallback: TOP 0)
+            var schemaSql = $"SET FMTONLY ON;\n{sql}\nSET FMTONLY OFF;";
+
+            DataTable? dt = null;
+            await Task.Run(async () =>
+            {
+                using var conn = new SqlConnection(connString);
+                await conn.OpenAsync();
+                try
+                {
+                    using var cmd = new SqlCommand(schemaSql, conn) { CommandTimeout = 10 };
+                    using var reader = await cmd.ExecuteReaderAsync();
+                    dt = reader.GetSchemaTable() ?? new DataTable();
+                }
+                catch
+                {
+                    // FMTONLY may fail on complex queries; fallback to TOP 1
+                    var fallbackSql = $"SELECT TOP 1 * FROM ({sql}) AS __cols";
+                    try
+                    {
+                        using var cmd2 = new SqlCommand(fallbackSql, conn) { CommandTimeout = 10 };
+                        using var reader2 = await cmd2.ExecuteReaderAsync();
+                        dt?.Dispose();
+                        dt = new DataTable();
+                        dt.Load(reader2);
+                    }
+                    catch
+                    {
+                        // Last resort: run the actual query with short timeout
+                        using var cmd3 = new SqlCommand(sql, conn) { CommandTimeout = 10 };
+                        using var reader3 = await cmd3.ExecuteReaderAsync();
+                        dt?.Dispose();
+                        dt = new DataTable();
+                        dt.Load(reader3);
+                    }
+                }
+            });
+
+            // Extract column names
+            List<string> detected;
+            if (dt?.Columns.Contains("ColumnName") == true)
+            {
+                // From GetSchemaTable()
+                detected = dt.AsEnumerable()
+                    .Select(r => r["ColumnName"]?.ToString() ?? "")
+                    .Where(n => !string.IsNullOrEmpty(n))
+                    .ToList();
+            }
+            else
+            {
+                detected = dt.Columns.Cast<DataColumn>().Select(c => c.ColumnName).ToList();
+            }
+
+            dt?.Dispose(); // schema DataTable no longer needed
+
+            if (detected.Count > 0)
+            {
+                _availableColumns = detected;
+                Toast.ShowSuccess($"Detected {detected.Count} columns");
+            }
+            else
+            {
+                Toast.ShowWarning("No columns detected — check the query");
+            }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowWarning($"Column detection failed: {ex.Message}");
+        }
+        finally
+        {
+            _detectingColumns = false;
+            StateHasChanged();
+        }
+    }
+
+    private void AddColumn(string col)
+    {
+        if (_working == null) return;
+        _working.DataGridColumns ??= new List<string>();
+        if (!_working.DataGridColumns.Contains(col))
+            _working.DataGridColumns.Add(col);
+    }
+
+    private void RemoveColumn(string col)
+    {
+        _working?.DataGridColumns?.Remove(col);
+    }
+
+    private void MoveColumnUp(int index)
+    {
+        if (_working?.DataGridColumns == null || index <= 0) return;
+        (_working.DataGridColumns[index], _working.DataGridColumns[index - 1]) =
+            (_working.DataGridColumns[index - 1], _working.DataGridColumns[index]);
+    }
+
+    private void MoveColumnDown(int index)
+    {
+        if (_working?.DataGridColumns == null || index >= _working.DataGridColumns.Count - 1) return;
+        (_working.DataGridColumns[index], _working.DataGridColumns[index + 1]) =
+            (_working.DataGridColumns[index + 1], _working.DataGridColumns[index]);
+    }
+
+    private void SelectAllColumns()
+    {
+        if (_working == null) return;
+        _working.DataGridColumns = new List<string>(_availableColumns);
+    }
+
+    private void ClearColumnSelection()
+    {
+        if (_working == null) return;
+        _working.DataGridColumns = null;
+    }
+
+    private static PanelDefinition Clone(PanelDefinition p) => new()
+    {
+        Id                     = p.Id,
+        Title                  = p.Title,
+        Description            = p.Description,
+        Enabled                = p.Enabled,
+        Source                 = p.Source,
+        PanelType              = p.PanelType,
+        ChartType              = p.ChartType,
+        Height                 = p.Height,
+        RefreshIntervalSeconds = p.RefreshIntervalSeconds,
+        Layout                 = new PanelLayout { Column = p.Layout.Column, Order = p.Layout.Order, SpanColumns = p.Layout.SpanColumns },
+        Query                  = new QueryPair   { Source = p.Query.Source, SqlServer = p.Query.SqlServer },
+        DefaultDatabase        = p.DefaultDatabase,
+        StatUnit               = p.StatUnit,
+        StatThresholdKey       = p.StatThresholdKey,
+        BarGaugeThresholdKey   = p.BarGaugeThresholdKey,
+        BarGaugeUnitSuffix     = p.BarGaugeUnitSuffix,
+        ValueFormat            = p.ValueFormat,
+        DataGridIsClickable    = p.DataGridIsClickable,
+        DataGridMaxRows        = p.DataGridMaxRows,
+        DataGridTopRows        = p.DataGridTopRows,
+        DataGridColumns        = p.DataGridColumns != null ? new List<string>(p.DataGridColumns) : null,
+        ActionColumn           = p.ActionColumn,
+        ActionColumnMode       = p.ActionColumnMode,
+        ColorThresholds        = p.ColorThresholds.Select(t => new ColorThresholdRule
+            { Operator = t.Operator, Value = t.Value, Color = t.Color, Label = t.Label }).ToList(),
+    };
+
+    private RenderFragment ValueFormatSelect(PanelDefinition p) => __builder =>
+    {
+        <select @bind="p.ValueFormat">
+            <option value="">Default (no formatting)</option>
+            <option value="N0">Integer (1,234)</option>
+            <option value="N1">1 Decimal (1,234.5)</option>
+            <option value="N2">2 Decimals (1,234.56)</option>
+            <option value="P0">Percent 0 (100%)</option>
+            <option value="P1">Percent 1 (99.9%)</option>
+            <option value="P2">Percent 2 (99.99%)</option>
+            <option value="C0">Currency 0 ($1,234)</option>
+            <option value="C2">Currency 2 ($1,234.56)</option>
+            <option value="0.## GB">GB (1.23 GB)</option>
+            <option value="0.## MB">MB (1.23 MB)</option>
+            <option value="0.## TB">TB (1.23 TB)</option>
+            <option value="0.## ms">Milliseconds (123 ms)</option>
+            <option value="0.## s">Seconds (1.23 s)</option>
+        </select>
+    };
+
+    public void Dispose()
+    {
+        _testQueryResult?.Dispose();
+        _testQueryResult = null;
+    }
+}

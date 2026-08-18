@@ -1,0 +1,366 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using System.Data
+@using System.Threading
+
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using Microsoft.Extensions.Logging
+@inject IJSRuntime JS
+@inject ILogger<DynamicPanel> Logger
+@inject LocalLogService LocalLogger
+
+<div id="panel-@Panel?.Id" style="position:relative;">
+    @if (IsCached)
+    {
+        <span class="cache-badge" style="position:absolute;top:4px;right:4px;font-size:10px;background:var(--bg-secondary);color:var(--text-secondary);padding:2px 6px;border-radius:3px;opacity:0.7;pointer-events:none;" title="Data loaded from cache; refresh in progress">
+            Cached
+        </span>
+    }
+
+     @switch (Panel?.PanelType)
+     {
+    case "TimeSeries":
+        <TimeSeriesChart Title="@Panel.Title"
+                         Data="@TimeSeriesData"
+                         BaselineData="@BaselineData"
+                         Height="@Panel.Height"
+                         ChartSeriesType="@MapChartType()"
+                         TimezoneOffsetHours="@TimezoneOffsetHours" />
+        @if (!string.IsNullOrEmpty(Panel.Description))
+        {
+            <div class="panel-description">@Panel.Description</div>
+        }
+        break;
+
+    case "StatCard":
+        @if (StatData != null)
+        {
+            <div class="stat-panel-wrapper">
+                <StatCard Label="@Panel.Title"
+                          Value="@StatData.Value"
+                          Unit="@Panel.StatUnit"
+                          Color="@StatData.Color"
+                          Description="@Panel.Description"
+                          ValueFormat="@Panel.ValueFormat" />
+            </div>
+        }
+        break;
+
+    case "DeltaStatCard":
+        @if (StatData != null)
+        {
+            <div class="stat-panel-wrapper">
+                <DeltaStatCard Label="@Panel.Title"
+                               Value="@StatData.Value"
+                               Unit="@Panel.StatUnit"
+                               Color="@StatData.Color"
+                               Description="@Panel.Description"
+                               ValueFormat="@Panel.ValueFormat" />
+            </div>
+        }
+        break;
+
+    case "BarGauge":
+        @if (BarGaugeData != null)
+        {
+            <CollapsibleSection Title="@Panel.Title" IsExpanded="true">
+                <div style="padding: 8px 16px;">
+                    @foreach (var item in BarGaugeData)
+                    {
+                        <BarGauge Label="@item.Label"
+                                  Value="@item.Value"
+                                  ThresholdKey="@(Panel.BarGaugeThresholdKey ?? "")"
+                                  UnitSuffix="@Panel.BarGaugeUnitSuffix"
+                                  ValueFormat="@Panel.ValueFormat" />
+                    }
+                </div>
+            </CollapsibleSection>
+            @if (!string.IsNullOrEmpty(Panel.Description))
+            {
+                <div class="panel-description">@Panel.Description</div>
+            }
+        }
+        break;
+
+    case "DataGrid":
+        <DataGrid Title="@Panel.Title"
+                  Data="@GridData"
+                  IsClickable="@Panel.DataGridIsClickable"
+                  MaxRows="@Panel.DataGridMaxRows"
+                  MaxHeight="@(Panel.Height > 0 ? Panel.Height * 3 : 0)"
+                  HiddenColumns="@_planHiddenColumns"
+                  PlanIndicatorColumn="@(GridData != null ? _planColumnCandidates.FirstOrDefault(c => GridData.Columns.Contains(c)) : null)"
+                  OnRowClick="@OnDataGridRowClick"
+                  TopRowsConfig="@(Panel.DataGridTopRows > 0 ? TopRowsValue : null)"
+                  OnTopRowsConfigChanged="@OnTopRowsConfigChanged"
+                  ActionColumn="@Panel.ActionColumn"
+                  OnActionExecute="@OnActionExecute"
+                  RunJobColumn="@RunJobColumn"
+                  OnRunJob="@OnRunJob"
+                  JobOutcomeColumn="@JobOutcomeColumn"
+                  JobNameColumn="@JobNameColumn"
+                  OnJobDetails="@OnJobDetails"
+                  ColumnOrder="@Panel.DataGridColumns"
+                  ColumnColorRules="@Panel.DataGridColumnColors" />
+        @if (!string.IsNullOrEmpty(Panel.Description))
+        {
+            <div class="panel-description">@Panel.Description</div>
+        }
+        <QueryPlanModal @ref="_queryPlanModal" ConnectionId="@ConnectionId" DatabaseName="@DatabaseName" />
+        break;
+
+    case "CheckStatus":
+        @if (CheckData != null)
+        {
+            @foreach (var check in CheckData)
+            {
+                <StatCard Label="@check.Status"
+                          Value="@check.Count"
+                          Unit="" />
+            }
+        }
+        break;
+
+    case "TextCard":
+        @if (GridData != null && GridData.Rows.Count > 0)
+        {
+            <CollapsibleSection Title="@Panel.Title" IsExpanded="true">
+                <div style="display: flex; flex-wrap: wrap; gap: 12px; padding: 16px;">
+                    @foreach (DataRow row in GridData.Rows)
+                    {
+                        @foreach (DataColumn column in GridData.Columns)
+                        {
+                            var value = row[column];
+                            <div class="stat-card-mini">
+                                <div class="stat-card-label">@column.ColumnName</div>
+                                <div class="stat-card-value">@ConvertToText(value)</div>
+                            </div>
+                        }
+                    }
+                </div>
+            </CollapsibleSection>
+            @if (!string.IsNullOrEmpty(Panel.Description))
+            {
+                <div class="panel-description">@Panel.Description</div>
+            }
+        }
+        break;
+
+    case "Donut":
+        @if (BarGaugeData != null)
+        {
+            <DonutChart Title="@Panel.Title"
+                        Data="@BarGaugeData"
+                        Height="@Panel.Height"
+                        ValueSuffix="@Panel.BarGaugeUnitSuffix" />
+            @if (!string.IsNullOrEmpty(Panel.Description))
+            {
+                <div class="panel-description">@Panel.Description</div>
+            }
+        }
+        break;
+
+    case "HorizontalBar":
+        @if (BarGaugeData != null)
+        {
+            <HorizontalBarChart Title="@Panel.Title"
+                                Data="@BarGaugeData"
+                                Height="@Panel.Height"
+                                SeriesName="@Panel.Title"
+                                ValueSuffix="@Panel.BarGaugeUnitSuffix" />
+            @if (!string.IsNullOrEmpty(Panel.Description))
+            {
+                <div class="panel-description">@Panel.Description</div>
+            }
+        }
+        break;
+
+    case "XeStatus":
+    {
+        var xeVal = GridData?.Rows.Count > 0
+            ? GridData.Rows[0][0]?.ToString()?.Trim() ?? ""
+            : "";
+        var xeOk = xeVal.Equals("Yes", StringComparison.OrdinalIgnoreCase);
+        var xeColor = xeOk ? "var(--green)" : "var(--red)";
+        var xeIcon  = xeOk ? "fa-circle-check" : "fa-circle-xmark";
+        <div style="display: flex; align-items: center; gap: 10px; padding: 8px 14px;
+                    background: @(xeOk ? "rgba(78,201,176,0.08)" : "rgba(244,71,71,0.08)");
+                    border: 1px solid @xeColor; border-radius: 6px; font-size: 12px;">
+            <i class="fa-solid @xeIcon" style="color: @xeColor; font-size: 15px;"></i>
+            <span style="font-weight: 600; color: @xeColor;">@Panel.Title</span>
+            <span style="color: var(--text-secondary); font-weight: 500;">@(xeOk ? "Yes — session active" : "No — deadlocks will not be captured")</span>
+            @if (!xeOk)
+            {
+                <span style="margin-left: auto; font-size: 11px; color: var(--text-muted);">
+                    Deploy a session via Alerting &gt; Extended Events or run:
+                    <code style="font-family: monospace; font-size: 10px; color: var(--text-secondary);">CREATE EVENT SESSION [DeadlockMonitor] …</code>
+                </span>
+            }
+        </div>
+        break;
+    }
+
+    case "Deadlock":
+        <CollapsibleSection Title="@Panel.Title" IsExpanded="true">
+            <DeadlockViewer DeadlockEvents="@GridData" />
+        </CollapsibleSection>
+        break;
+
+    case "BlockingTree":
+        <CollapsibleSection Title="@Panel.Title" IsExpanded="true">
+            <BlockingTreeViewer BlockingData="@GridData" />
+        </CollapsibleSection>
+        break;
+
+    case "SessionBubble":
+        <div class="text-card-container" style="text-align: center; padding: 24px;">
+            <h4 class="text-card-title">@Panel.Title</h4>
+            <p style="color: var(--text-secondary); margin: 12px 0;">
+                The live session bubble view is available as a dedicated page.
+            </p>
+            <a href="RouteConstants.Sessions" style="color: var(--accent); text-decoration: underline;">
+                Open Live Sessions
+            </a>
+        </div>
+        break;
+    }
+</div>
+
+@code {
+    [Parameter] public PanelDefinition Panel { get; set; } = new();
+    [Parameter] public List<TimeSeriesPoint>? TimeSeriesData { get; set; }
+    [Parameter] public List<TimeSeriesPoint>? BaselineData { get; set; }
+    [Parameter] public double TimezoneOffsetHours { get; set; } = 0;
+    [Parameter] public StatValue? StatData { get; set; }
+    [Parameter] public List<StatValue>? BarGaugeData { get; set; }
+    [Parameter] public DataTable? GridData { get; set; }
+    [Parameter] public List<CheckStatus>? CheckData { get; set; }
+    [Parameter] public int? TopRowsValue { get; set; }
+    [Parameter] public EventCallback<int> OnTopRowsConfigChanged { get; set; }
+    [Parameter] public Func<string, CancellationToken, Task<(bool success, string message)>>? OnActionExecute { get; set; }
+    [Parameter] public bool IsCached { get; set; }
+
+    [Parameter] public string? ConnectionId  { get; set; }
+    [Parameter] public string? DatabaseName  { get; set; }
+
+    // ── Job Monitor ──
+    [Parameter] public Func<string, CancellationToken, Task<(bool success, string message)>>? OnRunJob { get; set; }
+    [Parameter] public EventCallback<string> OnJobDetails { get; set; }
+    [Parameter] public string? RunJobColumn { get; set; }
+    [Parameter] public string? JobOutcomeColumn { get; set; }
+    [Parameter] public string? JobNameColumn { get; set; }
+
+    private QueryPlanModal? _queryPlanModal;
+
+    // Plan XML column names — hidden in the grid and opened via modal on row click
+    private static readonly HashSet<string> _planHiddenColumns = new(StringComparer.OrdinalIgnoreCase)
+        { "Plan", "query_plan_xml", "query_plan", "plan_xml" };
+
+    // Ordered list of column names tried when looking for a plan XML value
+    private static readonly string[] _planColumnCandidates =
+        { "Plan", "query_plan_xml", "query_plan", "plan_xml" };
+
+    // Ordered list of column names tried when looking for the query text
+    private static readonly string[] _queryTextCandidates =
+        { "query_text", "query_text_sample", "QueryText", "sql_text", "text", "statement_text", "Query" };
+
+    protected override void OnInitialized()
+    {
+        Logger.LogDebug("[DynamicPanel:{PanelId}] Panel initialized - Type: {PanelType}, Title: {Title}", 
+            Panel?.Id ?? "Unknown", Panel?.PanelType ?? "Unknown", Panel?.Title ?? "Unknown");
+        LocalLogger.LogInfo($"[DynamicPanel:{Panel?.Id ?? "Unknown"}] Panel initialized: {Panel?.PanelType}");
+        base.OnInitialized();
+    }
+
+    protected override void OnParametersSet()
+    {
+        Logger.LogDebug("[DynamicPanel:{PanelId}] Parameters set - HasTimeSeriesData: {HasTS}, HasStatData: {HasStat}, HasGridData: {HasGrid}, HasCheckData: {HasCheck}", 
+            Panel?.Id ?? "Unknown", 
+            TimeSeriesData?.Count > 0, 
+            StatData != null, 
+            GridData?.Rows.Count > 0, 
+            CheckData?.Count > 0);
+        base.OnParametersSet();
+    }
+
+    private async Task OnDataGridRowClick(DataRow row)
+    {
+        Logger.LogDebug("[DynamicPanel:{PanelId}] DataGrid row clicked", Panel?.Id ?? "Unknown");
+        
+        if (_queryPlanModal == null) 
+        {
+            Logger.LogWarning("[DynamicPanel:{PanelId}] QueryPlanModal is null, cannot show plan", Panel?.Id ?? "Unknown");
+            return;
+        }
+        
+        // Find plan XML in any recognised column name
+        string? xml = null;
+        foreach (var col in _planColumnCandidates)
+        {
+            if (row.Table.Columns.Contains(col) && row[col] != DBNull.Value)
+            {
+                xml = row[col]?.ToString();
+                if (!string.IsNullOrWhiteSpace(xml)) break;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(xml))
+        {
+            Logger.LogDebug("[DynamicPanel:{PanelId}] Row does not contain a recognised plan XML column", Panel?.Id ?? "Unknown");
+            return;
+        }
+
+        // Extract query text if present
+        string? queryText = null;
+        foreach (var candidate in _queryTextCandidates)
+        {
+            if (row.Table.Columns.Contains(candidate) && row[candidate] != DBNull.Value)
+            {
+                queryText = row[candidate]?.ToString();
+                Logger.LogDebug("[DynamicPanel:{PanelId}] Found query text in column: {ColumnName}", Panel?.Id ?? "Unknown", candidate);
+                break;
+            }
+        }
+
+        try
+        {
+            Logger.LogDebug("[DynamicPanel:{PanelId}] Showing query plan modal", Panel?.Id ?? "Unknown");
+            await _queryPlanModal.ShowAsync(xml, queryText);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "[DynamicPanel:{PanelId}] Failed to show query plan modal: {ErrorMessage}", Panel?.Id ?? "Unknown", ex.Message);
+            LocalLogger.LogError($"[DynamicPanel:{Panel?.Id ?? "Unknown"}] Query plan modal error: {ex.Message}", ex);
+        }
+    }
+
+    private ApexCharts.SeriesType MapChartType()
+    {
+        var chartType = Panel.ChartType switch
+        {
+            "Bar" => ApexCharts.SeriesType.Bar,
+            "Area" => ApexCharts.SeriesType.Area,
+            _ => ApexCharts.SeriesType.Line
+        };
+        
+        Logger.LogDebug("[DynamicPanel:{PanelId}] Mapped chart type: {InputType} -> {OutputType}", 
+            Panel?.Id ?? "Unknown", Panel?.ChartType ?? "Default", chartType);
+            
+        return chartType;
+    }
+
+    // Helper method for TextCard panel type
+    private string ConvertToText(object value)
+    {
+        if (value == null || value == DBNull.Value) 
+        {
+            Logger.LogDebug("[DynamicPanel:{PanelId}] ConvertToText: null or DBNull value", Panel?.Id ?? "Unknown");
+            return "N/A";
+        }
+        
+        var result = value.ToString() ?? "N/A";
+        Logger.LogDebug("[DynamicPanel:{PanelId}] ConvertToText: {InputType} -> '{OutputValue}'", 
+            Panel?.Id ?? "Unknown", value.GetType().Name, result);
+        return result;
+    }
+}

@@ -1,0 +1,997 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/cio"
+@using SQLTriage.Components.Shared
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@using static SQLTriage.Data.Services.GovernanceService
+@using Microsoft.Extensions.Logging
+@inject IGovernanceService GovernanceService
+@inject IGovernanceWeightsProvider GovWeights
+@inject GovernanceHistoryService HistoryService
+@inject ExecutiveHealthService HealthService
+@inject CheckExecutionService CheckExecutor
+@inject ServerConnectionManager ConnectionManager
+@inject ConnectionHealthService ConnectionHealth
+@inject HealthCheckService HealthCheck
+@inject NavigationManager Navigation
+@inject ToastService Toast
+@inject UserSettingsService UserSettings
+@inject LicensingEstimator LicensingEstimator
+@inject PowerEstimateService PowerEstimate
+@inject RemediationWeightStore WeightStore
+@inject IPrintService PrintSvc
+@inject IJSRuntime JS
+@inject ILogger<CioDashboard> Logger
+
+<PageTitle>CIO Dashboard - SQLTriage</PageTitle>
+
+<div class="cio-container">
+
+    @if (_loading)
+    {
+        <LoadingSpinner Message="@_loadingMessage" />
+    }
+    else if (!_hasServers)
+    {
+        <div class="cio-empty-state">
+            <i class="fa-solid fa-server cio-empty-icon"></i>
+            <h2 class="cio-empty-title">No Servers Configured</h2>
+            <p class="cio-empty-text">Connect to a SQL Server instance to see your governance score, compliance coverage, and risk heatmap.</p>
+            <div class="cio-empty-actions">
+                <a href="/servers" class="cio-empty-link">
+                    <i class="fa-solid fa-plus"></i> Add Server
+                </a>
+            </div>
+        </div>
+    }
+    else
+    {
+        <!-- Header -->
+        <div class="cio-header-row" style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px;">
+            <div class="cio-header" style="margin-bottom:0;">
+            <div class="cio-header-icon">
+                <i class="fa-solid fa-chart-line"></i>
+            </div>
+            <div>
+                <h1 class="cio-header-title">CIO Dashboard</h1>
+                <p class="cio-header-subtitle">Executive overview of SQL Server governance and risk</p>
+            </div>
+        </div>
+            <div class="cio-header-actions">
+                <button class="cio-action-btn-secondary" style="border-radius:50%; width:40px; height:40px; padding:0; display:flex; align-items:center; justify-content:center;">
+                    <i class="fa-regular fa-bell"></i>
+                </button>
+            </div>
+        </div>
+        @if (UserSettings.GetNarrationMode() && _governanceScore != null)
+        {
+            <div class="cio-narration card-glass">
+                <i class="fa-solid fa-comment-dots cio-narration-icon"></i>
+                <p class="cio-narration-text">@NarrationService.Narrate(_governanceScore)</p>
+            </div>
+        }
+<div class="cio-top-layout" style="display:flex; flex-direction:column; gap:24px; margin-bottom:24px;">
+            <div class="cio-hero-column">
+<!-- Overall Governance Score (Hero) -->
+        @if (_governanceScore != null)
+        {
+            <div class="cio-score-card card-glass">
+                <div class="cio-score-label" style="text-align:left; margin-bottom:24px;">Overall Governance Score</div>
+                <div style="display:flex; align-items:center; gap:40px;">
+                    <div class="cio-score-donut-container" style="position:relative; width: 240px; height: 240px; flex-shrink:0;">
+                    @{
+                        // Single score ring with an industry-average marker — one circle, one
+                        // start point (12 o'clock), so there are no concentric rings to align.
+                        // Geometry: r = 15.9155 (circumference ≈ 100), centre (18,18). The track
+                        // and arc start at the top and sweep clockwise; the avg marker is a tick
+                        // placed at the avg% position on the same circle.
+                        const double gaugeR = 15.9155;
+                        var avgAngle = (_industryAverageScore / 100.0) * 2 * Math.PI - Math.PI / 2; // 0% = top, clockwise
+                        var inv = System.Globalization.CultureInfo.InvariantCulture;
+                        var markX = (18 + gaugeR * Math.Cos(avgAngle)).ToString("F3", inv);
+                        var markY = (18 + gaugeR * Math.Sin(avgAngle)).ToString("F3", inv);
+                        // Inner/outer endpoints of the radial tick (a short line across the ring).
+                        var tickInX = (18 + (gaugeR - 2.6) * Math.Cos(avgAngle)).ToString("F3", inv);
+                        var tickInY = (18 + (gaugeR - 2.6) * Math.Sin(avgAngle)).ToString("F3", inv);
+                        var tickOutX = (18 + (gaugeR + 2.6) * Math.Cos(avgAngle)).ToString("F3", inv);
+                        var tickOutY = (18 + (gaugeR + 2.6) * Math.Sin(avgAngle)).ToString("F3", inv);
+                        var scoreStr = _governanceScore.Overall.ToString("F0", inv);
+                    }
+                    <svg viewBox="0 0 36 36" class="cio-circular-chart" overflow="visible" style="position:absolute; top:0; left:0; width:100%; height:100%;" title="Your Score: @scoreStr · Industry Average: @_industryAverageScore">
+                        <!-- Full background track -->
+                        <path class="cio-circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="3.2" />
+                        <!-- Client score arc (the hero), starts at 12 o'clock, sweeps clockwise -->
+                        <path class="cio-circle client-score" stroke-dasharray="@scoreStr, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="@ScoreColor(_governanceScore.Overall)" stroke-width="3.2" stroke-linecap="round" style="filter: drop-shadow(0 0 8px @ScoreGlowColor(_governanceScore.Overall));" />
+                        <!-- Industry-average marker: a radial tick on the same ring -->
+                        <line x1="@tickInX" y1="@tickInY" x2="@tickOutX" y2="@tickOutY" stroke="var(--accent)" stroke-width="1.2" stroke-linecap="round" style="filter: drop-shadow(0 0 3px var(--accent));" />
+                        <circle cx="@markX" cy="@markY" r="1.1" fill="var(--accent)" style="filter: drop-shadow(0 0 3px var(--accent));" />
+                    </svg>
+                    <div class="cio-score-value" style="position:absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color:@ScoreColor(_governanceScore.Overall); font-size: 2.5rem; text-shadow: 0 0 12px @(ScoreGlowColor(_governanceScore.Overall))40; font-weight: 800; line-height: 1;">
+                        @_governanceScore.Overall.ToString("F0")
+                    </div>
+                </div>
+                <div class="cio-score-details" style="text-align:left; flex:1;">
+                        <div class="cio-score-legend" style="display:flex; justify-content:flex-start; gap:16px; margin-bottom:16px; font-size:0.85em;">
+                            <span style="display:flex; align-items:center; gap:4px;"><span style="width:10px; height:10px; border-radius:50%; background:@ScoreColor(_governanceScore.Overall);"></span>Your Score</span>
+                    <span style="display:flex; align-items:center; gap:4px;"><span style="width:10px; height:10px; border-radius:50%; background:var(--accent);"></span>Industry Avg</span>
+                </div>
+                <div class="cio-score-band">
+                    @_governanceScore.Band
+                        </div>
+                        @{
+                            var evaluated = _governanceScore.PassedFindings + _governanceScore.FailedFindings;
+                            var notAssessed = Math.Max(0, _governanceScore.TotalFindings - evaluated);
+                        }
+                        <div class="cio-score-findings" style="margin-top:12px; display:flex; flex-direction:column; gap:4px; align-items:flex-start;">
+                    <span style="font-weight:600; color:@(_governanceScore.FailedFindings > 0 ? "#e0564a" : "#3fb27f");">
+                        @_governanceScore.FailedFindings open finding@(_governanceScore.FailedFindings == 1 ? "" : "s")
+                    </span>
+                    <span style="font-size:0.82em; opacity:0.75;">
+                        @evaluated of @_governanceScore.TotalFindings checks evaluated@(notAssessed > 0 ? $" · {notAssessed} not assessed" : "")
+                    </span>
+                </div>
+                <div class="cio-dimension-score">
+                    @{
+                        var starCount = (int)Math.Floor(_governanceScore.Overall / 20);
+                        var totalStars = 5;
+                    }
+                    @for (int i = 0; i < totalStars; i++)
+                    {
+                        <i class="fa-solid fa-star @(i < starCount ? "cio-dimension-star-filled" : "cio-dimension-star-empty")"></i>
+                    }
+                    <span class="cio-dimension-label">@starCount/@totalStars stars</span>
+                </div>
+                <div style="margin-top:12px;">
+                    <span class="cio-assessment-badge" style="@AssessmentBadgeStyle()">
+                        @(_governanceScore.IsIndicative ? "Indicative" : "Full Assessment")
+                    </span>
+                </div>
+                        @if (_governanceScore.IsIndicative)
+                        {
+                            <div class="cio-score-fullaudit" style="margin-top:12px; font-size:0.82em; opacity:0.8; max-width:280px;">
+                                This is a partial check set. A <strong>Full Audit</strong> assesses
+                                @FullAuditCheckCount+ checks across every dimension — your complete score may differ.
+                            </div>
+                        }
+                        <div class="cio-score-updated" style="margin-top:16px;">
+                            Last updated: @_lastUpdated.ToString("MMM dd, yyyy HH:mm")
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+        
+            </div>
+            <div class="cio-findings-column" style="height:100%;">
+<!-- Top 10 High Priority Findings -->
+        <div class="cio-risks-section card-glass">
+            <div class="cio-section-header">
+                <i class="fa-solid fa-triangle-exclamation cio-risks-icon"></i>
+                <h3 class="cio-section-title">Top 10 High Priority Findings</h3>
+            </div>
+            @if (_topRisks.Count > 0)
+            {
+                <div class="cio-risks-list">
+                    @foreach (var risk in _topRisks)
+                    {
+                        var sevColor = risk.Severity?.ToLower() switch
+                        {
+                            "critical" => "var(--red)",
+                            "high" => "var(--orange)",
+                            "medium" => "var(--yellow)",
+                            "low" => "var(--green)",
+                            _ => "var(--text-muted)"
+                        };
+                        var ops = RiskOps(risk.Severity);
+                        <div class="cio-risk-item" style="border-left-color:@sevColor;">
+                            <span class="cio-risk-badge" style="background:@(sevColor)22; color:@sevColor;">
+                                @risk.Severity
+                            </span>
+                            <div class="cio-risk-content">
+                                <div class="cio-risk-name">@risk.CheckName</div>
+                                <div class="cio-risk-server">
+                                    <i class="fa-solid fa-server"></i>@risk.InstanceName
+                                </div>
+                                @if (!string.IsNullOrEmpty(risk.RecommendedAction))
+                                {
+                                    <div class="cio-risk-action">
+                                        <i class="fa-solid fa-arrow-right"></i>@Markdig.Markdown.ToPlainText(risk.RecommendedAction)
+                                    </div>
+                                }
+                                <div class="cio-risk-ops">
+                                    <span class="cio-risk-op">
+                                        <span class="cio-risk-op-label">Next step</span>
+                                        <span class="cio-risk-op-value">@ops.NextStep</span>
+                                    </span>
+                                    <span class="cio-risk-op">
+                                        <span class="cio-risk-op-label">Assigned to</span>
+                                        <span class="cio-risk-op-value">@ops.AssignedTo</span>
+                                    </span>
+                                    <span class="cio-risk-op">
+                                        <span class="cio-risk-op-label">Escalation</span>
+                                        <span class="cio-risk-op-value">@ops.Escalation</span>
+                                    </span>
+                                    <span class="cio-risk-op">
+                                        <span class="cio-risk-op-label">Review by</span>
+                                        <span class="cio-risk-op-value">@ops.Review</span>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="cio-risks-empty">
+                    <i class="fa-solid fa-shield-halved cio-risks-empty-icon"></i>
+                    Run Quick Check to see top risks
+                </div>
+            }
+        </div>
+
+        
+            </div>
+        </div>
+<!-- Quick Actions -->
+        <div class="cio-actions">
+            <button class="cio-action-btn" @onclick='() => Navigation.NavigateTo("/audit")'>
+                <i class="fa-solid fa-bolt-lightning"></i> Run Quick Check
+            </button>
+            <button class="cio-action-btn-secondary" @onclick='() => Navigation.NavigateTo("/fullaudit")'>
+                <i class="fa-solid fa-clipboard-check"></i> Raw Diagnostics
+            </button>
+            <button class="cio-action-btn-secondary" @onclick='() => Navigation.NavigateTo("/governance-report")'>
+                <i class="fa-solid fa-file-lines"></i> View Governance Report
+            </button>
+            <button class="cio-action-btn-secondary" @onclick='() => Navigation.NavigateTo("/compliance-map")'>
+                <i class="fa-solid fa-map"></i> Compliance Map
+            </button>
+            <button class="cio-action-btn-export" @onclick="ExportPdf" disabled="@(_isExporting)">
+                <i class="fa-solid fa-file-pdf"></i> @(_isExporting ? "Exporting..." : "Export PDF Report")
+            </button>
+            <button class="cio-action-btn-secondary" @onclick='() => Navigation.NavigateTo("/servers")'>
+                <i class="fa-solid fa-plus"></i> Add Server
+            </button>
+        </div>
+
+        
+<!-- Server Risk Heatmap -->
+        @if (_serverGov.Count > 0)
+        {
+            <div class="cio-heatmap-section">
+                <div class="cio-section-header">
+                    <i class="fa-solid fa-table-cells cio-heatmap-icon"></i>
+                    <h3 class="cio-section-title">Server Risk Heatmap</h3>
+                </div>
+                <div class="cio-heatmap-scroll">
+                    <table class="cio-heatmap-table">
+                        <thead>
+                            <tr>
+                                <th class="cio-heatmap-th">Server</th>
+                                <th class="cio-heatmap-th cio-heatmap-th-center">Connection</th>
+                                <th class="cio-heatmap-th cio-heatmap-th-center">Governance</th>
+                                <th class="cio-heatmap-th cio-heatmap-th-center">Open</th>
+                                <th class="cio-heatmap-th cio-heatmap-th-center">Critical</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var entry in _serverGov)
+                            {
+                                var gov = entry.Value;
+                                var connStatus = ConnectionHealth.GetStatus(entry.Key);
+                                var connColor = SeverityColor(connStatus.Status == ConnectionHealthService.ServerStatus.Online ? HealthSeverity.Healthy : connStatus.Status == ConnectionHealthService.ServerStatus.Offline ? HealthSeverity.Critical : HealthSeverity.Unknown);
+                                var open = gov.FailedFindings;
+                                var crit = _serverCritical.TryGetValue(entry.Key, out var cc) ? cc : 0;
+                                <tr class="cio-heatmap-row" @onclick="() => NavigateToServer(entry.Key)">
+                                    <td class="cio-heatmap-td cio-heatmap-td-server">
+                                        <i class="fa-solid fa-database"></i>@entry.Key
+                                    </td>
+                                    <td class="cio-heatmap-td cio-heatmap-td-center">
+                                        <span class="cio-heatmap-cell" style="background:@connColor;">
+                                            @{
+                                                 var isOnline = connStatus.Status == ConnectionHealthService.ServerStatus.Online;
+                                                 var isOffline = connStatus.Status == ConnectionHealthService.ServerStatus.Offline;
+                                             }
+                                             @if (isOnline) { <i class="fa-solid fa-check"></i> } else if (isOffline) { <i class="fa-solid fa-xmark"></i> } else { <text>?</text> }
+                                        </span>
+                                    </td>
+                                    <td class="cio-heatmap-td cio-heatmap-td-center">
+                                        <span class="cio-heatmap-cell" style="background:@ScoreColor(gov.Overall); color:#0b0e14; font-weight:700;"
+                                              title="@($"Governance score {gov.Overall:F0} — {gov.Band}")">@gov.Overall.ToString("F0") · @gov.Band</span>
+                                    </td>
+                                    <td class="cio-heatmap-td cio-heatmap-td-center">
+                                        <span class="cio-heatmap-cell" style="background:@SeverityColor(open == 0 ? HealthSeverity.Healthy : HealthSeverity.Warning);"
+                                              title="@($"{open} open finding(s)")">@open</span>
+                                    </td>
+                                    <td class="cio-heatmap-td cio-heatmap-td-center">
+                                        <span class="cio-heatmap-cell" style="background:@SeverityColor(crit == 0 ? HealthSeverity.Healthy : HealthSeverity.Critical);"
+                                              title="@($"{crit} critical finding(s)")">@crit</span>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="cio-legend">
+                    <span><span class="cio-legend-swatch" style="background:var(--green);"></span> Healthy</span>
+                    <span><span class="cio-legend-swatch" style="background:var(--yellow);"></span> Warning</span>
+                    <span><span class="cio-legend-swatch" style="background:var(--red);"></span> Critical</span>
+                    <span><span class="cio-legend-swatch" style="background:var(--text-muted);"></span> Unknown</span>
+                </div>
+            </div>
+        }
+
+        
+<!-- ── Health Score & Risk Rating (Strategic #7) ───────────────────── -->
+        @if (_serverGov.Count > 0)
+        {
+            <div class="cio-health-score-section">
+                <div class="cio-section-header">
+                    <i class="fa-solid fa-heart-pulse cio-section-header-icon"></i>
+                    <h3 class="cio-section-title">Health Score &amp; Risk Rating</h3>
+                    <a href="/health" class="cio-health-view-full">
+                        <i class="fa-solid fa-arrow-up-right-from-square"></i> Full breakdown
+                    </a>
+                </div>
+
+                @foreach (var kvp in _serverGov)
+                {
+                    var gov  = kvp.Value;
+                    var cats = gov.Categories.Values.Where(c => c.Assessed).OrderByDescending(c => c.Weight).ToList();
+                    var band = CioScoreBand((int)Math.Round(gov.Overall, MidpointRounding.AwayFromZero));
+
+                    <div class="cio-health-server-card">
+                        @if (cats.Count == 0)
+                        {
+                            <!-- Nothing assessed yet — muted placeholder instead of a false score -->
+                            <div class="cio-health-hero">
+                                <span class="cio-health-server-name">
+                                    <i class="fa-solid fa-database"></i> @kvp.Key
+                                </span>
+                                <span class="cio-health-unassessed-badge">Not yet assessed</span>
+                            </div>
+                            <p class="cio-health-unassessed-hint">
+                                Run an assessment to populate this server's score.
+                            </p>
+                        }
+                        else
+                        {
+                            <!-- Hero row -->
+                            <div class="cio-health-hero">
+                                <span class="cio-health-server-name">
+                                    <i class="fa-solid fa-database"></i> @kvp.Key
+                                </span>
+                                <span class="cio-health-score" style="color:@ScoreColor(gov.Overall);">@gov.Overall.ToString("F0")</span>
+                                <span class="cio-health-band">@band</span>
+                            </div>
+
+                            <!-- Per-category pass-rate bars (from this server's governance assessment) -->
+                            <div class="cio-health-dims">
+                                @foreach (var cat in cats)
+                                {
+                                    var pct    = (int)Math.Round(cat.PassRate);
+                                    var barPct = Math.Max(2, pct);
+                                    var dimCol = CioDimColor(pct);
+                                    <div class="cio-health-dim" title="@($"{cat.Dimension}: {cat.PassedCount} of {cat.FindingCount} checks passing")">
+                                        <span class="cio-health-dim-label">@cat.Dimension</span>
+                                        <div class="cio-health-dim-track">
+                                            <div class="cio-health-dim-fill"
+                                                 style="width:@barPct%;background:@dimCol;">
+                                            </div>
+                                        </div>
+                                        <span class="cio-health-dim-score" style="color:@dimCol;">
+                                            @pct
+                                        </span>
+                                    </div>
+                                }
+                            </div>
+
+                        }
+                    </div>
+                }
+            </div>
+        }
+
+        
+
+<!-- Power Savings (sustainability estimate) -->
+        @if (_powerRollup != null && _powerRollup.ServersWithEstimate > 0)
+        {
+            <div class="cio-section card-glass" style="margin-top:24px;">
+                <div class="cio-section-header">
+                    <i class="fa-solid fa-leaf" style="color:#4ade80;"></i>
+                    <span>Power Savings <span style="font-weight:400; opacity:.55; font-size:.8em;">— estimate</span></span>
+                </div>
+                <div style="padding:6px 4px 2px;">
+                    <p style="margin:0 0 8px; font-size:0.95em;">
+                        Performance tuning could trim roughly
+                        <strong>@_powerRollup.CutLowPct&ndash;@_powerRollup.CutHighPct%</strong> of compute energy across
+                        <strong>@_powerRollup.ServersWithEstimate</strong> connected server@(_powerRollup.ServersWithEstimate == 1 ? "" : "s").
+                    </p>
+                    @if (_powerRollup.ServersQuantified > 0)
+                    {
+                        <div style="display:flex; gap:36px; flex-wrap:wrap; margin-top:10px;">
+                            <div>
+                                <div style="font-size:1.6rem; font-weight:700; color:#4ade80; line-height:1;">$@_powerRollup.CostLow&ndash;$@_powerRollup.CostHigh</div>
+                                <div style="opacity:.6; font-size:.78em; margin-top:4px;">per year, potentially avoidable</div>
+                            </div>
+                            <div>
+                                <div style="font-size:1.6rem; font-weight:700; color:#4ade80; line-height:1;">@_powerRollup.Co2Low&ndash;@_powerRollup.Co2High kg</div>
+                                <div style="opacity:.6; font-size:.78em; margin-top:4px;">CO&#8322;e per year</div>
+                            </div>
+                            <div>
+                                <div style="font-size:1.6rem; font-weight:700; color:#4ade80; line-height:1;">@_powerRollup.KWhLow&ndash;@_powerRollup.KWhHigh</div>
+                                <div style="opacity:.6; font-size:.78em; margin-top:4px;">kWh per year</div>
+                            </div>
+                        </div>
+                        <p style="margin:12px 0 0; opacity:.55; font-size:.76em;">
+                            Quantified across @_powerRollup.ServersQuantified physical host@(_powerRollup.ServersQuantified == 1 ? "" : "s") with &ge;7 days history.
+                            Modelled estimate, not a measurement; realisable only if freed capacity is reclaimed (right-size / consolidate).
+                        </p>
+                    }
+                    else
+                    {
+                        <p style="margin:6px 0 0; opacity:.55; font-size:.76em;">
+                            Absolute energy figures appear only for physical hosts with &ge;7 days history; virtual/cloud hosts show the relative reduction only.
+                            Modelled estimate, not a measurement.
+                        </p>
+                    }
+                </div>
+            </div>
+        }
+
+<!-- Governance Trend -->
+        @if (_trendData.Count > 1)
+        {
+            <div class="cio-section" style="margin-top:24px;">
+                <div class="cio-section-header">
+                    <i class="fa-solid fa-chart-line" style="color:var(--accent);"></i>
+                    <h3 class="cio-section-title">Governance Trend</h3>
+                    <div class="cio-trend-toggle">
+                        <button class="@(_trendView == "weekly" ? "cio-trend-btn-active" : "cio-trend-btn")" @onclick='() => SetTrendView("weekly")'>Weekly</button>
+                        <button class="@(_trendView == "daily" ? "cio-trend-btn-active" : "cio-trend-btn")" @onclick='() => SetTrendView("daily")'>Daily</button>
+                    </div>
+                </div>
+                <div class="cio-trend-chart">
+                    @foreach (var point in _trendData)
+                    {
+                        var heightPct = Math.Max(5, point.OverallScore);
+                        var color = ScoreColor(point.OverallScore);
+                        <div class="cio-trend-bar-wrapper" title="@point.RecordedAt: @point.OverallScore:F1 (@point.Band)">
+                            <div class="cio-trend-bar" style="height:@(heightPct)%; background:@color;"></div>
+                            <div class="cio-trend-label">@TrendLabel(point.RecordedAt)</div>
+                        </div>
+                    }
+                </div>
+                @if (_trendDelta != 0)
+                {
+                    <div class="cio-trend-delta">
+                        <span>@TrendGlyph @Math.Abs(_trendDelta).ToString("F1") points over @_trendPeriod</span>
+                    </div>
+                }
+            </div>
+        }
+    }
+    </div>
+
+@code {
+    private bool _loading = true;
+    private bool _hasServers = false;
+    private string _loadingMessage = "Loading CIO Dashboard...";
+    private GovernanceScore? _governanceScore;
+    private Dictionary<string, ExecutiveHealthScore> _serverScores = new(StringComparer.OrdinalIgnoreCase);
+    // Per-server GOVERNANCE — the populated data behind the heatmap + health cards (the live
+    // health poll is empty in most deployments). Score/band/category-breakdown + critical count.
+    private Dictionary<string, GovernanceScore> _serverGov = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, int> _serverCritical = new(StringComparer.OrdinalIgnoreCase);
+    private List<CheckResult> _topRisks = new();
+    private List<CategoryScore> _orderedCategories = new();
+    private int _industryAverageScore = 68;
+    private int _maxExtentScore = 100;
+    // ─── Pricing model (2026-05-13: replaces reverse-from-governance) ──
+    // Project cost = Σ(EffortHours_override_or_baseline × HourlyRate) × ComplianceFactor.
+    // Per-check effort tuned in /remediation-tuner → Config/sql-check-weights-override.json.
+    // Compliance tier still multiplies (audit overhead, change mgmt, evidence).
+    // Methodology: .claude/docs/pricing-methodology.md
+    private const double RangeSpread = 0.35;          // ±35% around midpoint (per pricing-methodology.md)
+
+    // Teaser denominator for the indicative score. Conservative round number;
+    // the full golden corpus is ~547 checks, so "500+" is always truthful.
+    private const int FullAuditCheckCount = 500;
+
+    private static double ComplianceFactor(string tier) => tier switch
+    {
+        "SOC2" or "ISO27001" => 1.7,
+        "PCI" or "SOX"       => 2.4,
+        "HIPAA"              => 2.6,
+        _                    => 1.0,  // "None"
+    };
+
+    // Severity → (NextStep, AssignedTo, EscalationPath, ReviewPeriod).
+    // Mirrors the Alliance Group risk-matrix layout — operationalises each
+    // finding with owner, escalation, and review cadence.
+    private static (string NextStep, string AssignedTo, string Escalation, string Review) RiskOps(string? severity) =>
+        (severity ?? "").ToLowerInvariant() switch
+        {
+            "critical" => ("Urgent attention", "Senior Management", "Executive team",  "1 month"),
+            "high"     => ("Plan intervention", "Senior Management", "General Manager", "3 months"),
+            "medium"   => ("Actively manage",   "BU Manager",        "Senior Management", "6 months"),
+            "low"      => ("Monitor",           "DBA",                "BU Manager",       "6 months"),
+            _          => ("Review",            "DBA",                "BU Manager",       "6 months"),
+        };
+
+    // Trend glyph — shape-only (no colour) for colour-blind safety.
+    private string TrendGlyph => _trendDelta > 0.05 ? "▲" : _trendDelta < -0.05 ? "▼" : "▬";
+
+    // IsBad gates costing — only checks flagged bad:1 in YAML incur remediation cost.
+    // Scoring uses all non-SKIP results; costing uses IsBad failures only.
+    private IEnumerable<CheckResult> _failed => _lastCheckResults.Where(r => !r.Passed && r.IsBad);
+
+    private int _serversInLastRun => _lastCheckResults
+        .Select(r => r.InstanceName)
+        .Where(n => !string.IsNullOrEmpty(n))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .Count();
+
+    // Σ(effort × times-failed) — each row in _failed is one (server, check) failure,
+    // so summing per-row effort is mathematically equivalent to grouping by CheckId
+    // and multiplying by TimesFailed. WeightStore returns override if set, else baseline.
+    private double _remediationLabourHours =>
+        _failed.Sum(r => WeightStore.GetEffort(r.CheckId, r.EffortHours));
+
+    private double _remediationLabourCost => _remediationLabourHours * HourlyRate;
+
+    private double _projectMidpoint =>
+        _remediationLabourCost * ComplianceFactor(UserSettings.GetComplianceTier());
+
+    private double _costLow  => _projectMidpoint * (1 - RangeSpread);
+    private double _costHigh => _projectMidpoint * (1 + RangeSpread);
+
+    // Raw technical labour line — same labour figure without the compliance multiplier
+    private double _rawLabourHours => _remediationLabourHours;
+    private double _rawLabourCost  => _remediationLabourCost;
+
+    private int _pricedCheckCount => _failed.Count(r => r.IsBad);
+    private DateTime _lastUpdated = DateTime.Now;
+    private List<CheckResult> _lastCheckResults = new();
+    private LicensingEstimate? _licensingEstimate;
+    private PowerRollup? _powerRollup;
+    private sealed class PowerRollup
+    {
+        public int ServersWithEstimate;
+        public int ServersQuantified;
+        public int CutLowPct = 10, CutHighPct = 30;
+        public int KWhLow, KWhHigh, CostLow, CostHigh, Co2Low, Co2High;
+    }
+    private List<GovernanceTrendPoint> _trendData = new();
+    private string _trendView = "weekly";
+    private double HourlyRate => UserSettings.GetRemediationHourlyRate();
+    private bool ShowRemediationCost => UserSettings.GetShowRemediationCost();
+    private string ComplianceTierDisplay => UserSettings.GetComplianceTier() switch
+    {
+        "SOC2"     => "SOC 2",
+        "ISO27001" => "ISO 27001",
+        "PCI"      => "PCI-DSS",
+        "SOX"      => "SOX",
+        "HIPAA"    => "HIPAA",
+        _          => "",
+    };
+    private double _trendDelta;
+    private string _trendPeriod = "";
+    private bool _isExporting;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (UserSettings.GetFastAppLoad()) await Task.Yield();
+        try
+        {
+            _loadingMessage = "Loading server connections...";
+            var connections = ConnectionManager.GetEnabledConnections();
+            if (connections.Count == 0)
+            {
+                _hasServers = false;
+                _loading = false;
+                return;
+            }
+            _hasServers = true;
+
+            var allServers = connections.SelectMany(c => c.GetServerList()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (allServers.Count == 0)
+            {
+                _hasServers = false;
+                _loading = false;
+                return;
+            }
+
+            _loadingMessage = "Computing health scores...";
+            StateHasChanged();
+
+            foreach (var server in allServers)
+            {
+                try
+                {
+                    var score = await HealthService.GetHealthScoreAsync(server);
+                    _serverScores[server] = score;
+                }
+                catch (Exception ex)
+                {
+                    _serverScores[server] = new ExecutiveHealthScore
+                    {
+                        Score = 0,
+                        Severity = HealthSeverity.Unknown,
+                        Trend = HealthTrend.Stable,
+                        Message = ex.Message
+                    };
+                }
+            }
+
+            _loadingMessage = "Loading check results...";
+            StateHasChanged();
+
+            foreach (var server in allServers)
+            {
+                List<CheckResult> serverResults = new();
+                try
+                {
+                    // Try persisted results (survive restarts)
+                    var persisted = HistoryService.LoadLatestCheckResults(server, 7);
+                    if (persisted.Count > 0 && persisted.Any(r => r.EffortHours > 0))
+                        serverResults = persisted;
+                }
+                catch { /* fall through to live data */ }
+
+                if (serverResults.Count == 0)
+                {
+                    try
+                    {
+                        // Fall back to live in-memory results (has EffortHours)
+                        var live = CheckExecutor.GetResults(server, 500);
+                        if (live.Count > 0) serverResults = live;
+                    }
+                    catch { /* non-fatal */ }
+                }
+
+                if (serverResults.Count > 0)
+                {
+                    _lastCheckResults.AddRange(serverResults);
+                    // Per-server governance — the real data behind the heatmap + health cards.
+                    try { _serverGov[server] = await GovernanceService.ComputeIndicativeAsync(serverResults); }
+                    catch { /* non-fatal */ }
+                    _serverCritical[server] = serverResults.Count(r => !r.Passed && IsCriticalSeverity(r.Severity));
+                }
+            }
+
+            _loadingMessage = "Computing governance score...";
+            StateHasChanged();
+
+            if (_lastCheckResults.Count > 0)
+            {
+                _governanceScore = await GovernanceService.ComputeIndicativeAsync(_lastCheckResults);
+
+                // Record to history for trending
+                try
+                {
+                    foreach (var conn in ConnectionManager.GetEnabledConnections())
+                    {
+                        foreach (var server in conn.GetServerList())
+                        {
+                            HistoryService.RecordGovernanceScore(server, _governanceScore);
+                        }
+                    }
+                }
+                catch { /* non-fatal — history recording is best-effort */ }
+
+                _topRisks = _lastCheckResults
+                    .Where(r => !r.Passed)
+                    .OrderByDescending(r => SeverityRank(r.Severity))
+                    .Take(5)
+                    .ToList();
+
+                // Licensing probe — fire-and-forget, refreshes UI when done
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var distinctServers = _lastCheckResults
+                            .Select(r => r.InstanceName)
+                            .Where(n => !string.IsNullOrEmpty(n))
+                            .Distinct(StringComparer.OrdinalIgnoreCase)
+                            .ToList();
+
+                        var facts = new List<ServerLicensingFacts>();
+                        foreach (var srv in distinctServers)
+                        {
+                            var f = await LicensingEstimator.ProbeServerAsync(srv);
+                            if (f != null) facts.Add(f);
+                        }
+
+                        if (facts.Count > 0)
+                        {
+                            _licensingEstimate = LicensingEstimator.Estimate(facts, _governanceScore?.Overall ?? 0);
+                            await InvokeAsync(StateHasChanged);
+                        }
+
+                        // Power roll-up — potential annual energy avoidance across the estate.
+                        // Relative for every reachable server; absolute $/CO2 only where the host
+                        // is physical with >= 7 days history (suppressed on VM/cloud).
+                        var pr = new PowerRollup();
+                        foreach (var srv in distinctServers)
+                        {
+                            var est = await PowerEstimate.GetEstimateAsync(srv);
+                            if (est == null) continue;
+                            pr.ServersWithEstimate++;
+                            pr.CutLowPct = est.TuneCutLowPct;
+                            pr.CutHighPct = est.TuneCutHighPct;
+                            if (est.AnnualKWhLow.HasValue)
+                            {
+                                pr.ServersQuantified++;
+                                pr.KWhLow   += est.AnnualKWhLow.Value;
+                                pr.KWhHigh  += est.AnnualKWhHigh ?? 0;
+                                pr.CostLow  += est.AnnualCostLowUsd ?? 0;
+                                pr.CostHigh += est.AnnualCostHighUsd ?? 0;
+                                pr.Co2Low   += est.AnnualCo2KgLow ?? 0;
+                                pr.Co2High  += est.AnnualCo2KgHigh ?? 0;
+                            }
+                        }
+                        if (pr.ServersWithEstimate > 0)
+                        {
+                            _powerRollup = pr;
+                            await InvokeAsync(StateHasChanged);
+                        }
+                    }
+                    catch { /* non-fatal — licensing panel just won't show */ }
+                });
+            }
+            else
+            {
+                _governanceScore = new GovernanceScore
+                {
+                    IsIndicative = true,
+                    Overall = 0,
+                    Band = ScoreBand.Emerging,
+                    Categories = new Dictionary<string, CategoryScore>(StringComparer.OrdinalIgnoreCase),
+                    TotalFindings = 0,
+                    PassedFindings = 0,
+                    FailedFindings = 0
+                };
+
+                var defaultCategories = new[] { "Security", "Performance", "Reliability", "Compliance", "Cost" };
+                var weights = new[] { 0.25, 0.20, 0.20, 0.20, 0.15 };
+                for (int i = 0; i < defaultCategories.Length; i++)
+                {
+                    _governanceScore.Categories[defaultCategories[i]] = new CategoryScore
+                    {
+                        Dimension = defaultCategories[i],
+                        Weight = weights[i],
+                        RawScore = 0,
+                        CappedScore = 0,
+                        Ceiling = 100,
+                        FindingCount = 0,
+                        PassedCount = 0
+                    };
+                }
+            }
+
+            _orderedCategories = _governanceScore.Categories.Values
+                .OrderByDescending(c => c.Weight)
+                .ToList();
+
+            _lastUpdated = DateTime.Now;
+
+            // Load trend data
+            try
+            {
+                var firstServer = allServers.FirstOrDefault() ?? "";
+                if (!string.IsNullOrEmpty(firstServer))
+                {
+                    _trendData = HistoryService.GetTrend(firstServer, 90);
+                    if (_trendData.Count >= 2)
+                    {
+                        _trendDelta = _trendData.Last().OverallScore - _trendData.First().OverallScore;
+                        var days = (DateTime.Parse(_trendData.Last().RecordedAt) - DateTime.Parse(_trendData.First().RecordedAt)).Days;
+                        _trendPeriod = days > 30 ? $"{days / 30} months" : $"{days} days";
+                    }
+                }
+            }
+            catch { /* trend is best-effort */ }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("Failed to load CIO Dashboard", ex.Message);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void NavigateToServer(string serverName)
+    {
+        Navigation.NavigateTo($"/dashboard/instance?server={Uri.EscapeDataString(serverName)}");
+    }
+
+    private static bool IsCriticalSeverity(string? sev) => sev?.ToLowerInvariant() is "error" or "critical";
+
+    // Ring/number colour, aligned to the medal tier (not a health gradient). Single-source band
+    // thresholds via GovWeights.BandFor, so the colour always matches the displayed band name.
+    private string ScoreColor(double score) =>
+        BandColor(GovWeights.Current.BandFor((int)Math.Round(score, MidpointRounding.AwayFromZero)));
+
+    private static string BandColor(string? band) => band?.ToLowerInvariant() switch
+    {
+        "platinum" => "#e3e9f2",  // bright silver (the golden glow is applied separately)
+        "gold"     => "#e7b53c",  // gold
+        "silver"   => "#c4ccd8",  // silver
+        "bronze"   => "#c87f43",  // bronze
+        _          => "#9aa1ad",  // Emerging — un-medaled slate
+    };
+
+    // Glow (halo) colour for the ring + number. Platinum = a silver ring with a GOLDEN glow;
+    // every other tier glows its own colour.
+    private string ScoreGlowColor(double score) =>
+        string.Equals(GovWeights.Current.BandFor((int)Math.Round(score, MidpointRounding.AwayFromZero)),
+                      "Platinum", StringComparison.OrdinalIgnoreCase)
+            ? "#e7b53c"            // golden glow over the silver platinum ring
+            : ScoreColor(score);   // other tiers glow their own colour
+
+    private string AssessmentBadgeStyle()
+    {
+        if (_governanceScore == null) return "";
+        return _governanceScore.IsIndicative
+            ? "background:rgba(99,102,241,0.12);color:var(--accent);border:1px solid rgba(99,102,241,0.3)"
+            : "background:rgba(34,197,94,0.12);color:var(--green);border:1px solid rgba(34,197,94,0.3)";
+    }
+
+    // ── Health Score helpers (Strategic #7) ──────────────────────────────────
+    // Medal band from the SAME governance-weights.json band config the governance
+    // score uses (GovernanceWeights.BandFor) — single source, so the two pages
+    // can't drift if the thresholds are edited.
+    private string CioScoreBand(int score) => GovWeights.Current.BandFor(score);
+
+    private static string CioDimColor(int score) =>
+        score >= 80 ? "var(--green)"
+        : score >= 60 ? "var(--yellow)"
+        : score >= 40 ? "var(--orange)"
+        : "var(--red)";
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private static string SeverityColor(HealthSeverity? sev)
+    {
+        return sev switch
+        {
+            HealthSeverity.Healthy => "var(--green)",
+            HealthSeverity.Warning => "var(--yellow)",
+            HealthSeverity.Critical => "var(--red)",
+            _ => "var(--text-muted)"
+        };
+    }
+
+    private static int SeverityRank(string? severity) => severity?.ToLower() switch
+    {
+        "critical" => 4, "high" => 3, "medium" => 2, "low" => 1, _ => 0
+    };
+
+    private void SetTrendView(string view)
+    {
+        _trendView = view;
+        var firstServer = _serverScores.Keys.FirstOrDefault() ?? "";
+        if (!string.IsNullOrEmpty(firstServer))
+        {
+            if (view == "weekly")
+                _trendData = HistoryService.GetWeeklyAverages(firstServer, 12).Select(w => new GovernanceTrendPoint { RecordedAt = w.Week, OverallScore = w.AvgScore }).ToList();
+            else
+                _trendData = HistoryService.GetTrend(firstServer, 90);
+            StateHasChanged();
+        }
+    }
+
+    private string CategoryColor(double passRate)
+    {
+        if (passRate >= 80) return "var(--green)";
+        if (passRate >= 50) return "var(--yellow)";
+        return "var(--red)";
+    }
+
+    private static string WaitVerdict(string waitMessage)
+    {
+        if (string.IsNullOrEmpty(waitMessage)) return "No wait data available.";
+        
+        // Try parse "category|pct" format from SQL message
+        var parts = waitMessage.Split('|');
+        if (parts.Length >= 2 && double.TryParse(parts[1].Trim(), out var pct))
+        {
+            var cat = parts[0].Trim();
+            return cat switch
+            {
+                "Disk I/O" when pct > 30 => $"Disk I/O is {pct:F0}% of wait time — storage upgrade recommended (4-6 hour engagement).",
+                "Locking" when pct > 20 => $"Locking is {pct:F0}% of wait time — query/index tuning recommended (6-8 hour engagement).",
+                "CPU Pressure" when pct > 40 => $"CPU pressure at {pct:F0}% of wait time — query optimization recommended (8-12 hour engagement).",
+                "Memory Pressure" when pct > 15 => $"Memory pressure at {pct:F0}% — memory configuration review recommended (4-6 hour engagement).",
+                "Transaction Log" when pct > 15 => $"Transaction log waits at {pct:F0}% — log drive performance review recommended (2-4 hour engagement).",
+                "Parallelism" when pct > 20 => $"Parallelism waits at {pct:F0}% — MAXDOP and CTFP tuning recommended (2-4 hour engagement).",
+                _ => $"{cat} at {pct:F0}% of wait time. Performance review recommended."
+            };
+        }
+        
+        // Fallback: show generic performance health
+        return "Performance snapshot available — run Quick Check for dominant wait category with engagement estimate.";
+    }
+
+    private string TrendLabel(string recordedAt)
+    {
+        if (DateTime.TryParse(recordedAt, out var dt))
+        {
+            return _trendView == "weekly"
+                ? dt.ToString("MM/dd")
+                : dt.ToString("dd");
+        }
+        return recordedAt.Length > 5 ? recordedAt[^5..] : recordedAt;
+    }
+
+    // Renders the live CIO Dashboard view to PDF via WebView2 (CoreWebView2.PrintToPdfAsync),
+    // not QuestPDF, so no Community-licensing constraint applies. Mirrors the pattern used
+    // by DiagnosticsRoadmap.razor — hide chrome, expand sections, capture, restore.
+    private async Task ExportPdf(MouseEventArgs e)
+    {
+        if (_isExporting) return;
+        try
+        {
+            _isExporting = true;
+            StateHasChanged();
+
+            var firstServer = _serverScores.Keys.FirstOrDefault() ?? "CIO";
+            var fileName = $"CIO_Dashboard_{firstServer.Replace("\\", "_").Replace("/", "_")}_{DateTime.UtcNow:yyyyMMdd_HHmmssZ}.pdf";
+
+            await JS.InvokeVoidAsync("eval",
+                "document.querySelectorAll('.nav-menu,.dashboard-toolbar,.cio-action-bar,[class*=\"server-mode\"]').forEach(e => { e.dataset.printHidden='1'; e.style.display='none'; });" +
+                "document.body.classList.add('printing-active');");
+            await Task.Delay(200);
+
+            // Watermark: apply if any displayed server is non-production or unset.
+            var cioEnvs = ConnectionManager.GetEnabledConnections().Select(c => c.Environment);
+            var cioWatermark = ServerEnvironment.RequiresWatermark(cioEnvs);
+            if (cioWatermark)
+                await JS.InvokeVoidAsync("eval", "document.body.classList.add('has-draft-watermark');");
+
+            var (success, path, error) = await PrintSvc.PrintToPdfAsync(fileName,
+                printBackgrounds: true,
+                orientation: Microsoft.Web.WebView2.Core.CoreWebView2PrintOrientation.Portrait,
+                headerTitle: null,
+                footerUri: null);
+
+            if (cioWatermark)
+                await JS.InvokeVoidAsync("eval", "document.body.classList.remove('has-draft-watermark');");
+            await JS.InvokeVoidAsync("eval",
+                "document.querySelectorAll('[data-print-hidden=\"1\"]').forEach(e => { e.style.display=''; delete e.dataset.printHidden; });" +
+                "document.body.classList.remove('printing-active');");
+
+            if (success && !string.IsNullOrEmpty(path))
+            {
+                Logger.LogInformation("CIO Dashboard PDF exported: {File}", path);
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = path,
+                    UseShellExecute = true
+                });
+                Toast.ShowSuccess("PDF exported", $"Saved to {System.IO.Path.GetDirectoryName(path)}");
+            }
+            else
+            {
+                Toast.ShowError("PDF export failed", error ?? "Unknown error");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "CIO Dashboard PDF export failed");
+            Toast.ShowError("PDF export failed", ex.Message);
+        }
+        finally
+        {
+            _isExporting = false;
+            StateHasChanged();
+        }
+    }
+}

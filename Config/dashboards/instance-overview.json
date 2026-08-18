@@ -1,0 +1,118 @@
+{
+  "id": "instance-overview",
+  "title": "Instance Overview",
+  "description": "Comprehensive view of SQL Server instance health and performance metrics",
+  "navTitle": "Instance Overview",
+  "navIcon": "fa-solid fa-tachometer-alt-fast",
+  "navCategory": "Dashboards",
+  "navOrder": 1,
+  "route": "/instance",
+  "enabled": true,
+  "source": "sqlwatch",
+  "defaultDatabase": "SQLWATCH",
+  "showAllOption": true,
+  "panels": [
+    {
+      "id": "repo.checks",
+      "title": "Health Checks",
+      "description": null,
+      "enabled": false,
+      "source": "",
+      "panelType": "CheckStatus",
+      "chartType": "Line",
+      "height": 250,
+      "refreshIntervalSeconds": null,
+      "layout": {
+        "column": 0,
+        "order": 0,
+        "spanColumns": false
+      },
+      "query": {
+        "source": "sqlwatch",
+        "sqlServer": "\r\nSELECT\r\n    d.check_status AS [Status],\r\n    COUNT(*) AS [Count]\r\nFROM dbo.sqlwatch_logger_check d WITH (NOLOCK)\r\nINNER JOIN dbo.sqlwatch_logger_snapshot_header h WITH (NOLOCK)\r\n    ON h.snapshot_time = d.snapshot_time\r\n    AND h.snapshot_type_id = d.snapshot_type_id\r\n    AND h.sql_instance = d.sql_instance\r\nWHERE h.report_time BETWEEN @TimeFrom AND @TimeTo\r\n    AND d.sql_instance IN (SELECT value FROM STRING_SPLIT(@SqlInstance, ','))\r\nGROUP BY d.check_status"
+      },
+      "defaultDatabase": "SQLWATCH",
+      "statUnit": "",
+      "statThresholdKey": null,
+      "barGaugeThresholdKey": null,
+      "barGaugeUnitSuffix": "%",
+      "valueFormat": "",
+      "colorThresholds": [],
+      "dataGridIsClickable": false,
+      "dataGridMaxRows": 500,
+      "dataGridTopRows": 0,
+      "actionColumn": null,
+      "actionColumnMode": null,
+      "dataGridColumns": null,
+      "dataGridColumnColors": null
+    },
+    {
+      "id": "instance.cpu",
+      "title": "CPU Utilization",
+      "description": "Historical CPU utilization percentage over time from SQLWATCH performance counters.",
+      "enabled": true,
+      "source": "",
+      "panelType": "TimeSeries",
+      "chartType": "Line",
+      "height": 250,
+      "refreshIntervalSeconds": null,
+      "layout": {
+        "column": 1,
+        "order": 0,
+        "spanColumns": false
+      },
+      "query": {
+        "source": "sqlwatch",
+        "sqlServer": "SELECT\n    h.report_time AS [Time],\n    instance_name + ' %'  AS [Series],\n    AVG(CONVERT(MONEY,d.cntr_value_calculated)) AS [Value]\nFROM dbo.sqlwatch_logger_perf_os_performance_counters d WITH (NOLOCK)\nINNER JOIN dbo.sqlwatch_logger_snapshot_header h WITH (NOLOCK)\n    ON h.snapshot_time = d.snapshot_time\n    AND h.snapshot_type_id = d.snapshot_type_id\n    AND h.sql_instance = d.sql_instance\nINNER JOIN dbo.sqlwatch_meta_performance_counter m WITH (NOLOCK)\n    ON m.sql_instance = d.sql_instance\n    AND m.performance_counter_id = d.performance_counter_id\nWHERE h.report_time BETWEEN @TimeFrom AND @TimeTo\n    AND d.sql_instance IN (SELECT value FROM STRING_SPLIT(@SqlInstance, ','))\n    AND m.counter_name IN ('Processor Time %','Privileged Time %','User Time %')\n    AND m.cntr_type <> 1073939712\nGROUP BY h.report_time ,\n    instance_name"
+      },
+      "defaultDatabase": "SQLWATCH",
+      "statUnit": "",
+      "statThresholdKey": null,
+      "barGaugeThresholdKey": null,
+      "barGaugeUnitSuffix": "%",
+      "valueFormat": "",
+      "colorThresholds": [],
+      "dataGridIsClickable": false,
+      "dataGridMaxRows": 500,
+      "dataGridTopRows": 0,
+      "actionColumn": null,
+      "actionColumnMode": null,
+      "dataGridColumns": null,
+      "dataGridColumnColors": null
+    },
+    {
+      "id": "instance.memory",
+      "title": "Memory GB and usage %",
+      "description": "Buffer pool memory usage and page life expectancy trends from SQLWATCH snapshots.",
+      "enabled": true,
+      "source": "",
+      "panelType": "TimeSeries",
+      "chartType": "Line",
+      "height": 250,
+      "refreshIntervalSeconds": null,
+      "layout": {
+        "column": 2,
+        "order": 0,
+        "spanColumns": false
+      },
+      "query": {
+        "source": "sqlwatch",
+        "sqlServer": "SELECT\n    h.report_time AS [Time],\n    'Physical Memory In Use (GB)' AS [Series],\n    AVG(CONVERT(MONEY,d.physical_memory_in_use_kb))/1024/1024 AS [Value]\nFROM dbo.sqlwatch_logger_perf_os_process_memory d WITH (NOLOCK)\nINNER JOIN dbo.sqlwatch_logger_snapshot_header h WITH (NOLOCK)\n    ON h.snapshot_time = d.snapshot_time\n    AND h.snapshot_type_id = d.snapshot_type_id\n    AND h.sql_instance = d.sql_instance\nWHERE h.report_time BETWEEN @TimeFrom AND @TimeTo\n    AND d.sql_instance IN (SELECT value FROM STRING_SPLIT(@SqlInstance, ','))\n    GROUP BY h.report_time\n\nUNION ALL\n\nSELECT\n    h.report_time,\n    'Memory Utilization % of commit',\n    AVG(d.memory_utilization_percentage)\nFROM dbo.sqlwatch_logger_perf_os_process_memory d WITH (NOLOCK)\nINNER JOIN dbo.sqlwatch_logger_snapshot_header h WITH (NOLOCK)\n    ON h.snapshot_time = d.snapshot_time\n    AND h.snapshot_type_id = d.snapshot_type_id\n    AND h.sql_instance = d.sql_instance\nWHERE h.report_time BETWEEN @TimeFrom AND @TimeTo\n    AND d.sql_instance IN (SELECT value FROM STRING_SPLIT(@SqlInstance, ','))\nGROUP BY h.report_time"
+      },
+      "defaultDatabase": "SQLWATCH",
+      "statUnit": "",
+      "statThresholdKey": null,
+      "barGaugeThresholdKey": null,
+      "barGaugeUnitSuffix": "%",
+      "valueFormat": "",
+      "colorThresholds": [],
+      "dataGridIsClickable": false,
+      "dataGridMaxRows": 500,
+      "dataGridTopRows": 0,
+      "actionColumn": null,
+      "actionColumnMode": null,
+      "dataGridColumns": null,
+      "dataGridColumnColors": null
+    }
+  ]
+}

@@ -1,0 +1,492 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject SQLTriage.Data.UserSettingsService UserSettings
+@inject SQLTriage.Data.ToastService Toast
+@inject ServerConnectionManager ConnectionManager
+@inject SQLTriage.Data.Services.ConnectionHealthService HealthService
+@using SQLTriage.Data.Services
+@using Microsoft.Data.SqlClient
+
+@if (IsVisible)
+{
+    <div class="panel-maximize-overlay" @onclick="Close">
+        <div class="query-plan-modal-content" @onclick:stopPropagation>
+            <div class="panel-maximize-header">
+                <span class="panel-maximize-title">Query Execution Plan</span>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <button class="panel-maximize-btn" style="position:static;opacity:1;"
+                            @onclick="ToggleSummary" title="@(_showSummary ? "Hide Summary" : "Show Summary")">
+                        <i class="fa-solid fa-chart-bar"></i>
+                    </button>
+                    <button class="panel-maximize-btn" style="position:static;opacity:1;"
+                            @onclick="ToggleCompact" title="@(_compactView ? "Detailed View" : "Compact View")">
+                        <i class="fa-solid fa-compress"></i>
+                    </button>
+                    <button class="panel-maximize-btn" style="position:static;opacity:1;"
+                            @onclick="ExportPlan" title="Export Plan as Image">
+                        <i class="fa-solid fa-image"></i>
+                    </button>
+                    <button class="panel-maximize-btn" style="position:static;opacity:1;"
+                            @onclick="DownloadSqlplan" title="Download as .sqlplan (open in SSMS)">
+                        <i class="fa-solid fa-file-code"></i>
+                    </button>
+                    <button class="panel-maximize-btn" style="position:static;opacity:1;"
+                            @onclick="OpenInPlanExplorer" title="Open in Plan Explorer">
+                        <i class="fa-solid fa-magnifying-glass-chart"></i>
+                    </button>
+                    <button class="panel-maximize-btn" style="position:static;opacity:1;"
+                            @onclick="ShowOptimizationTips" title="Show Optimization Tips">
+                        <i class="fa-solid fa-lightbulb"></i>
+                    </button>
+                    <button class="panel-maximize-btn" style="position:static;opacity:1;"
+                            @onclick="SavePlan" title="Save Plan for Comparison">
+                        <i class="fa-solid fa-save"></i>
+                    </button>
+                    @if (!string.IsNullOrWhiteSpace(QueryText))
+                    {
+                        <button class="panel-maximize-btn" style="position:static;opacity:1;"
+                                @onclick="ToggleQueryText" title="@(_showQueryText ? "Hide Query" : "Show Query")">
+                            SQL
+                        </button>
+                    }
+                    <button class="panel-maximize-close" @onclick="Close" title="Close"><i class="fa-solid fa-xmark"></i></button>
+                </div>
+            </div>
+
+            @if (_showQueryText && !string.IsNullOrWhiteSpace(QueryText))
+            {
+                <div class="query-plan-sql-box">
+                    <pre>@QueryText</pre>
+                </div>
+            }
+
+            <!-- Search/Filter Controls -->
+            <div class="plan-controls" style="display:flex;gap:8px;padding:8px;border-bottom:1px solid var(--border);">
+                <input type="text" placeholder="Search operators… (highlights matching nodes)"
+                       value="@_searchTerm" @oninput="OnSearchInput" style="flex:1;" />
+                <button class="settings-btn" @onclick="ClearSearch" disabled="@(string.IsNullOrEmpty(_searchTerm))">Clear</button>
+            </div>
+            
+            @* Index execution options — only shown when No-Pants mode is on *@
+            @if (UserSettings.GetNoPantsMode())
+            {
+                <div style="display:flex;align-items:center;gap:6px;padding:4px 12px;border-bottom:1px solid var(--border);background:rgba(239,68,68,0.04);">
+                    <button type="button" @onclick="() => _showNoPantsPanel = !_showNoPantsPanel"
+                            title="@(_showNoPantsPanel ? "Hide index options" : "Show index options")"
+                            style="background:none;border:none;cursor:pointer;padding:2px 4px;font-size:14px;color:@(_showNoPantsPanel ? "#ef4444" : "var(--text-muted)");line-height:1;">
+                        <i class="fa-solid fa-person-pants-burst"></i>
+                    </button>
+                    <span style="font-size:11px;color:var(--text-muted);">Index options</span>
+                </div>
+            }
+            @if (UserSettings.GetNoPantsMode() && _showNoPantsPanel)
+            {
+                <div class="plan-options-panel" style="display:flex;gap:12px;padding:6px 12px;border-bottom:1px solid var(--border);align-items:center;flex-wrap:wrap;background:rgba(239,68,68,0.05);">
+                    <span style="font-size:11px;font-weight:600;color:var(--red);opacity:0.8;">NO-PANTS</span>
+                    <div style="display:flex;align-items:center;gap:4px;" title="@(CanUseOnline ? "Build the index without taking the table offline" : $"ONLINE not supported on this edition (Enterprise/Developer only). Detected: {_serverEdition ?? "unknown"}")">
+                        <input type="checkbox" id="idx-opt-online" @bind="_indexOptionOnline" disabled="@(!CanUseOnline)" />
+                        <label for="idx-opt-online" style="margin:0;font-size:12px;@(CanUseOnline ? "" : "opacity:0.4;")">ONLINE</label>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:4px;">
+                        <input type="checkbox" id="idx-opt-sorttemp" @bind="_indexOptionSortInTempDb" />
+                        <label for="idx-opt-sorttemp" style="margin:0;font-size:12px;">SORT_IN_TEMPDB</label>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:4px;" title="@(CanUseResumable ? "Pause/resume during long index builds" : $"RESUMABLE requires Enterprise + SQL 2017+. Detected: v{_serverVersion?.ToString() ?? "?"} {_serverEdition ?? "edition unknown"}")">
+                        <input type="checkbox" id="idx-opt-resumable" @bind="_indexOptionResumable" disabled="@(!CanUseResumable)" />
+                        <label for="idx-opt-resumable" style="margin:0;font-size:12px;@(CanUseResumable ? "" : "opacity:0.4;")">RESUMABLE</label>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:4px;">
+                        <label style="margin:0;font-size:12px;">MAXDOP:</label>
+                        <input type="number" min="1" max="64" style="width:46px;font-size:12px;" @bind="_indexMaxDop" />
+                    </div>
+                    <div style="display:flex;align-items:center;gap:4px;">
+                        <label style="margin:0;font-size:12px;">COMPRESSION:</label>
+                        <select @bind="_indexCompression" style="width:90px;font-size:12px;">
+                            <option value="NONE">NONE</option>
+                            <option value="ROW">ROW</option>
+                            <option value="PAGE">PAGE</option>
+                        </select>
+                    </div>
+                    @if (_indexIsExecuting)
+                    {
+                        <button class="btn btn-danger btn-sm" @onclick="CancelIndexCreation">Cancel</button>
+                        <span style="font-size:12px;opacity:0.8;">@_indexExecutionStatus</span>
+                    }
+                </div>
+            }
+
+            <div class="query-plan-modal-body" style="display: flex; height: 100%; overflow: hidden; background: var(--bg-surface);">
+                <div id="qp-container" style="flex: 1; overflow: auto; position: relative;"></div>
+                <div id="qp-sidebar" style="width: 360px; border-left: 1px solid var(--border); overflow-y: auto; background: var(--bg-surface); padding: 0; display: none;"></div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string? PlanXml    { get; set; }
+    [Parameter] public string? QueryText  { get; set; }
+    [Parameter] public string? ConnectionId { get; set; }
+    [Parameter] public string? DatabaseName { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    // Resolved from ConnectionHealthService when the modal opens. Used to
+    // gate ONLINE / RESUMABLE checkboxes:
+    //   ONLINE     — Enterprise / Developer / Evaluation only
+    //   RESUMABLE  — Enterprise-class AND SQL Server 2017+ (major version >= 14)
+    private int? _serverVersion;
+    private string? _serverEdition;
+    private bool _serverIsEnterpriseClass;
+    private bool CanUseOnline    => _serverIsEnterpriseClass;
+    private bool CanUseResumable => _serverIsEnterpriseClass && (_serverVersion ?? 0) >= 14;
+
+    public bool IsVisible { get; private set; }
+
+    private bool _showQueryText = false;
+    private bool _showSummary = true;
+    private bool _compactView = false;
+    private string _searchTerm = "";
+    
+    // No-pants panel visibility (collapsed by default)
+    private bool _showNoPantsPanel = false;
+
+    // Index generation options
+    private bool _indexOptionOnline = true;
+    private bool _indexOptionSortInTempDb = true;
+    private bool _indexOptionResumable = true;
+    private int _indexMaxDop = 8;
+    private string _indexNamePrefix = "IX_SQLDBA_";
+    private bool _indexAutoSuffix = true;
+    private string _indexCompression = "NONE";
+    private bool _indexOptionOptimizeForSequential = false;
+    
+    private CancellationTokenSource? _indexExecutionCts;
+    private bool _indexIsExecuting;
+    private double _indexExecutionProgress;
+    private string? _indexExecutionStatus;
+
+    // ── ROLLBACK FLAG ────────────────────────────────────────────────────────
+    // Set to false to instantly revert to the legacy JS-only renderer.
+    private const bool UseV2Renderer = true;
+
+    private DotNetObjectReference<QueryPlanModal>? _dotNetRef;
+
+    public async Task ShowAsync(string xml, string? queryText = null)
+    {
+        PlanXml       = xml;
+        QueryText     = queryText;
+        _showQueryText = false;
+        IsVisible     = true;
+
+        // Resolve server capabilities from the live health-check cache so
+        // we can gate ONLINE/RESUMABLE checkboxes appropriately. Falls back
+        // to "unknown" (everything disabled) if the server hasn't been
+        // probed yet — better than silently emitting invalid index DDL.
+        ResolveServerCapabilities();
+
+        StateHasChanged();
+        await Task.Delay(50); // allow DOM to render
+
+        if (UseV2Renderer)
+        {
+            try
+            {
+                // Apply icon set preference before rendering (guard: older published versions may not have this method)
+                try { await JS.InvokeVoidAsync("queryPlanInteropV2.setUseV2Icons", UserSettings.GetUseV2PlanIcons()); } catch { }
+
+                // Register .NET reference so the operator pane can call back for index execution
+                if (UserSettings.GetNoPantsMode() && !string.IsNullOrEmpty(ConnectionId))
+                {
+                    _dotNetRef ??= DotNetObjectReference.Create(this);
+                    try { await JS.InvokeVoidAsync("queryPlanInteropV2.setDotNetRef", _dotNetRef); } catch { }
+                }
+
+                Serilog.Log.Debug("Parsing execution plan for modal: {XmlLength} chars", xml?.Length ?? 0);
+                var json = ExecutionPlanParser.ParseToJson(xml ?? string.Empty);
+                await JS.InvokeVoidAsync("queryPlanInteropV2.showPlan", "qp-container", json, xml);
+                return;
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Error(ex, "Failed to render execution plan in modal");
+                Toast.ShowError($"Plan parsing failed: {ex.Message}");
+                
+                // Surface parse errors in the container instead of silently falling back
+                try
+                {
+                    await JS.InvokeVoidAsync("queryPlanInteropV2.showParseError", "qp-container", ex.Message);
+                    return;
+                }
+                catch
+                {
+                    // JS not available — fall through to legacy renderer
+                }
+            }
+        }
+
+        // Legacy renderer (always available as rollback)
+        await JS.InvokeVoidAsync("queryPlanInterop.showPlan", "qp-container", xml);
+    }
+
+    public async Task CloseAsync()
+    {
+        IsVisible = false;
+        PlanXml   = null;
+        QueryText = null;
+        _indexIsExecuting = false;
+        StateHasChanged();
+        try { await JS.InvokeVoidAsync("queryPlanInteropV2.setDotNetRef", (object?)null); } catch { }
+        var clearFn = UseV2Renderer ? "queryPlanInteropV2.clearPlan" : "queryPlanInterop.clearPlan";
+        await JS.InvokeVoidAsync(clearFn, "qp-container");
+    }
+
+    [JSInvokable]
+    public async Task ExecuteIndexFromOperator(string ddl)
+    {
+        if (!UserSettings.GetNoPantsMode() || string.IsNullOrEmpty(ConnectionId)) return;
+        await ExecuteSingleIndex(ddl);
+    }
+
+    private async Task Close()
+    {
+        await CloseAsync();
+        if (OnClose.HasDelegate)
+            await OnClose.InvokeAsync();
+    }
+
+    private void ToggleQueryText()
+    {
+        _showQueryText = !_showQueryText;
+    }
+
+    private async Task ToggleSummary()
+    {
+        _showSummary = !_showSummary;
+        try
+        {
+            await JS.InvokeVoidAsync("eval",
+                $"document.querySelector('.qp-v2-summary').style.display = '{(_showSummary ? "" : "none")}'");
+        }
+        catch { /* summary may not exist for this plan */ }
+    }
+
+    private async Task ToggleCompact()
+    {
+        _compactView = !_compactView;
+        try
+        {
+            await JS.InvokeVoidAsync("queryPlanInteropV2.setCompactView", _compactView);
+        }
+        catch { /* JS not available */ }
+    }
+
+    private async Task ExportPlan()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("queryPlanInteropV2.exportPlan", "query-plan-image.png");
+        }
+        catch { /* JS not available */ }
+    }
+
+    private void ShowOptimizationTips()
+    {
+        var tips = new List<string>
+        {
+            "Consider adding missing indexes for high-impact queries.",
+            "Review statistics on tables with row estimate mismatches.",
+            "Avoid implicit conversions by matching data types in predicates.",
+            "Use query hints sparingly; focus on schema optimization first.",
+            "Monitor for spills (sort/hash) indicating memory pressure.",
+            "Consider partitioning large tables for better performance."
+        };
+
+        // Could display in a modal or toast
+        Toast.ShowInfo(string.Join("\n", tips), "Optimization Tips");
+    }
+
+    private async Task OnSearchInput(ChangeEventArgs e)
+    {
+        _searchTerm = e.Value?.ToString() ?? "";
+        try { await JS.InvokeVoidAsync("queryPlanInteropV2.setSearchTerm", _searchTerm); }
+        catch { /* JS not available */ }
+    }
+
+    private async Task ClearSearch()
+    {
+        _searchTerm = "";
+        try { await JS.InvokeVoidAsync("queryPlanInteropV2.setSearchTerm", ""); }
+        catch { /* JS not available */ }
+    }
+
+    private async Task DownloadSqlplan()
+    {
+        try { await JS.InvokeVoidAsync("queryPlanInteropV2.downloadSqlplan", PlanXml); }
+        catch { Toast.ShowError("Download failed", "Could not save .sqlplan file"); }
+    }
+
+    private void OpenInPlanExplorer()
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(PlanXml))
+            {
+                Toast.ShowWarning("No plan available", "Load a query plan first");
+                return;
+            }
+            var tmpDir = Path.GetTempPath();
+            var filePath = Path.Combine(tmpDir, $"SQLTriage_Plan_{DateTime.Now:yyyyMMdd_HHmmss}.sqlplan");
+            File.WriteAllText(filePath, PlanXml);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = filePath,
+                UseShellExecute = true
+            });
+            Toast.ShowSuccess("Plan opened", "Plan Explorer should launch with the execution plan");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("Failed to open Plan Explorer", ex.Message);
+        }
+    }
+
+    private async Task SavePlan()
+    {
+        if (string.IsNullOrEmpty(PlanXml)) return;
+
+        try
+        {
+            // Save to local storage with timestamp
+            var key = $"plan_{DateTime.Now.ToString("yyyyMMdd_HHmmss")}";
+            await JS.InvokeVoidAsync("localStorage.setItem", key, PlanXml);
+            Toast.ShowSuccess("Plan saved for comparison");
+        }
+        catch { /* JS not available */ }
+    }
+
+    private async Task ExecuteSingleIndex(string rawDdl)
+    {
+        if (_indexIsExecuting) return; // prevent double-fire
+
+        _indexIsExecuting = true;
+        _indexExecutionStatus = "Creating index...";
+        _indexExecutionCts = new CancellationTokenSource();
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var serverConn = ConnectionManager.GetEnabledConnections()
+                .FirstOrDefault(c => c.Id == ConnectionId || c.ServerNames == ConnectionId);
+            if (serverConn == null)
+            {
+                Toast.ShowError("Could not find server connection. Re-open the plan from a live query result.");
+                return;
+            }
+
+            var server  = serverConn.GetServerList().FirstOrDefault() ?? "";
+            var connStr = serverConn.GetConnectionString(server, DatabaseName ?? "master");
+            var ddl     = ApplyIndexOptions(rawDdl);
+
+            using var sqlConn = new SqlConnection(connStr);
+            await sqlConn.OpenAsync(_indexExecutionCts.Token);
+            using var cmd = new SqlCommand(ddl, sqlConn);
+            cmd.CommandTimeout = 0; // index creation can be long
+            await cmd.ExecuteNonQueryAsync(_indexExecutionCts.Token);
+
+            _indexExecutionStatus = "Done";
+            Toast.ShowSuccess("Index created successfully");
+        }
+        catch (OperationCanceledException)
+        {
+            _indexExecutionStatus = "Cancelled";
+            Toast.ShowWarning("Index creation cancelled");
+        }
+        catch (Exception ex)
+        {
+            _indexExecutionStatus = "Failed";
+            Serilog.Log.Error(ex, "Failed to create index from operator");
+            Toast.ShowError($"Index creation failed: {ex.Message}");
+        }
+        finally
+        {
+            _indexIsExecuting = false;
+            _indexExecutionCts?.Dispose();
+            _indexExecutionCts = null;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private string ApplyIndexOptions(string ddl)
+    {
+        // Apply user-selected options
+        ddl = ddl
+            .Replace("{ONLINE}", _indexOptionOnline ? "ON" : "OFF")
+            .Replace("{SORT_IN_TEMPDB}", _indexOptionSortInTempDb ? "ON" : "OFF")
+            .Replace("{MAXDOP}", _indexMaxDop.ToString())
+            .Replace("{COMPRESSION}", _indexCompression)
+            .Replace("{RESUMABLE}", _indexOptionResumable ? ",\n        RESUMABLE = ON" : "")
+            .Replace("{SEQUENTIAL_KEY}", _indexOptionOptimizeForSequential ? ",\n        OPTIMIZE_FOR_SEQUENTIAL_KEY = ON" : "");
+
+        // Also handle double-brace variants from the parser
+        ddl = ddl
+            .Replace("{{ONLINE}}", _indexOptionOnline ? "ON" : "OFF")
+            .Replace("{{SORT_IN_TEMPDB}}", _indexOptionSortInTempDb ? "ON" : "OFF")
+            .Replace("{{MAXDOP}}", _indexMaxDop.ToString())
+            .Replace("{{COMPRESSION}}", _indexCompression)
+            .Replace("{{RESUMABLE}}", _indexOptionResumable ? ",\n        RESUMABLE = ON" : "")
+            .Replace("{{SEQUENTIAL_KEY}}", _indexOptionOptimizeForSequential ? ",\n        OPTIMIZE_FOR_SEQUENTIAL_KEY = ON" : "");
+
+        // Strip trailing comment lines (-- ...) — SQL Server executes them fine but strip for clarity
+        var lines = ddl.Split('\n')
+            .Where(l => !l.TrimStart().StartsWith("--"))
+            .ToList();
+        return string.Join('\n', lines).Trim().TrimEnd(';') + ";";
+    }
+
+    private void CancelIndexCreation()
+    {
+        _indexExecutionCts?.Cancel();
+    }
+
+    private void ResolveServerCapabilities()
+    {
+        _serverVersion = null;
+        _serverEdition = null;
+        _serverIsEnterpriseClass = false;
+
+        if (string.IsNullOrEmpty(ConnectionId)) return;
+        var conn = ConnectionManager.GetConnection(ConnectionId);
+        if (conn == null) return;
+
+        // ServerNames is comma-separated; the health service keys per-server,
+        // so probe the first one (DDL targets a single instance via the
+        // SqlConnection passed to ExecuteCreateIndexAsync, so this matches
+        // what the user will actually run against).
+        var firstServer = conn.ServerNames.Split(',', StringSplitOptions.RemoveEmptyEntries
+                                                    | StringSplitOptions.TrimEntries)
+                              .FirstOrDefault();
+        if (string.IsNullOrEmpty(firstServer)) return;
+
+        var caps = HealthService.GetCapabilities(firstServer);
+        if (caps == null) return;
+        _serverVersion = caps.MajorVersion > 0 ? caps.MajorVersion : null;
+        _serverEdition = caps.Edition;
+        _serverIsEnterpriseClass = caps.IsEnterpriseClass;
+
+        // Force-clear flags whose checkbox is now disabled, so the generated
+        // DDL doesn't carry over a stale "ON" from a previous server with
+        // different capabilities. The user can re-enable manually if the
+        // checkbox is available.
+        if (!CanUseOnline)    _indexOptionOnline    = false;
+        if (!CanUseResumable) _indexOptionResumable = false;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _indexExecutionCts?.Cancel();
+        _indexExecutionCts?.Dispose();
+        try { await JS.InvokeVoidAsync("queryPlanInteropV2.setDotNetRef", (object?)null); } catch { }
+        _dotNetRef?.Dispose();
+    }
+}

@@ -1,0 +1,722 @@
+/* In the name of God, the Merciful, the Compassionate */
+
+using System;
+using System.IO;
+using System.Text.Json;
+
+namespace SQLTriage.Data
+{
+    /// <summary>
+    /// Service for managing user settings that persist across sessions.
+    /// Stores settings in a JSON file in the application directory.
+    /// Thread-safe: all reads/writes are protected by a lock.
+    /// </summary>
+    public class UserSettingsService : Services.IUserSettingsService
+    {
+        private readonly string _settingsFilePath;
+        private readonly object _lock = new();
+        private UserSettings _settings;
+
+        public UserSettingsService()
+        {
+            var appDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SQLTriage");
+            Directory.CreateDirectory(appDataDir);
+            _settingsFilePath = Path.Combine(appDataDir, "user-settings.json");
+            _settings = LoadSettings();
+        }
+
+        /// <summary>
+        /// User settings that persist across sessions
+        /// </summary>
+        public class UserSettings
+        {
+            public int RefreshIntervalSeconds { get; set; } = 15;
+            public bool AutoRefresh { get; set; } = true;
+            public int DefaultTimeRangeMinutes { get; set; } = 60;
+            public bool ShowDiagnosticPane { get; set; } = false;
+            public string DefaultDashboardId { get; set; } = "";
+            /// <summary>Which view the home route ("/") renders: "hero" (marketing landing),
+            /// "guide" (the Guide page), or "dashboard" (Repository Dashboard). Default "hero".</summary>
+            public string LandingView { get; set; } = "hero";
+            /// <summary>Data source: "sqlwatch" or "pm" (PerformanceMonitor)</summary>
+            public string DataSource { get; set; } = "master";
+            /// <summary>Radzen Blazor UI theme name (e.g. "dark", "material3", "fluent-dark")</summary>
+            public string RadzenUiTheme { get; set; } = "dark";
+            /// <summary>WebView2 zoom level as a percentage (e.g. 100, 125, 150). Default 150.</summary>
+            public int ZoomLevel { get; set; } = 150;
+
+            // ── UX / Appearance ──
+            /// <summary>Enable UI animations (e.g. terminal typing effect). Off = blazing fast.</summary>
+            public bool EnableAnimations { get; set; } = false;
+            /// <summary>When true, pages yield before heavy initialisation so the UI renders a
+            /// skeleton screen instantly. Feels snappier but keeps more concurrent state in
+            /// memory. Turn off on memory-constrained servers (&lt;500 MB budget).</summary>
+            public bool FastAppLoad { get; set; } = false;
+
+            // ── Auto-Export Settings ──
+            public bool AutoExportAuditCsv { get; set; } = false;
+            public bool AutoExportAuditJson { get; set; } = false;
+            public bool AutoExportAuditPdf { get; set; } = false;
+            public bool AutoExportQuickCheckCsv { get; set; } = false;
+            public bool AutoExportQuickCheckPdf { get; set; } = false;
+            public bool AutoExportVulnerabilityAssessmentCsv { get; set; } = false;
+            public bool AutoExportVulnerabilityAssessmentPdf { get; set; } = false;
+
+            // ── Diagnostics ──
+            /// <summary>When true, silent catch blocks emit warnings to the log file. No restart required.</summary>
+            public bool EnableDebugLogging { get; set; } = false;
+            /// <summary>When true, real server names are replaced with SRV-001 aliases in log output.</summary>
+            public bool AnonymiseServerNames { get; set; } = false;
+
+            // ── Query Plan Icons ──
+            /// <summary>When true, uses high-res individual PNG icons for query plans. When false, uses coloured sprite sheet (v1).</summary>
+            public bool UseV2PlanIcons { get; set; } = false;
+
+            // ── VA Query Visibility ──
+            /// <summary>When true, the SQL query executed for each VA check is shown inline in the results table.</summary>
+            public bool ShowVaQueries { get; set; } = false;
+
+            // ── Onboarding ──
+            /// <summary>Set to true once the user completes or dismisses the first-run onboarding wizard.</summary>
+            public bool OnboardingComplete { get; set; } = false;
+
+            // ── Release Notes ──
+            /// <summary>The last version for which the "What's new" modal was shown. Empty = never shown.</summary>
+            public string LastSeenVersion { get; set; } = "";
+            /// <summary>When true, shows the "What's new" modal automatically when the version changes.</summary>
+            public bool ShowReleaseNotesOnUpdate { get; set; } = true;
+
+            // ── No-Pants Mode ──
+            /// <summary>When true, shows dangerous server-modification controls in dashboards. Off by default.</summary>
+            public bool NoPantsMode { get; set; } = false;
+            /// <summary>Whether the user has accepted the no-pants disclaimer at least once.</summary>
+            public bool NoPantsDisclaimerAccepted { get; set; } = false;
+
+            // ── Accessibility ──
+            /// <summary>When true, status indicators use a colorblind-safe palette (blue/yellow/orange) instead of red/green.</summary>
+            public bool ColorBlindMode { get; set; } = false;
+            public bool NarrationMode { get; set; } = false;
+
+            // ── Report identity ──
+            /// <summary>Company name shown on exported reports. Blank = none.</summary>
+            public string ReportCompanyName { get; set; } = "";
+            /// <summary>Operator / author name on reports. Blank = the local Windows username (without the computer name).</summary>
+            public string ReportOperatorName { get; set; } = "";
+            /// <summary>When true, exported reports carry a DRAFT watermark for non-production servers. Default OFF.</summary>
+            public bool ReportDraftWatermark { get; set; } = false;
+
+            // ── Live Sessions Monitoring ──
+            /// <summary>Auto-refresh enabled for Live Sessions page.</summary>
+            public bool SessionsAutoRefresh { get; set; } = true;
+            /// <summary>Refresh interval in seconds for Live Sessions page.</summary>
+            public int SessionsRefreshInterval { get; set; } = 5;
+            /// <summary>Hide sleeping sessions by default.</summary>
+            public bool SessionsHideSleeping { get; set; } = false;
+            /// <summary>Show only blocked/blocking sessions.</summary>
+            public bool SessionsShowOnlyBlocked { get; set; } = false;
+            /// <summary>Hide low-IO sessions.</summary>
+            public bool SessionsHideLowIO { get; set; } = false;
+            /// <summary>Search text for filtering sessions.</summary>
+            public string SessionsSearchText { get; set; } = "";
+            /// <summary>Maximum number of sessions to display.</summary>
+            public int SessionsMaxDisplay { get; set; } = 500;
+
+            // ── Performance Inspector ──
+            /// <summary>When true, enables performance tracing for dashboard loads.</summary>
+            public bool EnablePerfInspector { get; set; } = true;
+
+            // ── Query Concurrency ──
+            /// <summary>Maximum concurrent heavy queries (TimeSeries panels). Default 5. Range 1-20.</summary>
+            public int MaxHeavyConcurrent { get; set; } = 5;
+            /// <summary>Maximum concurrent light queries (StatCard, BarGauge, CheckStatus, DataGrid). Default 10. Range 2-50.</summary>
+            public int MaxLightConcurrent { get; set; } = 10;
+            /// <summary>Maximum concurrent queries per individual server. Default 3. Range 1-10.</summary>
+            public int MaxConcurrentPerServer { get; set; } = 3;
+            /// <summary>When true, temporarily raises concurrency limits during burst periods.</summary>
+            public bool EnableBurstMode { get; set; } = false;
+            /// <summary>Multiplier applied to concurrency limits during burst mode. Default 2.0. Range 1.0-5.0.</summary>
+            public double BurstConcurrencyMultiplier { get; set; } = 2.0;
+            /// <summary>Duration of burst mode in seconds. Default 60. Range 10-300.</summary>
+            public int BurstDurationSec { get; set; } = 60;
+
+            // ── Cache ──
+            /// <summary>Maximum data points returned per chart series from the SQLite cache. Lower = less memory, faster render.</summary>
+            public int ChartDataPointCap { get; set; } = 2000;
+
+            // ── Welcome tour ──
+            /// <summary>True once the user has either taken or dismissed the first-launch
+            /// welcome tour. Suppresses the CTA toast on subsequent launches. Users can
+            /// re-trigger the tour from Settings.</summary>
+            public bool HasSeenWelcomeTour { get; set; } = false;
+
+            // ── Remediation Cost Estimate ──
+            /// <summary>When true, CIO Dashboard displays the estimated remediation cost block. Off hides the costing entirely.</summary>
+            public bool ShowRemediationCost { get; set; } = true;
+            /// <summary>Hourly rate (USD) used to compute the raw technical labour line.</summary>
+            public double RemediationHourlyRate { get; set; } = 295.0;
+            /// <summary>Compliance tier driving the project-cost multiplier. One of: "None", "SOC2", "ISO27001", "PCI", "SOX", "HIPAA".</summary>
+            public string ComplianceTier { get; set; } = "None";
+            /// <summary>Optional consultancy brand displayed in the dashboard conversion footer. Blank hides the footer entirely.</summary>
+            public string ConsultancyName { get; set; } = "";
+            /// <summary>Typical engagement duration string (e.g. "1-2 weeks"). Shown alongside ConsultancyName. Hidden if blank.</summary>
+            public string EngagementDuration { get; set; } = "";
+            /// <summary>Monthly OPEX per server (NZD) — running costs + ops management + support services. Drives 3-year TCO calculation.</summary>
+            public double MonthlyOpexPerServerNZD { get; set; } = 400.0;
+
+            // ── Threshold-Based Highlighting (triage aid; not monitoring) ──
+            /// <summary>When true, rows/bubbles exceeding any configured threshold are highlighted. Off by default — opt-in.</summary>
+            public bool ThresholdsEnabled { get; set; } = false;
+            /// <summary>CPU time threshold in milliseconds. Sessions with CpuTime &gt;= this value are highlighted. 0 = disabled.</summary>
+            public int ThresholdCpuMs { get; set; } = 5000;
+            /// <summary>Wait time threshold in milliseconds. Sessions with WaitTime &gt;= this value are highlighted. 0 = disabled.</summary>
+            public int ThresholdWaitTimeMs { get; set; } = 1000;
+            /// <summary>Memory threshold in MB. Sessions with MemoryUsageKB / 1024 &gt;= this value are highlighted. 0 = disabled.</summary>
+            public int ThresholdMemoryMb { get; set; } = 0;
+            /// <summary>Logical reads threshold in KB. Sessions with LogicalReads &gt;= this value are highlighted. 0 = disabled.</summary>
+            public int ThresholdReadsKb { get; set; } = 0;
+            /// <summary>Writes threshold in KB. Sessions with Writes &gt;= this value are highlighted. 0 = disabled.</summary>
+            public int ThresholdWritesKb { get; set; } = 0;
+            /// <summary>Total elapsed time threshold in milliseconds. Sessions with TotalElapsedTime &gt;= this value are highlighted. 0 = disabled.</summary>
+            public int ThresholdDurationMs { get; set; } = 5000;
+
+            // ── Updates ──
+            /// <summary>Optional HTTP/HTTPS proxy URL for update checks. Null = use system proxy.</summary>
+            public string? UpdateProxyUrl { get; set; }
+
+            // ── Alert Baseline ──
+            /// <summary>When true, alert evaluation collects baseline samples and applies IQR-based dynamic thresholds.</summary>
+            public bool AlertBaselineEnabled { get; set; } = true;
+            /// <summary>When true, baseline thresholds are computed per-server rather than globally across all servers.</summary>
+            public bool AlertBaselinePerServer { get; set; } = true;
+
+            // ── Notifications ──
+            /// <summary>When false, toast notifications are suppressed (the nav notifications switch is off).</summary>
+            public bool NotificationsEnabled { get; set; } = true;
+
+            // ── Experimental Mode ──
+            /// <summary>When true, shows experimental/preview features that are not yet production-ready.</summary>
+            public bool ExperimentalMode { get; set; } = false;
+            /// <summary>When true, shows the Maturity Roadmap page in the nav. Requires No-Pants + Experimental. Off by default.</summary>
+            public bool ShowMaturityRoadmap { get; set; } = false;
+
+            // ── Vulnerability Assessment Scheduled PDF ──
+            public bool VaScheduledPdfEnabled { get; set; } = false;
+            public string VaScheduledPdfType { get; set; } = "Weekly";
+            public string VaScheduledPdfTime { get; set; } = "07:30";
+            public int VaScheduledPdfDayOfWeek { get; set; } = 1;
+            public int VaScheduledPdfDayOfMonth { get; set; } = 1;
+            public DateTime VaScheduledPdfLastRun { get; set; } = DateTime.MinValue;
+
+            // ── Roadmap Scheduled PDF ──
+            /// <summary>When true, the Diagnostics Roadmap page auto-exports a PDF on the configured schedule.</summary>
+            public bool RoadmapScheduledPdfEnabled { get; set; } = false;
+            /// <summary>Schedule type: "Daily", "Weekly", "Monthly".</summary>
+            public string RoadmapScheduledPdfType { get; set; } = "Weekly";
+            /// <summary>Time of day in HH:mm for the scheduled export.</summary>
+            public string RoadmapScheduledPdfTime { get; set; } = "07:00";
+            /// <summary>Day of week (0=Sun…6=Sat) for Weekly schedule.</summary>
+            public int RoadmapScheduledPdfDayOfWeek { get; set; } = 1; // Monday
+            /// <summary>Day of month (1-28) for Monthly schedule.</summary>
+            public int RoadmapScheduledPdfDayOfMonth { get; set; } = 1;
+            /// <summary>When true, exports one PDF per domain instead of a combined PDF.</summary>
+            public bool RoadmapScheduledPdfSplitByDomain { get; set; } = false;
+            /// <summary>Last time the scheduled roadmap PDF was exported (UTC).</summary>
+            public DateTime RoadmapScheduledPdfLastRun { get; set; } = DateTime.MinValue;
+
+            /// <summary>Immutable snapshot of VA schedule settings for thread-safe reads.</summary>
+            public record VaScheduleSnapshot(
+                bool Enabled,
+                string Type,
+                string Time,
+                int DayOfWeek,
+                int DayOfMonth,
+                DateTime LastRun)
+            {
+                public VaScheduleSnapshot(UserSettings s) : this(
+                    s.VaScheduledPdfEnabled,
+                    s.VaScheduledPdfType,
+                    s.VaScheduledPdfTime,
+                    s.VaScheduledPdfDayOfWeek,
+                    s.VaScheduledPdfDayOfMonth,
+                    s.VaScheduledPdfLastRun)
+                { }
+            }
+
+            /// <summary>Immutable snapshot of roadmap schedule settings for thread-safe reads.</summary>
+            public record RoadmapScheduleSnapshot(
+                bool Enabled,
+                string Type,
+                string Time,
+                int DayOfWeek,
+                int DayOfMonth,
+                bool SplitByDomain,
+                DateTime LastRun)
+            {
+                public RoadmapScheduleSnapshot(UserSettings s) : this(
+                    s.RoadmapScheduledPdfEnabled,
+                    s.RoadmapScheduledPdfType,
+                    s.RoadmapScheduledPdfTime,
+                    s.RoadmapScheduledPdfDayOfWeek,
+                    s.RoadmapScheduledPdfDayOfMonth,
+                    s.RoadmapScheduledPdfSplitByDomain,
+                    s.RoadmapScheduledPdfLastRun)
+                { }
+            }
+        }
+
+        private UserSettings LoadSettings() => ConfigFileHelper.Load<UserSettings>(_settingsFilePath);
+
+        public void SaveSettings()
+        {
+            lock (_lock)
+            {
+                try { ConfigFileHelper.Save(_settingsFilePath, _settings); }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[UserSettings] Save failed: {ex.Message}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Resets all settings to factory defaults and saves. Preserves nothing.
+        /// </summary>
+        public void ResetToDefaults()
+        {
+            lock (_lock)
+            {
+                _settings = new UserSettings();
+                SaveSettings();
+            }
+            // Fire mode-change events so NavMenu toggles update immediately
+            OnNoPantsModeChanged?.Invoke(false);
+            OnExperimentalModeChanged?.Invoke(false);
+        }
+
+        public string GetRadzenUiTheme() { lock (_lock) return _settings.RadzenUiTheme; }
+
+        public void SetRadzenUiTheme(string theme)
+        {
+            lock (_lock) _settings.RadzenUiTheme = theme;
+            SaveSettings();
+        }
+
+        // ── UX / Appearance ──
+        public bool GetEnableAnimations() { lock (_lock) return _settings.EnableAnimations; }
+        public void SetEnableAnimations(bool enabled)
+        {
+            lock (_lock) _settings.EnableAnimations = enabled;
+            SaveSettings();
+        }
+
+        // ── Fast App Load ──
+        public bool GetFastAppLoad() { lock (_lock) return _settings.FastAppLoad; }
+        public void SetFastAppLoad(bool enabled)
+        {
+            lock (_lock) _settings.FastAppLoad = enabled;
+            SaveSettings();
+        }
+
+        public int GetRefreshInterval() { lock (_lock) return _settings.RefreshIntervalSeconds; }
+
+        public void SetRefreshInterval(int seconds)
+        {
+            lock (_lock) _settings.RefreshIntervalSeconds = seconds;
+            SaveSettings();
+        }
+
+        public bool GetAutoRefresh() { lock (_lock) return _settings.AutoRefresh; }
+
+        public void SetAutoRefresh(bool enabled)
+        {
+            lock (_lock) _settings.AutoRefresh = enabled;
+            SaveSettings();
+        }
+
+        public int GetDefaultTimeRange() { lock (_lock) return _settings.DefaultTimeRangeMinutes; }
+
+        public void SetDefaultTimeRange(int minutes)
+        {
+            lock (_lock) _settings.DefaultTimeRangeMinutes = minutes;
+            SaveSettings();
+        }
+
+        public bool GetShowDiagnosticPane() { lock (_lock) return _settings.ShowDiagnosticPane; }
+
+        public void SetShowDiagnosticPane(bool enabled)
+        {
+            lock (_lock) _settings.ShowDiagnosticPane = enabled;
+            SaveSettings();
+        }
+
+        public string GetDefaultDashboardId() { lock (_lock) return _settings.DefaultDashboardId; }
+
+        public void SetDefaultDashboardId(string dashboardId)
+        {
+            lock (_lock) _settings.DefaultDashboardId = dashboardId;
+            SaveSettings();
+        }
+
+        public string GetLandingView() { lock (_lock) return string.IsNullOrWhiteSpace(_settings.LandingView) ? "hero" : _settings.LandingView; }
+
+        public void SetLandingView(string view)
+        {
+            lock (_lock) _settings.LandingView = view;
+            SaveSettings();
+        }
+
+        public string GetDataSource() { lock (_lock) return _settings.DataSource; }
+
+        public void SetDataSource(string source)
+        {
+            lock (_lock) _settings.DataSource = source;
+            SaveSettings();
+        }
+
+        public int GetZoomLevel() { lock (_lock) return _settings.ZoomLevel; }
+
+        public void SetZoomLevel(int zoomPercent)
+        {
+            lock (_lock) _settings.ZoomLevel = zoomPercent;
+            SaveSettings();
+            OnZoomChanged?.Invoke(zoomPercent);
+        }
+
+        /// <summary>
+        /// Fired when zoom level changes so MainWindow can apply it to WebView2.
+        /// </summary>
+        public event Action<int>? OnZoomChanged;
+
+        // ── Debug Logging ──
+        public bool GetDebugLogging() { lock (_lock) return _settings.EnableDebugLogging; }
+
+        public void SetDebugLogging(bool enabled)
+        {
+            lock (_lock) _settings.EnableDebugLogging = enabled;
+            SaveSettings();
+            OnDebugLoggingChanged?.Invoke(enabled);
+        }
+
+        /// <summary>Fired when debug logging is toggled so App can adjust Serilog level at runtime.</summary>
+        public event Action<bool>? OnDebugLoggingChanged;
+
+        // ── Anonymise Server Names in Logs ──
+        public bool GetAnonymiseServerNames() { lock (_lock) return _settings.AnonymiseServerNames; }
+
+        public void SetAnonymiseServerNames(bool enabled)
+        {
+            lock (_lock) _settings.AnonymiseServerNames = enabled;
+            SaveSettings();
+
+            // When the user disables anonymisation, drop the existing alias
+            // map so previously-anonymised log entries don't keep their old
+            // aliases on subsequent runs. Symmetric reset on enable too —
+            // forces a fresh allocation of aliases rather than reusing
+            // stale ones from a prior session.
+            LogAnon.Reset();
+        }
+
+        // ── Query Plan Icons ──
+        public bool GetUseV2PlanIcons() { lock (_lock) return _settings.UseV2PlanIcons; }
+
+        public void SetUseV2PlanIcons(bool enabled)
+        {
+            lock (_lock) _settings.UseV2PlanIcons = enabled;
+            SaveSettings();
+        }
+
+        // ── VA Query Visibility ──
+        public bool GetShowVaQueries() { lock (_lock) return _settings.ShowVaQueries; }
+
+        public void SetShowVaQueries(bool enabled)
+        {
+            lock (_lock) _settings.ShowVaQueries = enabled;
+            SaveSettings();
+        }
+
+        // ── No-Pants Mode ──
+        public bool GetNoPantsMode() { lock (_lock) return BuildModules.Community ? false : _settings.NoPantsMode; }
+
+        public void SetNoPantsMode(bool enabled)
+        {
+            if (BuildModules.Community) return;
+            lock (_lock) _settings.NoPantsMode = enabled;
+            SaveSettings();
+            OnNoPantsModeChanged?.Invoke(enabled);
+        }
+
+        public bool GetNoPantsDisclaimerAccepted() { lock (_lock) return _settings.NoPantsDisclaimerAccepted; }
+
+        public void SetNoPantsDisclaimerAccepted(bool accepted)
+        {
+            lock (_lock) _settings.NoPantsDisclaimerAccepted = accepted;
+            SaveSettings();
+        }
+
+        /// <summary>Fired when no-pants mode is toggled so dashboard components can show/hide dangerous controls.</summary>
+        public event Action<bool>? OnNoPantsModeChanged;
+
+        // ── Color-Blind Mode ──
+        public bool GetColorBlindMode() { lock (_lock) return _settings.ColorBlindMode; }
+        public void SetColorBlindMode(bool enabled)
+        {
+            lock (_lock) _settings.ColorBlindMode = enabled;
+            SaveSettings();
+            OnColorBlindModeChanged?.Invoke(enabled);
+        }
+        public event Action<bool>? OnColorBlindModeChanged;
+
+        // ── Narration Mode (progressive disclosure: opinionated commentary on demand) ──
+        public bool GetNarrationMode() { lock (_lock) return _settings.NarrationMode; }
+        public void SetNarrationMode(bool enabled)
+        {
+            lock (_lock) _settings.NarrationMode = enabled;
+            SaveSettings();
+            OnNarrationModeChanged?.Invoke(enabled);
+        }
+        public event Action<bool>? OnNarrationModeChanged;
+
+        // ── Report identity ──
+        public string GetReportCompanyName()  { lock (_lock) return _settings.ReportCompanyName ?? ""; }
+        public void   SetReportCompanyName(string v) { lock (_lock) _settings.ReportCompanyName = v ?? ""; SaveSettings(); }
+        public string GetReportOperatorName() { lock (_lock) return _settings.ReportOperatorName ?? ""; }
+        public void   SetReportOperatorName(string v) { lock (_lock) _settings.ReportOperatorName = v ?? ""; SaveSettings(); }
+        public bool   GetReportDraftWatermark()  { lock (_lock) return _settings.ReportDraftWatermark; }
+        public void   SetReportDraftWatermark(bool v) { lock (_lock) _settings.ReportDraftWatermark = v; SaveSettings(); }
+
+        // ── Alert Baseline ──
+        public bool GetAlertBaselineEnabled() { lock (_lock) return _settings.AlertBaselineEnabled; }
+        public void SetAlertBaselineEnabled(bool enabled)
+        {
+            lock (_lock) _settings.AlertBaselineEnabled = enabled;
+            SaveSettings();
+            OnAlertBaselineEnabledChanged?.Invoke(enabled);
+        }
+        public event Action<bool>? OnAlertBaselineEnabledChanged;
+
+        public bool GetAlertBaselinePerServer() { lock (_lock) return _settings.AlertBaselinePerServer; }
+        public void SetAlertBaselinePerServer(bool enabled)
+        {
+            lock (_lock) _settings.AlertBaselinePerServer = enabled;
+            SaveSettings();
+        }
+
+        // ── Experimental Mode ──
+        public bool GetExperimentalMode() { lock (_lock) return BuildModules.Community ? false : _settings.ExperimentalMode; }
+
+        public void SetExperimentalMode(bool enabled)
+        {
+            if (BuildModules.Community) return;
+            lock (_lock) _settings.ExperimentalMode = enabled;
+            SaveSettings();
+            OnExperimentalModeChanged?.Invoke(enabled);
+        }
+
+        /// <summary>Fired when experimental mode is toggled.</summary>
+        public event Action<bool>? OnExperimentalModeChanged;
+
+        // ── Notifications ──
+        public bool GetNotificationsEnabled() { lock (_lock) return _settings.NotificationsEnabled; }
+
+        public void SetNotificationsEnabled(bool enabled)
+        {
+            lock (_lock) _settings.NotificationsEnabled = enabled;
+            SaveSettings();
+            OnNotificationsEnabledChanged?.Invoke(enabled);
+        }
+
+        /// <summary>Fired when the notifications switch is toggled.</summary>
+        public event Action<bool>? OnNotificationsEnabledChanged;
+
+        // ── Maturity Roadmap ──
+        public bool GetShowMaturityRoadmap() { lock (_lock) return _settings.ShowMaturityRoadmap; }
+        public void SetShowMaturityRoadmap(bool enabled)
+        {
+            lock (_lock) _settings.ShowMaturityRoadmap = enabled;
+            SaveSettings();
+            OnShowMaturityRoadmapChanged?.Invoke(enabled);
+        }
+
+        /// <summary>Fired when Show Maturity Roadmap is toggled.</summary>
+        public event Action<bool>? OnShowMaturityRoadmapChanged;
+
+        // ── Performance Inspector ──
+        public bool GetEnablePerfInspector() { lock (_lock) return _settings.EnablePerfInspector; }
+        public void SetEnablePerfInspector(bool enabled)
+        {
+            lock (_lock) _settings.EnablePerfInspector = enabled;
+            SaveSettings();
+        }
+
+        // ── Onboarding ──
+        public bool GetOnboardingComplete() { lock (_lock) return _settings.OnboardingComplete; }
+        public void SetOnboardingComplete(bool complete) { lock (_lock) _settings.OnboardingComplete = complete; SaveSettings(); }
+
+        // ── Release Notes ──
+        public string GetLastSeenVersion() { lock (_lock) return _settings.LastSeenVersion; }
+        public void SetLastSeenVersion(string version) { lock (_lock) _settings.LastSeenVersion = version; SaveSettings(); }
+        public bool GetShowReleaseNotesOnUpdate() { lock (_lock) return _settings.ShowReleaseNotesOnUpdate; }
+        public void SetShowReleaseNotesOnUpdate(bool value) { lock (_lock) _settings.ShowReleaseNotesOnUpdate = value; SaveSettings(); }
+
+        // ── Live Sessions Monitoring ──
+        public bool GetSessionsAutoRefresh() { lock (_lock) return _settings.SessionsAutoRefresh; }
+        public void SetSessionsAutoRefresh(bool value) { lock (_lock) _settings.SessionsAutoRefresh = value; SaveSettings(); }
+
+        public int GetSessionsRefreshInterval() { lock (_lock) return _settings.SessionsRefreshInterval; }
+        public void SetSessionsRefreshInterval(int seconds) { lock (_lock) _settings.SessionsRefreshInterval = seconds; SaveSettings(); }
+
+        public bool GetSessionsHideSleeping() { lock (_lock) return _settings.SessionsHideSleeping; }
+        public void SetSessionsHideSleeping(bool value) { lock (_lock) _settings.SessionsHideSleeping = value; SaveSettings(); }
+
+        public bool GetSessionsShowOnlyBlocked() { lock (_lock) return _settings.SessionsShowOnlyBlocked; }
+        public void SetSessionsShowOnlyBlocked(bool value) { lock (_lock) _settings.SessionsShowOnlyBlocked = value; SaveSettings(); }
+
+        public bool GetSessionsHideLowIO() { lock (_lock) return _settings.SessionsHideLowIO; }
+        public void SetSessionsHideLowIO(bool value) { lock (_lock) _settings.SessionsHideLowIO = value; SaveSettings(); }
+
+        public string GetSessionsSearchText() { lock (_lock) return _settings.SessionsSearchText; }
+        public void SetSessionsSearchText(string text) { lock (_lock) _settings.SessionsSearchText = text; SaveSettings(); }
+
+        public int GetSessionsMaxDisplay() { lock (_lock) return _settings.SessionsMaxDisplay; }
+        public void SetSessionsMaxDisplay(int count) { lock (_lock) _settings.SessionsMaxDisplay = count; SaveSettings(); }
+
+        public int GetChartDataPointCap() { lock (_lock) return _settings.ChartDataPointCap; }
+        public void SetChartDataPointCap(int cap) { lock (_lock) _settings.ChartDataPointCap = Math.Clamp(cap, 500, 10000); SaveSettings(); }
+
+        public bool GetShowRemediationCost() { lock (_lock) return _settings.ShowRemediationCost; }
+        public void SetShowRemediationCost(bool enabled) { lock (_lock) _settings.ShowRemediationCost = enabled; SaveSettings(); }
+
+        public bool GetHasSeenWelcomeTour() { lock (_lock) return _settings.HasSeenWelcomeTour; }
+        public void SetHasSeenWelcomeTour(bool seen) { lock (_lock) _settings.HasSeenWelcomeTour = seen; SaveSettings(); }
+
+        public double GetRemediationHourlyRate() { lock (_lock) return _settings.RemediationHourlyRate; }
+        public void SetRemediationHourlyRate(double rate) { lock (_lock) _settings.RemediationHourlyRate = Math.Clamp(rate, 50.0, 1000.0); SaveSettings(); }
+
+        public string GetComplianceTier() { lock (_lock) return _settings.ComplianceTier; }
+        public void SetComplianceTier(string tier) { lock (_lock) _settings.ComplianceTier = string.IsNullOrWhiteSpace(tier) ? "None" : tier; SaveSettings(); }
+
+        public string GetConsultancyName() { lock (_lock) return _settings.ConsultancyName; }
+        public void SetConsultancyName(string name) { lock (_lock) _settings.ConsultancyName = name ?? ""; SaveSettings(); }
+
+        public string GetEngagementDuration() { lock (_lock) return _settings.EngagementDuration; }
+        public void SetEngagementDuration(string duration) { lock (_lock) _settings.EngagementDuration = duration ?? ""; SaveSettings(); }
+
+        public double GetMonthlyOpexPerServerNZD() { lock (_lock) return _settings.MonthlyOpexPerServerNZD; }
+        public void SetMonthlyOpexPerServerNZD(double opex) { lock (_lock) _settings.MonthlyOpexPerServerNZD = Math.Clamp(opex, 0, 10000); SaveSettings(); }
+
+        public int GetMaxHeavyConcurrent() { lock (_lock) return _settings.MaxHeavyConcurrent; }
+        public void SetMaxHeavyConcurrent(int limit) { lock (_lock) _settings.MaxHeavyConcurrent = Math.Clamp(limit, 1, 30); SaveSettings(); }
+
+        public int GetMaxLightConcurrent() { lock (_lock) return _settings.MaxLightConcurrent; }
+        public void SetMaxLightConcurrent(int limit) { lock (_lock) _settings.MaxLightConcurrent = Math.Clamp(limit, 2, 50); SaveSettings(); }
+
+        public int GetMaxConcurrentPerServer() { lock (_lock) return _settings.MaxConcurrentPerServer; }
+        public void SetMaxConcurrentPerServer(int limit) { lock (_lock) _settings.MaxConcurrentPerServer = Math.Clamp(limit, 1, 10); SaveSettings(); }
+
+        public bool GetEnableBurstMode() { lock (_lock) return _settings.EnableBurstMode; }
+        public void SetEnableBurstMode(bool enabled) { lock (_lock) _settings.EnableBurstMode = enabled; SaveSettings(); }
+
+        public double GetBurstConcurrencyMultiplier() { lock (_lock) return _settings.BurstConcurrencyMultiplier; }
+        public void SetBurstConcurrencyMultiplier(double mult) { lock (_lock) _settings.BurstConcurrencyMultiplier = Math.Clamp(mult, 1.0, 5.0); SaveSettings(); }
+
+        public int GetBurstDurationSec() { lock (_lock) return _settings.BurstDurationSec; }
+        public void SetBurstDurationSec(int sec) { lock (_lock) _settings.BurstDurationSec = Math.Clamp(sec, 10, 300); SaveSettings(); }
+
+        public string? GetUpdateProxyUrl() { lock (_lock) return _settings.UpdateProxyUrl; }
+        public void SetUpdateProxyUrl(string? url) { lock (_lock) _settings.UpdateProxyUrl = string.IsNullOrWhiteSpace(url) ? null : url.Trim(); SaveSettings(); }
+
+        // ── Threshold-Based Highlighting ──
+        public bool GetThresholdsEnabled() { lock (_lock) return _settings.ThresholdsEnabled; }
+        public void SetThresholdsEnabled(bool enabled) { lock (_lock) _settings.ThresholdsEnabled = enabled; SaveSettings(); }
+
+        public int GetThresholdCpuMs() { lock (_lock) return _settings.ThresholdCpuMs; }
+        public void SetThresholdCpuMs(int ms) { lock (_lock) _settings.ThresholdCpuMs = Math.Max(0, ms); SaveSettings(); }
+
+        public int GetThresholdWaitTimeMs() { lock (_lock) return _settings.ThresholdWaitTimeMs; }
+        public void SetThresholdWaitTimeMs(int ms) { lock (_lock) _settings.ThresholdWaitTimeMs = Math.Max(0, ms); SaveSettings(); }
+
+        public int GetThresholdMemoryMb() { lock (_lock) return _settings.ThresholdMemoryMb; }
+        public void SetThresholdMemoryMb(int mb) { lock (_lock) _settings.ThresholdMemoryMb = Math.Max(0, mb); SaveSettings(); }
+
+        public int GetThresholdReadsKb() { lock (_lock) return _settings.ThresholdReadsKb; }
+        public void SetThresholdReadsKb(int kb) { lock (_lock) _settings.ThresholdReadsKb = Math.Max(0, kb); SaveSettings(); }
+
+        public int GetThresholdWritesKb() { lock (_lock) return _settings.ThresholdWritesKb; }
+        public void SetThresholdWritesKb(int kb) { lock (_lock) _settings.ThresholdWritesKb = Math.Max(0, kb); SaveSettings(); }
+
+        public int GetThresholdDurationMs() { lock (_lock) return _settings.ThresholdDurationMs; }
+        public void SetThresholdDurationMs(int ms) { lock (_lock) _settings.ThresholdDurationMs = Math.Max(0, ms); SaveSettings(); }
+
+        // ── Auto-Export Accessors ──
+        public UserSettings GetSettings() { lock (_lock) return _settings; }
+
+        public void UpdateAutoExportSettings(
+            bool auditCsv, bool auditJson, bool auditPdf,
+            bool quickCheckCsv, bool quickCheckPdf,
+            bool vaCsv, bool vaPdf)
+        {
+            lock (_lock)
+            {
+                _settings.AutoExportAuditCsv = auditCsv;
+                _settings.AutoExportAuditJson = auditJson;
+                _settings.AutoExportAuditPdf = auditPdf;
+                _settings.AutoExportQuickCheckCsv = quickCheckCsv;
+                _settings.AutoExportQuickCheckPdf = quickCheckPdf;
+                _settings.AutoExportVulnerabilityAssessmentCsv = vaCsv;
+                _settings.AutoExportVulnerabilityAssessmentPdf = vaPdf;
+            }
+            SaveSettings();
+        }
+
+        // ── VA Scheduled PDF ──
+        public UserSettings.VaScheduleSnapshot GetVaSchedule()
+        {
+            lock (_lock) return new UserSettings.VaScheduleSnapshot(_settings);
+        }
+
+        public void SaveVaSchedule(bool enabled, string type, string time, int dayOfWeek, int dayOfMonth)
+        {
+            lock (_lock)
+            {
+                _settings.VaScheduledPdfEnabled = enabled;
+                _settings.VaScheduledPdfType = type;
+                _settings.VaScheduledPdfTime = time;
+                _settings.VaScheduledPdfDayOfWeek = dayOfWeek;
+                _settings.VaScheduledPdfDayOfMonth = dayOfMonth;
+            }
+            SaveSettings();
+        }
+
+        public void UpdateVaScheduleLastRun(DateTime utcNow)
+        {
+            lock (_lock) _settings.VaScheduledPdfLastRun = utcNow;
+            SaveSettings();
+        }
+
+        // ── Roadmap Scheduled PDF ──
+        public UserSettings.RoadmapScheduleSnapshot GetRoadmapSchedule()
+        {
+            lock (_lock) return new UserSettings.RoadmapScheduleSnapshot(_settings);
+        }
+
+        public void SaveRoadmapSchedule(bool enabled, string type, string time, int dayOfWeek, int dayOfMonth, bool splitByDomain)
+        {
+            lock (_lock)
+            {
+                _settings.RoadmapScheduledPdfEnabled = enabled;
+                _settings.RoadmapScheduledPdfType = type;
+                _settings.RoadmapScheduledPdfTime = time;
+                _settings.RoadmapScheduledPdfDayOfWeek = dayOfWeek;
+                _settings.RoadmapScheduledPdfDayOfMonth = dayOfMonth;
+                _settings.RoadmapScheduledPdfSplitByDomain = splitByDomain;
+            }
+            SaveSettings();
+        }
+
+        public void UpdateRoadmapScheduleLastRun(DateTime utcNow)
+        {
+            lock (_lock) _settings.RoadmapScheduledPdfLastRun = utcNow;
+            SaveSettings();
+        }
+    }
+}

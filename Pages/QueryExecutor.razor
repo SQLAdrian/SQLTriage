@@ -1,0 +1,144 @@
+@page "/query"
+<PageTitle>SQLTriage - Query Executor</PageTitle>
+@using System.Data
+@using Microsoft.Data.SqlClient
+@inject IDbConnectionFactory ConnectionFactory
+@inject ServerConnectionManager ConnectionManager
+@inject AppUserState UserState
+@inject AuditLogService AuditLog
+
+@if (!RbacService.HasPermission(UserState.Role, "run_scripts"))
+{
+    <div class="alert alert-danger" style="margin: 32px;">Access denied. Query Executor requires the 'run_scripts' permission. Contact your administrator.</div>
+    return;
+}
+
+<h3>SQL Query Executor</h3>
+
+<div style="display: flex; flex-direction: column; gap: 16px; padding: 16px;">
+    <div>
+        <label>Database:</label>
+        <input @bind="Database" style="margin-left: 8px; padding: 4px;" />
+    </div>
+    
+    <textarea @bind="SqlQuery" rows="10" style="font-family: 'Consolas', monospace; padding: 8px; width: 100%;" 
+              placeholder="Enter SQL query..."></textarea>
+    
+    <div>
+        <button @onclick="ExecuteQuery" disabled="@IsExecuting" class="btn-primary">
+            @(IsExecuting ? "Executing..." : "Execute (F5)")
+        </button>
+        <button @onclick="Clear" class="btn-secondary">Clear</button>
+    </div>
+
+    @if (Messages.Any())
+    {
+        <div style="background: var(--bg-secondary); padding: 12px; border-radius: 4px; font-family: 'Consolas', monospace; font-size: 12px;">
+            <strong>Messages:</strong>
+            @foreach (var msg in Messages)
+            {
+                <div style="color: @(msg.IsError ? "var(--red)" : "var(--green)");">@msg.Text</div>
+            }
+        </div>
+    }
+
+    @if (Results != null)
+    {
+        <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                <thead>
+                    <tr style="background: var(--border);">
+                        @foreach (DataColumn col in Results.Columns)
+                        {
+                            <th style="padding: 8px; border: 1px solid var(--border); text-align: left;">@col.ColumnName</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (DataRow row in Results.Rows)
+                    {
+                        <tr style="border-bottom: 1px solid var(--border);">
+                            @foreach (DataColumn col in Results.Columns)
+                            {
+                                <td style="padding: 8px; border: 1px solid var(--border);">@row[col]</td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <div style="margin-top: 8px; color: var(--text-muted);">@Results.Rows.Count row(s) returned</div>
+        </div>
+    }
+</div>
+
+@code {
+    private string SqlQuery = "";
+    private string Database = "master";
+    private bool IsExecuting = false;
+    private DataTable? Results;
+    private List<(string Text, bool IsError)> Messages = new();
+
+    private async Task ExecuteQuery()
+    {
+        if (string.IsNullOrWhiteSpace(SqlQuery)) return;
+
+        IsExecuting = true;
+        Messages.Clear();
+        Results = null;
+        StateHasChanged();
+
+        var serverName = ConnectionManager.CurrentServer?.ServerNames ?? "unknown";
+        var querySnippet = SqlQuery.Length > 500 ? SqlQuery[..500] : SqlQuery;
+        var startTime = DateTime.UtcNow;
+        bool success = false;
+        string? errorMessage = null;
+
+        try
+        {
+            var factory = ConnectionFactory as SqlServerConnectionFactory;
+            using var conn = (SqlConnection)factory!.CreateConnection(Database);
+
+            conn.InfoMessage += (s, e) => Messages.Add((e.Message, false));
+
+            await conn.OpenAsync();
+            serverName = conn.DataSource;
+            Messages.Add(($"Connected to {conn.DataSource} - {conn.Database}", false));
+
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = SqlQuery;
+            cmd.CommandTimeout = 300;
+
+            using var reader = await cmd.ExecuteReaderAsync();
+
+            Results = new DataTable();
+            Results.Load(reader);
+
+            var elapsed = DateTime.UtcNow - startTime;
+            success = true;
+            Messages.Add(($"Query completed in {elapsed.TotalSeconds:F2}s", false));
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+            Messages.Add(($"Error: {ex.Message}", true));
+        }
+        finally
+        {
+            AuditLog.LogScriptExecution(
+                $"QueryExecutor[{UserState.Role}]: {querySnippet}",
+                serverName,
+                success,
+                DateTime.UtcNow - startTime,
+                errorMessage);
+            IsExecuting = false;
+            StateHasChanged();
+        }
+    }
+
+    private void Clear()
+    {
+        SqlQuery = "";
+        Results = null;
+        Messages.Clear();
+    }
+}
