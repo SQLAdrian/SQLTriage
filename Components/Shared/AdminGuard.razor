@@ -1,0 +1,143 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using SQLTriage.Data.Services
+@inject AdminAuthService AdminAuth
+
+@if (AdminAuth.RequiresSetup)
+{
+    @* Fresh install, no admin password configured. The write path is CLOSED until one is set. *@
+    <div class="admin-guard-overlay">
+        <div class="admin-guard-box">
+            <div class="admin-guard-icon"><i class="fa-solid fa-user-shield"></i></div>
+            <h3 class="admin-guard-title">Set an Admin Password</h3>
+            <p class="admin-guard-sub">
+                This section performs administrative changes and is not yet protected.
+                Set an admin password to continue — at least @AdminAuthService.MinimumPasswordLength characters.
+                It is stored as a salted PBKDF2-SHA256 hash in <code>Config/appsettings.json</code>.
+            </p>
+            <div class="admin-guard-input-row">
+                <input type="password" class="admin-guard-input" placeholder="New admin password"
+                       @bind="_newPassword" @bind:event="oninput" />
+            </div>
+            <div class="admin-guard-input-row">
+                <input type="password" class="admin-guard-input" placeholder="Confirm password"
+                       @bind="_confirmPassword" @bind:event="oninput" @onkeydown="OnSetupKeyDown" />
+                <button class="btn btn-primary admin-guard-btn" @onclick="TrySetPassword">
+                    <i class="fa-solid fa-key"></i> Set Password
+                </button>
+            </div>
+            @if (!string.IsNullOrEmpty(_setupError))
+            {
+                <p class="admin-guard-error"><i class="fa-solid fa-circle-exclamation"></i> @_setupError</p>
+            }
+        </div>
+    </div>
+}
+else if (!AdminAuth.IsUnlocked)
+{
+    <div class="admin-guard-overlay">
+        <div class="admin-guard-box">
+            <div class="admin-guard-icon"><i class="fa-solid fa-lock"></i></div>
+            <h3 class="admin-guard-title">Admin Access Required</h3>
+            <p class="admin-guard-sub">This section is protected. Enter the admin password to continue.</p>
+            <div class="admin-guard-input-row">
+                <input type="password" class="admin-guard-input" placeholder="Admin password"
+                       @bind="_password" @onkeydown="OnKeyDown" />
+                <button class="btn btn-primary admin-guard-btn" @onclick="TryUnlock">
+                    <i class="fa-solid fa-unlock"></i> Unlock
+                </button>
+            </div>
+            @if (_failed)
+            {
+                <p class="admin-guard-error"><i class="fa-solid fa-circle-exclamation"></i> Incorrect password.</p>
+            }
+        </div>
+    </div>
+}
+else
+{
+    @if (AdminAuth.IsOpenUnprotected)
+    {
+        @* Pre-existing install running with no admin password. Deliberately NOT locked out
+           (that would break a live client on upgrade), but the open gate must be visible
+           every single time this area is entered — not a one-off dismissible toast. *@
+        <div role="alert" class="admin-guard-unprotected-banner"
+             style="border-left:4px solid var(--red); background:var(--bg-secondary); border-radius:var(--r-sm);
+                    padding:14px 18px; margin:0 0 20px; color:var(--text-secondary); line-height:1.55; font-size:0.92em;">
+            <strong style="color:var(--text-primary);">
+                <i class="fa-solid fa-unlock-keyhole"></i> Admin access is NOT protected on this installation.
+            </strong>
+            <p style="margin:8px 0 0;">
+                No admin password is configured, so anyone who can reach this application can run the
+                administrative actions on this page. Set a password to close the gate.
+            </p>
+            @if (!_showInlineSetup)
+            {
+                <button class="btn btn-primary" style="margin-top:10px;" @onclick="() => _showInlineSetup = true">
+                    <i class="fa-solid fa-key"></i> Set admin password
+                </button>
+            }
+            else
+            {
+                <div class="admin-guard-input-row" style="margin-top:10px;">
+                    <input type="password" class="admin-guard-input" placeholder="New admin password"
+                           @bind="_newPassword" @bind:event="oninput" />
+                    <input type="password" class="admin-guard-input" placeholder="Confirm password"
+                           @bind="_confirmPassword" @bind:event="oninput" @onkeydown="OnSetupKeyDown" />
+                    <button class="btn btn-primary admin-guard-btn" @onclick="TrySetPassword">
+                        <i class="fa-solid fa-key"></i> Save
+                    </button>
+                </div>
+                @if (!string.IsNullOrEmpty(_setupError))
+                {
+                    <p class="admin-guard-error"><i class="fa-solid fa-circle-exclamation"></i> @_setupError</p>
+                }
+            }
+        </div>
+    }
+    @ChildContent
+}
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private string _password = "";
+    private bool _failed;
+
+    private string _newPassword = "";
+    private string _confirmPassword = "";
+    private string? _setupError;
+    private bool _showInlineSetup;
+
+    private void TryUnlock()
+    {
+        _failed = !AdminAuth.Unlock(_password);
+        _password = "";
+    }
+
+    private void OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") TryUnlock();
+    }
+
+    private void TrySetPassword()
+    {
+        if (_newPassword != _confirmPassword)
+        {
+            _setupError = "The two passwords do not match.";
+            return;
+        }
+
+        _setupError = AdminAuth.SetInitialPassword(_newPassword);
+        if (_setupError is null)
+        {
+            _newPassword = "";
+            _confirmPassword = "";
+            _showInlineSetup = false;
+        }
+    }
+
+    private void OnSetupKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") TrySetPassword();
+    }
+}

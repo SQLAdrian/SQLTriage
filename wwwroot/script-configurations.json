@@ -1,0 +1,54 @@
+[
+  {
+    "Id": "107152ff-bf0b-4f4f-b310-3f385e395355",
+    "Name": "sp_Blitz",
+    "Description": "Diagnostic script: sp_Blitz.sql",
+    "ScriptPath": "sp_Blitz.sql",
+    "ExecutionParameters": "EXEC [dbo].[sqldba_sp_Blitz] @CheckUserDatabaseObjects = 1 , @CheckProcedureCache = 1 , @OutputType = 'TABLE' , @OutputProcedureCache = 0 , @CheckProcedureCacheFilter = NULL, @CheckServerInfo = 1, @OutputDatabaseName = 'master', @OutputSchemaName = 'dbo', @OutputTableName = 'sqldba_sp_Blitz_output', @BringThePain = 1;",
+    "SqlQueryForOutput": "DECLARE @ThisDomain NVARCHAR(100);\r\nEXEC master.dbo.xp_regread 'HKEY_LOCAL_MACHINE', 'SYSTEM\\CurrentControlSet\\services\\Tcpip\\Parameters', N'Domain',@ThisDomain OUTPUT;\r\nSELECT  ID, @ThisDomain [Domain],ServerName, CONVERT(VARCHAR,CheckDate,120), Priority, FindingsGroup, Finding, DatabaseName, URL, Details, CheckID FROM master.dbo.sqldba_sp_Blitz_output WHERE CheckDate = (SELEct max([CheckDate]) FROM master.dbo.sqldba_sp_Blitz_output);",
+    "Enabled": true,
+    "TimeoutSeconds": 300,
+    "Category": "Diagnostic",
+    "ExecutionOrder": 1,
+    "ExportToCsv": true
+  },
+  {
+    "Id": "b55522c5-2c13-4ffd-9399-a0d7104cc00e",
+    "Name": "SQLDBA.ORG.sp_triage",
+    "Description": "Diagnostic script: SQLDBA.ORG.sp_triage.sql",
+    "ScriptPath": "SQLDBA.ORG.sp_triage.sql",
+    "ExecutionParameters": "EXEC  [dbo].[sp_triage®]",
+    "SqlQueryForOutput": "\r\nSELECT TOP (100) PERCENT \r\nID, evaldate, domain, SQLInstance, SectionID, Section, Summary, Severity, Details, HoursToResolveWithTesting, QueryPlan\r\n\r\nFROM \r\n (SELECT         CONVERT(NVARCHAR(25), T1.ID) AS ID, REPLACE(T1.evaldate, '~', '-') AS evaldate, REPLACE(T1.domain, '~', '-') AS domain, REPLACE(T1.SQLInstance, '~', '-') \r\nAS SQLInstance, REPLACE(CONVERT(NVARCHAR(10), T1.SectionID), '~', '-') AS SectionID, REPLACE(T1.Section, '~', '-') AS Section, REPLACE(T1.Summary, '~', '-') AS Summary, \r\n REPLACE(T1.Severity, '~', '-') AS Severity, REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(REPLACE(T1.Details, '~', '-'), N''), CHAR(9), ' '), CHAR(10), ' '), CHAR(13), ' '), ' ', ' ') AS Details, \r\n REPLACE(CONVERT(NVARCHAR(10), T1.HoursToResolveWithTesting), '~', '-') AS HoursToResolveWithTesting, REPLACE(T1.QueryPlan, '~', '-') AS QueryPlan, T1.ID AS Sorter\r\nFROM            dbo.[sqldba_sp_triage®_output] AS T1 INNER JOIN\r\n(SELECT        MAX(evaldate) AS evaldate\r\nFROM            dbo.[sqldba_sp_triage®_output]) AS T2 ON T1.evaldate = T2.evaldate) AS T3\r\nORDER BY Sorter ASC\r\n\r\n",
+    "Enabled": true,
+    "TimeoutSeconds": 300,
+    "Category": "Diagnostic",
+    "ExecutionOrder": 99,
+    "ExportToCsv": true
+  },
+  {
+    "Id": "c307d95e-109f-4d6f-b32d-a972c9c412ec",
+    "Name": "Check_BP_Servers",
+    "Description": "Diagnostic script: Check_BP_Servers.sql",
+    "ScriptPath": "Check_BP_Servers.sql",
+    "ExecutionParameters": "",
+    "SqlQueryForOutput": "",
+    "Enabled": false,
+    "TimeoutSeconds": 300,
+    "Category": "Diagnostic",
+    "ExecutionOrder": 3,
+    "ExportToCsv": true
+  },
+  {
+    "Id": "c5e50737-83ae-40a2-92b8-8f0b7ee9a724",
+    "Name": "stpChecklist_Seguranca",
+    "Description": "Diagnostic script: stpChecklist_Seguranca.sql",
+    "ScriptPath": "stpChecklist_Seguranca.sql",
+    "ExecutionParameters": "EXEC dbo.sqldba_stpSecurity_Checklist",
+    "SqlQueryForOutput": "SELECT [evaldate]\r\n      ,[Domain]\r\n      ,[SQLInstance]\r\n      ,[code]\r\n      ,[Category]\r\n      ,[Title]\r\n      ,[Result]\r\n      ,[How this can be an Issue]\r\n      ,[Technical explanation]\r\n      ,[How to Fix]\r\n      ,[Result Details]\r\n      ,[External Reference]\r\n  FROM [master].[dbo].[sqldba_stpSecurity_Checklist_Table]\r\n  WHERE [evaldate] = (SELECT MAX([evaldate]) FROM [sqldba_stpSecurity_Checklist_Table])",
+    "Enabled": true,
+    "TimeoutSeconds": 300,
+    "Category": "Diagnostic",
+    "ExecutionOrder": 4,
+    "ExportToCsv": true
+  }
+]

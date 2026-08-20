@@ -1,0 +1,17 @@
+# Deterministic checkout for the SHA-256-pinned embedded Ola Hallengren Maintenance Solution.
+# The remediation install lane (MaintenanceSolutionOpRenderer.ExpectedScriptSha256) verifies the
+# embedded resource's hash at runtime and FAILS CLOSED on mismatch. That hash is computed over the
+# exact vendored release bytes (UTF-8 BOM + CRLF). Without pinning eol, a fresh clone on a machine
+# with core.autocrlf=input/true would check the file out with different line endings, MSBuild would
+# embed different bytes, and the tamper guard would refuse to run the install everywhere but the
+# author's machine. Pin CRLF so the checkout is byte-identical to the pinned hash on every platform.
+#
+# 2026-08-03: this rule read `-text eol=crlf` for three weeks and was SELF-CANCELLING. `-text` means
+# "do no conversion, check the blob out verbatim", which suppresses the `eol=crlf` beside it. The
+# blob is stored LF, so it landed LF, MSBuild embedded LF, and the guard refused to run the install.
+# It went unnoticed because worktrees created BEFORE this rule was added (2026-07-13) had already
+# been converted to CRLF by core.autocrlf=true, and git never re-normalises files already on disk —
+# so the pin held on the old trees and failed on every fresh checkout. `text` (no dash) is what makes
+# git normalise to LF in the index and convert to CRLF on checkout.
+# Do not re-add the dash. RemediationMaintenanceSolutionTests guards this at build time.
+"BPScripts/01. MaintenanceSolution.sql" text eol=crlf

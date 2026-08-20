@@ -1,0 +1,137 @@
+@* In the name of God, the Merciful, the Compassionate *@
+@using SQLTriage.Data.Models
+@using static SQLTriage.Data.Services.GovernanceService
+
+<div class="gt-wrapper">
+    <div class="gt-grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:24px; padding:8px 0;">
+        @{
+            // Scorable subset ONLY (Wave 2, 2026-07-12 fix): a card's Passed+Failed must sum
+            // to the same 1352-family total the /governance header scores from, or the page
+            // shows two irreconcilable "Passed" counts under one label (ruled defect — cards
+            // previously summed to all 1725 via the raw pass/fail boolean, including
+            // Informational and Skipped checks that the header excludes from scoring).
+            // A framework made up entirely of Informational checks (no scorable checks at
+            // all) has nothing to score and correctly does not render a card here.
+            var scorableFindings = Findings.Where(IsScorable).ToList();
+            var categoryGroups = scorableFindings
+                .GroupBy(f => string.IsNullOrWhiteSpace(f.Category) ? "General" : f.Category.Split(',')[0].Trim())
+                .OrderBy(g => g.Key)
+                .ToList();
+
+            var displayGroups = new List<TimelineGroup>();
+            if (categoryGroups.Any()) {
+                displayGroups = categoryGroups.Select(g => new TimelineGroup {
+                    Name = g.Key,
+                    Passed = g.Count(CountsAsPass),
+                    Failed = g.Count(f => !CountsAsPass(f)),
+                    // Failed-first (2026-07-22 fix): the preview is three slots out of a group that
+                    // can hold 146 checks, so spending one on a passing check costs a third of the
+                    // only detail a reader gets. Auditing showed "8 Failed" above a list whose
+                    // middle entry was a PASS. Order by CountsAsPass (false sorts first) so the
+                    // slots always go to failures; ties keep the group's existing order.
+                    Items = g.OrderBy(CountsAsPass).Take(3).ToList()
+                }).ToList();
+            }
+        }
+
+        @if (!displayGroups.Any())
+        {
+            <div class="gt-empty card-glass" style="padding:24px; text-align:center; color:var(--text-secondary); grid-column:1 / -1;">
+                No scorable findings yet — run an audit to populate framework groups.
+            </div>
+        }
+
+        @foreach (var group in displayGroups)
+        {
+            bool isClean = group.Failed == 0;
+            string iconColor = isClean ? "var(--green)" : "var(--red)";
+            string borderColor = isClean ? "var(--green)" : "var(--red)";
+
+            <div class="gt-card card-glass" style="border-top:3px solid @borderColor; padding:20px; display:flex; flex-direction:column; gap:16px;">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                    <div style="display:flex; align-items:center; gap:12px;">
+                        <i class="fa-solid @(isClean ? "fa-shield-check" : "fa-shield-exclamation")" style="color:@iconColor; font-size:20px;"></i>
+                        <h4 style="margin:0; font-size:16px; font-weight:600; color:var(--text-primary);">@group.Name</h4>
+                    </div>
+                </div>
+                <div style="display:flex; gap:16px; font-size:13px; background:rgba(0,0,0,0.2); padding:8px 12px; border-radius:6px;">
+                    <span style="color:var(--green); font-weight:600;"><i class="fa-solid fa-check" style="margin-right:4px;"></i>@group.Passed Passed</span>
+                    @if (group.Failed > 0)
+                    {
+                        <span style="color:var(--red); font-weight:600;"><i class="fa-solid fa-xmark" style="margin-right:4px;"></i>@group.Failed Failed</span>
+                    }
+                </div>
+                @{
+                    var total = group.Passed + group.Failed;
+                    var passRate = total > 0 ? (int)Math.Round(group.Passed * 100.0 / total) : 0;
+                }
+                @if (total > 0)
+                {
+                    <!-- Pass-rate context (Wave 2, 2026-07-12): now that Passed is bound to the
+                         FULL result set (not failures-only), a real ratio is worth showing. -->
+                    <div class="gt-passrate" title="@($"{group.Passed} of {total} checks passing ({passRate}%)")">
+                        <div class="gt-passrate-track">
+                            <div class="gt-passrate-fill" style="width:@passRate%; background:@borderColor;"></div>
+                        </div>
+                        <span class="gt-passrate-label">@passRate% passing</span>
+                    </div>
+                }
+                <div style="display:flex; flex-direction:column; gap:8px;">
+                    @* Collapse-when-clean (2026-07-22 fix): this branch was keyed on
+                       Items.Count == 0, which is UNREACHABLE — a group only exists because it has
+                       at least one finding, so Take(3) always yields at least one item. The
+                       one-liner therefore never rendered, and a 100%-passing framework listed three
+                       individual passed checks instead. Key it on the clean flag the card already
+                       computes, and state the real total rather than a bare "All checks passed". *@
+                    @if (isClean)
+                    {
+                        <div style="display:flex; align-items:center; gap:8px; font-size:13px; color:var(--text-secondary);">
+                            <i class="fa-solid fa-check-circle" style="color:var(--green);"></i>
+                            <span>All @group.Passed checks passed</span>
+                        </div>
+                    }
+                    else
+                    {
+                        foreach (var item in group.Items)
+                        {
+                            @* Icon predicate must be CountsAsPass, not the raw item.Passed boolean:
+                               the card's Passed/Failed tallies are scored with CountsAsPass, so a
+                               raw reader here can draw a green check beside a check the very same
+                               card counted as failed. *@
+                            var itemPassed = CountsAsPass(item);
+                            <div style="display:flex; align-items:flex-start; gap:8px; font-size:13px; color:var(--text-secondary);">
+                                <i class="fa-solid @(itemPassed ? "fa-check-circle" : "fa-triangle-exclamation")" style="color:@(itemPassed ? "var(--green)" : "var(--red)"); margin-top:2px;"></i>
+                                <span title="@item.Description" style="line-height:1.4;">@item.CheckName</span>
+                            </div>
+                        }
+
+                        @* Hidden-failure count: three slots over a group of 146 silently implied the
+                           listed items were the whole story. *@
+                        var shownFailed = group.Items.Count(i => !CountsAsPass(i));
+                        var moreFailing = group.Failed - shownFailed;
+                        if (moreFailing > 0)
+                        {
+                            <div style="display:flex; align-items:center; gap:8px; font-size:12px; color:var(--red); opacity:0.85; margin-top:2px;">
+                                <i class="fa-solid fa-ellipsis"></i>
+                                <span>+@moreFailing more failing</span>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public List<CheckResult> Findings { get; set; } = new();
+
+    public class TimelineGroup
+    {
+        public string Name { get; set; } = "";
+        public int Passed { get; set; }
+        public int Failed { get; set; }
+        public List<CheckResult> Items { get; set; } = new();
+    }
+}

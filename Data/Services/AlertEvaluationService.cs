@@ -1,0 +1,1188 @@
+/* In the name of God, the Merciful, the Compassionate */
+
+using System.Collections.Concurrent;
+using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using SQLTriage.Data;
+using SQLTriage.Data.Caching;
+using SQLTriage.Data.Models;
+using SQLTriage.Data.Scheduling;
+
+namespace SQLTriage.Data.Services
+{
+    /// <summary>
+    /// Timer-based engine that periodically evaluates alert definitions against all configured servers.
+    /// Runs each alert's T-SQL query, compares the result to thresholds, manages the state machine
+    /// (Active → Acknowledged → Resolved), and dispatches notifications via AlertingService.
+    /// </summary>
+    // BM:AlertEvaluationService.Class — timer-based alert engine
+    public class AlertEvaluationService : IDisposable
+    {
+        private readonly ILogger<AlertEvaluationService> _logger;
+        private readonly AlertDefinitionService _definitions;
+        private readonly AlertHistoryService _history;
+        private readonly AlertingService _alerting;
+        private readonly ServerConnectionManager _connections;
+        private readonly ToastService _toast;
+        private readonly NotificationChannelService _channels;
+        private readonly liveQueriesCacheStore _cache;
+        private readonly AlertBaselineService? _baseline;
+        private readonly ConnectionHealthService? _health;
+        private readonly IQueryOrchestrator _orchestrator;
+        private readonly SqlConnectionPoolService? _pool;
+        private readonly ServerCircuitBreakerService? _breaker;
+
+        // In-memory state: key = "alertId:serverName"
+        private readonly ConcurrentDictionary<string, AlertState> _activeStates = new(StringComparer.OrdinalIgnoreCase);
+
+        // Tracks last evaluation time per alert so we respect individual frequencies
+        private readonly ConcurrentDictionary<string, DateTime> _lastEvaluation = new(StringComparer.OrdinalIgnoreCase);
+
+        // Tracks last notification time per alert+server for cooldown
+        private readonly ConcurrentDictionary<string, DateTime> _lastNotified = new(StringComparer.OrdinalIgnoreCase);
+
+        // Tracks timestamps of each hit within the escalation window, keyed by "alertId:serverName"
+        private readonly ConcurrentDictionary<string, Queue<DateTime>> _hitTimes = new(StringComparer.OrdinalIgnoreCase);
+
+        // #68 LEG 2: an alert whose query THREW on its last attempt, keyed by "alertId:serverName".
+        // Cleared the instant that same query succeeds again. Drives AlertsNoc's Unknown/degraded
+        // card state so a server whose alert evaluation is silently erroring every cycle reads as
+        // "we don't know", never as a clean, healthy Ok.
+        private readonly ConcurrentDictionary<string, AlertEvalFailure> _evalFailures = new(StringComparer.OrdinalIgnoreCase);
+
+        private bool _isRunning;
+        private bool _dryRun;
+        private readonly int _baseTickSeconds;
+        private readonly SemaphoreSlim _evaluationLock = new(1, 1);
+        private readonly CancellationTokenSource _cts = new();
+        private Task? _loopTask;
+
+        public event Action? OnAlertsChanged;
+
+        /// <summary>
+        /// When true, alerts fire and appear in-memory but no notifications are dispatched and nothing is persisted.
+        /// Useful for testing alert rules without spamming notifications.
+        /// </summary>
+        public bool DryRun
+        {
+            get => _dryRun;
+            set
+            {
+                _dryRun = value;
+                _logger.LogInformation("Alert dry-run mode: {Mode}", value ? "ON" : "OFF");
+            }
+        }
+
+        /// <summary>
+        /// All currently active/acknowledged alert states (for UI binding).
+        /// </summary>
+        public IReadOnlyCollection<AlertState> ActiveAlerts =>
+            _activeStates.Values.Where(s => s.Status != AlertStatus.Resolved).OrderByDescending(s => s.LastTriggered).ToList();
+
+        public int ActiveCount => _activeStates.Values.Count(s => s.Status == AlertStatus.Active);
+
+        /// <summary>True if the given server has at least one alert whose query threw on its most
+        /// recent evaluation attempt and hasn't since succeeded — i.e. we genuinely don't know that
+        /// server's alert state. #68 LEG 2.</summary>
+        public bool HasEvaluationFailure(string serverName) =>
+            _evalFailures.Values.Any(f => f.ServerName.Equals(serverName, StringComparison.OrdinalIgnoreCase));
+
+        /// <summary>Snapshot of every alert currently failing to evaluate (diagnostics / future UI).</summary>
+        public IReadOnlyCollection<AlertEvalFailure> EvaluationFailures => _evalFailures.Values.ToList();
+
+        public bool IsRunning => _isRunning;
+
+        public AlertEvaluationService(
+            ILogger<AlertEvaluationService> logger,
+            AlertDefinitionService definitions,
+            AlertHistoryService history,
+            AlertingService alerting,
+            ServerConnectionManager connections,
+            ToastService toast,
+            NotificationChannelService channels,
+            liveQueriesCacheStore cache,
+            IQueryOrchestrator orchestrator,
+            AlertBaselineService? baseline = null,
+            ConnectionHealthService? health = null,
+            SqlConnectionPoolService? pool = null,
+            IConfiguration? configuration = null,
+            ServerCircuitBreakerService? breaker = null)
+        {
+            _logger = logger;
+            _definitions = definitions;
+            _history = history;
+            _alerting = alerting;
+            _connections = connections;
+            _toast = toast;
+            _channels = channels;
+            _cache = cache;
+            _orchestrator = orchestrator;
+            _baseline = baseline;
+            _breaker = breaker;
+            _health = health;
+            _pool = pool;
+
+            var baseTickSeconds = configuration?.GetValue<int>("AlertEvaluation:BaseTickSeconds", 30) ?? 30;
+            if (baseTickSeconds <= 0) baseTickSeconds = 30;
+            _baseTickSeconds = baseTickSeconds;
+        }
+
+        public void Start()
+        {
+            if (_isRunning) return;
+            _isRunning = true;
+            _loopTask = Task.Run(() => LoopAsync(_cts.Token));
+            _logger.LogInformation("Alert evaluation engine started ({IntervalS}s tick)", _baseTickSeconds);
+        }
+
+        public void Stop()
+        {
+            _isRunning = false;
+            _cts.Cancel();
+            _logger.LogInformation("Alert evaluation engine stopped");
+        }
+
+        private async Task LoopAsync(CancellationToken ct)
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(_baseTickSeconds));
+            while (await timer.WaitForNextTickAsync(ct))
+            {
+                var tickStart = DateTime.UtcNow;
+                try
+                {
+                    await EvaluateAllAsync(ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Alert evaluation cycle failed");
+                }
+                var elapsed = DateTime.UtcNow - tickStart;
+                if (elapsed.TotalSeconds > _baseTickSeconds)
+                    _logger.LogWarning("[ALERT] Evaluation tick overran interval ({ElapsedMs}ms > {IntervalS}s); next tick dropped",
+                        (int)elapsed.TotalMilliseconds, _baseTickSeconds);
+            }
+        }
+
+        /// <summary>
+        /// Run a single evaluation cycle across all enabled alerts and all enabled servers.
+        /// </summary>
+        public async Task EvaluateAllAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!await _evaluationLock.WaitAsync(0, cancellationToken)) return; // skip if already running
+
+            try
+            {
+                var globalDefaults = _definitions.GetGlobalDefaults();
+                if (!globalDefaults.Enabled) return;
+
+                var alerts = _definitions.GetEnabledAlerts();
+                var serverConnections = _connections.GetEnabledConnections();
+                if (alerts.Count == 0 || serverConnections.Count == 0) return;
+
+                var now = DateTime.UtcNow;
+
+                // Enforce retention policy from global defaults
+                _history.EnforceRetention(globalDefaults.RetentionDays);
+
+                // Auto-acknowledge stale alerts
+                var autoAcked = _history.AutoAcknowledge(globalDefaults.AutoAcknowledgeHours);
+                if (autoAcked > 0)
+                {
+                    _logger.LogInformation("Auto-acknowledged {Count} stale alerts", autoAcked);
+                    // Also update in-memory states
+                    foreach (var state in _activeStates.Values.Where(s => s.Status == AlertStatus.Active
+                        && (now - s.FirstTriggered).TotalHours >= globalDefaults.AutoAcknowledgeHours))
+                    {
+                        state.Status = AlertStatus.Acknowledged;
+                        state.AcknowledgedAt = now;
+                    }
+                }
+
+                // Check operational/maintenance windows once per cycle
+                var windows = _channels.GetAlertWindows();
+
+                // Evaluate each alert that is due
+                foreach (var alert in alerts)
+                {
+                    // Enforce minimum 300s for log-scan alert types (xp_readerrorlog is expensive)
+                    const int LogScanMinFrequencySeconds = 300;
+                    var effectiveFrequency = alert.Id is "error_log_severity" or "error_log_fatal" or "logon_failure"
+                        ? Math.Max(alert.FrequencySeconds, LogScanMinFrequencySeconds)
+                        : alert.FrequencySeconds;
+                    if (effectiveFrequency != alert.FrequencySeconds
+                        && !_lastEvaluation.ContainsKey($"__logwarn__{alert.Id}"))
+                    {
+                        _lastEvaluation[$"__logwarn__{alert.Id}"] = now; // sentinel — log once per run
+                        _logger.LogWarning("Alert '{AlertId}' FrequencySeconds ({Stored}s) is below log-scan minimum; effective frequency clamped to {Min}s",
+                            alert.Id, alert.FrequencySeconds, LogScanMinFrequencySeconds);
+                    }
+
+                    // Skip if not due yet based on frequency
+                    var evalKey = alert.Id;
+                    if (_lastEvaluation.TryGetValue(evalKey, out var lastEval)
+                        && (now - lastEval).TotalSeconds < effectiveFrequency)
+                    {
+                        continue;
+                    }
+
+                    // Suppress based on operational / maintenance windows
+                    if (!windows.ShouldFire(alert.AlwaysAlert))
+                    {
+                        _logger.LogDebug("Alert '{AlertId}' suppressed by window config (maintenance={M}, operational={O}, alwaysAlert={A})",
+                            alert.Id, windows.IsMaintenanceActive, windows.OperationalWindow.IsActive(), alert.AlwaysAlert);
+                        continue;
+                    }
+
+                    // Route special query modes to dedicated handlers
+                    if (!string.IsNullOrEmpty(alert.QueryMode) && alert.QueryMode != "standard")
+                    {
+                        _lastEvaluation[evalKey] = now;
+                        var specialTasks = new List<Task>();
+                        foreach (var conn in serverConnections)
+                        {
+                            foreach (var serverName in conn.GetServerList())
+                            {
+                                if (_breaker != null && !_breaker.ShouldAttempt(serverName))
+                                    continue;
+                                specialTasks.Add(ThrottledSpecialEvaluateAsync(alert, conn, serverName, globalDefaults, cancellationToken));
+                            }
+                        }
+                        await Task.WhenAll(specialTasks);
+                        continue;
+                    }
+
+                    _lastEvaluation[evalKey] = now;
+
+                    // Run against each server with bounded concurrency
+                    var tasks = new List<Task>();
+                    foreach (var conn in serverConnections)
+                    {
+                        foreach (var serverName in conn.GetServerList())
+                        {
+                            if (_breaker != null && !_breaker.ShouldAttempt(serverName))
+                                continue;
+                            tasks.Add(ThrottledEvaluateAsync(alert, conn, serverName, globalDefaults, cancellationToken));
+                        }
+                    }
+
+                    await Task.WhenAll(tasks);
+                }
+
+                // Resolve alerts that are no longer triggering
+                ResolveCleared();
+
+                OnAlertsChanged?.Invoke();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Alert evaluation cycle failed");
+            }
+            finally
+            {
+                _evaluationLock.Release();
+            }
+        }
+
+        /// <summary>Runs one standard alert evaluation through the orchestrator and applies what it
+        /// learned about the server to the circuit breaker. Internal rather than private so a test can
+        /// drive the whole path — wrapper, evaluation, exception handling, breaker — against a real
+        /// unreachable endpoint (InternalsVisibleTo SQLTriage.Tests).</summary>
+        internal async Task ThrottledEvaluateAsync(
+            AlertDefinition alert,
+            ServerConnection connection,
+            string serverName,
+            AlertGlobalDefaults globalDefaults,
+            CancellationToken cancellationToken)
+        {
+            // Per-attempt sink. EvaluateAlertOnServerAsync writes into it what it actually observed
+            // about the SERVER; see ServerReachabilityProbe for why result.Success cannot tell us.
+            var reach = new ServerReachabilityProbe();
+
+            var result = await _orchestrator.EnqueueAsync(new QueryRequest
+            {
+                QueryId = $"alert:{alert.Id}:{serverName}",
+                Work = async _ => await EvaluateAlertOnServerAsync(alert, connection, serverName, globalDefaults, reach),
+                CancellationToken = cancellationToken
+            }, QueryPriority.P1_Alert, cancellationToken);
+
+            if (!result.Success)
+            {
+                _breaker?.RecordFailure(serverName);
+                _logger.LogError(result.Exception, "Alert evaluation failed for {AlertId} on {Server}", alert.Id, serverName);
+                return;
+            }
+
+            ApplyBreakerOutcome(_breaker, serverName, reach.Reachability);
+        }
+
+        /// <summary>
+        /// What one evaluation attempt learned about the SERVER, as opposed to what it learned about
+        /// the orchestrator. Written by the evaluation, read by the throttling wrapper.
+        ///
+        /// <para><b>The defect this exists to fix (2026-08-01).</b> The wrappers used to call
+        /// <c>_breaker.RecordSuccess(serverName)</c> whenever <c>result.Success</c> was true. That flag
+        /// answers "did the work delegate throw", not "did we reach SQL Server" — and the delegate never
+        /// throws, because every evaluation path catches its own <see cref="SqlException"/>, logs it and
+        /// returns (deliberately: the recorded failure is what makes AlertsNoc render Unknown instead of
+        /// a clean Ok). So polling a DEAD server reported success, ConsecutiveFailures reset to 0, and
+        /// the circuit closed on the very next tick. The live log shows 143 "circuit OPENED" and 143
+        /// "circuit CLOSED", perfectly paired: ConnectionHealthService — which sees real failures —
+        /// opened the breaker, and the alert loop immediately closed it again. Two subsystems sharing
+        /// one breaker with contradictory definitions of success. The breaker consequently never
+        /// suppressed the expensive path, so a dead server burned a full login timeout on every tick.</para>
+        ///
+        /// <para><b><see cref="ServerReachability.Undetermined"/> is a first-class state, not a
+        /// synonym for success.</b> An attempt that was skipped (alert not supported on Azure SQL) or
+        /// that failed for a reason which is not the server's fault says nothing about reachability,
+        /// and must leave the breaker exactly as it found it. Recording success there would be the same
+        /// false-signal bug in a smaller costume; recording failure there would suppress polling of a
+        /// perfectly healthy server because of a defect in our own alert logic.</para>
+        /// </summary>
+        internal enum ServerReachability
+        {
+            /// <summary>Nothing was learned about the server this attempt. Leave the breaker alone.</summary>
+            Undetermined = 0,
+            /// <summary>A query completed against the server — it is up and answering.</summary>
+            Reached,
+            /// <summary>The connection or query failed at the SQL layer — treat as a real failure.</summary>
+            Unreachable
+        }
+
+        internal sealed class ServerReachabilityProbe
+        {
+            public ServerReachability Reachability { get; set; } = ServerReachability.Undetermined;
+        }
+
+        /// <summary>Applies one attempt's observed reachability to the shared circuit breaker.
+        /// Internal test seam (InternalsVisibleTo SQLTriage.Tests).</summary>
+        internal static void ApplyBreakerOutcome(
+            ServerCircuitBreakerService? breaker, string serverName, ServerReachability reachability)
+        {
+            if (breaker == null) return;
+            switch (reachability)
+            {
+                case ServerReachability.Reached:
+                    breaker.RecordSuccess(serverName);
+                    break;
+                case ServerReachability.Unreachable:
+                    breaker.RecordFailure(serverName);
+                    break;
+                default:
+                    break; // Undetermined — say nothing rather than say something false.
+            }
+        }
+
+        private async Task ThrottledSpecialEvaluateAsync(
+            AlertDefinition alert,
+            ServerConnection connection,
+            string serverName,
+            AlertGlobalDefaults globalDefaults,
+            CancellationToken cancellationToken)
+        {
+            var result = await _orchestrator.EnqueueAsync(new QueryRequest
+            {
+                QueryId = $"alert:special:{alert.Id}:{serverName}",
+                Work = async _ => await EvaluateSpecialAlertAsync(alert, connection, serverName, globalDefaults),
+                CancellationToken = cancellationToken
+            }, QueryPriority.P1_Alert, cancellationToken);
+
+            if (!result.Success)
+            {
+                _breaker?.RecordFailure(serverName);
+                _logger.LogError(result.Exception, "Special alert evaluation failed for {AlertId} on {Server}", alert.Id, serverName);
+                return;
+            }
+
+            // No RecordSuccess here — deliberately. The special handlers convert unreachability into a
+            // VALUE rather than an error: CheckConnectivityAsync catches everything and returns 1 =
+            // unreachable, because that IS the result of a connectivity alert. So this path cannot
+            // distinguish "the server answered" from "the server did not" without restructuring those
+            // handlers — and it must not report success on the strength of a delegate that did not
+            // throw. Reachability here is Undetermined by construction: the breaker is left alone,
+            // which is also what keeps the alert that exists to detect a down server from being the
+            // thing that suppresses its own polling.
+        }
+
+        private async Task EvaluateSpecialAlertAsync(
+            AlertDefinition alert,
+            ServerConnection connection,
+            string serverName,
+            AlertGlobalDefaults globalDefaults)
+        {
+            var stateKey = $"{alert.Id}:{serverName}".ToLowerInvariant();
+
+            try
+            {
+                double? value = alert.QueryMode switch
+                {
+                    "connectivity_check" => await CheckConnectivityAsync(connection, serverName),
+                    "host_connectivity_check" => await CheckConnectivityAsync(connection, serverName),
+                    "error_log_scan" => await ScanErrorLogAsync(alert, connection, serverName),
+                    "io_error_check" => await CheckIoErrorsAsync(connection, serverName),
+                    "deadlock_count" => await CountDeadlocksAsync(connection, serverName),
+                    _ => null
+                };
+
+                if (value == null) return;
+
+                var isTriggered = IsThresholdBreached(value.Value, alert.Thresholds.Warning, alert.Operator)
+                    || (alert.Thresholds.Critical.HasValue && IsThresholdBreached(value.Value, alert.Thresholds.Critical, alert.Operator));
+
+                if (isTriggered)
+                {
+                    var isCritical = alert.Thresholds.Critical.HasValue
+                        && IsThresholdBreached(value.Value, alert.Thresholds.Critical, alert.Operator);
+                    var severity = isCritical ? "Critical" : "Warning";
+
+                    // 2026-08-05, the same class as the main path with a different shape: this
+                    // defaulted to `?? 1` when Warning was null, so the message named a threshold
+                    // of 1 that no definition carried. These special modes fire on a fixed
+                    // threshold or not at all, so a null Warning with no Critical breach means
+                    // nothing measured a threshold, and none is printed.
+                    var firingBasis = isCritical
+                        ? FiringBasis.Fixed(alert.Thresholds.Critical!.Value)
+                        : alert.Thresholds.Warning.HasValue
+                            ? FiringBasis.Fixed(alert.Thresholds.Warning.Value)
+                            : FiringBasis.Unknown();
+
+                    if (!_activeStates.TryGetValue(stateKey, out var existing))
+                    {
+                        existing = new AlertState
+                        {
+                            AlertId = alert.Id,
+                            AlertName = alert.Name,
+                            ServerName = serverName,
+                            Severity = severity,
+                            Status = AlertStatus.Active,
+                            LastValue = value.Value,
+                            ThresholdValue = firingBasis.Threshold,
+                            BasisKind = firingBasis.Kind.ToString(),
+                            HitCount = 1,
+                            FirstTriggered = DateTime.UtcNow,
+                            LastTriggered = DateTime.UtcNow,
+                            Message = FormatMessage(alert, serverName, value.Value, firingBasis, severity)
+                        };
+                        _activeStates[stateKey] = existing;
+                        if (!_dryRun) _history.UpsertAlert(existing);
+                        if (!_dryRun) DispatchNotification(alert, existing);
+                        _lastNotified[stateKey] = DateTime.UtcNow;
+                    }
+                    else
+                    {
+                        existing.HitCount++;
+                        existing.LastValue = value.Value;
+                        existing.LastTriggered = DateTime.UtcNow;
+                        // C3 (2026-08-05): this branch re-DISPATCHES, and it used to carry the
+                        // FIRST fire's basis, threshold and sentence into the new notification.
+                        // A re-fire that crossed Critical was paged out naming the Warning
+                        // threshold from an hour earlier. The main evaluation path already
+                        // refreshed these on re-fire; this one is now the same shape.
+                        existing.Severity = severity;
+                        existing.ThresholdValue = firingBasis.Threshold;
+                        existing.BasisKind = firingBasis.Kind.ToString();
+                        existing.Message = FormatMessage(alert, serverName, value.Value, firingBasis, severity);
+                        var cooldown = alert.NextAlertDelayMinutes.HasValue
+                            ? TimeSpan.FromMinutes(alert.NextAlertDelayMinutes.Value)
+                            : _definitions.GetCooldown(alert);
+                        if (!_lastNotified.TryGetValue(stateKey, out var lastNotify)
+                            || (DateTime.UtcNow - lastNotify) >= cooldown)
+                        {
+                            if (!_dryRun) DispatchNotification(alert, existing);
+                            _lastNotified[stateKey] = DateTime.UtcNow;
+                        }
+                        if (!_dryRun) _history.UpsertAlert(existing);
+                    }
+                }
+                else if (_activeStates.TryRemove(stateKey, out var cleared))
+                {
+                    cleared.Status = AlertStatus.Resolved;
+                    cleared.ResolvedAt = DateTime.UtcNow;
+                    if (!_dryRun) _history.ResolveAlert(alert.Id, serverName);
+                    _lastNotified.TryRemove(stateKey, out _);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Special alert {AlertId} ({Mode}) failed on {Server}",
+                    alert.Id, alert.QueryMode, LogAnon.S(serverName));
+            }
+        }
+
+        // Helper: get a connection — from pool if available, else direct.
+        // Caller must call ReturnOrDispose when done.
+        private async Task<(System.Data.IDbConnection Conn, bool Pooled)> RentConnectionAsync(string connStr, CancellationToken ct = default)
+        {
+            if (_pool != null)
+                return (await _pool.GetConnectionAsync(connStr, ct), true);
+            var c = new SqlConnection(connStr);
+            await c.OpenAsync(ct);
+            return (c, false);
+        }
+
+        private void ReturnOrDispose(System.Data.IDbConnection conn, string connStr, bool pooled)
+        {
+            if (pooled && _pool != null)
+                _pool.ReturnConnection(conn, connStr);
+            else
+                try { conn.Dispose(); } catch { /* best effort */ }
+        }
+
+        private async Task<double?> CheckConnectivityAsync(ServerConnection connection, string serverName)
+        {
+            try
+            {
+                var connStr = connection.GetConnectionString(serverName, "master");
+                var (sqlConn, pooled) = await RentConnectionAsync(connStr);
+                try
+                {
+                    using var cmd = new SqlCommand("SELECT 1", (SqlConnection)sqlConn) { CommandTimeout = 5 };
+                    await cmd.ExecuteScalarAsync();
+                    return 0; // 0 = reachable (below threshold of 1 = unreachable)
+                }
+                finally { ReturnOrDispose(sqlConn, connStr, pooled); }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Connectivity check failed for {Server} — treating as unreachable", LogAnon.S(serverName));
+                return 1; // 1 = unreachable
+            }
+        }
+
+        private async Task<double?> ScanErrorLogAsync(AlertDefinition alert, ServerConnection connection, string serverName)
+        {
+            try
+            {
+                var connStr = connection.GetConnectionString(serverName, "master");
+
+                // Count matching errors in xp_readerrorlog output from the last 5 minutes.
+                // xp_readerrorlog params 5 & 6 must be datetime variables, not inline expressions.
+                var sql = alert.Id switch
+                {
+                    "error_log_severity" => "DECLARE @f DATETIME = DATEADD(MINUTE,-5,GETDATE()), @t DATETIME = GETDATE(); DECLARE @r TABLE(LogDate DATETIME, ProcessInfo NVARCHAR(50), [Text] NVARCHAR(MAX)); INSERT INTO @r EXEC xp_readerrorlog 0, 1, NULL, NULL, @f, @t; SELECT COUNT(*) FROM @r WHERE [Text] NOT LIKE '%Backup%'",
+                    "error_log_fatal" => "DECLARE @f DATETIME = DATEADD(MINUTE,-5,GETDATE()), @t DATETIME = GETDATE(); DECLARE @r TABLE(LogDate DATETIME, ProcessInfo NVARCHAR(50), [Text] NVARCHAR(MAX)); INSERT INTO @r EXEC xp_readerrorlog 0, 1, NULL, NULL, @f, @t; SELECT COUNT(*) FROM @r WHERE [Text] LIKE '%Fatal%' OR [Text] LIKE '%severity 2[0-5]%'",
+                    "logon_failure" => "DECLARE @f DATETIME = DATEADD(MINUTE,-5,GETDATE()), @t DATETIME = GETDATE(); DECLARE @r TABLE(LogDate DATETIME, ProcessInfo NVARCHAR(50), [Text] NVARCHAR(MAX)); INSERT INTO @r EXEC xp_readerrorlog 0, 1, 'Login failed', NULL, @f, @t; SELECT COUNT(*) FROM @r",
+                    _ => null
+                };
+
+                if (sql == null) return null;
+
+                var (sqlConn, pooled) = await RentConnectionAsync(connStr);
+                try
+                {
+                    using var cmd = new SqlCommand(sql, (SqlConnection)sqlConn) { CommandTimeout = 15 };
+                    var result = await cmd.ExecuteScalarAsync();
+                    return result == null || result == DBNull.Value ? 0 : Convert.ToDouble(result);
+                }
+                finally { ReturnOrDispose(sqlConn, connStr, pooled); }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Error log scan failed for alert {AlertId} on {Server}: {Msg}", alert.Id, LogAnon.S(serverName), ex.Message);
+                return null;
+            }
+        }
+
+        private async Task<double?> CheckIoErrorsAsync(ServerConnection connection, string serverName)
+        {
+            try
+            {
+                var connStr = connection.GetConnectionString(serverName, "master");
+                var (sqlConn, pooled) = await RentConnectionAsync(connStr);
+                try
+                {
+                    using var cmd = new SqlCommand(
+                        "SELECT COUNT(*) FROM sys.dm_io_virtual_file_stats(NULL, NULL) WHERE io_stall_read_ms > 5000 OR io_stall_write_ms > 5000",
+                        (SqlConnection)sqlConn)
+                    { CommandTimeout = 10 };
+                    var result = await cmd.ExecuteScalarAsync();
+                    return result == null || result == DBNull.Value ? 0 : Convert.ToDouble(result);
+                }
+                finally { ReturnOrDispose(sqlConn, connStr, pooled); }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "I/O error check failed on {Server}", LogAnon.S(serverName));
+                return null;
+            }
+        }
+
+        private async Task<double?> CountDeadlocksAsync(ServerConnection connection, string serverName)
+        {
+            try
+            {
+                var connStr = connection.GetConnectionString(serverName, "master");
+                var (sqlConn, pooled) = await RentConnectionAsync(connStr);
+
+                // Count xml_deadlock_report events in the last 5 minutes from system_health ring buffer.
+                // Pre-check: if target_data contains no 'xml_deadlock_report' string at all,
+                // return 0 immediately without any XML parse — this is the fast path when there
+                // are no deadlocks (the common case). Only cast to XML when deadlocks exist.
+                const string sql = @"
+                    IF NOT EXISTS (
+                        SELECT 1 FROM sys.dm_xe_session_targets st WITH (NOLOCK)
+                        JOIN sys.dm_xe_sessions s WITH (NOLOCK)
+                          ON s.address = st.event_session_address
+                        WHERE s.name = N'system_health'
+                          AND st.target_name = N'ring_buffer'
+                          AND CAST(target_data AS NVARCHAR(MAX)) LIKE N'%xml_deadlock_report%'
+                    )
+                    BEGIN SELECT 0; RETURN; END;
+
+                    SELECT COUNT(*) FROM (
+                        SELECT TOP 200 xed.value('(@timestamp)[1]', 'varchar(50)') AS ts
+                        FROM (
+                            SELECT CAST(target_data AS XML) AS td
+                            FROM sys.dm_xe_session_targets st WITH (NOLOCK)
+                            JOIN sys.dm_xe_sessions s WITH (NOLOCK)
+                              ON s.address = st.event_session_address
+                            WHERE s.name = N'system_health'
+                              AND st.target_name = N'ring_buffer'
+                        ) rb
+                        CROSS APPLY rb.td.nodes(
+                            'RingBufferTarget/event[@name=''xml_deadlock_report'']') xe(xed)
+                    ) ev
+                    WHERE TRY_CAST(ts AS datetimeoffset)
+                          >= DATEADD(MINUTE, -5, SYSUTCDATETIME())";
+
+                try
+                {
+                    using var cmd = new SqlCommand(sql, (SqlConnection)sqlConn) { CommandTimeout = 30 };
+                    var result = await cmd.ExecuteScalarAsync();
+                    return result == null || result == DBNull.Value ? 0 : Convert.ToDouble(result);
+                }
+                finally { ReturnOrDispose(sqlConn, connStr, pooled); }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Deadlock count check failed on {Server}", LogAnon.S(serverName));
+                return null;
+            }
+        }
+
+        private async Task EvaluateAlertOnServerAsync(
+            AlertDefinition alert,
+            ServerConnection connection,
+            string serverName,
+            AlertGlobalDefaults globalDefaults,
+            ServerReachabilityProbe? reach = null)
+        {
+            var stateKey = $"{alert.Id}:{serverName}".ToLowerInvariant();
+
+            try
+            {
+                // Skip alerts tagged as unsupported on Azure SQL DB / Managed Instance
+                if (alert.RequiresOnPrem && _health != null && _health.IsAzureSql(serverName))
+                {
+                    // Reachability stays Undetermined: nothing was attempted against the server.
+                    _logger.LogDebug("Skipping alert {AlertId} on {Server} — not supported on Azure SQL", alert.Id, LogAnon.S(serverName));
+                    return;
+                }
+
+                var value = await ExecuteAlertQueryAsync(alert, connection, serverName);
+
+                // A query completed — this is the one place in this method that proves the server is
+                // up and answering, and it is the ONLY thing entitled to close the circuit.
+                if (reach != null) reach.Reachability = ServerReachability.Reached;
+
+                _evalFailures.TryRemove(stateKey, out _); // query succeeded — clear any prior failure record
+                if (value == null) return; // query returned no data
+
+                // Record sample for IQR baseline (fire-and-forget, no latency impact)
+                _baseline?.RecordSample(alert.Id, serverName, value.Value);
+
+                // -- Which of the four bases fired ---------------------------------------
+                // 2026-08-05: the message printed alert.Thresholds regardless of what actually
+                // fired, so a TREND-only fire on an alert with no fixed thresholds configured
+                // rendered "above 0.0" -- a threshold that exists nowhere. The basis is now
+                // carried out of the decision block and NAMED in the message.
+                FiringBasis? basis = null;
+
+                // 1. Fixed thresholds from the alert definition.
+                var isWarning = IsThresholdBreached(value.Value, alert.Thresholds.Warning, alert.Operator);
+                var isCritical = alert.Thresholds.Critical.HasValue
+                    && IsThresholdBreached(value.Value, alert.Thresholds.Critical, alert.Operator);
+                if (isWarning || isCritical)
+                    basis = FiringBasis.Fixed(isCritical
+                        ? alert.Thresholds.Critical!.Value
+                        : alert.Thresholds.Warning!.Value);
+
+                // 2. IQR dynamic baseline thresholds (override fixed thresholds when baseline is ready)
+                if (!isWarning && !isCritical && _baseline != null && alert.CanBaseline)
+                {
+                    var (bWarn, bCrit) = _baseline.GetThresholds(alert.Id, serverName);
+                    if (bWarn.HasValue)
+                        isWarning = IsThresholdBreached(value.Value, bWarn, alert.Operator);
+                    if (bCrit.HasValue)
+                        isCritical = IsThresholdBreached(value.Value, bCrit, alert.Operator);
+                    if (isWarning || isCritical)
+                        basis = FiringBasis.Learned(isCritical ? bCrit!.Value : bWarn!.Value);
+                }
+
+                // 3. Trend anomaly: rising/falling slope over a rolling 72-hour window. This
+                //    fires on a SHAPE, not on a level, so there is no threshold to print.
+                if (!isWarning && !isCritical && _baseline != null && alert.CanBaseline)
+                {
+                    var (trendWarn, trendCrit) = _baseline.GetTrendSignal(alert.Id, serverName);
+                    if (trendCrit) isCritical = true;
+                    else if (trendWarn) isWarning = true;
+                    if (isWarning || isCritical) basis = FiringBasis.Trend();
+                }
+
+                // Legacy baseline deviation (kept for backwards compat with existing alert configs)
+                if (!isWarning && !isCritical
+                    && alert.BaselineDeviationPercent > 0
+                    && !string.IsNullOrEmpty(alert.BaselineQueryId))
+                {
+                    var baseline = await GetBaselineAverageAsync(alert.BaselineQueryId, serverName, alert.BaselineSeries);
+                    if (baseline.HasValue && baseline.Value > 0)
+                    {
+                        var deviationPct = ((value.Value - baseline.Value) / baseline.Value) * 100.0;
+                        if (deviationPct >= alert.BaselineDeviationPercent)
+                        {
+                            isWarning = true;
+                            // 4. Legacy deviation: the breach is a PERCENTAGE off a measured
+                            //    baseline average, not a level, so both numbers are carried.
+                            basis = FiringBasis.Deviation(baseline.Value, deviationPct, alert.BaselineDeviationPercent);
+                            _logger.LogDebug("Baseline deviation: {AlertId} on {Server} — current={V:N1}, baseline={B:N1}, deviation={D:N1}%",
+                                alert.Id, LogAnon.S(serverName), value.Value, baseline.Value, deviationPct);
+                        }
+                    }
+                }
+
+                // Track hit times for escalation window
+                var hits = _hitTimes.GetOrAdd(stateKey, _ => new Queue<DateTime>());
+
+                if (isWarning || isCritical)
+                {
+                    var severity = isCritical ? "Critical" : "Warning";
+                    // Should be unreachable: every branch above that sets a flag also sets the
+                    // basis. Unknown() prints no threshold at all rather than inventing one.
+                    var firingBasis = basis ?? FiringBasis.Unknown();
+
+                    // Record this hit for escalation window tracking. Trim to the longest
+                    // escalation window we care about so the queue can't grow forever
+                    // while an alert stays firing. Default 60min cap is plenty.
+                    var trimWindow = alert.EscalationWindowMinutes > 0
+                        ? alert.EscalationWindowMinutes
+                        : 60;
+                    var trimCutoff = DateTime.UtcNow.AddMinutes(-trimWindow);
+                    lock (hits)
+                    {
+                        hits.Enqueue(DateTime.UtcNow);
+                        while (hits.Count > 0 && hits.Peek() < trimCutoff) hits.Dequeue();
+                    }
+
+                    if (_activeStates.TryGetValue(stateKey, out var existing))
+                    {
+                        // Already active — increment hit count, update value
+                        existing.HitCount++;
+                        existing.LastValue = value.Value;
+                        existing.LastTriggered = DateTime.UtcNow;
+                        existing.Severity = severity;
+                        existing.ThresholdValue = firingBasis.Threshold;
+                        existing.BasisKind = firingBasis.Kind.ToString();
+                        existing.Message = FormatMessage(alert, serverName, value.Value, firingBasis, severity);
+
+                        // Per-alert next-alert-delay override
+                        var cooldown = alert.NextAlertDelayMinutes.HasValue
+                            ? TimeSpan.FromMinutes(alert.NextAlertDelayMinutes.Value)
+                            : _definitions.GetCooldown(alert);
+                        if (!_lastNotified.TryGetValue(stateKey, out var lastNotify)
+                            || (DateTime.UtcNow - lastNotify) >= cooldown)
+                        {
+                            if (!_dryRun) DispatchNotification(alert, existing);
+                            _lastNotified[stateKey] = DateTime.UtcNow;
+                        }
+
+                        if (!_dryRun) _history.UpsertAlert(existing);
+                    }
+                    else
+                    {
+                        // New alert
+                        var state = new AlertState
+                        {
+                            AlertId = alert.Id,
+                            AlertName = alert.Name,
+                            ServerName = serverName,
+                            Severity = severity,
+                            Status = AlertStatus.Active,
+                            LastValue = value.Value,
+                            ThresholdValue = firingBasis.Threshold,
+                            BasisKind = firingBasis.Kind.ToString(),
+                            HitCount = 1,
+                            FirstTriggered = DateTime.UtcNow,
+                            LastTriggered = DateTime.UtcNow,
+                            Message = FormatMessage(alert, serverName, value.Value, firingBasis, severity)
+                        };
+                        _activeStates[stateKey] = state;
+                        if (!_dryRun) _history.UpsertAlert(state);
+
+                        if (!_dryRun) DispatchNotification(alert, state);
+                        _lastNotified[stateKey] = DateTime.UtcNow;
+
+                        _logger.LogWarning("Alert fired: {AlertName} on {Server} ({Severity}) — value: {Value}{DryRun}",
+                            alert.Name, LogAnon.S(serverName), severity, value.Value,
+                            _dryRun ? " [DRY RUN]" : "");
+                    }
+
+                    // ── Escalation check ───────────────────────────────────
+                    if (alert.Escalate && !_dryRun
+                        && _activeStates.TryGetValue(stateKey, out var activeState)
+                        && !activeState.IsEscalated
+                        && activeState.Status != AlertStatus.Acknowledged)
+                    {
+                        bool shouldEscalate;
+                        if (alert.EscalationThresholdEvents > 0 && alert.EscalationWindowMinutes > 0)
+                        {
+                            // Event-count based: N events within M minutes
+                            var windowStart = DateTime.UtcNow.AddMinutes(-alert.EscalationWindowMinutes);
+                            int recentHits;
+                            lock (hits) { recentHits = hits.Count(t => t >= windowStart); }
+                            shouldEscalate = recentHits >= alert.EscalationThresholdEvents;
+                        }
+                        else
+                        {
+                            // Time-based: unacknowledged for X minutes
+                            shouldEscalate = (DateTime.UtcNow - activeState.FirstTriggered).TotalMinutes >= alert.EscalationAfterMinutes;
+                        }
+
+                        if (shouldEscalate)
+                        {
+                            activeState.EscalatedAt = DateTime.UtcNow;
+                            activeState.Severity = "Critical"; // escalate severity
+                            DispatchEscalation(alert, activeState);
+                            _logger.LogWarning("Alert escalated: {AlertName} on {Server}", alert.Name, LogAnon.S(serverName));
+                        }
+                    }
+                }
+                else
+                {
+                    // Condition cleared — mark as resolved if was active
+                    if (_activeStates.TryRemove(stateKey, out var cleared))
+                    {
+                        cleared.Status = AlertStatus.Resolved;
+                        cleared.ResolvedAt = DateTime.UtcNow;
+                        _history.ResolveAlert(alert.Id, serverName);
+                        _lastNotified.TryRemove(stateKey, out _);
+                        lock (hits) { hits.Clear(); }
+
+                        _logger.LogInformation("Alert resolved: {AlertName} on {Server}", alert.Name, LogAnon.S(serverName));
+                    }
+                }
+            }
+            catch (Microsoft.Data.SqlClient.SqlException sqlEx)
+            {
+                // Connection failures and SQL errors are expected (server offline, AG not configured, etc.)
+                // Log at Debug to avoid spamming the log on every evaluation cycle — but still record the
+                // failure so AlertsNoc can render this server as Unknown instead of silently Ok (#68 LEG 2).
+                // This handler deliberately does NOT rethrow; the breaker is told via `reach` instead.
+                if (reach != null) reach.Reachability = ServerReachability.Unreachable;
+                _logger.LogDebug(sqlEx, "Alert query failed (SQL) {AlertId} on {Server}: {Msg}", alert.Id, LogAnon.S(serverName), sqlEx.Message);
+                _evalFailures[stateKey] = new AlertEvalFailure(alert.Id, serverName, DateTime.UtcNow, sqlEx.Message);
+            }
+            catch (Exception ex)
+            {
+                // Reachability stays whatever it already was. A non-SQL exception here is a fault in OUR
+                // logic (threshold maths, notification dispatch, history write), not evidence about the
+                // server — opening the circuit on it would suppress polling of a healthy instance.
+                _logger.LogWarning(ex, "Failed to evaluate alert {AlertId} on {Server}", alert.Id, LogAnon.S(serverName));
+                _evalFailures[stateKey] = new AlertEvalFailure(alert.Id, serverName, DateTime.UtcNow, ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Returns the average value of a cached time-series metric over the last 7 days,
+        /// excluding the most recent hour (so today's spike doesn't inflate the baseline).
+        /// Returns null if insufficient data.
+        /// </summary>
+        private async Task<double?> GetBaselineAverageAsync(string queryId, string serverName, string? seriesFilter)
+        {
+            try
+            {
+                var to = DateTime.UtcNow.AddHours(-1);
+                var from = to.AddDays(-7);
+                var points = await _cache.GetTimeSeriesAsync(queryId, serverName, from, to);
+                if (points.Count < 10) return null; // not enough data for a meaningful baseline
+
+                var filtered = string.IsNullOrEmpty(seriesFilter)
+                    ? points
+                    : points.Where(p => p.Series.Equals(seriesFilter, StringComparison.OrdinalIgnoreCase)).ToList();
+
+                if (filtered.Count < 10) return null;
+                return filtered.Average(p => p.Value);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Baseline lookup failed for queryId={QueryId} server={Server}", queryId, LogAnon.S(serverName));
+                return null;
+            }
+        }
+
+        private async Task<double?> ExecuteAlertQueryAsync(
+            AlertDefinition alert,
+            ServerConnection connection,
+            string serverName)
+        {
+            var connString = connection.GetConnectionString(serverName, "master");
+            var (sqlConn, pooled) = await RentConnectionAsync(connString);
+            try
+            {
+                using var cmd = new SqlCommand(alert.Query, (SqlConnection)sqlConn)
+                {
+                    CommandTimeout = 15
+                };
+                var result = await cmd.ExecuteScalarAsync();
+                if (result == null || result == DBNull.Value) return null;
+                return Convert.ToDouble(result);
+            }
+            finally { ReturnOrDispose(sqlConn, connString, pooled); }
+        }
+
+        internal static bool IsThresholdBreached(double value, double? threshold, string op)
+        {
+            if (!threshold.HasValue) return false;
+            return op == "less_than"
+                ? value < threshold.Value
+                : value > threshold.Value;
+        }
+
+        private void DispatchNotification(AlertDefinition alert, AlertState state)
+        {
+            // Toast notification — uses alert channel so flood muting applies
+            _toast.ShowAlert($"{alert.Name} — {state.ServerName}",
+                state.Message, critical: state.Severity == "Critical", duration: 6000);
+
+            // Feed into existing AlertingService notification pipeline for email/Teams
+            var notification = new AlertNotification
+            {
+                AlertName = alert.Name,
+                Metric = alert.Id,
+                CurrentValue = state.LastValue,
+                ThresholdValue = state.ThresholdValue,
+                BasisKind = state.BasisKind,
+                Severity = state.Severity.ToLowerInvariant(),
+                InstanceName = state.ServerName,
+                Message = state.Message,
+                TriggeredAt = state.LastTriggered,
+                SendEmail = alert.SendEmail
+            };
+
+            _ = DispatchAndSurfaceAsync(notification);
+        }
+
+        private void DispatchEscalation(AlertDefinition alert, AlertState state)
+        {
+            var msg = $"ESCALATED — {alert.Name} on {state.ServerName} has been active for {(DateTime.UtcNow - state.FirstTriggered).TotalMinutes:N0} min without acknowledgement. {state.Message}";
+            _toast.ShowError($"ESCALATED: {alert.Name} — {state.ServerName}", msg, 10000);
+
+            var notification = new AlertNotification
+            {
+                AlertName = $"[ESCALATED] {alert.Name}",
+                Metric = alert.Id,
+                CurrentValue = state.LastValue,
+                ThresholdValue = state.ThresholdValue,
+                BasisKind = state.BasisKind,
+                Severity = "critical",
+                InstanceName = state.ServerName,
+                Message = msg,
+                TriggeredAt = DateTime.UtcNow
+            };
+
+            _ = DispatchAndSurfaceAsync(notification);
+        }
+
+        /// <summary>Awaits the channel dispatch and toasts if any channel failed. #68 LEG 1: the old
+        /// call site was `_ = _channels.DispatchAsync(notification);` — fire-and-forget with no way
+        /// to know a channel silently failed. DispatchAsync itself now records per-channel delivery
+        /// health (visible on the Alerting Config page); this adds an immediate, loud signal at the
+        /// point an alert actually fires.</summary>
+        private async Task DispatchAndSurfaceAsync(AlertNotification notification)
+        {
+            try
+            {
+                var results = await _channels.DispatchAsync(notification);
+                var failures = results.Where(r => !r.Success).ToList();
+                if (failures.Count > 0)
+                {
+                    _toast.ShowError(
+                        $"Alert delivery failed — {notification.AlertName}",
+                        string.Join("; ", failures.Select(f => $"{f.Channel}: {f.Detail}")),
+                        8000);
+                }
+            }
+            catch (Exception ex)
+            {
+                // DispatchAsync itself should never throw (each channel catches its own), but this is
+                // the fire-and-forget boundary — never let an unexpected fault vanish silently.
+                _logger.LogError(ex, "Unexpected error dispatching alert notification for {AlertName}", notification.AlertName);
+            }
+        }
+
+        /// <summary>
+        /// Resolve any in-memory states that haven't been refreshed in 3x their frequency
+        /// (the alert condition has likely cleared but was never re-evaluated to confirm).
+        /// </summary>
+        private void ResolveCleared()
+        {
+            var now = DateTime.UtcNow;
+            foreach (var kvp in _activeStates)
+            {
+                var state = kvp.Value;
+                var alert = _definitions.GetAlert(state.AlertId);
+                if (alert == null) continue;
+
+                var staleCutoff = TimeSpan.FromSeconds(alert.FrequencySeconds * 3);
+                if ((now - state.LastTriggered) > staleCutoff && state.Status == AlertStatus.Active)
+                {
+                    state.Status = AlertStatus.Resolved;
+                    state.ResolvedAt = now;
+                    _activeStates.TryRemove(kvp.Key, out _);
+                    _history.ResolveAlert(state.AlertId, state.ServerName);
+                    _lastNotified.TryRemove(kvp.Key, out _);
+                }
+            }
+        }
+
+        public void AcknowledgeAlert(string alertId, string serverName)
+        {
+            var key = $"{alertId}:{serverName}".ToLowerInvariant();
+            if (_activeStates.TryGetValue(key, out var state))
+            {
+                state.Status = AlertStatus.Acknowledged;
+                state.AcknowledgedAt = DateTime.UtcNow;
+            }
+            _history.AcknowledgeAlert(alertId, serverName);
+            OnAlertsChanged?.Invoke();
+        }
+
+        public void AcknowledgeAll()
+        {
+            foreach (var state in _activeStates.Values.Where(s => s.Status == AlertStatus.Active))
+            {
+                state.Status = AlertStatus.Acknowledged;
+                state.AcknowledgedAt = DateTime.UtcNow;
+            }
+            _history.AcknowledgeAll();
+            OnAlertsChanged?.Invoke();
+        }
+
+        /// <summary>
+        /// Builds the sentence beside a fired alert. Conditioned on the basis that ACTUALLY fired
+        /// (2026-08-05): this used to take a bare double read from <c>alert.Thresholds</c> whatever
+        /// the basis was, so a trend-only fire on an alert with no fixed thresholds rendered
+        /// "above 0.0", naming a threshold that exists in no definition. Each branch prints only
+        /// numbers its own basis measured, and the trend branch prints no threshold at all,
+        /// because a slope has none.
+        /// </summary>
+        internal static string FormatMessage(AlertDefinition alert, string server, double value,
+            FiringBasis basis, string severity)
+        {
+            var direction = alert.Operator == "less_than" ? "below" : "above";
+            var unit = alert.Unit switch
+            {
+                "percent" => "%",
+                "seconds" => "s",
+                "milliseconds" => "ms",
+                "megabytes" => " MB",
+                "hours" => " hrs",
+                "minutes" => " min",
+                "count" => "",
+                "per_second" => "/s",
+                "per_minute" => "/min",
+                _ => ""
+            };
+            var sev = severity.ToLowerInvariant();
+
+            return basis.Kind switch
+            {
+                AlertBasisKind.FixedThreshold =>
+                    $"{value:N1}{unit} ({direction} the {basis.Threshold!.Value:N1}{unit} {sev} threshold)",
+
+                AlertBasisKind.LearnedBaseline =>
+                    $"{value:N1}{unit} ({direction} the learned {sev} threshold of "
+                    + $"{basis.Threshold!.Value:N1}{unit}, from this alert's own recent samples)",
+
+                AlertBasisKind.TrendAnomaly =>
+                    $"{value:N1}{unit} (a {sev} trend over the last 72 h of samples; "
+                    + $"no fixed threshold was crossed)",
+
+                AlertBasisKind.BaselineDeviation =>
+                    $"{value:N1}{unit} ({basis.DeviationPercent!.Value:N1}% above the "
+                    + $"{basis.BaselineAverage!.Value:N1}{unit} baseline average, over the "
+                    + $"{basis.DeviationLimitPercent!.Value:N1}% deviation limit)",
+
+                _ =>
+                    $"{value:N1}{unit} ({sev}; the condition that fired was not recorded, so no "
+                    + $"threshold is named here)",
+            };
+        }
+
+        public void Dispose()
+        {
+            Stop();
+            try { _loopTask?.Wait(TimeSpan.FromSeconds(5)); } catch { /* best effort */ }
+            _cts?.Dispose();
+            _evaluationLock?.Dispose();
+        }
+    }
+
+    /// <summary>An alert query that threw on its most recent evaluation attempt. #68 LEG 2.</summary>
+    public sealed record AlertEvalFailure(string AlertId, string ServerName, DateTime LastFailureUtc, string ErrorSummary);
+
+    /// <summary>
+    /// Which of the four conditions actually fired an alert. Four bases can trip one alert, and
+    /// only two of them involve a threshold the definition carries, so the basis has to travel
+    /// with the decision or the message ends up naming whatever number was nearest to hand.
+    /// </summary>
+    public enum AlertBasisKind
+    {
+        /// <summary>A fixed threshold from the alert definition was crossed.</summary>
+        FixedThreshold,
+        /// <summary>An IQR threshold learned from this alert's own recent samples was crossed.</summary>
+        LearnedBaseline,
+        /// <summary>A slope over the rolling 72 h window. Fires on shape, so there is NO threshold.</summary>
+        TrendAnomaly,
+        /// <summary>The legacy percentage-off-a-baseline-average rule. The numbers are a percentage and an average.</summary>
+        BaselineDeviation,
+        /// <summary>The firing condition was not recorded. Prints no number rather than a plausible one.</summary>
+        Unrecorded,
+    }
+
+    /// <summary>
+    /// The basis that fired, carried out of the decision block so the message can name it
+    /// (2026-08-05). Every numeric field is nullable and null unless THIS basis measured it:
+    /// <see cref="Threshold"/> is null for a trend fire because a slope has no threshold, and
+    /// that null is the whole point — the old code substituted 0 and printed "above 0.0".
+    /// </summary>
+    public sealed record FiringBasis(
+        AlertBasisKind Kind,
+        double? Threshold = null,
+        double? BaselineAverage = null,
+        double? DeviationPercent = null,
+        double? DeviationLimitPercent = null)
+    {
+        public static FiringBasis Fixed(double threshold)
+            => new(AlertBasisKind.FixedThreshold, Threshold: threshold);
+
+        public static FiringBasis Learned(double threshold)
+            => new(AlertBasisKind.LearnedBaseline, Threshold: threshold);
+
+        public static FiringBasis Trend()
+            => new(AlertBasisKind.TrendAnomaly);
+
+        public static FiringBasis Deviation(double baselineAverage, double deviationPercent, double limitPercent)
+            => new(AlertBasisKind.BaselineDeviation,
+                   BaselineAverage: baselineAverage,
+                   DeviationPercent: deviationPercent,
+                   DeviationLimitPercent: limitPercent);
+
+        public static FiringBasis Unknown()
+            => new(AlertBasisKind.Unrecorded);
+    }
+}

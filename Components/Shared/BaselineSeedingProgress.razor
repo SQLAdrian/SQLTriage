@@ -1,0 +1,78 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using SQLTriage.Data.Services
+@inject AlertBaselineService Baseline
+@implements IDisposable
+
+@if (_show)
+{
+    <div style="margin-bottom: 14px; padding: 10px 14px; background: rgba(var(--accent-rgb, 0,120,212),0.08);
+                border: 1px solid rgba(var(--accent-rgb, 0,120,212),0.25); border-radius: 8px;
+                display: flex; align-items: center; gap: 12px;">
+        <i class="fa-solid fa-chart-line" style="color: var(--accent); font-size: 14px; flex-shrink: 0;"></i>
+        <div style="flex: 1; min-width: 0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                <span style="font-size: 12px; font-weight: 600; color: var(--text);">
+                    Seeding alert baselines&hellip;
+                </span>
+                <span style="font-size: 11px; color: var(--text-muted);">
+                    @_seeded of @_total alert/server pairs ready
+                </span>
+            </div>
+            <div style="height: 5px; background: var(--border); border-radius: 3px; overflow: hidden;">
+                <div style="height: 100%; width: @(_pct.ToString("F1"))%; background: var(--accent);
+                            border-radius: 3px; transition: width 0.4s ease;"></div>
+            </div>
+            <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">
+                Dynamic IQR thresholds will activate once each alert has 10+ samples (&asymp; 5 min from first run)
+            </div>
+        </div>
+        @if (_pct >= 100)
+        {
+            <i class="fa-solid fa-circle-check" style="color: var(--green); font-size: 16px; flex-shrink: 0;"></i>
+        }
+    </div>
+}
+
+@code {
+    private double _pct;
+    private int    _seeded;
+    private int    _total;
+    private bool   _show;
+
+    protected override void OnInitialized()
+    {
+        Baseline.OnProgressChanged += OnProgress;
+        Refresh();
+    }
+
+    private void OnProgress()
+    {
+        Refresh();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void Refresh()
+    {
+        // Snapshot all three properties in a single pass to avoid torn reads
+        // when Baseline updates between property accesses
+        int seeded = Baseline.SeededCount;
+        int total  = Baseline.TotalPairCount;
+        bool done  = Baseline.SeedingComplete;
+
+        _pct    = total > 0 ? seeded * 100.0 / total : 0;
+        _seeded = seeded;
+        _total  = total;
+        _show   = !done;
+
+        // Once seeding completes, unsubscribe to stop consuming CPU on every baseline tick
+        if (done)
+        {
+            Baseline.OnProgressChanged -= OnProgress;
+        }
+    }
+
+    public void Dispose()
+    {
+        Baseline.OnProgressChanged -= OnProgress;
+    }
+}

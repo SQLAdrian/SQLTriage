@@ -1,0 +1,145 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@*
+    Tiny SVG sparkline. Pass either:
+      • Values — numeric series for a line chart. A NULL entry is a gap: the sample exists
+        but has no value to plot (A1b, 2026-07-20). The line BREAKS across it rather than
+        dropping to the floor — plotting 0 for "we could not compute a rate" draws a cliff
+        that reads as a total-failure day, which is a different lie from the one it replaced,
+        not an improvement on it. A run of one surviving value between two gaps is drawn as
+        a dot, because a one-point polyline renders nothing at all.
+      • States — SparkState series for a discrete dot chart (pass / fail / unassessed).
+
+    Width/Height default to a row-friendly 80x18. Stroke and dot colors use canonical CSS
+    vars so colour-blind mode auto-remaps via wwwroot/css/Accessibility.css.
+*@
+
+@if (HasData)
+{
+    <svg width="@Width" height="@Height" viewBox="0 0 @Width @Height"
+         class="sparkline" role="img" aria-label="@(AriaLabel ?? "Trend sparkline")">
+        @if (States != null && States.Count > 0)
+        {
+            @* Dot chart: one dot per sample. THREE states — see FillFor. *@
+            @for (var i = 0; i < States.Count; i++)
+            {
+                var cx = States.Count == 1 ? Width / 2.0 : (i * (Width - 6.0) / (States.Count - 1)) + 3;
+                var cy = Height / 2.0;
+                <circle cx="@cx.ToString("F1")" cy="@cy.ToString("F1")" r="2.5" fill="@FillFor(States[i])" />
+            }
+        }
+        else if (HasPlottableValues)
+        {
+            @* Line chart: one polyline per contiguous run of plottable values, so gaps stay gaps. *@
+            @foreach (var seg in BuildSegments())
+            {
+                if (seg.IsSinglePoint)
+                {
+                    <circle cx="@seg.PointX.ToString("F1")" cy="@seg.PointY.ToString("F1")" r="1.5"
+                            fill="var(--accent, #4a9eff)" />
+                }
+                else
+                {
+                    <polyline fill="none" stroke="var(--accent, #4a9eff)" stroke-width="1.5"
+                              points="@seg.Points" />
+                }
+            }
+        }
+    </svg>
+}
+
+@code {
+    [Parameter] public List<SparkState>? States { get; set; }
+
+    /// <summary>Nullable by design: null = no value for this sample, drawn as a gap (A1b).</summary>
+    [Parameter] public List<double?>? Values { get; set; }
+
+    [Parameter] public int Width { get; set; } = 80;
+    [Parameter] public int Height { get; set; } = 18;
+    [Parameter] public string? AriaLabel { get; set; }
+
+    /// <summary>
+    /// The dot fill per state. The third state's colour is a decision, not a default.
+    ///
+    /// <para><c>--orange</c> was rejected on evidence: <c>wwwroot/css/Accessibility.css</c> remaps
+    /// <c>--red</c> to <c>#d97706</c> and <c>--orange</c> to <c>#f59e0b</c> in colour-blind mode —
+    /// two ambers about 7° of hue apart, which at a 2.5px radius is not a distinction at all. It
+    /// would have read as red to exactly the readers who most need it not to.</para>
+    ///
+    /// <para><c>--text-muted</c> (#828F88) is used instead. It is NOT remapped by Accessibility.css,
+    /// so it holds still while the other two move, and it separates from both by SATURATION rather
+    /// than hue — the channel that survives both dichromacy and a five-pixel dot. Semantically it
+    /// is also the honest reading: nothing was recorded here.</para>
+    /// </summary>
+    public static string FillFor(SparkState state) => state switch
+    {
+        SparkState.Pass       => "var(--green)",
+        SparkState.Fail       => "var(--red)",
+        SparkState.Unassessed => "var(--text-muted)",
+        _                     => "var(--text-muted)",
+    };
+
+    private bool HasData =>
+        (States != null && States.Count > 0) || HasPlottableValues;
+
+    /// <summary>At least one non-null value — an all-gap series has nothing to draw.</summary>
+    private bool HasPlottableValues =>
+        Values != null && Values.Any(v => v.HasValue);
+
+    /// <summary>One drawable run of contiguous non-null values.</summary>
+    public readonly record struct Segment(string Points, bool IsSinglePoint, double PointX, double PointY);
+
+    /// <summary>
+    /// Splits the series into contiguous runs of plottable values and projects each to SVG
+    /// coordinates. X position is always the sample's index across the FULL series, so a gap
+    /// occupies real horizontal space instead of the surrounding days sliding together and
+    /// hiding that a day is missing.
+    /// </summary>
+    private List<Segment> BuildSegments() => BuildSegments(Values, Width, Height);
+
+    /// <summary>
+    /// Static and internal (InternalsVisibleTo SQLTriage.Tests) on purpose: the gap behaviour IS
+    /// A1b, and a segment builder no test can reach is a claim rather than a fix. Taking the three
+    /// inputs as parameters lets a test drive the real shipped projection without constructing a
+    /// component and setting its parameters from outside (which is what BL0005 warns about).
+    /// </summary>
+    internal static List<Segment> BuildSegments(List<double?>? values, int width, int height)
+    {
+        var segments = new List<Segment>();
+        if (values == null) return segments;
+
+        var present = values.Where(v => v.HasValue).Select(v => v!.Value).ToList();
+        if (present.Count == 0) return segments;
+
+        var min = present.Min();
+        var max = present.Max();
+        var range = max - min;
+        if (range <= 0) range = 1;
+
+        double X(int i) => values.Count == 1 ? width / 2.0 : (i * (width - 4.0) / (values.Count - 1)) + 2;
+        double Y(double v) => height - 2 - (((v - min) / range) * (height - 4));
+
+        var i = 0;
+        while (i < values.Count)
+        {
+            if (!values[i].HasValue) { i++; continue; }
+
+            var start = i;
+            var sb = new System.Text.StringBuilder();
+            while (i < values.Count && values[i].HasValue)
+            {
+                if (i > start) sb.Append(' ');
+                sb.Append(X(i).ToString("F1"));
+                sb.Append(',');
+                sb.Append(Y(values[i]!.Value).ToString("F1"));
+                i++;
+            }
+
+            if (i - start == 1)
+                segments.Add(new Segment("", true, X(start), Y(values[start]!.Value)));
+            else
+                segments.Add(new Segment(sb.ToString(), false, 0, 0));
+        }
+
+        return segments;
+    }
+}

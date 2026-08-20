@@ -1,0 +1,40 @@
+/* In the name of God, the Merciful, the Compassionate */
+/* ──────────────────────────────────────────────────────────────────────────
+   Diagnostics Roadmap — print styles: RETIRED 2026-07-29.
+
+   This file previously held ~440 lines of print CSS, every rule scoped to
+   `body.printing-active`. Nothing sets that class any more: the browser-print
+   path (PrintPrepareDomAsync / PrintSinglePdfAsync, which added the class around
+   a WebView2 PrintToPdfAsync call) was replaced by a server-side QuestPDF render.
+   The rules had therefore been unreachable for some time — deleted rather than
+   left to look load-bearing.
+
+   The PDF is now built by Data/Services/RoadmapPdfBuilder.cs. Style it there.
+
+   ── Kept: the three Chromium print-engine findings, because they cost real
+      debugging and would be re-learned the hard way by anyone who revives a
+      DOM-print path (WebView2 plumbing still exists in Data/Services/PrintService.cs):
+
+   1. Per-page footers. A position:fixed DOM footer is unreliable in Chromium
+      print-to-PDF and bleeds over content. The spec-correct slot is a @page
+      margin box (@bottom-right { content: "Page " counter(page) ... }), which
+      reserves margin space and repeats without overlapping.
+
+   2. Multi-column grids collapse. Chromium lets a column's min-content (the
+      longest description) bully a 3-up grid into stacking on landscape A4
+      unless every track is minmax(0, 1fr) and children carry min-width: 0.
+
+   3. Backgrounds are stripped. Chromium's print "economy mode" drops
+      background-color, so pills/badges render as bare coloured text and the
+      visual hierarchy is lost. print-color-adjust: exact restores it.
+
+   QuestPDF has none of these problems — it is not a browser — which is a good
+   part of why the export moved.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* The only rule that still earns its place. The print-only executive summary
+   also carries an inline display:none, so this is defence in depth: if that
+   inline style is ever refactored away, the block must not appear on screen. */
+@media screen {
+    #roadmap-print-region .print-executive-summary { display: none; }
+}

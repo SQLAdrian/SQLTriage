@@ -1,0 +1,267 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/changed-objects"
+@using SQLTriage.Components.Shared
+@using SQLTriage.Data
+@using SQLTriage.Data.Services
+@using Microsoft.Extensions.Logging
+
+@inject ChangedObjectsService Detector
+@inject ServerConnectionManager ConnectionManager
+@inject ToastService Toast
+@inject ILogger<ChangedObjects> Logger
+
+<PageTitle>Changed Objects - SQLTriage</PageTitle>
+
+<div class="co-page">
+
+    <div class="page-header">
+        <div>
+            <h2><i class="fa-solid fa-clock-rotate-left"></i> Changed Objects</h2>
+            <p class="page-description">
+                Detects database objects (procedures, functions, views, triggers, tables) that were
+                <strong>Created</strong>, <strong>Altered</strong>, or <strong>Dropped</strong> between scans.
+                Each scan captures a read-only inventory per database and diffs it against the stored baseline.
+            </p>
+        </div>
+        <div class="co-header-actions">
+            <button class="btn btn-primary" @onclick="ScanNowAsync" disabled="@_busy">
+                <i class="fa-solid @(_busy ? "fa-spinner fa-spin" : "fa-magnifying-glass-arrow-right")"></i>
+                @(_busy ? "Scanning…" : "Scan now")
+            </button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrEmpty(_statusMessage))
+    {
+        <div class="co-status @_statusClass">
+            <i class="fa-solid @(_statusClass == "co-status-error" ? "fa-circle-exclamation" : "fa-circle-info")"></i>
+            @_statusMessage
+        </div>
+    }
+
+    @if (_busy && _views.Count == 0)
+    {
+        <LoadingSpinner Message="Scanning databases…" />
+    }
+    else if (_views.Count == 0)
+    {
+        <div class="co-empty">
+            <i class="fa-solid fa-clock-rotate-left"></i>
+            <p>No database scans yet.</p>
+            <p class="co-empty-sub">
+                Run a Vulnerability Assessment, or click <strong>Scan now</strong>, to capture a baseline of
+                database objects. Differences are reported from the next scan onward.
+            </p>
+        </div>
+    }
+    else
+    {
+        @foreach (var serverGroup in _views.GroupBy(v => v.ServerName).OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            <div class="co-server">
+                <h3 class="co-server-title"><i class="fa-solid fa-server"></i> @serverGroup.Key</h3>
+
+                @foreach (var db in serverGroup.OrderBy(v => v.DatabaseName, StringComparer.OrdinalIgnoreCase))
+                {
+                    var created = db.Changes.Count(c => c.ChangeType == "Created");
+                    var altered = db.Changes.Count(c => c.ChangeType == "Altered");
+                    var dropped = db.Changes.Count(c => c.ChangeType == "Dropped");
+
+                    <div class="co-db">
+                        <div class="co-db-head">
+                            <span class="co-db-name"><i class="fa-solid fa-database"></i> @db.DatabaseName</span>
+                            <span class="co-db-meta">last scan @FormatUtc(db.LastScanUtc)</span>
+                        </div>
+
+                        @if (db.HasScanNote)
+                        {
+                            <div class="co-note co-note-warn">
+                                <i class="fa-solid fa-triangle-exclamation"></i>
+                                @db.ScanNote
+                            </div>
+                        }
+
+                        @if (db.IsBaselineOnly)
+                        {
+                            <div class="co-note">
+                                <i class="fa-solid fa-flag-checkered"></i>
+                                Baseline captured @FormatUtc(db.FirstScanUtc) — differences will appear from the next scan.
+                            </div>
+                        }
+                        else if (db.Changes.Count == 0)
+                        {
+                            <div class="co-note co-note-clean">
+                                <i class="fa-solid fa-shield-check"></i>
+                                No object changes since the baseline.
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="co-summary-bar">
+                                <span class="co-badge co-badge-created">+@created created</span>
+                                <span class="co-badge co-badge-altered">~@altered altered</span>
+                                <span class="co-badge co-badge-dropped">-@dropped dropped</span>
+                            </div>
+                            <div class="co-db-meta">
+                                Change events over @db.ScanCount scans — an object changed more than once counts each time, not once.@(db.Changes.Count >= 500 ? " Showing the 500 most recent." : "")
+                            </div>
+
+                            <table class="co-table">
+                                <thead>
+                                    <tr>
+                                        <th>Change</th>
+                                        <th>Object</th>
+                                        <th>Type</th>
+                                        <th>Detected</th>
+                                        <th>Modify date (baseline &rarr; current)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var c in db.Changes)
+                                    {
+                                        <tr class="@RowClass(c.ChangeType)">
+                                            <td><span class="co-badge @BadgeClass(c.ChangeType)">@c.ChangeType</span></td>
+                                            <td class="co-obj">@(c.SchemaName + "." + c.ObjectName)</td>
+                                            <td class="co-type">@FriendlyType(c.ObjectType)</td>
+                                            <td class="co-when">@FormatUtc(c.DetectedUtc)</td>
+                                            <td class="co-modify">@FormatModify(c)</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    }
+
+</div>
+
+@code {
+    private List<ChangedObjectsDbView> _views = new();
+    private bool _busy;
+    private string _statusMessage = string.Empty;
+    private string _statusClass = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _views = (await Detector.GetChangesAsync()).ToList();
+    }
+
+    // ── Scan now — run collection for every enabled connection's servers ────
+    private async Task ScanNowAsync()
+    {
+        var targets = ConnectionManager.GetEnabledConnections()
+            .SelectMany(c => c.GetServerList().Select(s =>
+                (ConnectionString: c.GetConnectionString(s, "master"), ServerName: s)))
+            .ToList();
+
+        if (targets.Count == 0)
+        {
+            SetStatus("No enabled connections — add a server on the Servers page first.", isError: true);
+            return;
+        }
+
+        _busy = true;
+        ClearStatus();
+        StateHasChanged();
+
+        var scanned = 0;
+        try
+        {
+            foreach (var (connString, serverName) in targets)
+            {
+                // The service is self-contained (never throws), but keep each server isolated so
+                // one unreachable instance still lets the rest scan.
+                await Detector.ScanServerAsync(serverName, connString);
+                scanned++;
+            }
+
+            await ReloadAsync();
+            SetStatus($"Scan complete — {scanned} server(s) inventoried.", isError: false);
+            Toast.ShowSuccess("Changed-objects scan complete.");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Changed-objects scan failed");
+            SetStatus("Scan failed: " + ex.Message, isError: true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // ── Formatting helpers ──────────────────────────────────────────────────
+    private static string FormatUtc(DateTime utc)
+    {
+        if (utc == DateTime.MinValue) return "—";
+        var local = utc.Kind == DateTimeKind.Utc ? utc.ToLocalTime() : utc;
+        return local.ToString("yyyy-MM-dd HH:mm");
+    }
+
+    private static string FormatModify(ObjectChange c)
+    {
+        var oldM = FormatModifyStamp(c.OldModifyDate);
+        var newM = FormatModifyStamp(c.NewModifyDate);
+        if (c.ChangeType == "Created") return newM;
+        if (c.ChangeType == "Dropped") return oldM;
+        return oldM + " → " + newM;
+    }
+
+    private static string FormatModifyStamp(string? iso)
+    {
+        if (string.IsNullOrEmpty(iso)) return "—";
+        return DateTime.TryParse(iso, System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.RoundtripKind, out var dt)
+            ? (dt.Kind == DateTimeKind.Utc ? dt.ToLocalTime() : dt).ToString("yyyy-MM-dd HH:mm")
+            : iso;
+    }
+
+    private static string FriendlyType(string typeDesc) => typeDesc switch
+    {
+        "USER_TABLE" => "Table",
+        "VIEW" => "View",
+        "SQL_STORED_PROCEDURE" => "Procedure",
+        "SQL_SCALAR_FUNCTION" => "Scalar function",
+        "SQL_INLINE_TABLE_VALUED_FUNCTION" => "Inline TVF",
+        "SQL_TABLE_VALUED_FUNCTION" => "Table-valued function",
+        "SQL_TRIGGER" => "Trigger",
+        _ => typeDesc
+    };
+
+    private static string BadgeClass(string changeType) => changeType switch
+    {
+        "Created" => "co-badge-created",
+        "Altered" => "co-badge-altered",
+        "Dropped" => "co-badge-dropped",
+        _ => string.Empty
+    };
+
+    private static string RowClass(string changeType) => changeType switch
+    {
+        "Created" => "co-row-created",
+        "Altered" => "co-row-altered",
+        "Dropped" => "co-row-dropped",
+        _ => string.Empty
+    };
+
+    // ── Status helpers ──────────────────────────────────────────────────────
+    private void SetStatus(string message, bool isError)
+    {
+        _statusMessage = message;
+        _statusClass = isError ? "co-status-error" : "co-status-ok";
+    }
+
+    private void ClearStatus()
+    {
+        _statusMessage = string.Empty;
+        _statusClass = string.Empty;
+    }
+}

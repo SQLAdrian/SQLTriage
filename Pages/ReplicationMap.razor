@@ -1,0 +1,498 @@
+@* /* In the name of God, the Merciful, the Compassionate */ *@
+@page "/replication-map"
+<PageTitle>SQLTriage — Replication Map</PageTitle>
+
+@using System.Globalization
+@using System.Linq
+@using System.Data
+@using Microsoft.Data.SqlClient
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services.Replication
+@inject ServerConnectionManager ConnectionManager
+@inject AuditLogService AuditLog
+@inject SQLTriage.Data.Services.AppUserState UserState
+@inject NavigationManager Navigation
+
+@*
+    Replication Map (Phase 1 — READ ONLY) — a "live PCB" of transactional
+    replication: publications (left) wired to subscriptions (right), edges
+    coloured by distribution-agent health (green = flowing, amber = retry/lag,
+    red = failed, grey = unknown), with the current pulse travelling in the
+    replication direction.
+
+    Connects to the SELECTED server as the distributor and reads the distribution
+    database (MSdistribution_agents + latest MSdistribution_history). Degrades to
+    a clear empty state when the server is not a distributor or lacks permission.
+    The exact T-SQL is shown via "Show query" so it can be validated on-site.
+    "Sample data" renders a synthetic topology for preview without a live server.
+
+    No commands are sent here — remediation is Phase 2 (behind No-Pants + RBAC).
+*@
+
+<div class="rep-page">
+    <div class="rep-head">
+        <div>
+            <h2 class="rep-title"><i class="fa-solid fa-diagram-project"></i> Replication Map</h2>
+            <div class="rep-sub">
+                @if (_sample) { <span class="rep-badge rep-badge-sample">SAMPLE DATA</span> <text>@_scanSummary</text> }
+                else if (_scanned) { <text>@_scanSummary</text> }
+                else { <text>Transactional replication topology &amp; health (read-only).</text> }
+            </div>
+        </div>
+        <div class="rep-toolbar">
+            @* "All servers" scans every catalogued server as a candidate distributor; each
+               server's outcome is reported separately below, so an all-scope scan can never
+               present one server's silence as the whole estate's. *@
+            <ServerSelector Items="_items"
+                            SelectedId="@_selectedId"
+                            SelectedIdChanged="OnSelectionChanged"
+                            AllowAllScope="true" />
+            <button class="rep-btn rep-btn-primary" @onclick="ScanAsync" disabled="@(_scanning || _items.Count == 0)">
+                @if (_scanning) { <i class="fa-solid fa-spinner fa-spin"></i> <span>Scanning…</span> }
+                else { <i class="fa-solid fa-radar"></i> <span>Scan</span> }
+            </button>
+            <button class="rep-btn" @onclick="LoadSample" disabled="@_scanning" title="Render a synthetic topology to preview the map">
+                <i class="fa-solid fa-vial"></i> Sample
+            </button>
+            <button class="rep-btn" @onclick="() => _showSql = !_showSql">
+                <i class="fa-solid fa-code"></i> @(_showSql ? "Hide" : "Show") query
+            </button>
+            @if (_scanned || _sample)
+            {
+                <button class="rep-btn" @onclick="Clear"><i class="fa-solid fa-xmark"></i> Clear</button>
+            }
+        </div>
+    </div>
+
+    @if (_showSql)
+    {
+        <pre class="rep-sql">@ReplicationQuery</pre>
+    }
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="rep-alert"><i class="fa-solid fa-circle-exclamation"></i> @_error</div>
+    }
+
+    @* Per-server outcomes. Every server the scan touched gets a line of its own, so a
+       failure is never presented as "no replication configured" and an all-scope scan
+       never hides one server's silence behind another's data. *@
+    @if (_outcomes.Count > 0)
+    {
+        <div class="rep-outcomes">
+            @foreach (var o in _outcomes)
+            {
+                <div class="rep-outcome">
+                    <span class="rep-dot @(o.Kind == ScanOutcomeKind.LinksFound ? "s-ok" : o.Kind == ScanOutcomeKind.Failed ? "s-bad" : "s-unknown")"></span>
+                    <strong>@o.Server</strong>
+                    @if (o.Kind == ScanOutcomeKind.LinksFound)
+                    {
+                        <text>@o.Links link(s) read from its distribution database(s).</text>
+                    }
+                    else if (o.Kind == ScanOutcomeKind.NoReplicationMetadata)
+                    {
+                        <text>answered, and returned no rows from any distribution database on it.</text>
+                    }
+                    else
+                    {
+                        <text>could not be read: @o.Detail</text>
+                    }
+                </div>
+            }
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(_unresolvedNotice))
+    {
+        <div class="rep-notice"><i class="fa-solid fa-circle-question"></i> @_unresolvedNotice</div>
+    }
+
+    <div class="rep-legend">
+        <span><span class="rep-key s-ok"></span> Healthy / flowing</span>
+        <span><span class="rep-key s-warn"></span> Retry / latency</span>
+        <span><span class="rep-key s-bad"></span> Failed / stopped</span>
+        <span><span class="rep-key s-unknown"></span> Unknown</span>
+        <span class="rep-hint">Click a link for detail.</span>
+    </div>
+
+    @if (_edges.Count == 0)
+    {
+        @if (_scanned)
+        {
+            var quiet = _outcomes.Where(o => o.Kind == ScanOutcomeKind.NoReplicationMetadata).Select(o => o.Server).ToList();
+            var broken = _outcomes.Count(o => o.Kind == ScanOutcomeKind.Failed);
+            <div class="rep-empty">
+                <i class="fa-solid fa-diagram-project"></i>
+                @if (quiet.Count > 0)
+                {
+                    <p>No replication metadata on <strong>@string.Join(", ", quiet)</strong>.</p>
+                    <p class="rep-empty-sub">Each of those answered and returned no rows. The server may not be a distributor, replication may not be configured, or the login may lack permission on the <code>distribution</code> database. Try the publisher/distributor instance, or use <strong>Sample</strong> to preview.</p>
+                }
+                @if (broken > 0)
+                {
+                    <p class="rep-empty-sub">@broken server(s) could not be read at all — the reason for each is listed above. Nothing is claimed about replication on those.</p>
+                }
+            </div>
+        }
+        else if (!_sample)
+        {
+            <div class="rep-empty">
+                <i class="fa-solid fa-diagram-project"></i>
+                <p>Pick a server (or <strong>All servers</strong>) and click <strong>Scan</strong>.</p>
+                <p class="rep-empty-sub">No live server? Click <strong>Sample</strong> to preview the map.</p>
+            </div>
+        }
+    }
+    else
+    {
+        <div class="rep-board">
+            <svg class="rep-svg @(_selEdge >= 0 ? "has-sel" : "")" viewBox="0 0 1400 @N(_vbH)"
+                 preserveAspectRatio="xMidYMin meet" role="img" aria-label="Replication topology map">
+                <rect x="0" y="0" width="1400" height="@N(_vbH)" fill="transparent" @onclick="() => _selEdge = -1"></rect>
+
+                @* ── edges (pub → sub), coloured by health ── *@
+                @for (int ei = 0; ei < _edges.Count; ei++)
+                {
+                    var e = _edges[ei];
+                    var idx = ei;
+                    var sel = _selEdge == idx ? " rep-sel" : (_selEdge >= 0 ? " rep-dim" : "");
+                    var traceCls = $"rep-trace s-{e.Status}{sel}";
+                    var curCls = $"rep-current s-{e.Status}{sel}";
+                    <path class="@traceCls" d="@e.D"></path>
+                    @if (e.Status != "bad")
+                    {
+                        <path class="@curCls" d="@e.D" pathLength="100"
+                              style="animation-delay:@N(e.Delay)s; animation-duration:@N(e.Dur)s"></path>
+                    }
+                    <path class="rep-hit" d="@e.D" @onclick="() => SelectEdge(idx)" @onclick:stopPropagation="true"></path>
+                }
+
+                @* ── publication nodes (left) ── *@
+                @foreach (var n in _pubNodes)
+                {
+                    <g class="rep-node">
+                        @((MarkupString)$"<rect class=\"rep-pub{(n.Unresolved ? " rep-unresolved" : "")}\" x=\"{N(PubX - 168)}\" y=\"{N(n.Y - 17)}\" width=\"168\" height=\"34\" rx=\"5\"></rect>")
+                        @((MarkupString)$"<text class=\"rep-n1\" x=\"{N(PubX - 156)}\" y=\"{N(n.Y - 2)}\">{Enc(n.Line1)}</text>")
+                        @((MarkupString)$"<text class=\"rep-n2{(n.Unresolved ? " rep-n2-unresolved" : "")}\" x=\"{N(PubX - 156)}\" y=\"{N(n.Y + 11)}\">{Enc(n.Line2)}</text>")
+                        @if (n.Unresolved && n.Detail != null)
+                        {
+                            <title>@n.Detail</title>
+                        }
+                        <circle class="rep-pin" cx="@N(PubX + 4)" cy="@N(n.Y)" r="4"></circle>
+                    </g>
+                }
+
+                @* ── subscription nodes (right) ── *@
+                @foreach (var n in _subNodes)
+                {
+                    <g class="rep-node">
+                        @((MarkupString)$"<rect class=\"rep-sub{(n.Unresolved ? " rep-unresolved" : "")}\" x=\"{N(SubX)}\" y=\"{N(n.Y - 17)}\" width=\"176\" height=\"34\" rx=\"5\"></rect>")
+                        @((MarkupString)$"<text class=\"rep-n1{(n.Unresolved ? " rep-n1-unresolved" : "")}\" x=\"{N(SubX + 12)}\" y=\"{N(n.Y - 2)}\">{Enc(n.Line1)}</text>")
+                        @((MarkupString)$"<text class=\"rep-n2\" x=\"{N(SubX + 12)}\" y=\"{N(n.Y + 11)}\">{Enc(n.Line2)}</text>")
+                        @if (n.Unresolved && n.Detail != null)
+                        {
+                            <title>@n.Detail</title>
+                        }
+                        <circle class="rep-pin" cx="@N(SubX - 4)" cy="@N(n.Y)" r="4"></circle>
+                    </g>
+                }
+            </svg>
+        </div>
+
+        @if (_selEdge >= 0 && _selEdge < _edges.Count)
+        {
+            var e = _edges[_selEdge];
+            <div class="rep-detail">
+                <div class="rep-detail-head">
+                    <span class="rep-dot s-@e.Status"></span>
+                    <strong>@e.PubLabel</strong> <i class="fa-solid fa-arrow-right-long"></i> <strong>@e.SubLabel</strong>
+                    <button class="rep-btn rep-btn-sm" @onclick="() => _selEdge = -1">✕</button>
+                </div>
+                <div class="rep-detail-grid">
+                    <div><span>Agent</span>@(string.IsNullOrEmpty(e.Agent) ? "—" : e.Agent)</div>
+                    <div><span>Status</span>@e.StatusText</div>
+                    <div><span>Latency</span>@(e.LatencyMs.HasValue ? $"{e.LatencyMs.Value / 1000.0:0.0}s" : "—")</div>
+                    <div><span>Last activity</span>@(e.LastActivity?.ToString("yyyy-MM-dd HH:mm:ss") ?? "—")</div>
+                    <div class="rep-detail-msg"><span>Last message</span>@(string.IsNullOrWhiteSpace(e.LastMessage) ? "—" : e.LastMessage)</div>
+                    @if (e.PubDetail != null)
+                    {
+                        <div class="rep-detail-msg"><span>Publisher name</span>@e.PubDetail</div>
+                    }
+                    @if (e.SubDetail != null)
+                    {
+                        <div class="rep-detail-msg"><span>Subscriber name</span>@e.SubDetail</div>
+                    }
+                </div>
+                <div class="rep-detail-foot">Phase 2 will add remediation here (restart / reinitialize), behind No-Pants Mode + confirmation + audit.</div>
+            </div>
+        }
+    }
+
+    @* ── A.2: the same topology grouped by SQL instance ─────────────────────────
+       The bipartite board above answers "what flows where". This answers "what does
+       THIS instance do", which is the question a DBA arrives with. Roles and items
+       are derived from the same links, never re-queried. *@
+    @if (_groups.Count > 0)
+    {
+        <div class="rep-groups">
+            <h3 class="rep-groups-title"><i class="fa-solid fa-server"></i> By SQL instance (@_groups.Count)</h3>
+            @foreach (var g in _groups)
+            {
+                <div class="rep-group @(g.NameResolved ? "" : "rep-group-unresolved")">
+                    <div class="rep-group-head">
+                        <strong>@g.Display</strong>
+                        <span class="rep-roles">@g.RoleSummary</span>
+                        @if (!g.NameResolved)
+                        {
+                            <span class="rep-badge rep-badge-unresolved">NO SERVER NAME</span>
+                        }
+                    </div>
+                    @if (!g.NameResolved && g.UnresolvedDetail != null)
+                    {
+                        <div class="rep-group-note">@g.UnresolvedDetail</div>
+                    }
+                    <ul class="rep-items">
+                        @foreach (var it in g.Items)
+                        {
+                            <li class="rep-item">
+                                <span class="rep-dot s-@it.Status"></span>
+                                <span class="rep-item-kind">
+                                    @(it.Kind == ReplicationItemKind.Publication ? "publication"
+                                      : it.Kind == ReplicationItemKind.Subscription ? "subscription" : "distributor")
+                                </span>
+                                <span class="rep-item-title">@it.Title</span>
+                                <span class="rep-item-detail">@it.Detail</span>
+                                @if (!string.IsNullOrEmpty(it.StatusText))
+                                {
+                                    <span class="rep-item-status">@it.StatusText</span>
+                                }
+                            </li>
+                        }
+                    </ul>
+                </div>
+            }
+        </div>
+    }
+
+    @* ── A.4: participants this install has no connection for ───────────────────
+       One explicit add at a time, through the existing dialog on /servers. This page
+       writes nothing to the server store: probing opens a connection and closes it,
+       and "Add" hands the discovered name to that dialog pre-filled.
+
+       In SAMPLE mode every name in this block was invented by LoadSample. The block and
+       each row say so, and both actions are refused — a fabricated name must never reach
+       the add dialog, where nothing would tell the operator it was fabricated. The gate is
+       ParticipantOffer, asked by the markup AND by the handlers. *@
+    @if ((_scanned || _sample) && (_participants.Addable.Count > 0 || _participants.NotNameable.Count > 0))
+    {
+        <div class="rep-participants">
+            <h3 class="rep-groups-title">
+                <i class="fa-solid fa-plus"></i> Discovered participants not in your server list
+                @if (_participants.Fabricated)
+                {
+                    <span class="rep-badge rep-badge-sample">SAMPLE DATA</span>
+                }
+            </h3>
+            @if (_participants.Fabricated)
+            {
+                <p class="rep-part-foot rep-part-sample">
+                    These names were generated to preview the map. Nothing here was read from a server,
+                    so nothing here can be probed or added: both actions are refused on sample rows.
+                    Scan a real distributor to get participants you can act on.
+                </p>
+            }
+            @if (_participants.Addable.Count > 0)
+            {
+                <table class="rep-part-table">
+                    <thead><tr><th>Server</th><th>Named by</th><th>Reachability</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var c in _participants.Addable)
+                        {
+                            var p = ProbeOf(c.Key);
+                            <tr class="@(c.Fabricated ? "rep-part-row-sample" : "")">
+                                <td>
+                                    <strong>@c.Server</strong>
+                                    @if (c.Fabricated)
+                                    {
+                                        <span class="rep-badge rep-badge-sample">SAMPLE</span>
+                                    }
+                                </td>
+                                <td>@(string.IsNullOrEmpty(c.ViaDistributor) ? "—" : c.ViaDistributor)</td>
+                                <td>
+                                    @if (!ParticipantOffer.MayProbe(c))
+                                    {
+                                        <span class="rep-dot s-unknown"></span>@ParticipantOffer.ProbeRefusedLabel
+                                        <div class="rep-part-reason">@ParticipantOffer.DescribeUnprobeable(c, true)</div>
+                                    }
+                                    else
+                                    {
+                                        <span class="rep-dot @ProbeClass(p)"></span>@ProbeLabel(p)
+                                        @if (p.Probed && !string.IsNullOrEmpty(p.Reason))
+                                        {
+                                            <div class="rep-part-reason">@p.Reason</div>
+                                        }
+                                    }
+                                </td>
+                                <td class="rep-part-actions">
+                                    @if (ParticipantOffer.MayProbe(c))
+                                    {
+                                        <button class="rep-btn rep-btn-sm2" @onclick="() => ProbeParticipantAsync(c)" disabled="@p.Running">
+                                            @(p.Probed ? "Re-probe" : "Probe")
+                                        </button>
+                                    }
+                                    @if (MayManageServers && ParticipantOffer.MayHandOffToAddDialog(c))
+                                    {
+                                        <button class="rep-btn rep-btn-sm2" @onclick="() => AddParticipant(c)">Add…</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <p class="rep-part-foot">
+                    @if (_participants.Fabricated)
+                    {
+                        <text>No connection is opened for these rows: the probe is refused before it runs, and <strong>Add…</strong> is not offered, because these names came from <strong>Sample</strong> rather than from a distributor.</text>
+                    }
+                    else
+                    {
+                        @* Conditioned on the row it describes, not on the happy path: a scanned
+                           row whose discovering connection was never recorded, or has since been
+                           removed, short-circuits before any connection is opened. Saying "probing
+                           opens a connection" flat would over-claim for those rows too. *@
+                        <text>Where the connection that discovered a server is still in your catalogue, probing borrows its credentials to open a connection and closes it.</text>
+                        <text> A row without that connection is not probed at all, and its Reachability cell says which of the two it was.</text>
+                        <text> <strong>Add…</strong> opens the normal add-connection dialog on the Servers page with the name filled in — one server, reviewed and saved by you.</text>
+                        @if (!MayManageServers)
+                        {
+                            <text> Adding is hidden because this account does not hold <code>manage_servers</code>.</text>
+                        }
+                    }
+                </p>
+            }
+            @if (_participants.NotNameable.Count > 0)
+            {
+                <p class="rep-part-foot">
+                    @_participants.NotNameable.Count participant(s) cannot be offered here — @string.Join(", ", _participants.NotNameable) —
+                    @if (_participants.Fabricated)
+                    {
+                        <text>because the sample topology carries no server name for them, only the id shown above.</text>
+                    }
+                    else
+                    {
+                        <text>because the scan read no server name for them, only what is shown above. There is nothing to connect to until that id resolves on the distributor.</text>
+                    }
+                </p>
+            }
+        </div>
+    }
+</div>
+
+<style>
+    .rep-page { padding:18px 26px 30px; max-width:none; }
+    .rep-head { display:flex; justify-content:space-between; align-items:flex-end; gap:16px; flex-wrap:wrap; }
+    .rep-title { font-size:21px; font-weight:600; color:var(--text-primary); margin:0; }
+    .rep-title i { color:var(--accent,#34D17A); margin-right:6px; }
+    .rep-sub { color:var(--text-muted); font-size:12.5px; margin-top:4px; }
+    .rep-badge { font-size:10px; font-weight:700; letter-spacing:.05em; padding:2px 7px; border-radius:5px; }
+    .rep-badge-sample { background:rgba(245,158,11,.15); color:#f59e0b; border:1px solid rgba(245,158,11,.4); }
+    .rep-toolbar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .rep-select { background:var(--bg-primary,#0b0f12); color:var(--text-primary); border:1px solid var(--border); border-radius:6px; padding:6px 10px; font-size:12.5px; min-width:240px; }
+    .rep-btn { background:rgba(20,31,38,.6); color:var(--text-secondary); border:1px solid var(--border); border-radius:6px; padding:6px 12px; cursor:pointer; font-size:12.5px; }
+    .rep-btn:hover:not(:disabled) { border-color:var(--accent,#34D17A); color:var(--text-primary); }
+    .rep-btn:disabled { opacity:.4; cursor:not-allowed; }
+    .rep-btn-primary { background:var(--accent,#34D17A); color:#06231f; border-color:var(--accent,#34D17A); font-weight:600; }
+    .rep-btn-sm { padding:1px 7px; margin-left:auto; }
+    .rep-sql { background:#0b0f12; border:1px solid var(--border); border-radius:8px; padding:12px 14px; color:var(--text-secondary); font-size:11.5px; font-family:ui-monospace,Consolas,monospace; overflow:auto; max-height:280px; white-space:pre; margin:10px 0; }
+    .rep-alert { background:rgba(239,68,68,.1); border:1px solid rgba(239,68,68,.35); color:#fca5a5; border-radius:8px; padding:10px 14px; margin:10px 0; font-size:13px; }
+    .rep-legend { display:flex; gap:18px; flex-wrap:wrap; margin:12px 0 14px; font-size:11.5px; color:var(--text-secondary); align-items:center; }
+    .rep-key { display:inline-block; width:14px; height:10px; vertical-align:middle; margin-right:5px; border-radius:2px; }
+    .rep-hint { color:var(--text-muted); font-style:italic; }
+
+    .rep-board { position:relative; border:1px solid var(--border); border-radius:12px; overflow:auto;
+        background:
+            linear-gradient(rgba(52, 209, 122,.045) 1px, transparent 1px) 0 0 / 26px 26px,
+            linear-gradient(90deg, rgba(52, 209, 122,.045) 1px, transparent 1px) 0 0 / 26px 26px,
+            radial-gradient(130% 90% at 50% -10%, rgba(52, 209, 122,.06), transparent 55%),
+            #0b0f12;
+        box-shadow: inset 0 0 60px rgba(0,0,0,.5); }
+    .rep-svg { width:100%; height:auto; display:block; }
+
+    /* status palette */
+    .s-ok      { --c:#5BE58C; } .s-warn { --c:#f59e0b; }
+    .s-bad     { --c:#ef4444; } .s-unknown { --c:#64748b; }
+    .rep-key.s-ok{background:#5BE58C;} .rep-key.s-warn{background:#f59e0b;}
+    .rep-key.s-bad{background:#ef4444;} .rep-key.s-unknown{background:#64748b;}
+    .rep-dot { display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--c);box-shadow:0 0 5px var(--c);margin-right:6px;vertical-align:middle; }
+
+    .rep-trace { fill:none; stroke:var(--c); stroke-width:1.8; opacity:.4; transition:opacity .15s; }
+    .rep-current { fill:none; stroke:var(--c); color:var(--c); stroke-width:2.6; stroke-dasharray:4 96; stroke-linecap:round;
+                   filter:drop-shadow(0 0 3px var(--c));
+                   animation-name:rep-flow; animation-timing-function:linear; animation-iteration-count:infinite; }
+    @@keyframes rep-flow { from { stroke-dashoffset:100; } to { stroke-dashoffset:0; } }
+    .rep-hit { fill:none; stroke:transparent; stroke-width:14; cursor:pointer; }
+    .rep-sel { opacity:1 !important; stroke-width:3.2; }
+    .rep-dim { opacity:.10 !important; }
+    .rep-trace.rep-sel { filter:drop-shadow(0 0 5px var(--c)); }
+
+    .rep-pub, .rep-sub { fill:rgba(20,31,38,.9); stroke:rgba(148,163,184,.35); stroke-width:1; }
+    .rep-n1 { fill:#e7edf2; font-size:12px; font-weight:600; font-family:ui-monospace,Consolas,monospace; }
+    .rep-n2 { fill:var(--text-muted); font-size:10px; font-family:ui-monospace,Consolas,monospace; }
+    .rep-pin { fill:var(--accent,#34D17A); }
+
+    /* Unresolved ends: a dashed outline + amber label so a node with no server name
+       cannot be read as a server that happens to be called that. */
+    .rep-unresolved { stroke:rgba(245,158,11,.65); stroke-dasharray:4 3; }
+    .rep-n1-unresolved, .rep-n2-unresolved { fill:#f59e0b; font-style:italic; }
+    .rep-badge-unresolved { background:rgba(245,158,11,.15); color:#f59e0b; border:1px solid rgba(245,158,11,.4); }
+
+    .rep-outcomes { margin:10px 0; display:flex; flex-direction:column; gap:4px; }
+    .rep-outcome { font-size:12px; color:var(--text-secondary); }
+    .rep-outcome strong { color:var(--text-primary); margin-right:6px; }
+    .rep-notice { background:rgba(245,158,11,.08); border:1px solid rgba(245,158,11,.3); color:#fbbf24; border-radius:8px; padding:9px 13px; margin:10px 0; font-size:12.5px; }
+
+    .rep-groups, .rep-participants { margin-top:20px; }
+    .rep-groups-title { font-size:14px; font-weight:600; color:var(--text-primary); margin:0 0 10px; }
+    .rep-groups-title i { color:var(--accent,#34D17A); margin-right:6px; }
+    .rep-group { border:1px solid var(--border); border-radius:10px; background:rgba(20,31,38,.45); padding:11px 14px; margin-bottom:9px; }
+    .rep-group-unresolved { border-color:rgba(245,158,11,.4); }
+    .rep-group-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; color:var(--text-primary); font-size:13.5px; }
+    .rep-roles { font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:.04em; }
+    .rep-group-note { font-size:11.5px; color:#fbbf24; margin-top:6px; }
+    .rep-items { list-style:none; margin:8px 0 0; padding:0; display:flex; flex-direction:column; gap:4px; }
+    .rep-item { font-size:12px; color:var(--text-secondary); display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .rep-item-kind { font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); min-width:84px; }
+    .rep-item-title { color:var(--text-primary); font-family:ui-monospace,Consolas,monospace; }
+    .rep-item-detail { color:var(--text-muted); }
+    .rep-item-status { margin-left:auto; font-size:11px; color:var(--text-muted); }
+
+    .rep-part-table { width:100%; max-width:900px; border-collapse:collapse; font-size:12.5px; }
+    .rep-part-table th { text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted); padding:4px 8px; border-bottom:1px solid var(--border); }
+    .rep-part-table td { padding:7px 8px; border-bottom:1px solid rgba(148,163,184,.12); color:var(--text-secondary); vertical-align:top; }
+    .rep-part-reason { font-size:11px; color:var(--text-muted); margin-top:3px; max-width:420px; }
+    .rep-part-actions { white-space:nowrap; }
+    .rep-btn-sm2 { padding:3px 10px; font-size:11.5px; margin-right:5px; }
+    .rep-part-foot { font-size:11.5px; color:var(--text-muted); margin-top:9px; max-width:900px; }
+    /* Sample rows carry fabricated names: amber-marked, and both actions withheld. */
+    .rep-part-sample { color:#fbbf24; margin-top:2px; }
+    .rep-part-row-sample td { background:rgba(245,158,11,.05); }
+    .rep-part-row-sample .rep-badge-sample { margin-left:7px; }
+
+    .rep-empty { text-align:center; color:var(--text-muted); padding:50px 20px; }
+    .rep-empty i { font-size:34px; opacity:.5; display:block; margin-bottom:12px; }
+    .rep-empty-sub { font-size:12px; max-width:560px; margin:6px auto 0; }
+    .rep-empty code { font-family:ui-monospace,Consolas,monospace; color:var(--text-secondary); }
+
+    .rep-detail { margin-top:14px; border:1px solid var(--border); border-radius:10px; background:rgba(20,31,38,.5); padding:14px 16px; max-width:760px; }
+    .rep-detail-head { display:flex; align-items:center; gap:8px; color:var(--text-primary); font-size:14px; }
+    .rep-detail-head i { color:var(--text-muted); font-size:11px; }
+    .rep-detail-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px 24px; margin-top:12px; font-size:12.5px; color:var(--text-primary); }
+    .rep-detail-grid > div { display:flex; flex-direction:column; }
+    .rep-detail-grid span { color:var(--text-muted); font-size:10px; text-transform:uppercase; letter-spacing:.04em; margin-bottom:2px; }
+    .rep-detail-msg { grid-column:1 / -1; }
+    .rep-detail-foot { margin-top:12px; font-size:11px; color:var(--text-muted); font-style:italic; }
+
+    @@media (prefers-reduced-motion: reduce) { .rep-current { animation:none; stroke-dasharray:none; opacity:.7; } }
+</style>
+

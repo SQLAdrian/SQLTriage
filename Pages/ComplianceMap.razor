@@ -1,0 +1,688 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/compliance-map"
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@using static SQLTriage.Data.Services.ComplianceScoreService
+@inject ComplianceMappingService MappingSvc
+@inject ComplianceScoreService ScoreSvc
+@inject QuickCheckStateService QcState
+@inject SQLTriage.Data.Services.AssessmentRehydrationService Rehydration
+@inject AuditLogService Audit
+@inject ToastService Toast
+@inject IJSRuntime JSRuntime
+@inject PrintService PrintSvc
+@inject UserSettingsService UserSettings
+@inject ServerConnectionManager ConnectionManager
+@inject SQLTriage.Data.Services.Licensing.ISeatRegister Seats
+@using SQLTriage.Components.Shared
+
+<PageTitle>Compliance Scorecard - SQLTriage</PageTitle>
+
+<div class="compliance-map-container @(_dataGridMode ? "data-grid-mode" : "")">
+    @* FreeStateBanner is now rendered once at MainLayout level *@
+
+    <div class="compliance-map-header" style="justify-content: space-between;">
+        <div>
+            <div class="compliance-map-title-row">
+                <i class="fa-solid fa-shield-halved"></i>
+                <h1>Compliance Framework Scorecard</h1>
+            </div>
+            <p class="compliance-map-subtitle">
+                Corpus audit findings scored against industry frameworks via category-level control mapping.
+                Run an Audit Assessment first to populate scores.
+            </p>
+        </div>
+        <button class="btn @(_dataGridMode ? "btn-primary" : "btn-secondary")" @onclick="() => _dataGridMode = !_dataGridMode" style="height:fit-content;white-space:nowrap;margin-right:20px;">
+            <i class="fa-solid fa-table"></i> Data Grid
+        </button>
+    </div>
+
+    @* ── Seat-licence exclusion banner ──
+       Never let instances vanish from a compliance score silently: if the licence excluded any,
+       say how many and why, right where the score is read. *@
+    @if (_seatNotice != null)
+    {
+        <div class="compliance-seat-notice">
+            <i class="fa-solid fa-circle-info"></i>
+            <span>@_seatNotice</span>
+        </div>
+    }
+
+    @* ── Server filter (only when >1 server in the audit results) ── *@
+    @if (_servers.Count > 1)
+    {
+        <div class="compliance-server-filter">
+            <span class="compliance-server-filter-label">Server scope:</span>
+            <ServerSelector Servers="_servers"
+                            Selected="@_serverFilter"
+                            SelectedChanged="OnServerFilterChanged"
+                            AllowAllScope="true" />
+        </div>
+    }
+
+    @* ── Framework picker ── *@
+    <div class="framework-tabs" role="tablist" aria-label="Compliance frameworks">
+        @foreach (var fw in _frameworks)
+        {
+            <button class="framework-tab @(fw == _selectedFramework ? "active" : "") @(IsLegendary(fw) ? "framework-tab--legendary" : "")"
+                    role="tab"
+                    aria-selected="@(fw == _selectedFramework ? "true" : "false")"
+                    style="color:@FrameworkColor(fw);"
+                    title="@FrameworkScoreTitle(fw)"
+                    @onclick="() => SelectFramework(fw)">
+                @fw
+            </button>
+        }
+    </div>
+
+    @if (_scorecard == null)
+    {
+        <div class="compliance-no-data-banner">
+            <i class="fa-solid fa-circle-info"></i>
+            No framework definitions loaded. Verify <code>Config/control_mappings.json</code> is present.
+        </div>
+    }
+    else if (!_scorecard.HasData)
+    {
+        <div class="compliance-no-data-banner">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            No Audit Assessment results found.
+            <a href="/audit" class="compliance-link">Run an Audit Assessment</a> to populate this scorecard.
+            @if (_unmappedCategories.Count > 0)
+            {
+                <div class="compliance-gap-hint" style="margin-top:8px">
+                    @_mappedCategoryCount audit categories mapped to controls;
+                    @_unmappedCategories.Count not mapped (e.g. @string.Join(", ", _unmappedCategories.Take(4))).
+                </div>
+            }
+        </div>
+        @* Still render the control table for gap-awareness even without audit data *@
+        <div class="compliance-gap-table-wrapper">
+            <p class="compliance-gap-hint">Framework controls for <strong>@_selectedFramework</strong> — no audit data mapped yet.</p>
+            <table class="controls-table">
+                <thead>
+                    <tr>
+                        <th class="col-id">Control ID</th>
+                        <th>Control Name</th>
+                        <th class="col-checks">VA Categories</th>
+                        <th class="col-status">Score</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var fs in _scorecard.FamilyScores)
+                    {
+                        <tr>
+                            <td class="control-id-cell">@fs.FamilyId</td>
+                            <td>@fs.FamilyName</td>
+                            <td><span class="no-checks-placeholder">—</span></td>
+                            <td>
+                                @if (fs.Status == ControlStatus.NotTested)
+                                {
+                                    <span class="status-badge status-nottested" title="@(string.IsNullOrEmpty(fs.NotTestedReason) ? "SQLTriage does not test this control." : fs.NotTestedReason)"><i class="fa-solid fa-flask-vial"></i> Not Currently Tested</span>
+                                }
+                                else
+                                {
+                                    <span class="status-badge status-nodata">Outside Scope</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    else
+    {
+        @* ── Overall summary bar ── *@
+        <div class="coverage-summary-bar">
+            <div class="compliance-overall-score @GetOverallScoreClass(_scorecard.OverallPercent)">
+                @(_scorecard.OverallPercent >= 0 ? _scorecard.OverallPercent.ToString("F0") + "%" : "—")
+            </div>
+            <div class="compliance-summary-details">
+                <div class="coverage-bar-track" title="@(_scorecard.OverallPercent >= 0 ? _scorecard.OverallPercent.ToString("F1") + "% compliance" : "Outside scope")">
+                    @if (_scorecard.OverallPercent >= 0)
+                    {
+                        <div class="coverage-bar-fill @GetOverallScoreClass(_scorecard.OverallPercent)"
+                             style="width: @(_scorecard.OverallPercent.ToString("F0"))%">
+                        </div>
+                    }
+                </div>
+                <div class="compliance-summary-stats">
+                    <span>@_scorecard.FamilyScores.Count(f => f.Status == ControlStatus.Compliant) compliant</span>
+                    <span>@_scorecard.FamilyScores.Count(f => f.Status == ControlStatus.PartiallyCompliant) partial</span>
+                    <span>@_scorecard.FamilyScores.Count(f => f.Status == ControlStatus.NonCompliant) non-compliant</span>
+                    <span>@_scorecard.FamilyScores.Count(f => f.Status == ControlStatus.NoData) outside scope</span>
+                    @if (_scorecard.FamilyScores.Any(f => f.Status == ControlStatus.NotTested))
+                    {
+                        <span>@_scorecard.FamilyScores.Count(f => f.Status == ControlStatus.NotTested) not tested</span>
+                    }
+                </div>
+            </div>
+            @* Gated report trigger (Adrian 2026-07-21, "three keepers only"): const-pruned in
+               community, same idiom as the ReportBundles cards. *@
+            @if (BuildModules.Reports.ComplianceReport)
+            {
+                <button class="btn-export-compliance"
+                        @onclick="ExportReport"
+                        title="Export audit evidence for @_selectedFramework">
+                    <i class="fa-solid fa-file-export"></i> Export Evidence
+                </button>
+            }
+        </div>
+
+        @* ── Per-control scorecard: sortable data grid, or the styled scorecard ──
+           Two genuinely different renders of the same FamilyScores, not a density toggle:
+           the grid gives sortable/filterable columns for "show me the worst controls",
+           the scorecard gives the visual read. The drill-down panel is shared. *@
+        @if (_dataGridMode)
+        {
+            <DataGrid Title="@($"{_selectedFramework} — control scores")"
+                      Data="@BuildScorecardTable()"
+                      IsClickable="true"
+                      OnRowClick="OnGridRowClick"
+                      MaxRows="1000"
+                      ColumnOrder="@GridColumnOrder" />
+
+            @if (_expandedFamily is { } sel && sel.FailingResults.Count > 0)
+            {
+                <div class="drill-down-panel" style="margin-top:12px;">
+                    <div class="drill-down-header">
+                        <i class="fa-solid fa-list-check"></i>
+                        Failing findings mapped to <strong>@sel.FamilyId</strong>
+                        @if (sel.FailingResults.Count > 5)
+                        {
+                            <span>(showing first 5 of @sel.FailingResults.Count — the exported evidence lists all @sel.FailingResults.Count)</span>
+                        }
+                    </div>
+                    <table class="drill-down-table">
+                        <thead>
+                            <tr>
+                                <th>Check ID</th>
+                                <th>Name</th>
+                                <th>Severity</th>
+                                <th>Message</th>
+                                <th>Target</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var r in sel.FailingResults.Take(5))
+                            {
+                                <tr>
+                                    <td class="control-id-cell">@r.CheckId</td>
+                                    <td>@r.DisplayName</td>
+                                    <td><span class="severity-badge @r.Severity.ToLower()">@r.Severity</span></td>
+                                    <td>@r.Message</td>
+                                    <td>@r.TargetName</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        }
+        else
+        {
+        <div class="controls-table-wrapper">
+            <table class="controls-table" id="compliance-scorecard-table">
+                <thead>
+                    <tr>
+                        <th class="col-id">Control ID</th>
+                        <th>Control Name</th>
+                        <th class="col-checks">Checks (Pass / Total)</th>
+                        <th class="col-bar">Compliance</th>
+                        <th class="col-status">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var fs in _scorecard.FamilyScores.OrderBy(f => f.FamilyId))
+                    {
+                        <tr class="@(fs == _expandedFamily ? "expanded" : "")"
+                            @onclick="() => ToggleDrillDown(fs)">
+                            <td class="control-id-cell">@fs.FamilyId</td>
+                            <td>@fs.FamilyName</td>
+                            <td class="checks-cell">
+                                @if (fs.Status == ControlStatus.NoData || fs.Status == ControlStatus.NotTested)
+                                {
+                                    <span class="no-checks-placeholder">—</span>
+                                }
+                                else
+                                {
+                                    <span>@fs.PassingChecks / @fs.TotalChecks</span>
+                                }
+                            </td>
+                            <td class="bar-cell">
+                                @if (fs.Status != ControlStatus.NoData && fs.Percent >= 0)
+                                {
+                                    <div class="mini-bar-track">
+                                        <div class="mini-bar-fill @GetStatusClass(fs.Status)"
+                                             style="width: @(fs.Percent.ToString("F0"))%">
+                                        </div>
+                                    </div>
+                                    <span class="mini-bar-label">@fs.Percent.ToString("F0")%</span>
+                                }
+                            </td>
+                            <td>
+                                @if (fs.Status == ControlStatus.Compliant)
+                                {
+                                    <span class="status-badge status-covered"><i class="fa-solid fa-check"></i> Compliant</span>
+                                }
+                                else if (fs.Status == ControlStatus.PartiallyCompliant)
+                                {
+                                    <span class="status-badge status-partial"><i class="fa-solid fa-minus"></i> Partial</span>
+                                }
+                                else if (fs.Status == ControlStatus.NonCompliant)
+                                {
+                                    <span class="status-badge status-gap"><i class="fa-solid fa-xmark"></i> Non-Compliant</span>
+                                }
+                                else if (fs.Status == ControlStatus.NotTested)
+                                {
+                                    <span class="status-badge status-nottested" title="@(string.IsNullOrEmpty(fs.NotTestedReason) ? "SQLTriage does not test this control." : fs.NotTestedReason)"><i class="fa-solid fa-flask-vial"></i> Not Currently Tested</span>
+                                }
+                                else
+                                {
+                                    <span class="status-badge status-nodata">Outside Scope</span>
+                                }
+                            </td>
+                        </tr>
+
+                        @* ── Drill-down: failing findings for this control ── *@
+                        @if (fs == _expandedFamily && fs.FailingResults.Count > 0)
+                        {
+                            <tr class="drill-down-row">
+                                <td colspan="5">
+                                    <div class="drill-down-panel">
+                                        <div class="drill-down-header">
+                                            <i class="fa-solid fa-list-check"></i>
+                                            Failing findings mapped to <strong>@fs.FamilyId</strong>
+                                            @if (fs.FailingResults.Count > 5)
+                                            {
+                                                <span>(showing first 5 of @fs.FailingResults.Count — the exported evidence lists all @fs.FailingResults.Count)</span>
+                                            }
+                                        </div>
+                                        <table class="drill-down-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Check ID</th>
+                                                    <th>Name</th>
+                                                    <th>Severity</th>
+                                                    <th>Message</th>
+                                                    <th>Target</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var r in fs.FailingResults.Take(5))
+                                                {
+                                                    <tr>
+                                                        <td class="control-id-cell">@r.CheckId</td>
+                                                        <td>@r.DisplayName</td>
+                                                        <td><span class="severity-badge @r.Severity.ToLower()">@r.Severity</span></td>
+                                                        <td>@r.Message</td>
+                                                        <td>@r.TargetName</td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+        }
+
+        @* ── Gap summary ── *@
+        @if (_scorecard.FamilyScores.Where(f => f.Status == ControlStatus.NonCompliant).ToList() is var gaps && gaps.Count > 0)
+        {
+            <div class="gap-analysis-section">
+                <div class="gap-analysis-header">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <h3>Non-Compliant Controls (@gaps.Count)</h3>
+                </div>
+                <div class="gap-control-list">
+                    @foreach (var gap in gaps.OrderBy(g => g.FamilyId))
+                    {
+                        <div class="gap-control-item">
+                            <span class="gap-id">@gap.FamilyId</span>
+                            <span class="gap-name">@gap.FamilyName</span>
+                            <span class="gap-pct">@gap.Percent.ToString("F0")%</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    }
+
+</div>
+
+@code {
+    private bool _dataGridMode = false;
+
+    // ── Data-grid view ───────────────────────────────────────────────────────
+    // Same FamilyScores the scorecard renders, projected into a DataTable so the shared
+    // DataGrid can sort/filter/export it. Typed columns on purpose: Percent and the check
+    // counts go in as numbers so "sort by worst" actually sorts numerically rather than
+    // lexically ("9%" before "10%").
+    private static readonly List<string> GridColumnOrder = new()
+    {
+        "Control ID", "Control Name", "Status", "Compliance %", "Passing", "Total", "Not assessed", "Failing findings"
+    };
+
+    private System.Data.DataTable BuildScorecardTable()
+    {
+        var t = new System.Data.DataTable("ControlScores");
+        t.Columns.Add("Control ID", typeof(string));
+        t.Columns.Add("Control Name", typeof(string));
+        t.Columns.Add("Status", typeof(string));
+        t.Columns.Add("Compliance %", typeof(double));
+        t.Columns.Add("Passing", typeof(int));
+        t.Columns.Add("Total", typeof(int));
+        t.Columns.Add("Not assessed", typeof(int));
+        t.Columns.Add("Failing findings", typeof(int));
+
+        if (_scorecard is null) return t;
+
+        foreach (var fs in _scorecard.FamilyScores.OrderBy(f => f.FamilyId, StringComparer.Ordinal))
+        {
+            var row = t.NewRow();
+            row["Control ID"] = fs.FamilyId;
+            row["Control Name"] = fs.FamilyName;
+            row["Status"] = StatusLabel(fs);
+            // A negative Percent means un-scored; DBNull keeps it out of the sort and out of
+            // any average rather than dragging the column down with a fake -1.
+            row["Compliance %"] = fs.Percent >= 0 && fs.Status != ControlStatus.NoData
+                ? Math.Round(fs.Percent, 0)
+                : (object)DBNull.Value;
+            row["Passing"] = fs.PassingChecks;
+            row["Total"] = fs.TotalChecks;
+            row["Not assessed"] = fs.UnassessedChecks;
+            row["Failing findings"] = fs.FailingResults.Count;
+            t.Rows.Add(row);
+        }
+        return t;
+    }
+
+    private static string StatusLabel(ControlFamilyScore fs) => fs.Status switch
+    {
+        ControlStatus.Compliant          => "Compliant",
+        ControlStatus.PartiallyCompliant => "Partial",
+        ControlStatus.NonCompliant       => "Non-Compliant",
+        ControlStatus.NotTested          => "Not Currently Tested",
+        _                                => "Outside Scope"
+    };
+
+    // Row click opens the SAME drill-down the scorecard uses, so the two views stay
+    // interchangeable rather than each growing its own detail panel.
+    private void OnGridRowClick(System.Data.DataRow row)
+    {
+        var id = row["Control ID"]?.ToString();
+        var match = _scorecard?.FamilyScores.FirstOrDefault(f => f.FamilyId == id);
+        _expandedFamily = ReferenceEquals(match, _expandedFamily) ? null : match;
+    }
+
+    private List<string> _frameworks = new();
+    private string _selectedFramework = "";
+    private ComplianceScorecard? _scorecard;
+    private ControlFamilyScore? _expandedFamily;
+
+    // Audit Assessment (QuickCheck) results adapted to the scoring contract.
+    private List<AssessmentResult> _auditResults = new();
+
+    /// <summary>Honest banner text when the seat licence excluded instances from this score;
+    /// null when nothing was dropped (unlimited/legacy licence, or every instance seated).</summary>
+    private string? _seatNotice;
+    // Diagnostic (THE RISK loopback): does the audit corpus' Category vocabulary
+    // actually intersect the compliance mapping vocabulary? Surfaced, never silent.
+    private int _mappedCategoryCount;
+    private List<string> _unmappedCategories = new();
+
+    // Server scope filter — null/empty = all servers (the loud "All servers" chip).
+    private string? _serverFilter;
+    private List<string> _servers = new();
+
+    private IReadOnlyList<AssessmentResult> ScopedResults =>
+        string.IsNullOrEmpty(_serverFilter)
+            ? _auditResults
+            : _auditResults.Where(r =>
+                  string.Equals(r.ThisServer, _serverFilter, StringComparison.OrdinalIgnoreCase)).ToList();
+
+    private void OnServerFilterChanged(string? s)
+    {
+        _serverFilter = s;
+        _expandedFamily = null;
+        ComputeAllFrameworkScores();
+        ComputeScorecard();
+    }
+
+    protected override void OnInitialized()
+    {
+        _frameworks = MappingSvc.GetFrameworks().ToList();
+        _selectedFramework = _frameworks.FirstOrDefault() ?? "";
+        // Cold-start restore (2026-07-30): this page reads QcState.Results directly, so after an
+        // app restart it rendered the no-scorecard fallback until the user happened to visit
+        // /audit (which used to own the rehydrate). Idempotent — a warm state returns instantly.
+        Rehydration.EnsureLastRunLoaded();
+        RefreshAuditResults();
+        ComputeAllFrameworkScores();
+        ComputeScorecard();
+    }
+
+    private void SelectFramework(string fw)
+    {
+        _selectedFramework = fw;
+        _expandedFamily = null;
+        ComputeScorecard();
+    }
+
+    // Adapt CheckResult (Audit Assessment output) → AssessmentResult (scoring contract).
+    // ComplianceScoreService maps by .Category / .Status only — no VA-specific fields needed.
+    private static AssessmentResult ToAssessmentResult(CheckResult c) => new()
+    {
+        CheckId     = c.CheckId,
+        DisplayName = c.CheckName,
+        Category    = c.Category,
+        Severity    = c.Severity,
+        Message     = c.Message,
+        // 2026-07-20 sweep: mapping shared via ComplianceScoreService.StatusFor (see there). It
+        // covers SKIP and INFO as well as WARN — all three ride Passed=true and all three were
+        // inflating the framework score; ruling #4 had closed only the WARN arm.
+        Status      = ComplianceScoreService.StatusFor(c),
+        TargetName  = c.InstanceName,
+        ThisServer  = c.InstanceName,
+    };
+
+    private void RefreshAuditResults()
+    {
+        // SEAT GATE. This page does NOT route through CheckExecutionService.GetResults — it reads
+        // QuickCheckStateService.Results directly, so the choke-point filter there does not cover it
+        // and the gate has to be applied here. Compliance scorecards and the exported compliance
+        // report are squarely "audits & reports", so an instance outside the licence must not
+        // contribute to a framework score.
+        var raw = QcState.Results;
+        var seatFilter = Seats.Filter(
+            raw.Select(r => r.InstanceName).Where(n => !string.IsNullOrWhiteSpace(n)).Select(n => n!));
+        _seatNotice = seatFilter.ExclusionNotice;   // rendered as an honest banner; null when nothing dropped
+
+        var seatedSet = new HashSet<string>(seatFilter.Seated, StringComparer.OrdinalIgnoreCase);
+        _auditResults = raw
+            .Where(r => !string.IsNullOrWhiteSpace(r.InstanceName) && seatedSet.Contains(r.InstanceName!))
+            .Select(ToAssessmentResult)
+            .ToList();
+
+        // Objective loopback: which audit categories map to compliance controls?
+        var mapKeys = ComplianceMappingService.CategoryToHints.Keys;
+        var distinctCats = _auditResults
+            .Select(r => r.Category)
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        _mappedCategoryCount = distinctCats.Count(c => mapKeys.Contains(c));
+        _unmappedCategories  = distinctCats
+            .Where(c => !mapKeys.Contains(c))
+            .OrderBy(c => c, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        _servers = _auditResults
+            .Select(r => r.ThisServer)
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Select(s => s!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        // Drop a stale filter if that server is no longer present.
+        if (!string.IsNullOrEmpty(_serverFilter) &&
+            !_servers.Contains(_serverFilter, StringComparer.OrdinalIgnoreCase))
+            _serverFilter = null;
+    }
+
+    private void ComputeScorecard()
+    {
+        if (string.IsNullOrEmpty(_selectedFramework)) return;
+        _scorecard = ScoreSvc.ComputeScorecard(ScopedResults, _selectedFramework);
+    }
+
+    // Score per framework (OverallPercent; -1 = outside scope) so each tab name can be tinted to its
+    // compliance level. Recomputed when results / server filter change (not per render).
+    private Dictionary<string, double> _frameworkScores = new(StringComparer.OrdinalIgnoreCase);
+    private void ComputeAllFrameworkScores()
+    {
+        var scoped = ScopedResults;
+        var map = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        foreach (var fw in _frameworks)
+        {
+            try { map[fw] = ScoreSvc.ComputeScorecard(scoped, fw).OverallPercent; }
+            catch { map[fw] = -1; }
+        }
+        _frameworkScores = map;
+    }
+
+    private string FrameworkColor(string fw) =>
+        SQLTriage.Data.Services.AssessmentPdf.ScoreColor(
+            _frameworkScores.TryGetValue(fw, out var p) ? p : -1, UserSettings.GetColorBlindMode());
+
+    private string FrameworkScoreTitle(string fw) =>
+        _frameworkScores.TryGetValue(fw, out var p) && p >= 0 ? $"{fw} — {p:F0}% compliant" : $"{fw} — outside scope / no data";
+
+    // 100% compliant → "legendary": the tab gets a soft pulsing glow.
+    private bool IsLegendary(string fw) => _frameworkScores.TryGetValue(fw, out var p) && p >= 99.95;
+
+    private void ToggleDrillDown(ControlFamilyScore fs)
+    {
+        _expandedFamily = _expandedFamily == fs ? null : fs;
+    }
+
+    private async Task ExportReport()
+    {
+#if SQLT_NO_REPORT_COMPLIANCE_REPORT
+        // Gated per Adrian's 2026-07-21 ruling. The method survives as a stub so the (const-pruned)
+        // button's @onclick reference still type-checks; BuildComplianceReport itself is compiled out.
+        await Task.CompletedTask;
+#else
+        if (_scorecard == null) return;
+
+        try
+        {
+            var cb      = UserSettings.GetColorBlindMode();
+            var scoped  = ScopedResults;
+            var servers = scoped.Select(r => r.ThisServer).Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s!)
+                                .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(s => s).ToList();
+            var runId   = Guid.NewGuid().ToString("N")[..8];
+            var nowUtc  = DateTime.UtcNow;
+            var tz      = TimeZoneInfo.Local.StandardName;
+            var scope   = servers.Count == 0 ? "—" : servers.Count == 1 ? servers[0] : $"{servers.Count} servers";
+
+            var serverSet = servers.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var envs = ConnectionManager.GetConnections()
+                .Where(c => c.GetServerList().Any(n => serverSet.Contains(n))).Select(c => c.Environment).ToList();
+            var watermark = UserSettings.GetReportDraftWatermark()
+                            && SQLTriage.Data.Models.ServerEnvironment.RequiresWatermark(envs);
+
+            var report = new SQLTriage.Data.Services.ComplianceReport
+            {
+                Meta = new SQLTriage.Data.Services.AssessmentMeta
+                {
+                    Title        = _selectedFramework,
+                    Company      = UserSettings.GetReportCompanyName(),
+                    Subtitle     = servers.Count == 0 ? "No audit data" : servers.Count == 1 ? servers[0] : $"{servers.Count} servers · {string.Join(", ", servers.Take(6))}",
+                    Engine       = "Compliance framework mapping",
+                    GeneratedUtc = nowUtc.ToString("yyyy-MM-ddTHH:mmZ"),
+                    TimezoneId   = tz,
+                    RunId        = runId,
+                    ColorBlind   = cb,
+                    Watermark    = watermark,
+                    FooterMeta   = $"SQLTriage — Compliance Scorecard — {_selectedFramework} — {scope} — {nowUtc:yyyy-MM-ddTHH:mmZ} ({tz}) — Run {runId}",
+                },
+                OverallPercent = _scorecard.OverallPercent,
+                Compliant      = _scorecard.FamilyScores.Count(f => f.Status == ControlStatus.Compliant),
+                Partial        = _scorecard.FamilyScores.Count(f => f.Status == ControlStatus.PartiallyCompliant),
+                NonCompliant   = _scorecard.FamilyScores.Count(f => f.Status == ControlStatus.NonCompliant),
+                OutsideScope   = _scorecard.FamilyScores.Count(f => f.Status == ControlStatus.NoData),
+                NotTested      = _scorecard.FamilyScores.Count(f => f.Status == ControlStatus.NotTested),
+            };
+            foreach (var f in _scorecard.FamilyScores)
+            {
+                var row = new SQLTriage.Data.Services.ComplianceFamilyRow
+                {
+                    Id = f.FamilyId, Name = f.FamilyName, Percent = f.Percent, Status = f.Status.ToString(),
+                    NotTested = f.Status == ControlStatus.NotTested, NotTestedReason = f.NotTestedReason,
+                };
+                // Complete, uncapped failing evidence per control (#87) — the exported PDF must
+                // carry every failed finding, not a 5-row sample.
+                foreach (var r in f.FailingResults)
+                    row.Findings.Add(new SQLTriage.Data.Services.ComplianceFindingRow
+                    {
+                        CheckId  = r.CheckId,
+                        Name     = r.DisplayName,
+                        Severity = r.Severity,
+                        Message  = r.Message,
+                        Server   = !string.IsNullOrWhiteSpace(r.ThisServer) ? r.ThisServer!
+                                 : !string.IsNullOrWhiteSpace(r.TargetName) ? r.TargetName : "(unspecified)",
+                    });
+                report.Families.Add(row);
+            }
+
+            var bytes = await Task.Run(() => SQLTriage.Data.Services.AssessmentPdf.BuildComplianceReport(report));
+            var dir   = System.IO.Path.Combine(AppContext.BaseDirectory, "output");
+            System.IO.Directory.CreateDirectory(dir);
+            var label = _selectedFramework.Replace(" ", "-").Replace("\\", "_").Replace("/", "_");
+            var path  = System.IO.Path.Combine(dir, $"ComplianceScorecard_{label}_{nowUtc:yyyyMMdd_HHmmssZ}_{runId}.pdf");
+            await System.IO.File.WriteAllBytesAsync(path, bytes);
+
+            Audit.LogComplianceReportExported(
+                framework:      _selectedFramework,
+                exportedBy:     Environment.UserName,
+                totalControls:  _scorecard.FamilyScores.Count,
+                overallPercent: _scorecard.OverallPercent >= 0 ? _scorecard.OverallPercent : 0,
+                success:        true);
+
+            Toast.ShowSuccess("Compliance Export", $"Saved {System.IO.Path.GetFileName(path)}");
+        }
+        catch (Exception ex)
+        {
+            Audit.LogComplianceReportExported(
+                framework:      _selectedFramework,
+                exportedBy:     Environment.UserName,
+                totalControls:  _scorecard?.FamilyScores.Count ?? 0,
+                overallPercent: 0,
+                success:        false,
+                errorMessage:   ex.Message);
+
+            Toast.ShowError("Compliance Export", $"Export failed: {ex.Message}");
+        }
+#endif
+    }
+
+    private static string GetOverallScoreClass(double pct)
+        => pct >= 80 ? "score-compliant" : pct >= 50 ? "score-partial" : "score-noncompliant";
+
+    private static string GetStatusClass(ControlStatus status)
+        => status switch
+        {
+            ControlStatus.Compliant          => "bar-compliant",
+            ControlStatus.PartiallyCompliant => "bar-partial",
+            ControlStatus.NonCompliant       => "bar-noncompliant",
+            _                                => "bar-nodata"
+        };
+}

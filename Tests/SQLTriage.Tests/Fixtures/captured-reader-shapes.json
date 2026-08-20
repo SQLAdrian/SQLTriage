@@ -1,0 +1,2977 @@
+{
+  "capturedUtc": "2026-08-13T08:54:00.0103412Z",
+  "target": ".\\old2017",
+  "database": "_sqlt_idxscope_cap",
+  "serverVersion": "14.00.2120",
+  "missing": [
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_cap"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "wide"
+      },
+      {
+        "name": "EqualityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "[seekme]"
+      },
+      {
+        "name": "InequalityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "IncludedColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "UserHits",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "2"
+      },
+      {
+        "name": "AvgImpact",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "99.97"
+      },
+      {
+        "name": "ImpactScore",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "2434"
+      },
+      {
+        "name": "SuggestedScript",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "CREATE NONCLUSTERED INDEX IX_wide_seekme ON wide ([seekme])"
+      }
+    ],
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_cap"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "wide"
+      },
+      {
+        "name": "EqualityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "InequalityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "[seekme]"
+      },
+      {
+        "name": "IncludedColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "UserHits",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "1"
+      },
+      {
+        "name": "AvgImpact",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "99.00"
+      },
+      {
+        "name": "ImpactScore",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "1217"
+      },
+      {
+        "name": "SuggestedScript",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "CREATE NONCLUSTERED INDEX IX_wide_ ON wide (, [seekme])"
+      }
+    ]
+  ],
+  "unused": [
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_cap"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "neverread"
+      },
+      {
+        "name": "IndexName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "IX_neverread_c1"
+      },
+      {
+        "name": "IndexType",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "NONCLUSTERED"
+      },
+      {
+        "name": "UserReads",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "0"
+      },
+      {
+        "name": "UserWrites",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "1"
+      },
+      {
+        "name": "SizeMB",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "0.07"
+      }
+    ]
+  ],
+  "fragmented": [
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_cap"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "frag"
+      },
+      {
+        "name": "IndexName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "CX_frag_id"
+      },
+      {
+        "name": "FragPercent",
+        "sqlType": "float",
+        "clrType": "System.Double",
+        "isNull": "false",
+        "value": "94.95073891625616"
+      },
+      {
+        "name": "PageCount",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "4060"
+      },
+      {
+        "name": "SizeMB",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "31.72"
+      },
+      {
+        "name": "RecommendedAction",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "REBUILD"
+      }
+    ]
+  ],
+  "unusedNullSize": [
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_cap"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "neverread"
+      },
+      {
+        "name": "IndexName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "IX_neverread_c1"
+      },
+      {
+        "name": "IndexType",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "NONCLUSTERED"
+      },
+      {
+        "name": "UserReads",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "0"
+      },
+      {
+        "name": "UserWrites",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "1"
+      },
+      {
+        "name": "SizeMB",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "true",
+        "value": null
+      }
+    ]
+  ],
+  "usageWindow": [
+    [
+      {
+        "name": "sqlserver_start_time",
+        "sqlType": "datetime",
+        "clrType": "System.DateTime",
+        "isNull": "false",
+        "value": "2026-08-12T12:58:48.3130000"
+      },
+      {
+        "name": "",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_cap"
+      }
+    ]
+  ],
+  "dbRanking": [
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SCAN"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "50"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_hot"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "14992"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "True"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "1"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "ONLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SCAN"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "51"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_cap"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "6871"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "True"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "2"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "ONLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SCAN"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "8"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SeedIdx2017"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "6436"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "True"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "3"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "ONLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SCAN"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "5"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SQLTriagePerfDemo"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "2967"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "True"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "4"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "ONLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SCAN"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "7"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SeedLegacy2017"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "683"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "True"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "5"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "ONLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SCAN"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "6"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "S5TestDB"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "681"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "True"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "6"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "ONLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SCAN"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "10"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_p00"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "144"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "True"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "7"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "ONLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SCAN"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "11"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_p01"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "115"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "True"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "8"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "ONLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SCAN"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "12"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_p02"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "115"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "True"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "9"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "ONLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SCAN"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "13"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_p03"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "115"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "True"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "10"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "ONLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SCAN"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "14"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_p04"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "115"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "True"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "11"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "ONLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SCAN"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "16"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_p06"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "115"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "True"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "12"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "ONLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SCAN"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "17"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_p07"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "115"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "True"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "13"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "ONLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SCAN"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "19"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_p09"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "115"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "True"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "14"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "ONLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SCAN"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "20"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_p10"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "115"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "True"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "15"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "ONLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SCAN"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "21"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_p11"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "115"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "True"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "16"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "ONLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SCAN"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "22"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_p12"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "115"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "True"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "17"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "ONLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SCAN"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "23"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_p13"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "115"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "True"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "18"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "ONLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SCAN"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "24"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_p14"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "115"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "True"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "19"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "ONLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SCAN"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "25"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_p15"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "115"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "True"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "20"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "ONLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SKIP-UNRANKED"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "9"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_ac"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "0"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "25"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "ONLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SKIP-STATE"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "28"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_o00"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "0"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "26"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "OFFLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SKIP-STATE"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "29"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_o01"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "0"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "27"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "OFFLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SKIP-STATE"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "30"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_o02"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "0"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "28"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "OFFLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SKIP-STATE"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "31"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_o03"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "0"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "29"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "OFFLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SKIP-STATE"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "32"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_o04"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "0"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "30"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "OFFLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SKIP-STATE"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "33"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_o05"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "0"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "31"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "OFFLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SKIP-STATE"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "34"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_o06"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "0"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "32"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "OFFLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SKIP-STATE"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "35"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_o07"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "0"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "33"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "OFFLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SKIP-STATE"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "36"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_o08"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "0"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "34"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "OFFLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SKIP-STATE"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "37"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_o09"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "0"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "35"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "OFFLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SKIP-STATE"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "38"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_o10"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "0"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "36"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "OFFLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SKIP-STATE"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "39"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_o11"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "0"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "37"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "OFFLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SKIP-STATE"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "40"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_o12"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "0"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "38"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "OFFLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SKIP-STATE"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "41"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_o13"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "0"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "39"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "OFFLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SKIP-STATE"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "42"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_o14"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "0"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "40"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "OFFLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SKIP-STATE"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "43"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_o15"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "0"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "41"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "OFFLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SKIP-STATE"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "44"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_o16"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "0"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "42"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "OFFLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SKIP-STATE"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "45"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_o17"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "0"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "43"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "OFFLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ],
+    [
+      {
+        "name": "RowKind",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SKIP-STATE"
+      },
+      {
+        "name": "DatabaseId",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "46"
+      },
+      {
+        "name": "DatabaseName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_idxscope_o18"
+      },
+      {
+        "name": "IoOperations",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "0"
+      },
+      {
+        "name": "IoMeasured",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      },
+      {
+        "name": "IoRank",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "44"
+      },
+      {
+        "name": "StateDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "OFFLINE"
+      },
+      {
+        "name": "UserAccessDesc",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "MULTI_USER"
+      },
+      {
+        "name": "IsReadOnly",
+        "sqlType": "bit",
+        "clrType": "System.Boolean",
+        "isNull": "false",
+        "value": "False"
+      }
+    ]
+  ],
+  "dbRankingCensus": [
+    [
+      {
+        "name": "TopN",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "20"
+      },
+      {
+        "name": "UserDatabases",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "47"
+      },
+      {
+        "name": "EligibleDatabases",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "25"
+      },
+      {
+        "name": "IneligibleDatabases",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "22"
+      },
+      {
+        "name": "SampledDatabases",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "20"
+      },
+      {
+        "name": "PassedOverDatabases",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "23"
+      },
+      {
+        "name": "SkipReportCap",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "20"
+      },
+      {
+        "name": "RankedBelowCutDatabases",
+        "sqlType": "int",
+        "clrType": "System.Int32",
+        "isNull": "false",
+        "value": "4"
+      }
+    ]
+  ]
+}
