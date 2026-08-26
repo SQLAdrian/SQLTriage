@@ -1,0 +1,16 @@
+{
+  "version": "0.98.0",
+  "buildNumber": 3712,
+  "buildDate": "2026-08-26",
+  "releaseType": "Production",
+  "updateCheckUrl": "https://api.github.com/repos/SQLAdrian/SQLTriage/releases/latest",
+  "whatsnew": [
+    "**Alerts tell the truth.** The severity model is simplified to the two levels the engine acts on - Warning and Critical - and every existing alert routes exactly as it did before. Checks that previously reported without measuring (including the Windows power plan check) now perform the real check or say they could not.",
+    "**Corrections reach your install.** A new config migrator delivers corrected alert definitions and dashboard panels to existing installations on upgrade - and never overwrites anything you have tuned. Your edits, enable/disable choices, cooldowns and channels are preserved byte-for-byte.",
+    "**Dashboards measure what they name.** Security tiles now see the failed logins and orphaned users they report on; several panels that silently queried the wrong database context are fixed; a panel with no data now says \"no data\" instead of looking healthy.",
+    "**The installer respects your configuration.** Upgrades no longer replace operator-edited configuration files. The Alerts page's session deploy buttons now emit valid scripts that create and start their sessions.",
+    "**Local admin access works out of the box.** The app now directs you to the address its security boundary actually admits (localhost), first-admin setup is reachable, licence bundles can be installed from the UI (admin-gated), and every activation failure states its real reason on screen.",
+    "**The audit CLI never reports empty success.** Audit and import runs that produce nothing now exit non-zero with a message that says so; exported CSVs no longer fabricate values for checks that carry a verdict.",
+    "**Documentation matches the code.** The security whitepaper's credential-encryption section has been re-verified against the source, and the About page states only capabilities that actually ship."
+  ]
+}

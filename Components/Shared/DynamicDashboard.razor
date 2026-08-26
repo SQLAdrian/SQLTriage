@@ -1,0 +1,2933 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using System.Data
+@using System.Buffers
+@using System.Collections.Concurrent
+@using SQLTriage.Data
+@using SQLTriage.Data.Caching
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Scheduling
+@using Microsoft.Extensions.Logging
+@using Microsoft.Data.SqlClient
+@inject DashboardConfigService ConfigService
+@inject DashboardDataService DataService
+@inject QueryExecutor QueryExecutor
+@inject CachingQueryExecutor CachingExecutor
+@inject SQLTriage.Data.Services.CacheMetricsService CacheMetrics
+@inject AutoRefreshService RefreshService
+@inject UserSettingsService UserSettings
+@inject ServerConnectionManager ConnectionManager
+@inject SQLTriage.Data.Services.SqlWatchInstanceDiscovery Discovery
+@inject GlobalInstanceSelector InstanceSelector
+@inject IQueryOrchestrator QueryOrchestrator
+@inject DatabaseAvailabilityService DbAvailability
+@inject IDbConnectionFactory _connectionFactory
+@inject ILogger<DynamicDashboard> Logger
+@inject SQLTriage.Data.Services.AppUserState UserState
+@inject LocalLogService LocalLogger
+@inject liveQueriesCacheStore CacheStore
+@inject PerformanceInspectorService PerfService
+@implements IDisposable
+
+
+@* CHECKED 2026-08-06, and it is not a second gap. These two modals and the EditPageToolbar below
+   are declared unconditionally with their OnSave/OnAdd/OnReset delegates already wired, which is
+   the "a delegate that has been handed out does not un-hand itself" shape this file gates against
+   elsewhere. What holds is three things together: each renders NOTHING unless IsVisible / EditMode
+   (all three open with @if), the only writers of those flags are the edit-mode controls behind the
+   Edit Page button (_noPantsMode && MayEditDashboardLayout), and — the part that actually holds —
+   every handler on the other end of those delegates refuses before it mutates. So a caller who
+   reached the modal by any route gets a refusal, not a saved layout. PanelEditorModal's own act,
+   running the caller's T-SQL, is gated inside that component on run_scripts. *@
+<PanelEditorModal IsVisible="_dashEditingPanel != null"
+    Panel="_dashEditingPanel"
+    OnSave="DashSavePanel"
+    OnCancel="() => _dashEditingPanel = null" />
+
+<AddSectionModal IsVisible="_dashShowAddPanel"
+    NativeKeys="new List<string>()"
+    OnAdd="DashHandlePanelAdded"
+    OnCancel="() => _dashShowAddPanel = false" />
+
+@if (_showJobDetailsModal)
+{
+    <div class="panel-maximize-overlay" @onclick="CloseJobDetailsModal">
+        <div class="query-plan-modal-content" style="max-width:900px;max-height:80vh;" @onclick:stopPropagation>
+            <div class="panel-maximize-header">
+                <span class="panel-maximize-title">
+                    <i class="fa-solid fa-calendar-check" style="margin-right:6px;"></i>
+                    Job History — @_jobDetailsName
+                </span>
+                <button class="panel-maximize-close" @onclick="CloseJobDetailsModal" title="Close">&#10005;</button>
+            </div>
+            <div style="overflow:auto;max-height:calc(80vh - 50px);padding:0;">
+                @if (_jobDetailsLoading)
+                {
+                    <div style="text-align:center;padding:40px;color:var(--text-muted);">
+                        <i class="fa-solid fa-spinner fa-spin"></i> Loading job history...
+                    </div>
+                }
+                else if (_jobDetailsData != null && _jobDetailsData.Rows.Count > 0)
+                {
+                    <table class="datagrid-table" style="min-width:700px;">
+                        <thead>
+                            <tr>
+                                @foreach (DataColumn col in _jobDetailsData.Columns)
+                                {
+                                    <th>@col.ColumnName</th>
+                                }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (DataRow row in _jobDetailsData.Rows)
+                            {
+                                var status = row.Table.Columns.Contains("Status") ? row["Status"]?.ToString() : "";
+                                var rowClass = status == "Failed" ? "background:rgba(239,68,68,0.08);" : "";
+                                <tr style="@rowClass">
+                                    @foreach (DataColumn col in _jobDetailsData.Columns)
+                                    {
+                                        var val = row[col]?.ToString() ?? "";
+                                        var cellStyle = col.ColumnName == "Status" && status == "Failed" ? "color:#ef4444;font-weight:600;" : "";
+                                        <td style="@cellStyle"
+                                            title="@val">
+                                            @if (col.ColumnName == "Message" && val.Length > 120)
+                                            {
+                                                <span>@val[..120]...</span>
+                                            }
+                                            else
+                                            {
+                                                @val
+                                            }
+                                        </td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    <div class="datagrid-footer">
+                        @_jobDetailsData.Rows.Count row(s)
+                    </div>
+                }
+                else
+                {
+                    <div style="text-align:center;padding:40px;color:var(--text-muted);">
+                        No job history found for '@_jobDetailsName'.
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@* ContextFollowNotice is in the condition on purpose: the notice is most needed exactly when there
+   is no current server and no instance list to render a header for, which is the state a denied
+   caller lands in when nobody has connected the process yet. *@
+@if (ConnectionManager.CurrentServer != null || Instances.Length > 0 || ContextFollowNotice is not null)
+{
+    <div class="server-context-header">
+        <span class="server-context-icon"><i class="fa-solid fa-desktop"></i></span>
+        <span class="server-context-label">Connected to:</span>
+        
+        @if (ConnectionManager.CurrentServer != null)
+        {
+            <span class="server-context-name">@ConnectionManager.CurrentServer.ServerNames</span>
+            <span class="server-context-db">(@(Dashboard?.DefaultDatabase ?? ConnectionManager.CurrentServer.Database))</span>
+        }
+        <span class="server-context-label" style="margin-left: 16px;">Instance:</span>
+        @* @key is load-bearing, not decoration. When a change is REFUSED the app's selection has
+           not moved, but the browser has already painted the option the caller clicked. Without a
+           key the re-render diffs to "no change" and leaves the <select> showing a server the app
+           is not connected to — a control asserting something false, which is the same defect
+           class as the refusal message itself. Bumping the key rebuilds the element from the
+           selection that actually holds. *@
+        <select @key="@("instance-select-" + _selectorGeneration)" class="toolbar-select" style="margin-left: 4px;" @onchange="OnInstanceChanged">
+            @if (Dashboard?.ShowAllOption ?? false)
+            {
+                <option value="ALL">All Instances</option>
+            }
+            @foreach (var instance in Instances)
+            {
+                <option value="@instance" selected="@(SelectedInstance == instance)">@instance</option>
+            }
+        </select>
+        @if (DashboardId == "querystore")
+        {
+            <span class="server-context-label" style="margin-left: 16px;">Database:</span>
+            <select @key="@("qs-db-select-" + _selectorGeneration)" class="toolbar-select" style="margin-left: 4px;" @onchange="OnQueryStoreDatabaseChanged">
+                @foreach (var db in _queryStoreDatabases)
+                {
+                    <option value="@db" selected="@(db == ConnectionManager.CurrentServer?.Database)">@db</option>
+                }
+            </select>
+        }
+        @if (_retargetRefusal is not null)
+        {
+            <span class="server-context-refusal" role="status" style="margin-left: 12px; color: #c62828;">
+                <i class="fa-solid fa-ban"></i> @_retargetRefusal
+            </span>
+        }
+        @if (ContextFollowNotice is not null)
+        {
+            <span class="server-context-following" role="status" style="margin-left: 12px; color: #c62828;">
+                <i class="fa-solid fa-link"></i> @ContextFollowNotice
+            </span>
+        }
+    </div>
+}
+
+@if (Dashboard != null)
+{
+    @* If this dashboard targets a non-system database that isn't present on the active
+       server, surface an informational banner instead of letting every panel spin forever
+       in "Loading..." with hidden login-failure errors. The banner explains; it does not
+       offer to install anything (unbundled 2026-07-21 — see RouteConstants.cs "Deployment"). *@
+    @if (!string.IsNullOrWhiteSpace(Dashboard.DefaultDatabase))
+    {
+        <DbMissingBanner DatabaseName="@Dashboard.DefaultDatabase" />
+    }
+
+    <div class="dashboard-title-header">
+        <h2>@Dashboard.NavTitle</h2>
+        <span class="dashboard-db-context">Database: @Dashboard.DefaultDatabase</span>
+        @if (_noPantsMode && MayEditDashboardLayout)
+        {
+            <button class="btn-edit-page @(_dashEditMode ? "btn-edit-page--active" : "")"
+                    @onclick="() => _dashEditMode = !_dashEditMode" title="Edit dashboard panels">
+                <i class="fa-solid fa-pen-to-square"></i>
+                @(_dashEditMode ? "Done Editing" : "Edit Page")
+            </button>
+        }
+        @if (LayoutRefusalNotice is not null)
+        {
+            <span class="dashboard-layout-refusal" role="status" style="margin-left: 12px; color: #c62828;">
+                <i class="fa-solid fa-ban"></i> @LayoutRefusalNotice
+            </span>
+        }
+    </div>
+    @if (!string.IsNullOrEmpty(Dashboard.Description))
+    {
+        <div class="dashboard-description">
+            @Dashboard.Description
+        </div>
+    }
+    @if (Dashboard.Tabs != null && Dashboard.Tabs.Count > 0)
+    {
+        <div class="dashboard-tabs" role="tablist">
+            @foreach (var tab in Dashboard.Tabs)
+            {
+                var isActive = tab.Id == _selectedTabId;
+                <button class="dashboard-tab @(isActive ? "dashboard-tab--active" : "")"
+                        role="tab"
+                        aria-selected="@(isActive.ToString().ToLower())"
+                        @onclick="() => SwitchTabAsync(tab.Id)">
+                    @if (!string.IsNullOrEmpty(tab.Icon))
+                    {
+                        <i class="@tab.Icon"></i>
+                    }
+                    <span>@tab.Title</span>
+                    <span class="dashboard-tab-count">@tab.Panels.Count</span>
+                </button>
+            }
+        </div>
+    }
+}
+
+<DashboardToolbar @bind-TimeRangeMinutes="TimeRangeMinutes"
+                  @bind-AutoRefresh="AutoRefresh"
+                  DataSource="@DataSource"
+                  DataSourceChanged="OnDataSourceChanged"
+                  OnRefreshRequested="OnManualRefresh"
+                  OnServerChanged="OnServerConnectionChanged"
+                  IsLoading="@IsLoading"
+                  LoadedPanels="@_loadedPanelCount"
+                  TotalPanels="@_totalPanelCount"
+                  DashboardName="@(Dashboard?.NavTitle ?? DashboardId)"
+                  ShowBaseline="@_showBaseline"
+                  OnBaselineToggled="ToggleBaseline" />
+
+<EditPageToolbar EditMode="_dashEditMode"
+    PageTitle="@(Dashboard?.NavTitle ?? DashboardId)"
+    HasUnsavedChanges="false"
+    ResetLabel="Reload Layout"
+    ResetTitle="Re-read the saved layout and leave edit mode"
+    OnAddSection="() => _dashShowAddPanel = true"
+    OnDone="() => _dashEditMode = false"
+    OnReset="DashResetPanels" />
+
+<div class="dashboard-content">
+
+    @* Thin loading bar — always rendered to avoid layout shift *@
+    <div class="db-loading-row">
+        <div class="db-loading-bar @(IsLoading ? "" : "db-loading-bar-idle")">
+            <div class="db-loading-bar-fill"></div>
+        </div>
+        @if (IsLoading)
+        {
+            <button class="btn-cancel-load" @onclick="CancelLoad" title="Cancel in-progress queries">
+                <i class="fa-solid fa-xmark"></i> Cancel
+            </button>
+        }
+    </div>
+
+    @if (!string.IsNullOrEmpty(ErrorMessage))
+    {
+        <div class="chart-empty" style="color: var(--red); background: var(--bg-secondary); border: 1px solid var(--red); padding: 12px; margin: 8px; border-radius: 4px;">
+            @ErrorMessage
+        </div>
+    }
+
+    @* Stale data banner — shown when SQL Server is unreachable and we're serving cached data *@
+    @if (CachingExecutor.IsServingStaleData)
+    {
+        <div class="db-stale-banner">
+            <span><i class="fa-solid fa-triangle-exclamation"></i> Serving cached data</span>
+            @if (CachingExecutor.LastSuccessfulFetch.HasValue)
+            {
+                <span class="db-stale-age">Last live fetch: @CachingExecutor.LastSuccessfulFetch.Value.ToString("HH:mm:ss")</span>
+            }
+        </div>
+    }
+
+    @* No servers configured — show prompt instead of connection errors *@
+    @if (!ConnectionManager.GetConnections().Any())
+    {
+        <div style="padding:48px 32px; text-align:center; background:var(--bg-secondary); border:1px solid var(--border); border-radius:8px; margin:16px;">
+            <i class="fa-solid fa-server" style="font-size:36px; color:var(--text-muted); margin-bottom:16px; display:block;"></i>
+            <div style="font-size:15px; font-weight:600; color:var(--text-primary); margin-bottom:8px;">No servers configured</div>
+            <div style="font-size:13px; color:var(--text-secondary); margin-bottom:20px;">Add a server connection to start monitoring.</div>
+            <a href="/servers" style="display:inline-flex; align-items:center; gap:8px; padding:8px 20px; background:var(--primary); color:var(--text-primary); border-radius:6px; text-decoration:none; font-size:13px; font-weight:600;">
+                <i class="fa-solid fa-plus"></i> Add Server
+            </a>
+        </div>
+    }
+
+    @* Show panel errors (only when servers are configured) *@
+    @if (_panelErrors.Any() && ConnectionManager.GetConnections().Any())
+    {
+        <div class="chart-empty" style="color: #ff9800; background: #2a2000; border: 1px solid #ff9800; padding: 12px; margin: 8px; border-radius: 4px;">
+            <strong>&#9888; Data Load Warnings:</strong>
+            <ul style="margin: 8px 0 0 0; padding-left: 20px;">
+                @foreach (var err in _panelErrors)
+                {
+                    <li>@err.Key: @err.Value</li>
+                }
+            </ul>
+        </div>
+    }
+
+    @* Retention honesty (DECISIONS 2026-08-26 18:23 ruling 4). A panel that retains history can now
+       show a real trend, and the moment it can, it can also be asked for a range that starts before
+       retention did. This says which panels those are and when their history begins, so a short line
+       reads as "not recorded" rather than "the queue was empty". It also says when a range holds more
+       retained points than the chart draws, because a line sampled down to the point cap is the other
+       way a whole-looking trend is not one. Silence means the lines are whole. *@
+    @if (!string.IsNullOrEmpty(_retentionNotice))
+    {
+        <div class="chart-empty" style="color: #90caf9; background: #10233a; border: 1px solid #2196f3; padding: 12px; margin: 8px; border-radius: 4px;">
+            <strong>&#8505; Retained history:</strong> @_retentionNotice
+        </div>
+    }
+
+    @* Baseline honesty: the Baseline button toggles _showBaseline. Retained history is what makes a
+       7-day-ago window possible at all; the live cache holds only the current window (the delta fetch
+       trims points older than TimeFrom after every fetch). When neither has the window, say which of
+       the two reasons applies instead of flipping the button active and rendering nothing. *@
+    @if (_showBaseline && !string.IsNullOrEmpty(_baselineNotice))
+    {
+        <div class="chart-empty" style="color: #90caf9; background: #10233a; border: 1px solid #2196f3; padding: 12px; margin: 8px; border-radius: 4px;">
+            <strong>&#8505; Baseline:</strong> @_baselineNotice
+        </div>
+    }
+
+    @* SQLWATCH-gated dashboards (config RequiresDatabase="SQLWATCH") render through the SAME
+       RequiredDbMissing banner below as every other requiresDatabase-gated dashboard — one
+       mechanism, one banner. The presence CHECK still uses the richer discovery signal
+       (CurrentServerHasSqlWatch, wired in via CheckRequiredDatabaseAsync's SQLWATCH special case),
+       only the "which dashboards get gated" trigger and the rendered banner are unified. *@
+    @if (RequiredDbMissing)
+    {
+        <div class="sqlwatch-required-banner">
+            <span class="sqlwatch-required-icon"><i class="fa-solid fa-triangle-exclamation"></i>️</span>
+            <div>
+                <strong>@RequiredDbBannerText</strong>
+                <div class="sqlwatch-required-detail">
+                    Connect a server that has this database, or skip this dashboard.
+                </div>
+            </div>
+        </div>
+    }
+
+    @* Initial blank-slate spinner only — subsequent refreshes keep content visible *@
+    @if (IsLoading && !_hasLoadedOnce && HasRenderablePanels)
+    {
+        <div class="chart-empty">Loading data...</div>
+    }
+    else if (Dashboard != null && HasRenderablePanels)
+    {
+        @if (_dashEditMode)
+        {
+            @* ── Edit mode: flat vertical list of all panels in config order ── *@
+            <div class="dash-edit-list">
+                @{
+                    var allPanels = Dashboard?.Panels ?? new();
+                }
+                @for (int i = 0; i < allPanels.Count; i++)
+                {
+                    var panel = allPanels[i];
+                    var idx   = i;
+                    <DashboardPanelWrapper Panel="panel" EditMode="true"
+                        IsFirst="idx == 0" IsLast="idx == allPanels.Count - 1"
+                        OnMoveUp="DashMoveUp" OnMoveDown="DashMoveDown"
+                        OnDelete="DashDeletePanel" OnEdit="p => _dashEditingPanel = p" OnToggle="DashTogglePanel">
+                        @if (!panel.Enabled)
+                        {
+                            <div class="dash-hidden-placeholder">
+                                <i class="fa-solid fa-eye-slash"></i>
+                                <span>Panel hidden — toggle visibility to show on dashboard</span>
+                            </div>
+                        }
+                        else
+                        {
+                            @RenderPanelForEdit(panel)
+                        }
+                    </DashboardPanelWrapper>
+                }
+            </div>
+        }
+        else
+        {
+            @* ── Normal mode: original grouped grid layout ──────────────────── *@
+
+            @* Stat cards section *@
+            @if (_statPanelsCache?.Any() == true)
+            {
+                <div class="stat-grid">
+                    @foreach (var panel in _statPanelsCache)
+                    {
+                        if (panel.PanelType == "CheckStatus" && _checkResults.TryGetValue(panel.Id, out var checks))
+                        {
+                            <DynamicPanel Panel="panel" CheckData="checks" TimezoneOffsetHours="@TimezoneOffsetHours" IsCached="_cachedPanelIds.ContainsKey(panel.Id)" />
+                        }
+                        else if ((panel.PanelType == "StatCard" || panel.PanelType == "DeltaStatCard") && _statResults.TryGetValue(panel.Id, out var stat))
+                        {
+                            <DynamicPanel Panel="panel" StatData="stat" TimezoneOffsetHours="@TimezoneOffsetHours" IsCached="_cachedPanelIds.ContainsKey(panel.Id)" />
+                        }
+                    }
+                </div>
+            }
+
+            @* Details section *@
+            @if (_detailsPanelsCache?.Any() == true)
+            {
+                <div class="details-section">
+                    @foreach (var panel in _detailsPanelsCache)
+                    {
+                        if (_gridResults.TryGetValue(panel.Id, out var grid))
+                        {
+                            <DynamicPanel Panel="panel" GridData="grid" TimezoneOffsetHours="@TimezoneOffsetHours"
+                                          ConnectionId="@ConnectionManager.CurrentServer?.Id"
+                                          DatabaseName="@ConnectionManager.CurrentServer?.Database"
+                                          IsCached="_cachedPanelIds.ContainsKey(panel.Id)" />
+                        }
+                    }
+                </div>
+            }
+
+            @* Bar gauge panels *@
+            @if (_gaugePanelsCache?.Any() == true)
+            {
+                @foreach (var panel in _gaugePanelsCache)
+                {
+                    if (_barGaugeResults.TryGetValue(panel.Id, out var gaugeData))
+                    {
+                        <div class="chart-grid-item" style="position: relative;">
+                            <button class="panel-maximize-btn" @onclick="() => MaximizePanel(panel)" title="Maximize"><i class="fa-solid fa-up-right-and-down-left-from-center"></i></button>
+                            <DynamicPanel Panel="panel" BarGaugeData="gaugeData" TimezoneOffsetHours="@TimezoneOffsetHours" IsCached="_cachedPanelIds.ContainsKey(panel.Id)" />
+                        </div>
+                    }
+                }
+            }
+
+            @* Maximized panel overlay *@
+            @if (_maximizedPanel != null)
+            {
+                <div class="panel-maximize-overlay" @onclick="RestorePanel">
+                    <div class="panel-maximize-content" @onclick:stopPropagation>
+                        <div class="panel-maximize-header">
+                            <span class="panel-maximize-title">@_maximizedPanel.Title</span>
+                            <button class="panel-maximize-close" @onclick="RestorePanel" title="Restore"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                        <div class="panel-maximize-body">
+                            <DynamicPanel Panel="@_maximizedPanelExpanded"
+                                          TimeSeriesData="@(_timeSeriesResults.TryGetValue(_maximizedPanel.Id, out var mts) ? mts : null)"
+                                          BaselineData="@(_showBaseline && _baselineResults.TryGetValue(_maximizedPanel.Id, out var mbl) ? mbl : null)"
+                                          GridData="@(_gridResults.TryGetValue(_maximizedPanel.Id, out var mgd) ? mgd : null)"
+                                          BarGaugeData="@(_barGaugeResults.TryGetValue(_maximizedPanel.Id, out var mbg) ? mbg : null)"
+                                          TimezoneOffsetHours="@TimezoneOffsetHours"
+                                          IsCached="_cachedPanelIds.ContainsKey(_maximizedPanel.Id)" />
+                        </div>
+                    </div>
+                </div>
+            }
+
+            @* Chart grid - 2 column layout *@
+            @if (_chartPanelsCache?.Any() == true)
+            {
+                <div class="chart-grid">
+                    @foreach (var panel in _chartPanelsCache)
+                    {
+                        @if (panel.Layout.SpanColumns)
+                        {
+                            <div class="chart-grid-full chart-grid-item">
+                                <button class="panel-maximize-btn" @onclick="() => MaximizePanel(panel)" title="Maximize"><i class="fa-solid fa-up-right-and-down-left-from-center"></i></button>
+                                @RenderChartOrGrid(panel)
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="chart-grid-item">
+                                <button class="panel-maximize-btn" @onclick="() => MaximizePanel(panel)" title="Maximize"><i class="fa-solid fa-up-right-and-down-left-from-center"></i></button>
+                                @RenderChartOrGrid(panel)
+                            </div>
+                        }
+                    }
+                </div>
+            }
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public string DashboardId { get; set; } = "";
+
+    private DashboardDefinition? Dashboard;
+    private string SelectedInstance = "";
+    private string[] Instances = Array.Empty<string>();
+    private int TimeRangeMinutes = 60;
+    private double TimezoneOffsetHours = 0;
+    private string DataSource = "sqlwatch";
+    private bool AutoRefresh = true;
+    private bool IsLoading = true;
+    private string? ErrorMessage;
+    private int _loadedPanelCount = 0;
+    private int _totalPanelCount = 0;
+
+    // Per-load cancellation (sqltoolsservice pattern: cancel in-flight load before starting new one)
+    private CancellationTokenSource? _loadCts;
+    private volatile bool _disposed = false;
+
+    // Data results keyed by panel ID
+    private ConcurrentDictionary<string, List<TimeSeriesPoint>> _timeSeriesResults = new();
+    private ConcurrentDictionary<string, StatValue> _statResults = new();
+    private ConcurrentDictionary<string, List<StatValue>> _barGaugeResults = new();
+    private ConcurrentDictionary<string, DataTable> _gridResults = new();
+    private ConcurrentDictionary<string, List<CheckStatus>> _checkResults = new();
+    private ConcurrentDictionary<string, string> _panelErrors = new();
+    private ConcurrentDictionary<string, List<TimeSeriesPoint>> _baselineResults = new();
+    private bool _showBaseline = false;
+    // Honest notice shown when Baseline is on but no 7-day-old data is retained for the range.
+    private string _baselineNotice = "";
+
+    /// <summary>
+    /// Set when a panel that retains history has less of it than the selected range asks for. Empty
+    /// means every retained panel on this dashboard covers the whole range — silence is the signal
+    /// that the trend is whole (DECISIONS 2026-08-26 18:23 ruling 4, the honesty bar).
+    /// </summary>
+    private string _retentionNotice = "";
+
+    // Track which panels are currently showing cached data (from preload)
+    private ConcurrentDictionary<string, bool> _cachedPanelIds = new();
+
+    // Cached panel lists to avoid repeated LINQ on each render
+    private List<PanelDefinition>? _enabledPanelsCache;
+    private List<PanelDefinition>? _statPanelsCache;
+    private List<PanelDefinition>? _detailsPanelsCache;
+    private List<PanelDefinition>? _gaugePanelsCache;
+    private List<PanelDefinition>? _chartPanelsCache;
+
+    // ── No-Pants Mode ─────────────────────────────────────────────────────
+    // PERMISSION, component-level: run_scripts. Found by the round-4 COMPONENT census - a class
+    // the page census is structurally blind to, because it enumerates @page routes and a shared
+    // component has no route. This component is rendered by the dashboard PAGES, every one of
+    // which is on the census's read-only list, and it carries two acts that reach a client's
+    // production server:
+    //   ExecuteActionSqlAsync - SqlCommand.ExecuteNonQueryAsync of the action cell's DDL, with a
+    //     "query" double-hop mode where the cell value is a SELECT that RETURNS the DDL to run;
+    //   RunAgentJobAsync      - EXEC msdb.dbo.sp_start_job on the selected instance.
+    // Both sit behind the _noPantsMode user setting, which is a SAFETY INTERLOCK and not an
+    // authorization check: it is a local preference any caller who reaches Settings can flip, and
+    // it says nothing about who the caller is. run_scripts by round 3's rule - acting on a
+    // connected server. NOT driven live: found by reading the scan output.
+    //
+    // Gated in BOTH places on purpose. The render condition stops the button being offered; the
+    // guard inside each handler is what actually holds, because the handlers are handed to DataGrid
+    // as Func<> delegates and a delegate that has been handed out does not un-hand itself.
+    private bool MayExecuteActions => UserState.IsAuthorized("run_scripts");
+
+    /// <summary>
+    /// Saving the dashboard layout is a write to Config/dashboard-config.json through a SINGLETON
+    /// DashboardConfigService — an INSTALL-WIDE change, not this caller's view. Every other
+    /// install-wide preference write in the tree was ruled onto "settings" in round 6 (NavMenu's
+    /// and StatusBar's toggles, on ShellSurfaceRegistry), and this is the same class.
+    ///
+    /// It was previously interlocked ONLY by _noPantsMode, which this file's own comment twenty
+    /// lines up already calls "a SAFETY INTERLOCK and not an authorization check". The upgraded
+    /// component census surfaced DashboardConfigService.UpdateConfig as an edge; the old verb
+    /// lexicon had no Update in it.
+    /// </summary>
+    private bool MayEditDashboardLayout => UserState.IsAuthorized("settings");
+
+    private bool _noPantsMode;
+
+    /// <summary>Set when a retarget was refused; rendered beside the selectors.</summary>
+    private string? _retargetRefusal;
+
+    /// <summary>Bumped on a refusal so the selectors re-render from the selection that holds.</summary>
+    private int _selectorGeneration;
+
+    private void OnNoPantsModeChanged(bool enabled)
+    {
+        _noPantsMode = enabled;
+        if (!enabled) _dashEditMode = false; // exit edit mode when pants go back on
+        _ = SafeStateHasChanged();
+    }
+
+    // ── Dashboard edit mode ───────────────────────────────────────────────
+    private bool               _dashEditMode;
+    private PanelDefinition?   _dashEditingPanel;
+    private bool               _dashShowAddPanel;
+
+    /// <summary>
+    /// THE GUARD, in front of the mutation rather than in front of the save.
+    ///
+    /// <para>It used to sit only at DashSaveAndRebuild, so every one of the six edit handlers
+    /// mutated <c>Dashboard.Panels</c> FIRST and the refusal then tried to undo the mutation by
+    /// re-reading <c>ConfigService.Config</c>. That undo does not work and the comment beside it
+    /// said it did: <c>Config</c> hands back the SAME in-memory object the handler just edited, so
+    /// the "panels on screen are the ones on disk" claim was false the moment it was written — the
+    /// panels on screen were the edited ones, and the refusal underneath them said they were not.
+    /// A refusal that asserts something false is the defect class this whole wave is about.</para>
+    ///
+    /// <para>Returning true means: refused, nothing has been touched, and the caller can see why.
+    /// Called BEFORE the first mutation in each handler; DashSaveAndRebuild keeps the same call as
+    /// a chokepoint so a seventh handler that forgets is still refused at the write.</para>
+    /// </summary>
+    private bool LayoutEditRefused()
+    {
+        if (MayEditDashboardLayout) return false;
+
+        _layoutRefusalCause = LayoutRefusalCause.ChangeRefused;
+        _dashEditMode = false;
+        Logger.LogInformation(
+            "[DynamicDashboard:{DashboardId}] Layout edit refused: caller is not authorised for settings.",
+            DashboardId);
+        StateHasChanged();
+        return true;
+    }
+
+    /// <summary>
+    /// Closes edit mode and SAYS SO when this caller's authorisation for <c>settings</c> drops
+    /// while the mode is open.
+    ///
+    /// <para><b>This is what makes the refusal below reachable, and it is a real path rather than a
+    /// contrived one.</b> The Edit Page button is conditioned on the same permission as the guard,
+    /// so a caller who may not save is never offered the mode — which meant the notice could only
+    /// ever be reached by a MID-SESSION change: an operator enables RBAC from another tab, or a
+    /// principal's role is edited, while a dashboard sits in edit mode. Both take effect inside one
+    /// circuit (bootstrap eligibility is re-evaluated on every check, and a store-backed role is
+    /// re-read on a 15-second TTL). What used to happen then was that the edit toolbar stayed live
+    /// and armed until the caller clicked something; it now closes at the next render.</para>
+    ///
+    /// <para><b>Scope limit on that reachability claim, recorded here because it is not obvious
+    /// from either sentence.</b> Neither notice can render on a STOCK install, and none can render
+    /// in a COMMUNITY build at all. Both causes require <c>_dashEditMode</c>, whose only entry
+    /// point is the Edit Page button, whose render condition is
+    /// <c>_noPantsMode &amp;&amp; MayEditDashboardLayout</c>. <c>_noPantsMode</c> comes from
+    /// <c>UserSettingsService.GetNoPantsMode()</c>, which returns a hard <c>false</c> when
+    /// <c>BuildModules.Community</c> and otherwise the <c>NoPantsMode</c> setting, which DEFAULTS
+    /// to false. So "a real path rather than a contrived one" is true of a No-Pants install and of
+    /// nothing else — the state was rendered and read out of a browser on 2026-08-07, on a box
+    /// where that setting was already on. Turning the interlock off does not make the refusal
+    /// wrong; it makes it unreachable, which is a different and weaker guarantee than the one the
+    /// paragraph above would otherwise be read as making.</para>
+    ///
+    /// <para>Deliberately NOT routed through <see cref="LayoutEditRefused"/>: no change was
+    /// submitted here, so printing "the change was refused" would be a sentence the state does not
+    /// support. Two causes, two sentences.</para>
+    /// </summary>
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (!_dashEditMode || MayEditDashboardLayout) return;
+
+        _layoutRefusalCause = LayoutRefusalCause.AuthorisationDropped;
+        _dashEditMode = false;
+        Logger.LogInformation(
+            "[DynamicDashboard:{DashboardId}] Layout edit mode closed: caller is no longer "
+            + "authorised for settings. No layout change had been submitted.",
+            DashboardId);
+        StateHasChanged();
+    }
+
+    private void DashMoveUp(PanelDefinition panel)
+    {
+        if (LayoutEditRefused()) return;
+        if (Dashboard == null) return;
+        var panels = Dashboard.Panels;
+        var idx = panels.IndexOf(panel);
+        if (idx <= 0) return;
+        panels.RemoveAt(idx);
+        panels.Insert(idx - 1, panel);
+        DashSaveAndRebuild();
+    }
+
+    private void DashMoveDown(PanelDefinition panel)
+    {
+        if (LayoutEditRefused()) return;
+        if (Dashboard == null) return;
+        var panels = Dashboard.Panels;
+        var idx = panels.IndexOf(panel);
+        if (idx < 0 || idx >= panels.Count - 1) return;
+        panels.RemoveAt(idx);
+        panels.Insert(idx + 1, panel);
+        DashSaveAndRebuild();
+    }
+
+    private void DashDeletePanel(PanelDefinition panel)
+    {
+        if (LayoutEditRefused()) return;
+        if (Dashboard == null) return;
+        Dashboard.Panels.Remove(panel);
+        DashSaveAndRebuild();
+    }
+
+    private void DashTogglePanel(PanelDefinition panel)
+    {
+        // The guard is first here for a reason the others do not have: this one mutates the PANEL
+        // object rather than the list, so an undo would have to remember the previous value.
+        if (LayoutEditRefused()) return;
+        panel.Enabled = !panel.Enabled;
+        DashSaveAndRebuild();
+    }
+
+    private async Task DashSavePanel(PanelDefinition updated)
+    {
+        if (LayoutEditRefused()) { _dashEditingPanel = null; return; }
+        if (Dashboard == null) { _dashEditingPanel = null; return; }
+        var idx = Dashboard.Panels.FindIndex(p => p.Id == updated.Id);
+        if (idx >= 0) Dashboard.Panels[idx] = updated;
+        _dashEditingPanel = null;
+        DashSaveAndRebuild();
+        await Task.CompletedTask;
+    }
+
+    private async Task DashHandlePanelAdded(ReportSection section)
+    {
+        if (LayoutEditRefused()) { _dashShowAddPanel = false; return; }
+        if (Dashboard == null) { _dashShowAddPanel = false; return; }
+        // AddSectionModal creates a ReportSection with PanelConfig — use its PanelConfig as new panel
+        if (section.PanelConfig != null)
+        {
+            section.PanelConfig.Id = Guid.NewGuid().ToString("N")[..8];
+            section.PanelConfig.Layout ??= new PanelLayout { Column = 1, Order = Dashboard.Panels.Count };
+            Dashboard.Panels.Add(section.PanelConfig);
+            DashSaveAndRebuild();
+        }
+        _dashShowAddPanel = false;
+        await Task.CompletedTask;
+    }
+
+    private void DashResetPanels()
+    {
+        // ⚠ THIS IS NOT A RELOAD FROM DISK, and it used to say it was. ConfigService.Config hands
+        // back the in-memory configuration object — the same one the edit handlers mutate — so
+        // re-reading it discards nothing. There is no read-only reload on DashboardConfigService
+        // to call instead (ResetDashboardToShipped rewrites the file to the shipped catalogue, which
+        // is a different and deliberate act the operator confirms in Settings), so this method
+        // re-points Dashboard at the current in-memory
+        // definition, refreshes the caches and leaves edit mode. That is all it has ever done.
+        //
+        // It no longer needs to discard anything: since the six edit handlers refuse BEFORE they
+        // mutate, an unauthorised caller's edits do not exist to be undone.
+        Dashboard = ConfigService.Config.Dashboards.FirstOrDefault(d => d.Id == DashboardId);
+        RefreshPanelCaches();
+        _dashEditMode = false;
+    }
+
+    private void DashSaveAndRebuild()
+    {
+        // The chokepoint, kept as a SECOND layer. Each of the six edit handlers now refuses before
+        // it mutates (see LayoutEditRefused), so nothing unauthorised reaches this line — this call
+        // is what catches a seventh handler somebody adds and forgets to guard, and it is the last
+        // point before the install-wide write. The Edit Page button is conditioned on the same
+        // property as well, so a denied caller is not offered the mode in the first place.
+        if (LayoutEditRefused()) return;
+
+        _layoutRefusalCause = LayoutRefusalCause.None;
+        try
+        {
+            ConfigService.UpdateConfig(ConfigService.Config);
+        }
+        catch { /* SQL safety violation — changes discarded */ }
+        RefreshPanelCaches();
+        StateHasChanged();
+    }
+
+    /// <summary>Why the layout notice is showing. Two causes, because they are two different facts.</summary>
+    private enum LayoutRefusalCause
+    {
+        /// <summary>Nothing to say.</summary>
+        None = 0,
+
+        /// <summary>A handler was reached and refused before it mutated anything.</summary>
+        ChangeRefused = 1,
+
+        /// <summary>Authorisation dropped while edit mode was open; no change had been submitted.</summary>
+        AuthorisationDropped = 2,
+    }
+
+    private LayoutRefusalCause _layoutRefusalCause;
+
+    /// <summary>
+    /// The layout notice, composed from the CAUSE rather than written at the refusal site.
+    ///
+    /// <para>Each sentence is true only of its own cause, which is why there are two of them:
+    /// "the change was refused" is false when nothing was submitted, and "editing was closed"
+    /// alone does not tell a caller who clicked Move Up that their click did nothing. Neither
+    /// claims "nothing on this page was altered" — edit mode closing IS a change to this page —
+    /// so both say exactly what did not happen: no panel was moved, hidden, added or saved.</para>
+    ///
+    /// <para>Neither is reachable unless No-Pants Mode is on, and neither is reachable at all in a
+    /// Community build. The scope limit and its proof are recorded on <see cref="OnAfterRender"/>,
+    /// beside the reachability claim it qualifies.</para>
+    /// </summary>
+    private string? LayoutRefusalNotice => _layoutRefusalCause switch
+    {
+        LayoutRefusalCause.ChangeRefused =>
+            "This dashboard's layout is stored for the whole installation, not for your session. "
+            + "Your role is not authorised for settings, so the change was refused: no panel was "
+            + "moved, hidden, added or saved, and editing has been closed.",
+
+        LayoutRefusalCause.AuthorisationDropped =>
+            "This dashboard's layout is stored for the whole installation, not for your session. "
+            + "Your role is no longer authorised for settings, so editing has been closed. No "
+            + "layout change had been submitted: no panel was moved, hidden, added or saved.",
+
+        _ => null,
+    };
+
+    // ── Maximize state ────────────────────────────────────────────────────
+    private PanelDefinition? _maximizedPanel;
+    private PanelDefinition? _maximizedPanelExpanded;
+
+    // Per-panel runtime TOP-rows values (keyed by panel ID)
+    private Dictionary<string, int> _panelTopRows = new();
+
+    // Set to true after the first successful LoadData so refresh cycles don't blank the UI
+    private bool _hasLoadedOnce = false;
+
+    // Maps SQLWATCH sql_instance names (@@SERVERNAME format) → ServerConnection.Id.
+    // Built during initialisation to bridge the gap between user-configured server names
+    // (IP addresses, aliases) and the actual instance names SQLWATCH stores in its tables.
+    private Dictionary<string, string> _sqlWatchInstanceToConnectionId = new(StringComparer.OrdinalIgnoreCase);
+
+    // Tracks which connection IDs have a confirmed SQLWATCH installation (non-empty discovery).
+    private readonly HashSet<string> _connectionsWithSqlWatch = new();
+
+    // Whether the CURRENT server has a confirmed SQLWATCH installation — the discovery-based
+    // presence signal CheckRequiredDatabaseAsync reuses for dashboards config-tagged with
+    // RequiresDatabase="SQLWATCH" (see below), so presence for them is governed by the SAME
+    // requiresDatabase mechanism every other gated dashboard uses, not a second hardcoded list.
+    private bool CurrentServerHasSqlWatch =>
+        _connectionsWithSqlWatch.Contains(ConnectionManager.CurrentServer?.Id ?? "");
+
+    // Generic database-precondition state — populated by CheckRequiredDatabaseAsync.
+    // null = not yet checked; true/false = result of last check.
+    private bool? _requiredDbAvailable;
+    private string? _requiredDbCheckedFor; // server id we last checked against, to invalidate on server change
+
+    /// <summary>
+    /// Whether the dashboard's RequiresDatabase actually applies to what's currently on screen.
+    /// Scoped to the ACTIVE tab/panel set rather than the dashboard as a whole: a panel can opt out
+    /// via its own RequiresDatabase="" (see <see cref="PanelDefinition.RequiresDatabase"/>), so a
+    /// tab made entirely of opted-out panels (e.g. the memory dashboard's native Overview tab) is not
+    /// gated even though the dashboard itself declares a requirement for its other tab/panels.
+    /// </summary>
+    private bool RequiresExtraDb =>
+        !string.IsNullOrEmpty(Dashboard?.RequiresDatabase) &&
+        (Dashboard!.GetActivePanels(_selectedTabId)).Any(p =>
+            p.RequiresDatabase == null || string.Equals(p.RequiresDatabase, Dashboard.RequiresDatabase, StringComparison.OrdinalIgnoreCase));
+
+    private bool RequiredDbMissing => RequiresExtraDb && _requiredDbAvailable == false;
+
+    /// <summary>
+    /// Whether a specific panel can run given the CURRENT (possibly still-resolving) database
+    /// precondition. Fail-open like <see cref="RequiredDbMissing"/>: a panel is excluded only once
+    /// its requirement is KNOWN unmet (_requiredDbAvailable == false), never while still pending.
+    /// </summary>
+    private bool PanelDatabaseAvailable(PanelDefinition panel)
+    {
+        var effective = panel.RequiresDatabase ?? Dashboard?.RequiresDatabase;
+        if (string.IsNullOrEmpty(effective)) return true; // opted out, or dashboard has no requirement
+        if (!string.Equals(effective, Dashboard?.RequiresDatabase, StringComparison.OrdinalIgnoreCase))
+            return true; // a distinct panel-specific db name isn't independently resolved yet
+        return _requiredDbAvailable != false;
+    }
+
+    /// <summary>
+    /// Whether there is anything to render below the RequiredDbMissing banner: either the
+    /// requirement is satisfied, or at least one panel opted out of it and survived the
+    /// PanelDatabaseAvailable filter in RefreshPanelCaches (memory's Overview tab, pevents' native
+    /// panels). Keeps dashboards with NO opted-out panels banner-only, exactly as before.
+    /// </summary>
+    private bool HasRenderablePanels => !RequiredDbMissing || (_enabledPanelsCache?.Count ?? 0) > 0;
+
+    private string RequiredDbBannerText
+    {
+        get
+        {
+            var db = Dashboard?.RequiresDatabase ?? "";
+            var role = Dashboard?.RequiresDatabaseRole;
+            return string.IsNullOrEmpty(role)
+                ? $"This dashboard requires the '{db}' database, which was not found on this server."
+                : $"This server is not a {role} (requires the '{db}' database).";
+        }
+    }
+
+    /// <summary>
+    /// Runs a precondition check for the dashboard's RequiresDatabase, if any.
+    /// Caches the result per (server-id, db-name) so repeated dashboard loads
+    /// don't re-query. Result populates _requiredDbAvailable.
+    /// </summary>
+    private async Task CheckRequiredDatabaseAsync()
+    {
+        if (!RequiresExtraDb || Dashboard == null) { _requiredDbAvailable = null; return; }
+        var serverId = ConnectionManager.CurrentServer?.Id ?? "";
+        if (_requiredDbCheckedFor == serverId && _requiredDbAvailable.HasValue) return;
+
+        // SQLWATCH is special-cased: reuse the discovery-based presence signal (confirmed via a
+        // real query against dbo.sqlwatch_logger_snapshot_header — see GetSqlWatchInstanceNamesAsync)
+        // instead of the generic sys.databases lookup below. An empty database literally named
+        // "SQLWATCH" would pass the generic check but never serve real collector data.
+        if (string.Equals(Dashboard.RequiresDatabase, "SQLWATCH", StringComparison.OrdinalIgnoreCase))
+        {
+            _requiredDbAvailable = CurrentServerHasSqlWatch;
+            _requiredDbCheckedFor = serverId;
+            return;
+        }
+
+        try
+        {
+            var serverName = ConnectionManager.CurrentServer?.ServerNames ?? "";
+            _requiredDbAvailable = await DbAvailability.DatabaseExistsOnServerAsync(serverName, Dashboard.RequiresDatabase!);
+            _requiredDbCheckedFor = serverId;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "[DynamicDashboard:{DashboardId}] RequiresDatabase precondition check failed (treating as missing)", DashboardId);
+            _requiredDbAvailable = false;
+            _requiredDbCheckedFor = serverId;
+        }
+    }
+
+    private void MaximizePanel(PanelDefinition panel)
+    {
+        _maximizedPanel = panel;
+        // Create a lightweight copy to avoid accidental mutation of original panel
+        _maximizedPanelExpanded = new PanelDefinition
+        {
+            Id = panel.Id,
+            Title = panel.Title,
+            Description = panel.Description,
+            Enabled = panel.Enabled,
+            PanelType = panel.PanelType,
+            ChartType = panel.ChartType,
+            Height = panel.Height,
+            RefreshIntervalSeconds = panel.RefreshIntervalSeconds,
+            Layout = panel.Layout != null ? new PanelLayout { Column = panel.Layout.Column, Order = panel.Layout.Order, SpanColumns = panel.Layout.SpanColumns } : new PanelLayout(),
+            Query = panel.Query != null ? new QueryPair { Source = panel.Query.Source, SqlServer = panel.Query.SqlServer } : new QueryPair(),
+            StatUnit = panel.StatUnit,
+            StatThresholdKey = panel.StatThresholdKey,
+            BarGaugeThresholdKey = panel.BarGaugeThresholdKey,
+            BarGaugeUnitSuffix = panel.BarGaugeUnitSuffix,
+            ValueFormat = panel.ValueFormat,
+            ColorThresholds = panel.ColorThresholds != null ? new List<ColorThresholdRule>(panel.ColorThresholds) : new List<ColorThresholdRule>(),
+            DataGridIsClickable = panel.DataGridIsClickable,
+            DataGridMaxRows = panel.DataGridMaxRows,
+            Source = panel.Source
+        };
+    }
+
+    private void RestorePanel()
+    {
+        _maximizedPanel = null;
+        _maximizedPanelExpanded = null;
+    }
+
+    // Permanently true today: no production surface writes UserSettings.DataSource (SetDataSource has
+    // no non-test caller, and the Settings page's Data Source control is commented out), so DataSource
+    // is always the default and per-panel source filtering has no operator input to act on. Flipping
+    // this to false WITHOUT first wiring a real DataSource writer would filter panels on a value the
+    // user can never change. The GetDataSource() read at load is kept so a future real writer lights
+    // this path up without another edit here.
+    private const bool DISABLE_PANEL_FILTERS = true;
+
+    private void RefreshPanelCaches()
+    {
+        // Resolve active panel set — tab-aware (falls back to Panels when no tabs).
+        var activePanels = Dashboard?.GetActivePanels(_selectedTabId) ?? new List<PanelDefinition>();
+
+        // Filter panels by data source
+        var sourceFilteredPanels = DISABLE_PANEL_FILTERS
+            ? activePanels
+            : activePanels.Where(p =>
+            {
+                var panelSource = p.GetEffectiveSource(Dashboard?.Source ?? "master");
+                var dashboardSource = Dashboard?.Source ?? "master";
+                var querySource = p.Query?.Source ?? "";
+                
+                // Allow panels with matching source, "both", or empty source
+                // Also check query source for compatibility
+                return panelSource == "both" || 
+                       panelSource == DataSource || 
+                       querySource == DataSource ||
+                       string.IsNullOrEmpty(panelSource) ||
+                       string.IsNullOrEmpty(querySource) ||
+                       (dashboardSource == "pm" && (DataSource == "pm" || DataSource == "sqlwatch"));
+            }).ToList();
+
+        // Filter panels by database precondition — independent of DISABLE_PANEL_FILTERS above
+        // (that toggle is about DATA SOURCE preference; this is about a database being PRESENT at
+        // all). Excludes only panels whose requirement is KNOWN unmet; see PanelDatabaseAvailable.
+        var dbFilteredPanels = sourceFilteredPanels.Where(PanelDatabaseAvailable).ToList();
+
+        _enabledPanelsCache = dbFilteredPanels.Where(p => p.Enabled).ToList();
+        _statPanelsCache = _enabledPanelsCache.Where(p => p.Layout.Column == 0 && (p.PanelType == "StatCard" || p.PanelType == "DeltaStatCard" || p.PanelType == "CheckStatus")).OrderBy(p => p.Layout.Order).ToList();
+        _detailsPanelsCache = _enabledPanelsCache.Where(p => p.Layout.Column == 0 && p.PanelType == "TextCard").OrderBy(p => p.Layout.Order).ToList();
+        _gaugePanelsCache = _enabledPanelsCache.Where(p => p.PanelType == "BarGauge").OrderBy(p => p.Layout.Order).ToList();
+        _chartPanelsCache = _enabledPanelsCache.Where(p => p.PanelType == "TimeSeries" || p.PanelType == "DataGrid" || (p.PanelType != "StatCard" && p.PanelType != "CheckStatus" && p.PanelType != "BarGauge" && p.PanelType != "TextCard" && p.Layout.Column > 0)).OrderBy(p => p.Layout.Order).ToList();
+    }
+
+    private string _currentDashboardId = "";
+    private string? _selectedTabId;
+
+    /// <summary>
+    /// Switch the active tab. Only panels in the newly-active tab are loaded —
+    /// panels in the previous tab are left with their last-known data.
+    /// </summary>
+    private async Task SwitchTabAsync(string tabId)
+    {
+        if (_selectedTabId == tabId) return;
+        _selectedTabId = tabId;
+        RefreshPanelCaches();
+        StateHasChanged();
+        await StartLoad();
+    }
+    private List<string> _queryStoreDatabases = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (UserSettings.GetFastAppLoad()) await Task.Yield();
+        _noPantsMode = UserSettings.GetNoPantsMode();
+        RefreshService.OnRefresh += OnAutoRefresh;
+        ConfigService.OnConfigChanged += OnConfigChanged;
+        InstanceSelector.OnInstanceChanged += OnGlobalInstanceChanged;
+        UserSettings.OnNoPantsModeChanged += OnNoPantsModeChanged;
+        await InitializeDashboard();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_currentDashboardId != DashboardId)
+        {
+            _currentDashboardId = DashboardId;
+            await InitializeDashboard();
+        }
+    }
+
+    private async Task InitializeDashboard()
+    {
+        Logger.LogInformation("[DynamicDashboard:{DashboardId}] Initializing dashboard", DashboardId);
+        LocalLogger.LogInfo($"[DynamicDashboard:{DashboardId}] Starting initialization");
+
+        // The measurement the refusal notice is conditioned on, taken BEFORE anything on this path
+        // could have written the edge. Without it, "the connection has not moved" is a guess, and a
+        // guess is exactly what the old notice printed as a fact.
+        //
+        // TAKEN ONCE PER LOAD, AND THE GUARD IS THE POINT OF IT. This method runs TWICE on one page
+        // load: OnInitializedAsync calls it, and then OnParametersSetAsync's first pass calls it
+        // again because _currentDashboardId is still "". Re-taking the observation on that second
+        // pass compares the load's END state with itself and deletes the load's own movement from
+        // the evidence — the notice then prints "which is the server this page began loading with"
+        // on the very load that moved it. That is not reasoning, it was RENDERED: a build carrying
+        // the discovery loop's fifth write walked the process from "." to GATEPROBE-NOSUCHHOST
+        // during the load and printed that sentence underneath the new name.
+        //
+        // Re-armed only when this component is handed a DIFFERENT dashboard: the same instance is
+        // reused across an in-app navigation, and that genuinely is a new page beginning to load,
+        // which is what the sentence claims to be about.
+        if (!_contextAtInitObserved
+            || !string.Equals(_contextAtInitFor, DashboardId, StringComparison.OrdinalIgnoreCase))
+        {
+            _contextAtInit = ConnectionManager.CurrentServer?.Id;
+            _contextAtInitFor = DashboardId;
+            _contextAtInitObserved = true;
+        }
+
+        TimezoneOffsetHours = TimeZoneInfo.Local.GetUtcOffset(DateTime.Now).TotalHours;
+        TimeRangeMinutes    = UserSettings.GetDefaultTimeRange();
+        DataSource          = UserSettings.GetDataSource();
+        Logger.LogDebug("[DynamicDashboard:{DashboardId}] Settings loaded - TimezoneOffset: {TimezoneOffset}, TimeRange: {TimeRange}m, DataSource: {DataSource}", DashboardId, TimezoneOffsetHours, TimeRangeMinutes, DataSource);
+        
+        Dashboard = ConfigService.Config.Dashboards.FirstOrDefault(d => string.Equals(d.Id, DashboardId, StringComparison.OrdinalIgnoreCase));
+
+        if (Dashboard == null)
+        {
+            var errorMsg = $"Dashboard '{DashboardId}' not found in configuration";
+            Logger.LogError("[DynamicDashboard:{DashboardId}] {ErrorMessage}. Available dashboards: {AvailableDashboards}", 
+                DashboardId, errorMsg, string.Join(", ", ConfigService.Config.Dashboards.Select(d => d.Id)));
+            LocalLogger.LogError(errorMsg);
+            
+            System.Diagnostics.Debug.WriteLine($"[DynamicDashboard] Dashboard '{DashboardId}' not found. Available dashboards:");
+            foreach (var d in ConfigService.Config.Dashboards)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DynamicDashboard]   - {d.Id}");
+            }
+            // Surface the misconfiguration instead of spinning forever: clear the loading flag and
+            // show the ErrorMessage banner. Without this, IsLoading stays true (its default) and the
+            // "Loading data..." spinner never resolves because LoadData (which clears it) is never reached.
+            ErrorMessage = $"{errorMsg}.";
+            IsLoading = false;
+            return;
+        }
+
+        Logger.LogInformation("[DynamicDashboard:{DashboardId}] Dashboard configuration loaded successfully", DashboardId);
+        // Default to the first tab when the dashboard is tabbed
+        _selectedTabId = Dashboard.Tabs?.FirstOrDefault()?.Id;
+        RefreshPanelCaches();
+
+        var connections = ConnectionManager.GetConnections();
+        var availableInstances = connections.SelectMany(c => c.GetServerList()).Distinct().ToList();
+        Instances = availableInstances.ToArray();
+        var initialInstance = InstanceSelector.SelectedInstance ?? (availableInstances.Any() ? availableInstances[0] : "");
+        SelectedInstance = initialInstance;
+        
+        Logger.LogDebug("[DynamicDashboard:{DashboardId}] Available instances: {Instances}, Selected: {SelectedInstance}", 
+            DashboardId, string.Join(", ", Instances), SelectedInstance);
+        
+        SetServerContext(initialInstance);
+
+        // The SAME process-wide object the Query-Store selector writes, on the load path. Behind
+        // the same permission as that selector (item 3): opening a dashboard with a DefaultDatabase
+        // rewrote the database for every screen in the process, and "I opened a page" is not an
+        // intention to retarget anybody else.
+        if (MayExecuteActions && !string.IsNullOrEmpty(Dashboard.DefaultDatabase) && ConnectionManager.CurrentServer != null)
+            ConnectionManager.CurrentServer.Database = Dashboard.DefaultDatabase;
+
+        if (DashboardId == "querystore")
+            await LoadQueryStoreDatabases();
+
+        if (ConnectionManager.DiscoveryCompleted)
+        {
+            Logger.LogDebug("[DynamicDashboard:{DashboardId}] Using cached discovery results", DashboardId);
+            // Reuse cached discovery results — no SQL roundtrips needed.
+            // This makes every subsequent dashboard switch instant.
+            var (cachedInstances, cachedMap, cachedWithSqlWatch) = ConnectionManager.GetDiscoveryCache();
+
+            foreach (var kvp in cachedMap)
+                _sqlWatchInstanceToConnectionId[kvp.Key] = kvp.Value;
+            foreach (var id in cachedWithSqlWatch)
+                _connectionsWithSqlWatch.Add(id);
+
+            if (cachedInstances.Length > 0)
+            {
+                Instances = cachedInstances;
+                if (!Instances.Contains(SelectedInstance, StringComparer.OrdinalIgnoreCase))
+                    SelectedInstance = Instances.FirstOrDefault() ?? "";
+            }
+            SetServerContext(SelectedInstance);
+
+            System.Diagnostics.Debug.WriteLine(
+                $"[DynamicDashboard:{DashboardId}] Using cached discovery. Instances: [{string.Join(", ", Instances)}]");
+        }
+        else
+        {
+            Logger.LogInformation("[DynamicDashboard:{DashboardId}] Running fresh discovery", DashboardId);
+            // First load ever (or connections changed) — run discovery and cache the results.
+            await DiscoverAndUpdateInstancesAsync();
+            ConnectionManager.CacheDiscoveryResults(Instances, _sqlWatchInstanceToConnectionId, _connectionsWithSqlWatch);
+        }
+
+        Logger.LogInformation("[DynamicDashboard:{DashboardId}] Starting initial data load", DashboardId);
+
+        // Pre-render from cache immediately — show stale data while the live fetch runs
+        await PreloadFromCacheAsync();
+
+        await StartLoad();
+        if (AutoRefresh)
+        {
+            Logger.LogDebug("[DynamicDashboard:{DashboardId}] Starting auto-refresh service", DashboardId);
+            RefreshService.Start();
+        }
+        
+        Logger.LogInformation("[DynamicDashboard:{DashboardId}] Initialization completed successfully", DashboardId);
+        LocalLogger.LogInfo($"[DynamicDashboard:{DashboardId}] Initialization completed");
+    }
+
+    private async void OnGlobalInstanceChanged(string instanceName)
+    {
+        Logger.LogInformation("[DynamicDashboard:{DashboardId}] Global instance changed to: {InstanceName}", DashboardId, instanceName);
+        LocalLogger.LogInfo($"[DynamicDashboard:{DashboardId}] Instance changed to: {instanceName}");
+        
+        SelectedInstance = instanceName;
+        SetServerContext(instanceName);
+        await InvokeAsync(async () =>
+        {
+            try
+            {
+                await StartLoad();
+                if (!_disposed) StateHasChanged();
+                Logger.LogDebug("[DynamicDashboard:{DashboardId}] Instance change completed successfully", DashboardId);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "[DynamicDashboard:{DashboardId}] Failed to load data after instance change: {ErrorMessage}", DashboardId, ex.Message);
+                LocalLogger.LogError($"[DynamicDashboard:{DashboardId}] Instance change error: {ex.Message}", ex);
+            }
+        });
+    }
+
+    private async Task OnInstanceChanged(ChangeEventArgs e)
+    {
+        var instance = e.Value?.ToString() ?? "";
+
+        // The gate is HERE, in the handler, not on the markup. The selector is a <select> whose
+        // change event is bound directly; hiding the markup from a denied caller would leave this
+        // handler reachable, and the census that used to run over this file could not see the call
+        // it makes either way (SetCurrentServer is a bare Set, and the Query-Store sibling below
+        // is a property write through a returned object — invisible to a call-shaped scan twice
+        // over).
+        if (!MayExecuteActions)
+        {
+            RefuseRetarget(
+                "Changing the instance retargets the server this application is connected to, for "
+                + "every screen open in it. Your role is not authorised for run_scripts, so the "
+                + "connection was left as it is.");
+            await SafeStateHasChanged();
+            return;
+        }
+
+        _retargetRefusal = null;
+        Logger.LogInformation("[DynamicDashboard:{DashboardId}] Instance dropdown changed to: {InstanceName}", DashboardId, instance);
+
+        SelectedInstance = instance;
+        InstanceSelector.SetSelectedInstance(instance, ConnectionRetargetGrant.ForCaller(UserState, "run_scripts"));
+        SetServerContext(instance);
+        
+        if (DashboardId == "querystore")
+            await LoadQueryStoreDatabases();
+        
+        try
+        {
+            await StartLoad();
+            Logger.LogDebug("[DynamicDashboard:{DashboardId}] Instance dropdown change completed successfully", DashboardId);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "[DynamicDashboard:{DashboardId}] Failed to load data after dropdown instance change: {ErrorMessage}", DashboardId, ex.Message);
+            LocalLogger.LogError($"[DynamicDashboard:{DashboardId}] Dropdown instance change error: {ex.Message}", ex);
+        }
+    }
+
+    private async Task LoadQueryStoreDatabases()
+    {
+        try
+        {
+            var sql = "SELECT name FROM sys.databases WHERE is_query_store_on = 1 ORDER BY database_id ASC";
+            using var conn = (SqlConnection)(_connectionFactory as SqlServerConnectionFactory)?.CreateConnection("master");
+            if (conn == null) return;
+            
+            await conn.OpenAsync();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = sql;
+            cmd.CommandTimeout = 10;
+            
+            using var reader = await cmd.ExecuteReaderAsync();
+            _queryStoreDatabases.Clear();
+            while (await reader.ReadAsync())
+            {
+                _queryStoreDatabases.Add(reader.GetString(0));
+            }
+            
+            // Same edge again, same permission: this runs from InitializeDashboard on the Query
+            // Store dashboard, so a viewer merely opening it used to set everybody's database to
+            // whatever this instance lists first.
+            if (MayExecuteActions && _queryStoreDatabases.Any() && ConnectionManager.CurrentServer != null)
+                ConnectionManager.CurrentServer.Database = _queryStoreDatabases[0];
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load Query Store databases");
+            _queryStoreDatabases = new List<string>();
+        }
+    }
+
+    private async Task OnQueryStoreDatabaseChanged(ChangeEventArgs e)
+    {
+        var dbName = e.Value?.ToString() ?? "";
+
+        // Same permission, same reason: ConnectionManager is a SINGLETON and CurrentServer is the
+        // object every screen in this process reads its database from. Writing through it is the
+        // same retarget as the instance selector, one hop further out.
+        if (!MayExecuteActions)
+        {
+            RefuseRetarget(
+                "Changing the Query Store database rewrites the database this application is "
+                + "connected to, for every screen open in it. Your role is not authorised for "
+                + "run_scripts, so the connection was left as it is.");
+            await SafeStateHasChanged();
+            return;
+        }
+
+        _retargetRefusal = null;
+
+        if (ConnectionManager.CurrentServer != null)
+        {
+            ConnectionManager.CurrentServer.Database = dbName;
+            await StartLoad();
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    /// Records a refusal and forces the selectors to be rebuilt from the selection that actually
+    /// holds. Both halves are required: a silent refusal leaves the caller believing the change
+    /// took, and a refusal that leaves the dropdown showing the rejected choice states the same
+    /// falsehood in the control instead of in the text.
+    /// </summary>
+    private void RefuseRetarget(string reason)
+    {
+        _retargetRefusal = reason;
+        _selectorGeneration++;
+        Logger.LogInformation(
+            "[DynamicDashboard:{DashboardId}] Server retarget refused: caller is not authorised for run_scripts.",
+            DashboardId);
+    }
+
+    /// <summary>
+    /// True once this circuit has been refused the process-wide write on this load. A FLAG, not a
+    /// sentence.
+    ///
+    /// <para>The sentence used to be stored here, composed at the moment of refusal, and it said
+    /// "so nothing was changed". It went on saying that for the rest of the load no matter what
+    /// happened afterwards — which is how it came to be printed on a page whose current server had
+    /// already been walked from one connection to another by the ungated discovery write in this
+    /// same method's caller. Freezing a replacement sentence would be the same defect one round
+    /// later, so the notice is composed at RENDER from live state; see
+    /// <see cref="ContextFollowNotice"/>.</para>
+    /// </summary>
+    private bool _contextFollowsProcess;
+
+    /// <summary>
+    /// The process-wide current server this component observed when it began initialising, and
+    /// whether it got to look. The pair is the MEASUREMENT the notice is conditioned on: without
+    /// it, "it has not moved" is a guess.
+    ///
+    /// <para><c>_contextAtInitFor</c> is which dashboard the observation belongs to, and it exists
+    /// because <c>InitializeDashboard</c> runs twice on a single load. Without it the second pass
+    /// overwrote the observation with the state the load had already produced, so the comparison
+    /// below was post-state against post-state and the notice reported "it has not moved" on a
+    /// load that had moved it. Keyed rather than latched-once so an in-app navigation to another
+    /// dashboard — which reuses this component instance — re-arms a genuinely new measurement.</para>
+    /// </summary>
+    private string? _contextAtInit;
+    private string? _contextAtInitFor;
+    private bool _contextAtInitObserved;
+
+    /// <summary>
+    /// What the header says when this caller was refused the retarget — composed at render, from
+    /// state read at render.
+    ///
+    /// <para><b>Every clause is something this component can show its working for.</b> That this
+    /// view did not select or change the server: the only writes of the current server in this
+    /// component are the two in <see cref="SetServerContext"/>, both below the guard that set this
+    /// flag, and the discovery pass no longer writes it at all. Which server it is following: read
+    /// from the manager on this render. Whether it is the one this page started with: the id
+    /// observed at the top of the FIRST <c>InitializeDashboard</c> of this dashboard's load — it
+    /// runs twice, and the observation is guarded against the second pass for the reason recorded
+    /// there — compared with the id now. The claim is about those two observations, and it is
+    /// worded as such.</para>
+    ///
+    /// <para>It says nothing about what the PANELS will do with a null connection, because that is
+    /// not this component's to know: <c>SqlServerConnectionFactory</c> falls back to the configured
+    /// connection string when no server is selected, so the old text's "panels then report a
+    /// missing connection" was a prediction, not a measurement.</para>
+    ///
+    /// <para>Null once the caller is authorised again: the notice describes a refusal this caller
+    /// received, and a caller who now holds <c>run_scripts</c> is not being refused.</para>
+    /// </summary>
+    private string? ContextFollowNotice
+    {
+        get
+        {
+            if (!_contextFollowsProcess) return null;
+            if (MayExecuteActions) return null;
+
+            const string whatThisViewDid =
+                "Your role is not authorised for run_scripts, so this view did not select or "
+                + "change the server this application is connected to.";
+
+            var now = ConnectionManager.CurrentServer;
+            if (now is null)
+                return whatThisViewDid + " No server is selected for this application.";
+
+            var name = now.GetServerList().FirstOrDefault() ?? now.ServerNames;
+            var following = whatThisViewDid + " It is following " + name;
+
+            // No observation, nothing said about history. The comparison is the evidence, and a
+            // sentence with no evidence behind it is the whole defect class this wave is closing.
+            if (!_contextAtInitObserved) return following + ".";
+
+            // Three states, because "it moved" and "one was chosen where there was none" are
+            // different facts and the second is the ordinary one: the shell's bootstrap establishes
+            // the first configured connection on a cold process, and this component's observation
+            // is taken before that has happened. Calling that a move would be an over-claim of the
+            // same kind as the sentence this notice replaced, pointing the other way.
+            if (string.Equals(_contextAtInit, now.Id, StringComparison.Ordinal))
+                return following + ", which is the server this page began loading with.";
+
+            if (string.IsNullOrEmpty(_contextAtInit))
+                return following + ", which was selected while this page was loading — not by this view.";
+
+            return following + ", which is not the server this page began loading with — something "
+                   + "else in this application changed it.";
+        }
+    }
+
+    /// <summary>
+    /// Records that this view is FOLLOWING the process's connection rather than setting it. Said
+    /// once per load, not once per call: SetServerContext runs several times during a single
+    /// initialisation, and a log line per call would turn a normal viewer's page load into noise
+    /// that hides the next real one.
+    /// </summary>
+    private void NoteContextFollowsTheProcess()
+    {
+        if (_contextFollowsProcess) return;
+        _contextFollowsProcess = true;
+
+        Logger.LogInformation(
+            "[DynamicDashboard:{DashboardId}] Server context left as it is: caller is not authorised "
+            + "for run_scripts. This view follows the process-wide connection.",
+            DashboardId);
+    }
+
+    private void SetServerContext(string instanceName)
+    {
+        // ── THIS COMPONENT'S retarget of the process-wide connection, behind run_scripts ────────
+        //
+        // WHERE THE CHOKEPOINT ACTUALLY IS, since 2026-08-07: not here. It is the signature of
+        // IServerConnectionManager.SetCurrentServer, which takes a ConnectionRetargetGrant, and
+        // default(grant) is a refusal. This comment used to claim the chokepoint was this method
+        // and that "all five call sites pass through" it, and a SIXTH call site sat sixty lines
+        // below the claim, in DiscoverAndUpdateInstancesAsync, reached by every dashboard load. A
+        // guard in one method cannot cover the file it lives in; a required parameter can, because
+        // the next call site does not compile without one. That write is gone entirely now —
+        // discovery probes each connection directly instead of steering a singleton.
+        //
+        // The guard below is still here, and is not redundant: the grant produces a refusal, and
+        // this produces the SENTENCE that tells the caller their view is following somebody else's
+        // selection rather than setting it.
+        //
+        // WHY NOT SCOPE THE SINGLETON per circuit, which would be the better answer:
+        // ConnectionManager.CurrentServer is read by the query executors, the toolbar, the
+        // selectors and the panels, so a per-circuit current server is a DI change across the whole
+        // read path, and half of it would be worse than neither half.
+        //
+        // WHAT AN UNAUTHORISED CALLER'S LOAD DOES, measured rather than asserted. This component
+        // makes no write of the connection edge for such a caller. What the SHELL may still do is
+        // ESTABLISH one when the process has none — DashboardToolbar and GlobalServerSelector
+        // bootstrap the first configured connection — and the manager itself enforces that an
+        // establish can only move the target from "none" to a server, never from one server to
+        // another. So: an unauthorised caller cannot MOVE the connection, and on a process where
+        // nothing has been selected yet the shell may set the first one. The earlier claim that
+        // such a caller "no longer establishes the connection either" was never true: on a process
+        // with no server selected, the shell's bootstrap establishes one before this component's
+        // panels render, and it did so for unauthorised callers throughout both earlier rounds.
+        if (!MayExecuteActions)
+        {
+            NoteContextFollowsTheProcess();
+            return;
+        }
+
+        var grant = ConnectionRetargetGrant.ForCaller(UserState, "run_scripts");
+
+        // Priority 1: SQLWATCH instance name → connection ID (populated after discovery).
+        if (_sqlWatchInstanceToConnectionId.TryGetValue(instanceName, out var connId))
+        {
+            ConnectionManager.SetCurrentServer(connId, grant);
+            return;
+        }
+
+        // Priority 2: user-configured server name inside a connection's server list.
+        var connection = ConnectionManager.GetConnections()
+            .FirstOrDefault(c => c.GetServerList().Contains(instanceName));
+
+        // Priority 3: fall back to first available connection so queries don't break.
+        connection ??= ConnectionManager.GetConnections().FirstOrDefault();
+        ConnectionManager.SetCurrentServer(connection?.Id, grant);
+    }
+
+    private DashboardFilter BuildFilter()
+    {
+        var now = DateTime.Now;
+        string[] instances;
+
+        if (SelectedInstance == "ALL" && _sqlWatchInstanceToConnectionId.Any())
+            instances = _sqlWatchInstanceToConnectionId.Keys.ToArray();
+        else
+            instances = new[] { SelectedInstance };
+
+        return new DashboardFilter
+        {
+            TimeFrom = now.AddMinutes(-TimeRangeMinutes),
+            TimeTo = now,
+            Instances = instances
+        };
+    }
+
+    /// <summary>
+    /// Builds the Instances dropdown by querying every enabled connection.
+    ///
+    /// Strategy per connection:
+    ///   HasSqlWatch=true  + SQLWATCH found  → use discovered @@SERVERNAME names (so @SqlInstance
+    ///                                         filters match what SQLWATCH stored).  Connection is
+    ///                                         added to _connectionsWithSqlWatch.
+    ///   HasSqlWatch=true  + SQLWATCH absent → fall back to the user-configured server names so
+    ///                                         the entry still appears in the dropdown (banner shown).
+    ///   HasSqlWatch=false                   → always use user-configured names (master-context
+    ///                                         dashboards like Live Monitor work fine without SQLWATCH).
+    ///
+    /// All servers always appear in every dashboard's dropdown.  The SQLWATCH-required banner
+    /// handles the "wrong server" case instead of hiding the server from the list.
+    ///
+    /// <para><b>THE FIFTH WRITE USED TO BE HERE</b>, and this is the note for whoever comes back to
+    /// it. The loop steered the probe by setting the PROCESS-WIDE current server once per enabled
+    /// connection — ungated, on the path every dashboard load takes, sixty lines below a comment
+    /// claiming the retarget had a chokepoint. It survived two rounds of gating because a
+    /// one-connection install cannot show it: with a single enabled connection the loop writes the
+    /// same id back and the defect is a no-op. With two, it walks every open screen in the process
+    /// across the estate and leaves them on whichever connection the loop ended on.</para>
+    ///
+    /// <para>The loop now lives in <see cref="SQLTriage.Data.Services.SqlWatchInstanceDiscovery"/>,
+    /// which is handed a probe that takes the connection as an ARGUMENT — which is what the
+    /// singleton write was clumsily trying to express — and which can be run by a test against two
+    /// enabled connections and asked what it did to the current server. A .razor file cannot be.</para>
+    /// </summary>
+    private async Task DiscoverAndUpdateInstancesAsync()
+    {
+        var allConnections = ConnectionManager.GetEnabledConnections();
+        if (allConnections.Count == 0) return;
+
+        var found = await Discovery.DiscoverAsync(
+            (conn, ct) => QueryExecutor.GetSqlWatchInstanceNamesAsync(conn, null, ct));
+
+        foreach (var kvp in found.InstanceToConnectionId)
+            _sqlWatchInstanceToConnectionId[kvp.Key] = kvp.Value;
+        foreach (var id in found.ConnectionsWithSqlWatch)
+            _connectionsWithSqlWatch.Add(id);
+
+        Instances = found.Instances;
+
+        // Keep SelectedInstance pointing at a valid entry.
+        if (!Instances.Contains(SelectedInstance, StringComparer.OrdinalIgnoreCase))
+            SelectedInstance = Instances.FirstOrDefault() ?? "";
+
+        SetServerContext(SelectedInstance);
+
+        System.Diagnostics.Debug.WriteLine(
+            $"[DynamicDashboard:{DashboardId}] Discovery complete. Instances: [{string.Join(", ", Instances)}]. Selected: {SelectedInstance}");
+    }
+
+    /// <summary>
+    /// Cancels any in-flight load, then starts a new one with a fresh CancellationTokenSource.
+    /// Adopted from sqltoolsservice QueryExecutionService pattern: always cancel previous
+    /// request before issuing a new one so stale results never overwrite fresh data.
+    /// </summary>
+    /// <summary>
+    /// Reads whatever is already in SQLite for every panel and renders it immediately.
+    /// No SQL Server roundtrip — makes the dashboard feel instant on repeat visits.
+    /// The live fetch in LoadData will overwrite these with fresh values as they arrive.
+    /// </summary>
+    private async Task PreloadFromCacheAsync()
+    {
+        if (Dashboard == null) return;
+
+        var filter = BuildFilter();
+        if (filter == null) return;
+
+        var panels = _enabledPanelsCache ?? Dashboard.GetActivePanels(_selectedTabId);
+        if (panels == null || !panels.Any()) return;
+
+        var tsResults   = new ConcurrentDictionary<string, List<TimeSeriesPoint>>();
+        var statResults = new ConcurrentDictionary<string, StatValue>();
+        var bgResults   = new ConcurrentDictionary<string, List<StatValue>>();
+        var gridResults = new ConcurrentDictionary<string, DataTable>();
+        var checkResults = new ConcurrentDictionary<string, List<CheckStatus>>();
+
+        try
+        {
+            await CachingExecutor.PreloadFromCacheAsync(panels, filter, tsResults, statResults, bgResults, gridResults, checkResults);
+        }
+        catch { return; }
+
+        // Only swap in and render if we actually got something
+        var hasAny = tsResults.Any() || statResults.Any() || bgResults.Any() || gridResults.Any() || checkResults.Any();
+        if (!hasAny) return;
+
+        // Track which panels are being served from cache (preload hit)
+        _cachedPanelIds.Clear();
+        foreach (var panel in panels)
+        {
+            if (tsResults.ContainsKey(panel.Id) || statResults.ContainsKey(panel.Id) ||
+                bgResults.ContainsKey(panel.Id) || gridResults.ContainsKey(panel.Id) ||
+                checkResults.ContainsKey(panel.Id))
+            {
+                _cachedPanelIds[panel.Id] = true;
+            }
+        }
+
+        _timeSeriesResults = tsResults;
+        _statResults       = statResults;
+        _barGaugeResults   = bgResults;
+        _gridResults       = gridResults;
+        _checkResults      = checkResults;
+        _hasLoadedOnce     = true;   // suppress the "Loading data..." blank state
+        IsLoading          = true;   // keep the loading bar visible so user knows refresh is in progress
+        await SafeStateHasChanged();
+    }
+
+    private async Task StartLoad()
+    {
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+        _loadCts = new CancellationTokenSource();
+        await LoadData(_loadCts.Token);
+    }
+
+    /// <summary>Cancels the current in-flight load, if any.</summary>
+    public void CancelLoad()
+    {
+        _loadCts?.Cancel();
+    }
+
+    private async Task LoadData(CancellationToken cancellationToken = default)
+    {
+        var debugTimestamp = DateTime.Now.ToString("HH:mm:ss.fff");
+        Logger.LogInformation("[DynamicDashboard:{DashboardId}] Starting data load at {Timestamp}", DashboardId, debugTimestamp);
+        LocalLogger.LogInfo($"[DynamicDashboard:{DashboardId}] LoadData START at {debugTimestamp}");
+        
+        System.Diagnostics.Debug.WriteLine($"[DynamicDashboard:{DashboardId}] [LoadData] START at {debugTimestamp}");
+        
+        if (Dashboard == null)
+        {
+            ErrorMessage = $"Dashboard '{DashboardId}' not found in configuration.";
+            Logger.LogError("[DynamicDashboard:{DashboardId}] Dashboard configuration is null", DashboardId);
+            LocalLogger.LogError($"[DynamicDashboard:{DashboardId}] Dashboard is NULL - not found in config");
+            System.Diagnostics.Debug.WriteLine($"[DynamicDashboard:{DashboardId}] [LoadData] Dashboard is NULL - not found in config");
+            IsLoading = false;
+            return;
+        }
+
+        // Generic database precondition (e.g. replication needs 'distribution', or SQLWATCH-gated
+        // dashboards — RequiresDatabase="SQLWATCH" resolves via CurrentServerHasSqlWatch, see
+        // CheckRequiredDatabaseAsync). ONE mechanism now governs every dashboard's presence gate.
+        await CheckRequiredDatabaseAsync();
+        // Re-filter now that the precondition is resolved: panels that opted out via their own
+        // RequiresDatabase="" (e.g. memory's native Overview tab, pevents' native panels) survive
+        // even when the dashboard's own requirement is unmet — only bail out entirely when NOTHING
+        // in the active panel set is left to load.
+        RefreshPanelCaches();
+        if (RequiredDbMissing && (_enabledPanelsCache?.Count ?? 0) == 0)
+        {
+            Logger.LogWarning("[DynamicDashboard:{DashboardId}] Skipping data load - required DB '{Db}' not present on current server",
+                DashboardId, Dashboard?.RequiresDatabase);
+            IsLoading = false;
+            return;
+        }
+
+        IsLoading = true;
+        ErrorMessage = null;
+        _panelErrors.Clear();
+        
+        Logger.LogDebug("[DynamicDashboard:{DashboardId}] Clearing previous data and starting fresh load", DashboardId);
+        
+        // Dispose old DataTables before replacing
+        foreach (var dt in _gridResults.Values)
+        {
+            dt?.Dispose();
+        }
+        _gridResults.Clear();
+
+        var filter = BuildFilter();
+        Logger.LogDebug("[DynamicDashboard:{DashboardId}] Filter built - Instances: [{Instances}], TimeRange: {TimeFrom} to {TimeTo}", 
+            DashboardId, string.Join(", ", filter?.Instances ?? Array.Empty<string>()), filter?.TimeFrom, filter?.TimeTo);
+        System.Diagnostics.Debug.WriteLine($"[DynamicDashboard:{DashboardId}] [LoadData] Filter: Instances=[{string.Join(", ", filter?.Instances ?? Array.Empty<string>())}], TimeFrom={filter?.TimeFrom:yyyy-MM-dd HH:mm:ss}, TimeTo={filter?.TimeTo:yyyy-MM-dd HH:mm:ss}");
+        
+        // Reset cache metrics counters so this load's hits/misses can be captured for the Settings → Cache Performance card
+        CachingExecutor.ResetMetrics();
+
+        try
+        {
+            await CachingExecutor.PrepareRefreshCycle(DashboardId, TimeRangeMinutes, SelectedInstance, TimezoneOffsetHours);
+            Logger.LogDebug("[DynamicDashboard:{DashboardId}] CachingExecutor refresh cycle prepared", DashboardId);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "[DynamicDashboard:{DashboardId}] Failed to prepare refresh cycle", DashboardId);
+            LocalLogger.LogError($"[DynamicDashboard:{DashboardId}] PrepareRefreshCycle failed: {ex.Message}", ex);
+            ErrorMessage = $"Failed to prepare data refresh: {ex.Message}";
+            IsLoading = false;
+            return;
+        }
+
+        var tsResults = new ConcurrentDictionary<string, List<TimeSeriesPoint>>();
+        var statResults = new ConcurrentDictionary<string, StatValue>();
+        var bgResults = new ConcurrentDictionary<string, List<StatValue>>();
+        var gridResults = new ConcurrentDictionary<string, DataTable>();
+        var checkResults = new ConcurrentDictionary<string, List<CheckStatus>>();
+
+        var panelsToLoad = _enabledPanelsCache ?? Dashboard?.GetActivePanels(_selectedTabId) ?? new List<PanelDefinition>();
+        var panelCount = panelsToLoad?.Count() ?? 0;
+        _loadedPanelCount = 0;
+        _totalPanelCount = panelCount;
+        Logger.LogInformation("[DynamicDashboard:{DashboardId}] Loading {PanelCount} panels in parallel", DashboardId, panelCount);
+        LocalLogger.LogInfo($"[DynamicDashboard:{DashboardId}] Loading {panelCount} panels in parallel");
+        System.Diagnostics.Debug.WriteLine($"[DynamicDashboard:{DashboardId}] [LoadData] Loading {panelCount} panels in parallel...");
+
+        // Group panels by type for optimized parallel execution
+        var panelGroups = panelsToLoad!.GroupBy(p => p.PanelType).ToList();
+        var parallelTasks = new List<Task>();
+        
+        Logger.LogDebug("[DynamicDashboard:{DashboardId}] Panel groups: {PanelGroups}", 
+            DashboardId, string.Join(", ", panelGroups.Select(g => $"{g.Key}({g.Count()})"))); 
+        foreach (var group in panelGroups)
+        {
+            var groupTask = Task.Run(async () =>
+            {
+                Logger.LogDebug("[DynamicDashboard:{DashboardId}] Processing panel group: {PanelType} with {Count} panels", 
+                    DashboardId, group.Key, group.Count());
+                    
+                var groupTasks = group.Select(async panel =>
+                {
+                    var result = await QueryOrchestrator.EnqueueAsync(new QueryRequest
+                    {
+                        QueryId = panel.Id,
+                        Work = async ct =>
+                        {
+                            await LoadPanelDataAsync(panel, filter!, tsResults, statResults, bgResults, gridResults, checkResults, ct);
+                            var loaded = Interlocked.Increment(ref _loadedPanelCount);
+                            // Coalesce StateHasChanged: render every 5 panels instead of every panel
+                            if (loaded % 5 == 0)
+                                await SafeStateHasChanged();
+                        },
+                        CancellationToken = cancellationToken
+                    }, panel.PanelType == "TimeSeries" ? QueryPriority.P0_Dashboard : QueryPriority.P0_Dashboard);
+                    if (!result.Success)
+                        Logger.LogError(result.Exception, "[DynamicDashboard:{DashboardId}] Panel {PanelId} failed", DashboardId, panel.Id);
+                });
+                
+                await Task.WhenAll(groupTasks);
+                Logger.LogDebug("[DynamicDashboard:{DashboardId}] Completed panel group: {PanelType}", DashboardId, group.Key);
+            });
+            parallelTasks.Add(groupTask);
+        }
+
+        try
+        {
+            await Task.WhenAll(parallelTasks);
+            Logger.LogDebug("[DynamicDashboard:{DashboardId}] All panel groups completed successfully", DashboardId);
+            await SafeStateHasChanged(); // Final render for any remaining panels
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "[DynamicDashboard:{DashboardId}] Error during parallel panel loading", DashboardId);
+            LocalLogger.LogError($"[DynamicDashboard:{DashboardId}] Parallel loading error: {ex.Message}", ex);
+            ErrorMessage = $"Error loading dashboard data: {ex.Message}";
+        }
+
+        // Swap references after all tasks complete
+        _timeSeriesResults = tsResults;
+        _statResults = statResults;
+        _barGaugeResults = bgResults;
+        _gridResults = gridResults;
+        _checkResults = checkResults;
+
+        // Retention honesty: a retained panel whose history starts INSIDE the selected range must say
+        // so. Retention makes the trend real from now on; it does not backfill the past.
+        _ = Task.Run(async () =>
+        {
+            try { await UpdateRetentionNoticeAsync(filter!, panelsToLoad!); }
+            catch (Exception ex) { Logger.LogDebug(ex, "Retention notice update failed"); }
+        });
+
+        // Load baseline data (7 days ago) from cache for TimeSeries panels
+        if (_showBaseline)
+        {
+            _ = Task.Run(async () =>
+            {
+                try { await LoadBaselineDataAsync(filter!); }
+                catch (Exception ex) { Logger.LogDebug(ex, "Baseline data load failed"); }
+            });
+        }
+        else
+        {
+            _baselineResults.Clear();
+        }
+
+        var resultSummary = $"TS:{tsResults.Count}, Stat:{statResults.Count}, BarGauge:{bgResults.Count}, Grid:{gridResults.Count}, Check:{checkResults.Count}";
+        Logger.LogInformation("[DynamicDashboard:{DashboardId}] Data load completed - {ResultSummary}", DashboardId, resultSummary);
+        LocalLogger.LogInfo($"[DynamicDashboard:{DashboardId}] LoadData COMPLETE - {resultSummary}");
+        System.Diagnostics.Debug.WriteLine($"[DynamicDashboard:{DashboardId}] [LoadData] COMPLETE - {resultSummary}");
+        
+        if (_panelErrors.Any())
+        {
+            Logger.LogWarning("[DynamicDashboard:{DashboardId}] {ErrorCount} panel errors occurred: {Errors}", 
+                DashboardId, _panelErrors.Count, string.Join("; ", _panelErrors.Select(kvp => $"{kvp.Key}: {kvp.Value}")));
+            LocalLogger.LogWarning($"[DynamicDashboard:{DashboardId}] Panel errors: {string.Join("; ", _panelErrors.Select(kvp => $"{kvp.Key}: {kvp.Value}"))}");
+        }
+        
+        // Persist this load's cache metrics for Settings → Cache Performance.
+        // Fire-and-forget — telemetry shouldn't block the dashboard.
+        try
+        {
+            _ = CacheMetrics.RecordSnapshotAsync(DashboardId,
+                CachingExecutor.TotalQueries, CachingExecutor.FreshHits, CachingExecutor.CacheHits);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug(ex, "[DynamicDashboard:{DashboardId}] CacheMetrics snapshot failed (non-fatal)", DashboardId);
+        }
+
+        _hasLoadedOnce = true;
+        IsLoading = false;
+        await SafeStateHasChanged();
+    }
+
+    private async Task LoadPanelDataAsync(
+    PanelDefinition panel,
+    DashboardFilter filter,
+    ConcurrentDictionary<string, List<TimeSeriesPoint>> tsResults,
+    ConcurrentDictionary<string, StatValue> statResults,
+    ConcurrentDictionary<string, List<StatValue>> bgResults,
+    ConcurrentDictionary<string, DataTable> gridResults,
+    ConcurrentDictionary<string, List<CheckStatus>> checkResults,
+    CancellationToken cancellationToken)
+    {
+        var panelDebugStart = DateTime.Now;
+        Logger.LogDebug("[DynamicDashboard:{DashboardId}] [Panel:{PanelId}] Starting panel load (Type: {PanelType})",
+            DashboardId, panel.Id, panel.PanelType);
+        System.Diagnostics.Debug.WriteLine($"[DynamicDashboard:{DashboardId}] [Panel:{panel.Id}] START loading (Type={panel.PanelType})");
+
+        var trace = new PanelTrace
+        {
+            DashboardId = DashboardId,
+            PanelId = panel.Id,
+            QueryId = panel.Id,
+            PanelType = panel.PanelType ?? "",
+            ServerName = filter.Instances?.FirstOrDefault() ?? "",
+            StartedAt = DateTime.Now
+        };
+        int traceRowCount = 0;
+
+        try
+        {
+            switch (panel.PanelType)
+            {
+                case "TimeSeries":
+                    Logger.LogDebug("[DynamicDashboard:{DashboardId}] [Panel:{PanelId}] Loading TimeSeries data", DashboardId, panel.Id);
+                    var tsData = await CachingExecutor.ExecuteQueryAsync(panel.Id, filter, MapTimeSeriesPoint, null, cancellationToken);
+                    tsResults[panel.Id] = tsData;
+                    Logger.LogDebug("[DynamicDashboard:{DashboardId}] [Panel:{PanelId}] TimeSeries loaded: {DataPoints} points", 
+                        DashboardId, panel.Id, tsData?.Count ?? 0);
+                    break;
+                case "StatCard":
+                case "DeltaStatCard":
+                    Logger.LogDebug("[DynamicDashboard:{DashboardId}] [Panel:{PanelId}] Loading {PanelType} data", DashboardId, panel.Id, panel.PanelType);
+                    var dt = await CachingExecutor.ExecuteQueryAsync(panel.Id, filter, null, cancellationToken);
+                    if (dt.Rows.Count > 0 && dt.Rows[0]["Value"] != DBNull.Value)
+                    {
+                        var val = Convert.ToDouble(dt.Rows[0]["Value"]);
+                        statResults[panel.Id] = new StatValue { Label = panel.Title, Value = val, Unit = panel.StatUnit, Color = ResolveColor(panel, val) };
+                        Logger.LogDebug("[DynamicDashboard:{DashboardId}] [Panel:{PanelId}] {PanelType} loaded: Value={Value}", 
+                            DashboardId, panel.Id, panel.PanelType, val);
+                    }
+                    else
+                    {
+                        Logger.LogWarning("[DynamicDashboard:{DashboardId}] [Panel:{PanelId}] {PanelType} returned no data or NULL value", 
+                            DashboardId, panel.Id, panel.PanelType);
+                    }
+                    break;
+                case "BarGauge":
+                case "Donut":
+                case "HorizontalBar":
+                    Logger.LogDebug("[DynamicDashboard:{DashboardId}] [Panel:{PanelId}] Loading {PanelType} data", DashboardId, panel.Id, panel.PanelType);
+                    var bgData = await CachingExecutor.ExecuteQueryAsync(panel.Id, filter, reader =>
+                    {
+                        var val = Convert.ToDouble(reader["Value"]);
+                        var schemaTable = reader.GetSchemaTable();
+                        var cols = schemaTable != null
+                            ? new HashSet<string>(schemaTable.Rows.Cast<System.Data.DataRow>().Select(r => r["ColumnName"]?.ToString() ?? ""), StringComparer.OrdinalIgnoreCase)
+                            : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        return new StatValue {
+                            Label    = reader["Label"]?.ToString() ?? "",
+                            Value    = val,
+                            Unit     = cols.Contains("Unit")     ? reader["Unit"]?.ToString()     ?? "" : "",
+                            Instance = cols.Contains("Instance") ? reader["Instance"]?.ToString() ?? "" : "",
+                            Color    = ResolveColor(panel, val)
+                        };
+                    }, null, cancellationToken);
+                    bgResults[panel.Id] = bgData;
+                    Logger.LogDebug("[DynamicDashboard:{DashboardId}] [Panel:{PanelId}] BarGauge loaded: {ItemCount} items", 
+                        DashboardId, panel.Id, bgData?.Count ?? 0);
+                    break;
+                case "DataGrid":
+                case "TextCard":
+                case "Deadlock":
+                case "XeStatus":
+                case "BlockingTree":
+                    Logger.LogDebug("[DynamicDashboard:{DashboardId}] [Panel:{PanelId}] Loading {PanelType} data", DashboardId, panel.Id, panel.PanelType);
+                    Dictionary<string, object>? gridParams = null;
+                    if (panel.DataGridTopRows > 0)
+                    {
+                        var topRows = _panelTopRows.TryGetValue(panel.Id, out var tr) ? tr : panel.DataGridTopRows;
+                        gridParams = new Dictionary<string, object> { ["@TopRows"] = topRows };
+                        Logger.LogDebug("[DynamicDashboard:{DashboardId}] [Panel:{PanelId}] Using TopRows parameter: {TopRows}", 
+                            DashboardId, panel.Id, topRows);
+                    }
+                    var gridData = await CachingExecutor.ExecuteQueryAsync(panel.Id, filter, gridParams, cancellationToken);
+                    gridResults[panel.Id] = gridData;
+                    Logger.LogDebug("[DynamicDashboard:{DashboardId}] [Panel:{PanelId}] {PanelType} loaded: {RowCount} rows, {ColumnCount} columns", 
+                        DashboardId, panel.Id, panel.PanelType, gridData?.Rows.Count ?? 0, gridData?.Columns.Count ?? 0);
+                    break;
+                case "CheckStatus":
+                    Logger.LogDebug("[DynamicDashboard:{DashboardId}] [Panel:{PanelId}] Loading CheckStatus data", DashboardId, panel.Id);
+                    var checkData = await CachingExecutor.ExecuteQueryAsync(panel.Id, filter, reader => new CheckStatus { Status = reader["Status"]?.ToString() ?? "OK", Count = reader["Count"] != DBNull.Value ? Convert.ToInt32(reader["Count"]) : 0 }, null, cancellationToken);
+                    checkResults[panel.Id] = checkData;
+                    Logger.LogDebug("[DynamicDashboard:{DashboardId}] [Panel:{PanelId}] CheckStatus loaded: {CheckCount} checks", 
+                        DashboardId, panel.Id, checkData?.Count ?? 0);
+                    break;
+
+                case "SessionBubble":
+                    Logger.LogDebug("[DynamicDashboard:{DashboardId}] [Panel:{PanelId}] SessionBubble panel - no data loading needed", DashboardId, panel.Id);
+                    // SessionBubble is real-time only — rendered on the dedicated /sessions page.
+                    // No data loading needed here; the DynamicPanel shows a link to /sessions.
+                    break;
+                    
+                default:
+                    Logger.LogWarning("[DynamicDashboard:{DashboardId}] [Panel:{PanelId}] Unknown panel type: {PanelType}",
+                        DashboardId, panel.Id, panel.PanelType);
+                    break;
+            }
+
+            trace.FetchCompleted = DateTime.Now;
+            trace.CacheHitTier = CachingExecutor.GetLastTier(panel.Id, CachingQueryExecutor.BuildInstanceKey(filter));
+
+            // Best-effort row count across the result dictionaries.
+            if (tsResults.TryGetValue(panel.Id, out var tsOut)) traceRowCount = tsOut?.Count ?? 0;
+            else if (gridResults.TryGetValue(panel.Id, out var gridOut)) traceRowCount = gridOut?.Rows.Count ?? 0;
+            else if (bgResults.TryGetValue(panel.Id, out var bgOut)) traceRowCount = bgOut?.Count ?? 0;
+            else if (checkResults.TryGetValue(panel.Id, out var checkOut)) traceRowCount = checkOut?.Count ?? 0;
+            else if (statResults.ContainsKey(panel.Id)) traceRowCount = 1;
+
+            trace.DataReadyAt = DateTime.Now;
+            trace.RowCount = traceRowCount;
+
+            // Panel finished loading — no longer showing cached data for this panel
+            _cachedPanelIds.TryRemove(panel.Id, out _);
+
+            var elapsed = DateTime.Now - panelDebugStart;
+            Logger.LogDebug("[DynamicDashboard:{DashboardId}] [Panel:{PanelId}] Completed successfully in {ElapsedMs}ms",
+                DashboardId, panel.Id, elapsed.TotalMilliseconds);
+        }
+        catch (OperationCanceledException)
+        {
+            trace.Success = false;
+            trace.ErrorMessage = "Cancelled";
+            Logger.LogDebug("[DynamicDashboard:{DashboardId}] [Panel:{PanelId}] Operation cancelled (navigation)", DashboardId, panel.Id);
+        }
+        catch (Exception ex) when (IsCancellationException(ex, cancellationToken))
+        {
+            trace.Success = false;
+            trace.ErrorMessage = "Cancelled";
+            // SqlException "Operation cancelled by user" — navigation away cancelled the query, not an error
+            Logger.LogDebug("[DynamicDashboard:{DashboardId}] [Panel:{PanelId}] Query cancelled by navigation", DashboardId, panel.Id);
+        }
+        catch (Exception ex)
+        {
+            var errorMsg = $"Panel '{panel.Id}' error: {ex.Message}";
+            _panelErrors[panel.Id] = errorMsg;
+            trace.Success = false;
+            trace.ErrorMessage = ex.Message;
+
+            Logger.LogError(ex, "[DynamicDashboard:{DashboardId}] [Panel:{PanelId}] Panel loading failed: {ErrorMessage}",
+                DashboardId, panel.Id, ex.Message);
+            LocalLogger.LogError($"[DynamicDashboard:{DashboardId}] [Panel:{panel.Id}] ERROR - {ex.Message}", ex);
+            System.Diagnostics.Debug.WriteLine($"[DynamicDashboard:{DashboardId}] [Panel:{panel.Id}] ERROR - {ex.Message}\n{ex.StackTrace}");
+        }
+        finally
+        {
+            // Ensure all stamps are populated even on cancel / error so durations compute cleanly.
+            if (trace.FetchCompleted == default) trace.FetchCompleted = DateTime.Now;
+            if (trace.DataReadyAt == default) trace.DataReadyAt = trace.FetchCompleted;
+            PerfService.AddTrace(trace);
+        }
+    }
+
+
+    /// <summary>Renders a panel's data for the flat edit-mode list using whatever cached results are available.</summary>
+    private RenderFragment RenderPanelForEdit(PanelDefinition panel) => builder =>
+    {
+        if (panel.PanelType == "CheckStatus" && _checkResults.TryGetValue(panel.Id, out var checks))
+        {
+            builder.OpenComponent<DynamicPanel>(0);
+            builder.AddAttribute(1, "Panel", panel);
+            builder.AddAttribute(2, "CheckData", checks);
+            builder.AddAttribute(3, "TimezoneOffsetHours", TimezoneOffsetHours);
+            builder.AddAttribute(4, "IsCached", _cachedPanelIds.ContainsKey(panel.Id));
+            builder.CloseComponent();
+        }
+        else if ((panel.PanelType == "StatCard" || panel.PanelType == "DeltaStatCard") && _statResults.TryGetValue(panel.Id, out var stat))
+        {
+            builder.OpenComponent<DynamicPanel>(0);
+            builder.AddAttribute(1, "Panel", panel);
+            builder.AddAttribute(2, "StatData", stat);
+            builder.AddAttribute(3, "TimezoneOffsetHours", TimezoneOffsetHours);
+            builder.AddAttribute(4, "IsCached", _cachedPanelIds.ContainsKey(panel.Id));
+            builder.CloseComponent();
+        }
+        else if (panel.PanelType == "BarGauge" && _barGaugeResults.TryGetValue(panel.Id, out var gauge))
+        {
+            builder.OpenComponent<DynamicPanel>(0);
+            builder.AddAttribute(1, "Panel", panel);
+            builder.AddAttribute(2, "BarGaugeData", gauge);
+            builder.AddAttribute(3, "TimezoneOffsetHours", TimezoneOffsetHours);
+            builder.AddAttribute(4, "IsCached", _cachedPanelIds.ContainsKey(panel.Id));
+            builder.CloseComponent();
+        }
+        else
+        {
+            // TimeSeries, DataGrid, TextCard, or any panel with no cached data yet
+            builder.OpenComponent<DynamicPanel>(0);
+            builder.AddAttribute(1, "Panel", panel);
+            builder.AddAttribute(2, "TimezoneOffsetHours", TimezoneOffsetHours);
+            if (panel.PanelType == "TimeSeries" && _timeSeriesResults.TryGetValue(panel.Id, out var ts))
+                builder.AddAttribute(3, "TimeSeriesData", ts);
+            else if (_gridResults.TryGetValue(panel.Id, out var grid))
+                builder.AddAttribute(3, "GridData", grid);
+            builder.AddAttribute(4, "IsCached", _cachedPanelIds.ContainsKey(panel.Id));
+            builder.CloseComponent();
+        }
+    };
+
+    private RenderFragment RenderChartOrGrid(PanelDefinition panel) => builder =>
+    {
+        builder.OpenComponent<DynamicPanel>(0);
+        builder.AddAttribute(1, "Panel", panel);
+        builder.AddAttribute(5, "TimezoneOffsetHours", TimezoneOffsetHours);
+
+        if (panel.PanelType == "TimeSeries" && _timeSeriesResults.TryGetValue(panel.Id, out var tsData))
+        {
+            builder.AddAttribute(2, "TimeSeriesData", tsData);
+            if (_showBaseline && _baselineResults.TryGetValue(panel.Id, out var baselineData))
+                builder.AddAttribute(9, "BaselineData", baselineData);
+        }
+        else if (panel.PanelType == "DataGrid")
+        {
+            // GridData and ErrorMessage are independent: a panel whose load FAILED (exception or
+            // timeout — see the catch block in LoadPanelDataAsync) never populates _gridResults for
+            // its id, so the two conditions used to be mutually exclusive by construction (no
+            // gridData -> this whole branch was skipped -> DataGrid always fell back to its
+            // "No data available" empty state, byte-identical to an honestly-empty panel). Both are
+            // now read independently so a failed panel still reaches DataGrid, carrying the reason.
+            if (_gridResults.TryGetValue(panel.Id, out var gridData))
+                builder.AddAttribute(3, "GridData", gridData);
+            if (_panelErrors.TryGetValue(panel.Id, out var gridPanelError))
+                builder.AddAttribute(16, "ErrorMessage", gridPanelError);
+            if (panel.DataGridTopRows > 0)
+            {
+                var topRows = _panelTopRows.TryGetValue(panel.Id, out var t) ? t : panel.DataGridTopRows;
+                builder.AddAttribute(6, "TopRowsValue", (int?)topRows);
+                builder.AddAttribute(7, "OnTopRowsConfigChanged",
+                    EventCallback.Factory.Create<int>(this, val => OnPanelTopRowsChanged(panel.Id, val)));
+            }
+            if (!string.IsNullOrEmpty(panel.ActionColumn) && _noPantsMode && MayExecuteActions)
+            {
+                var mode = panel.ActionColumnMode;
+                builder.AddAttribute(8, "OnActionExecute",
+                    new Func<string, CancellationToken, Task<(bool, string)>>(
+                        (sql, ct) => ExecuteActionSqlAsync(sql, ct, mode)));
+            }
+
+            // ── Job Monitor: Run Job + Details ──
+            if (panel.Id == "jobs.overview")
+            {
+                // Details button — always visible
+                builder.AddAttribute(10, "JobOutcomeColumn", "LastOutcome");
+                builder.AddAttribute(11, "JobNameColumn", "Job Name");
+                builder.AddAttribute(12, "OnJobDetails",
+                    EventCallback.Factory.Create<string>(this, ShowJobDetails));
+
+                // Run Job button — no-pants only, and only for a caller who may act on a server
+                if (_noPantsMode && MayExecuteActions)
+                {
+                    builder.AddAttribute(13, "RunJobColumn", "Job Name");
+                    builder.AddAttribute(14, "OnRunJob",
+                        new Func<string, CancellationToken, Task<(bool, string)>>(RunAgentJobAsync));
+                }
+            }
+        }
+        else if (panel.PanelType == "TextCard" && _gridResults.TryGetValue(panel.Id, out var textData))
+            builder.AddAttribute(4, "GridData", textData);
+        else if (panel.PanelType == "Deadlock" && _gridResults.TryGetValue(panel.Id, out var deadlockData))
+            builder.AddAttribute(4, "GridData", deadlockData);
+        else if (panel.PanelType == "XeStatus" || panel.PanelType == "BlockingTree")
+        {
+            // LoadPanelDataAsync loads _gridResults for XeStatus/BlockingTree (they share the DataGrid
+            // fetch case), but RenderChartOrGrid had no branch for them, so GridData was NEVER passed:
+            // XeStatus.xeVal stayed "" (permanent red "No"), BlockingTree.Queried stayed false. Pass
+            // GridData (and any load error) the same independent way the DataGrid branch does.
+            if (_gridResults.TryGetValue(panel.Id, out var xeGridData))
+                builder.AddAttribute(4, "GridData", xeGridData);
+            if (_panelErrors.TryGetValue(panel.Id, out var xePanelError))
+                builder.AddAttribute(16, "ErrorMessage", xePanelError);
+        }
+        else if ((panel.PanelType == "Donut" || panel.PanelType == "HorizontalBar") && _barGaugeResults.TryGetValue(panel.Id, out var chartData))
+            builder.AddAttribute(4, "BarGaugeData", chartData);
+
+        builder.AddAttribute(15, "IsCached", _cachedPanelIds.ContainsKey(panel.Id));
+        builder.CloseComponent();
+    };
+
+    private async Task OnPanelTopRowsChanged(string panelId, int newTopRows)
+    {
+        _panelTopRows[panelId] = newTopRows;
+        // Reload just the one panel that changed
+        var panel = _enabledPanelsCache?.FirstOrDefault(p => p.Id == panelId);
+        if (panel == null) return;
+        var filter = BuildFilter();
+        var topRows = newTopRows;
+        var gridParams = new Dictionary<string, object> { ["@TopRows"] = topRows };
+        try
+        {
+            var newData = await CachingExecutor.ExecuteQueryAsync(panelId, filter, gridParams);
+            if (_gridResults.TryGetValue(panelId, out var old)) old?.Dispose();
+            _gridResults[panelId] = newData;
+            await SafeStateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            _panelErrors[panelId] = $"Panel '{panelId}' error: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Executes a SQL action (e.g. CREATE INDEX) on the currently selected server.
+    /// Called by DataGrid action buttons.
+    /// When mode is "query", the cell value is a SELECT that returns the actual DDL — double-hop execution.
+    /// </summary>
+    private async Task<(bool success, string message)> ExecuteActionSqlAsync(string sql, CancellationToken ct, string? mode = null)
+    {
+        if (!MayExecuteActions)
+            return (false, "Not permitted: running an action against a server requires Operator or Admin.");
+
+        if (string.IsNullOrWhiteSpace(sql))
+            return (false, "No SQL to execute");
+
+        var conn = ConnectionManager.GetEnabledConnections().FirstOrDefault();
+        if (conn == null)
+            return (false, "No server connection available");
+
+        var serverName = SelectedInstance;
+        if (string.IsNullOrEmpty(serverName))
+            serverName = conn.GetServerList().FirstOrDefault() ?? "";
+        if (string.IsNullOrEmpty(serverName))
+            return (false, "No server selected");
+
+        try
+        {
+            var connString = conn.GetConnectionString(serverName, "master");
+            using var sqlConn = new Microsoft.Data.SqlClient.SqlConnection(connString);
+            await sqlConn.OpenAsync(ct);
+
+            var ddl = sql;
+
+            // Double-hop: cell value is a query that returns the DDL to execute
+            if (string.Equals(mode, "query", StringComparison.OrdinalIgnoreCase))
+            {
+                using var queryCmd = new Microsoft.Data.SqlClient.SqlCommand(sql, sqlConn)
+                {
+                    CommandTimeout = 60
+                };
+                ct.Register(() => { try { queryCmd.Cancel(); } catch { } });
+
+                var result = await queryCmd.ExecuteScalarAsync(ct);
+                ddl = result?.ToString();
+
+                if (string.IsNullOrWhiteSpace(ddl))
+                    return (false, "The create script query returned no result");
+
+                Logger.LogInformation("Action double-hop on {Server}: query returned {Length} chars", serverName, ddl.Length);
+            }
+
+            using var cmd = new Microsoft.Data.SqlClient.SqlCommand(ddl, sqlConn)
+            {
+                CommandTimeout = 300 // Index creation can take minutes
+            };
+            ct.Register(() => { try { cmd.Cancel(); } catch { } });
+
+            await cmd.ExecuteNonQueryAsync(ct);
+            Logger.LogInformation("Action SQL executed on {Server}: {Sql}", serverName, ddl.Length > 120 ? ddl[..120] + "..." : ddl);
+            return (true, "Executed successfully on " + serverName);
+        }
+        catch (OperationCanceledException)
+        {
+            throw; // Let DataGrid handle as Cancelled state
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Action SQL failed on {Server}", serverName);
+            return (false, ex.Message);
+        }
+    }
+
+    // ── Job Monitor: Run Job + Details ─────────────────────────────────
+
+    private async Task<(bool success, string message)> RunAgentJobAsync(string jobName, CancellationToken ct)
+    {
+        if (!MayExecuteActions)
+            return (false, "Not permitted: starting an Agent job requires Operator or Admin.");
+
+        if (string.IsNullOrWhiteSpace(jobName))
+            return (false, "No job name");
+
+        var conn = ConnectionManager.GetEnabledConnections().FirstOrDefault();
+        if (conn == null) return (false, "No server connection available");
+
+        var serverName = SelectedInstance;
+        if (string.IsNullOrEmpty(serverName))
+            serverName = conn.GetServerList().FirstOrDefault() ?? "";
+        if (string.IsNullOrEmpty(serverName))
+            return (false, "No server selected");
+
+        try
+        {
+            var connString = conn.GetConnectionString(serverName, "msdb");
+            using var sqlConn = new Microsoft.Data.SqlClient.SqlConnection(connString);
+            await sqlConn.OpenAsync(ct);
+
+            using var cmd = new Microsoft.Data.SqlClient.SqlCommand(
+                "EXEC msdb.dbo.sp_start_job @job_name = @JobName", sqlConn)
+            {
+                CommandTimeout = 30
+            };
+            cmd.Parameters.AddWithValue("@JobName", jobName);
+            ct.Register(() => { try { cmd.Cancel(); } catch { } });
+
+            await cmd.ExecuteNonQueryAsync(ct);
+            Logger.LogInformation("Agent job '{JobName}' started on {Server}", jobName, serverName);
+            return (true, $"Job '{jobName}' started on {serverName}");
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to start agent job '{JobName}' on {Server}", jobName, serverName);
+            return (false, ex.Message);
+        }
+    }
+
+    private bool _showJobDetailsModal = false;
+    private string _jobDetailsName = "";
+    private DataTable? _jobDetailsData;
+    private bool _jobDetailsLoading = false;
+
+    private async Task ShowJobDetails(string jobName)
+    {
+        _jobDetailsName = jobName;
+        _jobDetailsLoading = true;
+        _showJobDetailsModal = true;
+        _jobDetailsData?.Dispose();
+        _jobDetailsData = null;
+        StateHasChanged();
+
+        var conn = ConnectionManager.GetEnabledConnections().FirstOrDefault();
+        if (conn == null) { _jobDetailsLoading = false; StateHasChanged(); return; }
+
+        var serverName = SelectedInstance;
+        if (string.IsNullOrEmpty(serverName))
+            serverName = conn.GetServerList().FirstOrDefault() ?? "";
+
+        try
+        {
+            var connString = conn.GetConnectionString(serverName, "msdb");
+            using var sqlConn = new Microsoft.Data.SqlClient.SqlConnection(connString);
+            await sqlConn.OpenAsync();
+
+            using var cmd = new Microsoft.Data.SqlClient.SqlCommand(@"
+                SELECT
+                    h.step_id        AS [Step],
+                    h.step_name      AS [Step Name],
+                    CASE h.run_status
+                        WHEN 0 THEN 'Failed' WHEN 1 THEN 'Succeeded'
+                        WHEN 2 THEN 'Retry'  WHEN 3 THEN 'Cancelled'
+                        WHEN 4 THEN 'In Progress' ELSE 'Unknown'
+                    END AS [Status],
+                    CONVERT(VARCHAR, msdb.dbo.agent_datetime(h.run_date, h.run_time), 120) AS [Run Time],
+                    RIGHT('0'+CAST(h.run_duration/10000 AS VARCHAR),2) + ':' +
+                    RIGHT('0'+CAST((h.run_duration/100)%100 AS VARCHAR),2) + ':' +
+                    RIGHT('0'+CAST(h.run_duration%100 AS VARCHAR),2) AS [Duration],
+                    h.sql_severity   AS [Severity],
+                    REPLACE(REPLACE(h.message, CHAR(13), ' '), CHAR(10), ' ') AS [Message]
+                FROM msdb.dbo.sysjobhistory h WITH (NOLOCK)
+                INNER JOIN msdb.dbo.sysjobs j WITH (NOLOCK) ON h.job_id = j.job_id
+                WHERE j.name = @JobName
+                ORDER BY msdb.dbo.agent_datetime(h.run_date, h.run_time) DESC", sqlConn)
+            {
+                CommandTimeout = 30
+            };
+            cmd.Parameters.AddWithValue("@JobName", jobName);
+
+            var dt = new DataTable();
+            using var reader = await cmd.ExecuteReaderAsync();
+            dt.Load(reader);
+            _jobDetailsData = dt;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to load job history for '{JobName}'", jobName);
+        }
+
+        _jobDetailsLoading = false;
+        await SafeStateHasChanged();
+    }
+
+    private void CloseJobDetailsModal()
+    {
+        _showJobDetailsModal = false;
+        _jobDetailsData?.Dispose();
+        _jobDetailsData = null;
+    }
+
+    private async Task OnManualRefresh()
+    {
+        await StartLoad();
+    }
+
+    private async Task OnServerConnectionChanged()
+    {
+        // Invalidate the per-server precondition cache — the new server may or may not have the required DB.
+        _requiredDbAvailable = null;
+        _requiredDbCheckedFor = null;
+        await StartLoad();
+    }
+
+    private async Task OnDataSourceChanged(string newSource)
+    {
+        DataSource = newSource;
+        RefreshPanelCaches();
+        await StartLoad();
+    }
+
+    private async void OnAutoRefresh()
+    {
+        if (!AutoRefresh) 
+        {
+            Logger.LogDebug("[DynamicDashboard:{DashboardId}] Auto-refresh triggered but disabled, skipping", DashboardId);
+            return;
+        }
+        
+        Logger.LogDebug("[DynamicDashboard:{DashboardId}] Auto-refresh triggered", DashboardId);
+        try
+        {
+            using var cts = new System.Threading.CancellationTokenSource();
+            cts.CancelAfter(TimeSpan.FromSeconds(30));
+            await InvokeAsync(async () => await LoadData(cts.Token));
+            Logger.LogDebug("[DynamicDashboard:{DashboardId}] Auto-refresh completed successfully", DashboardId);
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.LogWarning("[DynamicDashboard:{DashboardId}] Auto-refresh cancelled due to timeout", DashboardId);
+            LocalLogger.LogWarning($"[DynamicDashboard:{DashboardId}] Auto-refresh timeout");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "[DynamicDashboard:{DashboardId}] Auto-refresh failed: {ErrorMessage}", DashboardId, ex.Message);
+            LocalLogger.LogError($"[DynamicDashboard:{DashboardId}] AutoRefresh error: {ex.Message}", ex);
+            System.Diagnostics.Debug.WriteLine($"[DynamicDashboard:{DashboardId}] AutoRefresh error: {ex}");
+        }
+    }
+
+    private async void OnConfigChanged()
+    {
+        Dashboard = ConfigService.Config.Dashboards.FirstOrDefault(d => string.Equals(d.Id, DashboardId, StringComparison.OrdinalIgnoreCase));
+        RefreshPanelCaches();
+        await InvokeAsync(() => LoadData());
+    }
+
+    /// <summary>Returns true when a SqlException is caused by query cancellation (navigation away),
+    /// not a real SQL error. Suppresses false ERR log entries on dashboard navigation.</summary>
+    private static bool IsCancellationException(Exception ex, CancellationToken ct)
+    {
+        if (ct.IsCancellationRequested) return true;
+        // A SqlException is a cancellation only for SqlClient's own cancel messages. The former
+        // "severe error" match was removed: that phrase is SQL Server's KILL/abort message, so a
+        // genuine server-side KILL was being swallowed as a user cancel (no error, no banner). See
+        // CancellationClassifier for the full reasoning and the exhaustive test.
+        if (ex is Microsoft.Data.SqlClient.SqlException sqlEx)
+            return CancellationClassifier.IsCancellationMessage(sqlEx.Message);
+        return ex.InnerException != null && IsCancellationException(ex.InnerException, ct);
+    }
+
+    /// <summary>Guards InvokeAsync(StateHasChanged) calls — no-ops after disposal to prevent
+    /// WebView2 "removeChild on null" / render-batch-sequence errors.</summary>
+    private Task SafeStateHasChanged()
+    {
+        if (_disposed) return Task.CompletedTask;
+        try { return InvokeAsync(StateHasChanged); }
+        catch (ObjectDisposedException) { return Task.CompletedTask; }
+        catch (InvalidOperationException) { return Task.CompletedTask; }
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        Logger.LogInformation("[DynamicDashboard:{DashboardId}] Starting disposal", DashboardId);
+        LocalLogger.LogInfo($"[DynamicDashboard:{DashboardId}] Starting disposal");
+        
+        // Dispose DataTables to prevent memory leaks
+        var gridCount = _gridResults.Count;
+        foreach (var dt in _gridResults.Values)
+        {
+            dt?.Dispose();
+        }
+        _gridResults.Clear();
+        
+        // Clear all data dictionaries to free memory
+        var tsCount = _timeSeriesResults.Count;
+        var statCount = _statResults.Count;
+        var bgCount = _barGaugeResults.Count;
+        var checkCount = _checkResults.Count;
+        var errorCount = _panelErrors.Count;
+        
+        _timeSeriesResults.Clear();
+        _statResults.Clear();
+        _barGaugeResults.Clear();
+        _checkResults.Clear();
+        _panelErrors.Clear();
+        
+        // Cancel and dispose any in-flight query load
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+        _loadCts = null;
+
+        // Unsubscribe from events without stopping RefreshService (affects all dashboards)
+        RefreshService.OnRefresh -= OnAutoRefresh;
+        ConfigService.OnConfigChanged -= OnConfigChanged;
+        InstanceSelector.OnInstanceChanged -= OnGlobalInstanceChanged;
+        UserSettings.OnNoPantsModeChanged -= OnNoPantsModeChanged;
+        
+        Logger.LogInformation("[DynamicDashboard:{DashboardId}] Disposed successfully - Cleared: {GridCount} grids, {TsCount} timeseries, {StatCount} stats, {BgCount} bargauges, {CheckCount} checks, {ErrorCount} errors", 
+            DashboardId, gridCount, tsCount, statCount, bgCount, checkCount, errorCount);
+        LocalLogger.LogInfo($"[DynamicDashboard:{DashboardId}] Disposed - Memory freed");
+        System.Diagnostics.Debug.WriteLine($"[DynamicDashboard] Disposed dashboard '{DashboardId}'. Memory freed.");
+    }
+
+    /// <summary>
+    /// Resolves the display colour for a numeric panel value.
+    /// Prefers the panel's inline ColorThresholds list; falls back to the
+    /// named ThresholdConfig entry (StatThresholdKey / BarGaugeThresholdKey).
+    /// </summary>
+    private static string ResolveColor(PanelDefinition panel, double value)
+    {
+        if (panel.ColorThresholds?.Count > 0)
+            return panel.GetThresholdColor(value);
+        var key = panel.StatThresholdKey ?? panel.BarGaugeThresholdKey ?? "";
+        return ThresholdConfig.GetColor(key, value);
+    }
+
+    private static TimeSeriesPoint MapTimeSeriesPoint(IDataReader reader) => new()
+    {
+        Time = reader["Time"] as DateTime? ?? DateTime.MinValue,
+        Series = reader["Series"]?.ToString() ?? "",
+        // A NULL measurement becomes NaN (an unmeasured instant), never a fabricated 0. The
+        // caching layer drops NaN points before storing/serving, so the series shows a gap.
+        Value = TimeSeriesValueMapper.MapValue(reader["Value"])
+    };
+
+    // ── Baseline Comparison ──
+
+    private async Task LoadBaselineDataAsync(DashboardFilter currentFilter)
+    {
+        var baselineResults = new ConcurrentDictionary<string, List<TimeSeriesPoint>>();
+        var shift = TimeSpan.FromDays(7);
+        var instanceKey = CachingQueryExecutor.BuildInstanceKey(currentFilter);
+
+        // THE WINDOW THE BASELINE ACTUALLY READS, hoisted so every measurement below is taken against
+        // it and never against the toolbar's window. Measuring the toolbar window described a window
+        // the baseline never opened: with retention at 8 days, a "Last 7 days" baseline reads from 14
+        // days ago, so it can never cover more than a seventh of what it was asked for, and the gate
+        // proved it rendering 23 hours of a 7-day comparison with every honesty surface silent.
+        var baselineFrom = currentFilter.TimeFrom - shift;
+        var baselineTo = currentFilter.TimeTo - shift;
+
+        var tsPanels = (_enabledPanelsCache?.Where(p => p.PanelType == "TimeSeries") ?? Enumerable.Empty<PanelDefinition>()).ToList();
+
+        var retainedPanelCount = 0;
+        DateTime? earliestRetained = null;
+        var shortPanels = new List<string>();
+        var stoppedPanels = new List<string>();
+        var gapPanels = new List<string>();
+        var sampledPanels = new List<string>();
+        var liveSourcedPanels = new List<string>();
+
+        foreach (var panel in tsPanels)
+        {
+            try
+            {
+                var retains = CachingExecutor.RetainsHistory(panel.Id);
+                if (retains) retainedPanelCount++;
+
+                // Retained history is the source a real baseline comes from — it is the only store that
+                // survives the window trim, the 24-hour eviction sweep and a restart. The live cache is
+                // still consulted after it, because a panel with no retention may happen to hold part of
+                // the window. Only part: CachingQueryExecutor trims cache_timeseries to filter.TimeFrom
+                // after every fresh fetch, and the longest toolbar range is 7 days, so the shifted window
+                // ends where the trimmed cache begins. Whatever it answers with is disclosed as coming
+                // from the cache rather than passed off as a record of 7 days ago.
+                var source = await CacheStore.GetMetricHistoryAsync(panel.Id, instanceKey, baselineFrom, baselineTo);
+                var fromLiveCache = false;
+                if (source.Count == 0)
+                {
+                    source = await CacheStore.GetTimeSeriesAsync(panel.Id, instanceKey, baselineFrom, baselineTo);
+                    fromLiveCache = source.Count > 0;
+                }
+
+                // What this panel's comparison line spans, measured off the points that will be drawn.
+                // Retained-history extents only: a live-cache extent is reported separately, because it
+                // is not evidence about retention and must not be dressed up as any.
+                DateTime? drawnFrom = source.Count > 0 && !fromLiveCache ? source.Min(p => p.Time) : null;
+                DateTime? drawnTo = source.Count > 0 && !fromLiveCache ? source.Max(p => p.Time) : null;
+
+                if (retains)
+                {
+                    var coverage = await CachingExecutor.GetRetentionCoverageAsync(
+                        panel.Id, currentFilter, baselineFrom, baselineTo);
+                    if (coverage.EarliestRetainedLocal is DateTime e && (earliestRetained is null || e < earliestRetained))
+                        earliestRetained = e;
+
+                    // Three separate shortfalls, because a row count and one boundary date cannot tell
+                    // them apart: history that starts too late, history that STOPPED, and a window that
+                    // fell in a hole with history on both sides. Measuring only the front of the window
+                    // left the last two rendering in silence, which the probe proved before this line
+                    // existed.
+                    var shortfall = DescribeBaselineShortfall(
+                        panel.Title, coverage, baselineFrom, baselineTo, drawnFrom, drawnTo);
+                    if (shortfall != null) shortPanels.Add(shortfall);
+
+                    var stoppage = DescribeBaselineStoppage(
+                        panel.Title, coverage, baselineFrom, baselineTo, drawnFrom, drawnTo);
+                    if (stoppage != null) stoppedPanels.Add(stoppage);
+
+                    var gap = DescribeBaselineGap(panel.Title, coverage, baselineFrom, baselineTo);
+                    if (gap != null) gapPanels.Add(gap);
+
+                    if (coverage.IsDownsampled)
+                    {
+                        sampledPanels.Add(
+                            $"{panel.Title} ({coverage.RowCount} retained points against a "
+                            + $"{coverage.PointCap}-point chart limit)");
+                    }
+                }
+
+                if (fromLiveCache)
+                {
+                    liveSourcedPanels.Add(
+                        $"{panel.Title} (drawn {source.Min(p => p.Time):d MMM yyyy HH:mm} to "
+                        + $"{source.Max(p => p.Time):d MMM yyyy HH:mm})");
+                }
+
+                if (source.Count > 0)
+                {
+                    // Shift timestamps forward by 7 days to align with current range
+                    var shifted = source.Select(p => new TimeSeriesPoint
+                    {
+                        Time = p.Time + shift,
+                        Series = p.Series,
+                        Value = p.Value
+                    }).ToList();
+                    baselineResults[panel.Id] = shifted;
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogDebug(ex, "Failed to load baseline for panel {PanelId}", panel.Id);
+            }
+        }
+
+        _baselineResults = baselineResults;
+        _baselineNotice = _showBaseline
+            ? BuildBaselineNotice(
+                baselineResults.IsEmpty, tsPanels.Count, retainedPanelCount, earliestRetained, DateTime.Now,
+                new BaselineWindowCoverage(
+                    baselineFrom, baselineTo, shortPanels, sampledPanels, liveSourcedPanels,
+                    stoppedPanels, gapPanels))
+            : "";
+        await SafeStateHasChanged();
+    }
+
+    /// <summary>
+    /// What the Baseline overlay drew, measured against the window it was asked for. The window is the
+    /// SHIFTED one (7 days before the toolbar range), because that is the only window the baseline read
+    /// and so the only one an honest notice can describe. Lists are per-panel and empty means whole.
+    /// </summary>
+    internal readonly record struct BaselineWindowCoverage(
+        DateTime WindowFrom,
+        DateTime WindowTo,
+        IReadOnlyList<string> ShortPanels,
+        IReadOnlyList<string> SampledPanels,
+        IReadOnlyList<string> LiveCachePanels,
+        IReadOnlyList<string>? StoppedPanels = null,
+        IReadOnlyList<string>? GapPanels = null)
+    {
+        /// <summary>Whole coverage: a baseline with nothing to disclose.</summary>
+        public static BaselineWindowCoverage Whole(DateTime windowFrom, DateTime windowTo)
+            => new(windowFrom, windowTo, Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>());
+
+        /// <summary>Panels whose retained history stopped before the window closed. Never null to a
+        /// reader, so a caller that measured only the front of the window reads as "none", which is
+        /// what it in fact knows.</summary>
+        public IReadOnlyList<string> Stopped => StoppedPanels ?? Array.Empty<string>();
+
+        /// <summary>Panels whose window fell in a hole in their retained history.</summary>
+        public IReadOnlyList<string> Gapped => GapPanels ?? Array.Empty<string>();
+    }
+
+    /// <summary>
+    /// One panel's baseline shortfall, or null when its retained history reaches the start of the
+    /// shifted window. The predicate is retention's own <see cref="RetentionCoverage.IsShortOfWindow"/>:
+    /// history that BEGINS after the window opened cannot have recorded the earlier part of it, whatever
+    /// the chart looks like. Two stored dates decide it, with no tolerance and no threshold, so the
+    /// notice cannot drift into an opinion about how thin is too thin.
+    /// </summary>
+    internal static string? DescribeBaselineShortfall(
+        string title, RetentionCoverage coverage, DateTime windowFrom, DateTime windowTo,
+        DateTime? drawnFrom, DateTime? drawnTo)
+    {
+        if (!coverage.IsShortOfWindow(windowFrom)) return null;
+
+        if (drawnFrom is null || drawnTo is null)
+            return $"{title} (nothing retained for that window)";
+
+        return $"{title} ({DescribeSpan(drawnTo.Value - drawnFrom.Value)} of the "
+             + $"{DescribeSpan(windowTo - windowFrom)} asked for, from {drawnFrom.Value:d MMM yyyy HH:mm})";
+    }
+
+    /// <summary>
+    /// One panel's baseline shortfall at the OTHER end, or null when its retained history runs past the
+    /// close of the shifted window. The mirror of <see cref="DescribeBaselineShortfall"/> and a fact it
+    /// cannot see: a panel whose collector went quiet has history reaching well past the start of the
+    /// window and none at the end of it, so the start predicate reports nothing while the comparison
+    /// line stops halfway across the chart.
+    ///
+    /// <para>Proved live before it was written, through the production store and these builders: with
+    /// the retention window widened past the shift, which <c>MetricRetention:WindowDays</c> already
+    /// allows, a panel that stopped recording 7.4 days ago drew 14 hours 10 minutes of a 24-hour
+    /// comparison and every honesty surface stayed silent. That is the same bar ruling 4 set.</para>
+    ///
+    /// <para>It cannot over-fire, by arithmetic rather than by tuning: the baseline window always
+    /// closes at least 7 days in the past, so a running collector's newest sample is always later than
+    /// it. The predicate fires only for a panel that recorded nothing across those 7 days or more.</para>
+    /// </summary>
+    internal static string? DescribeBaselineStoppage(
+        string title, RetentionCoverage coverage, DateTime windowFrom, DateTime windowTo,
+        DateTime? drawnFrom, DateTime? drawnTo)
+    {
+        // The front of the window comes first and owns the whole panel: a panel that has nothing until
+        // after the window opened has one problem, not two, and naming it twice would read as two.
+        if (coverage.IsShortOfWindow(windowFrom)) return null;
+        if (!coverage.EndsBeforeWindowCloses(windowTo)) return null;
+
+        var stopped = coverage.LatestRetainedLocal!.Value;
+
+        if (drawnFrom is null || drawnTo is null)
+            return $"{title} (nothing retained after {stopped:d MMM yyyy HH:mm})";
+
+        return $"{title} ({DescribeSpan(drawnTo.Value - drawnFrom.Value)} of the "
+             + $"{DescribeSpan(windowTo - windowFrom)} asked for, recording stopped "
+             + $"{stopped:d MMM yyyy HH:mm})";
+    }
+
+    /// <summary>
+    /// One panel whose baseline window fell in a hole in the retained history, or null. History reaches
+    /// past both ends of the window and there is nothing inside it, so neither boundary predicate can
+    /// see it and the panel simply draws no comparison line at all. Zero rows decides it, with no
+    /// tolerance and no threshold.
+    ///
+    /// <para>Also proved live before it was written: a 3-day recording gap that swallowed the whole
+    /// baseline window left one panel drawing no line, next to another panel's full line, and the
+    /// notice said nothing. A missing line is the largest shortfall there is, so silence about it was
+    /// the worst arm of the defect rather than the smallest.</para>
+    /// </summary>
+    internal static string? DescribeBaselineGap(
+        string title, RetentionCoverage coverage, DateTime windowFrom, DateTime windowTo)
+    {
+        if (!coverage.WindowFallsInAGap(windowFrom, windowTo)) return null;
+
+        return $"{title} (no retained samples inside that window, though history for it runs from "
+             + $"{coverage.EarliestRetainedLocal!.Value:d MMM yyyy HH:mm} to "
+             + $"{coverage.LatestRetainedLocal!.Value:d MMM yyyy HH:mm})";
+    }
+
+    /// <summary>A duration an operator reads at a glance. Two units at most, never a raw TimeSpan.</summary>
+    private static string DescribeSpan(TimeSpan span)
+    {
+        if (span <= TimeSpan.Zero) return "no time at all";
+
+        if (span.TotalDays >= 1)
+            return span.Hours == 0 ? Plural(span.Days, "day") : $"{Plural(span.Days, "day")} {Plural(span.Hours, "hour")}";
+
+        if (span.TotalHours >= 1)
+            return span.Minutes == 0 ? Plural(span.Hours, "hour") : $"{Plural(span.Hours, "hour")} {Plural(span.Minutes, "minute")}";
+
+        var minutes = (int)span.TotalMinutes;
+        return minutes >= 1 ? Plural(minutes, "minute") : "less than a minute";
+    }
+
+    private static string Plural(int count, string noun) => count == 1 ? $"1 {noun}" : $"{count} {noun}s";
+
+    /// <summary>
+    /// The Baseline honesty text. Distinct facts, never blurred into one apology: no panel here retains
+    /// history so there can never be a baseline; retention is running and the 7-day-ago window is not
+    /// old enough yet, with the date it becomes real; or a baseline WAS drawn and covers only part of
+    /// the window it was asked for.
+    ///
+    /// <para>That last branch is the one ruling 4 names directly, and it used to be silence: any
+    /// non-empty baseline returned "" however thin it was. The gate proved what that hides. At the
+    /// shipped 8-day retention window a "Last 7 days" baseline reads from 14 days ago, so it is
+    /// arithmetically incapable of covering more than a seventh of its window, in the steady state,
+    /// permanently. It rendered 23 hours 50 minutes of a 7-day comparison and said nothing. A partial
+    /// baseline is now measured against the window it actually read, and says so.</para>
+    ///
+    /// <para>Silence still means the comparison is whole, which is the only reason the notice is worth
+    /// reading. Static and pure so a test can assert each branch without a rendered dashboard.</para>
+    /// </summary>
+    internal static string BuildBaselineNotice(
+        bool baselineEmpty, int tsPanelCount, int retainedPanelCount, DateTime? earliestRetained, DateTime now,
+        BaselineWindowCoverage coverage)
+    {
+        if (tsPanelCount == 0) return "";
+
+        if (!baselineEmpty) return BuildPartialBaselineNotice(coverage);
+
+        if (retainedPanelCount == 0)
+        {
+            return "No data from 7 days ago is available for the selected time range, and no panel on this "
+                 + "dashboard retains history. The live cache holds only the current window, so a baseline "
+                 + "needs retained history that nothing here is recording.";
+        }
+
+        if (earliestRetained is null)
+        {
+            return "No data from 7 days ago is available yet. This dashboard retains history for "
+                 + $"{retainedPanelCount} panel(s), but nothing has been recorded so far. A 7-day baseline "
+                 + "becomes available 7 days after the first sample is retained.";
+        }
+
+        var available = earliestRetained.Value + TimeSpan.FromDays(7);
+        var wait = available - now;
+        var waitText = wait <= TimeSpan.Zero
+            ? "for ranges that fall inside the retained history"
+            : $"on {available:d MMM yyyy HH:mm}";
+
+        return "No data from 7 days ago is available for the selected time range. Retained history for this "
+             + $"dashboard starts at {earliestRetained.Value:d MMM yyyy HH:mm}, which is less than 7 days "
+             + $"before the selected range. A baseline becomes available {waitText}. Retention records from "
+             + "now on; it does not fill in the past.";
+    }
+
+    /// <summary>
+    /// The text for a baseline that WAS drawn and is less than it looks. Five separate ways that
+    /// happens, none of them the same fact. Short of window: retained history does not reach the start
+    /// of the shifted window, so the earlier part of the comparison was never recorded. Stopped:
+    /// history reaches the start but not the end, because that panel's collector went quiet. Gapped:
+    /// history reaches past both ends and there is nothing inside, so the panel draws no line at all.
+    /// Sampled: history reaches all the way and the chart draws a subset of it. Live-sourced: the
+    /// comparison came from the volatile cache instead of retained history, and that cache is trimmed
+    /// to the current window after every fresh fetch, so it is not a record of 7 days ago.
+    ///
+    /// <para>The first round of this fix measured only the front of the window, and a probe against
+    /// these builders proved what the other two arms cost: a panel drawing 14 hours 10 minutes of a
+    /// 24-hour comparison, and a panel drawing no line at all beside a full one, both in silence.</para>
+    ///
+    /// <para>Empty lists produce "", which is how silence keeps meaning whole.</para>
+    /// </summary>
+    private static string BuildPartialBaselineNotice(BaselineWindowCoverage coverage)
+    {
+        var parts = new List<string>();
+
+        if (coverage.ShortPanels.Count > 0)
+        {
+            parts.Add(
+                $"The baseline reads the same range 7 days earlier, {coverage.WindowFrom:d MMM yyyy HH:mm} to "
+                + $"{coverage.WindowTo:d MMM yyyy HH:mm}. Retained history does not reach the start of that "
+                + $"window for: {string.Join("; ", coverage.ShortPanels)}. The rest of those comparison lines "
+                + "is not a quiet period, it was never recorded. Retention records from now on; it does not "
+                + "fill in the past.");
+        }
+
+        if (coverage.Stopped.Count > 0)
+        {
+            parts.Add(
+                $"The baseline reads the same range 7 days earlier, {coverage.WindowFrom:d MMM yyyy HH:mm} to "
+                + $"{coverage.WindowTo:d MMM yyyy HH:mm}. Retained history stops before the END of that "
+                + $"window for: {string.Join("; ", coverage.Stopped)}. Nothing was recorded for the rest of "
+                + "it, so those comparison lines stop where the recording did.");
+        }
+
+        if (coverage.Gapped.Count > 0)
+        {
+            parts.Add(
+                $"Nothing at all was retained inside {coverage.WindowFrom:d MMM yyyy HH:mm} to "
+                + $"{coverage.WindowTo:d MMM yyyy HH:mm} for: {string.Join("; ", coverage.Gapped)}. Those "
+                + "panels have no comparison line on this chart. The collector wrote nothing for that "
+                + "period, either because it could not reach the server or because the query returned no "
+                + "rows, and the two are not distinguishable after the fact.");
+        }
+
+        if (coverage.SampledPanels.Count > 0)
+        {
+            parts.Add(
+                $"The baseline window holds more retained points than the chart draws for: "
+                + $"{string.Join("; ", coverage.SampledPanels)}. Those comparison lines are drawn from a "
+                + "subset of the retained points, spread across the whole window. Every point on them is a "
+                + "real measurement, and a short spike between two of them is not on the chart.");
+        }
+
+        if (coverage.LiveCachePanels.Count > 0)
+        {
+            parts.Add(
+                $"The baseline for {string.Join("; ", coverage.LiveCachePanels)} comes from the live cache "
+                + "rather than retained history. That cache is trimmed to the current window after every "
+                + "fresh fetch, so it is not a record of 7 days ago and holds only what survived the trim.");
+        }
+
+        return string.Join(" ", parts);
+    }
+
+    /// <summary>
+    /// Builds the per-load retention notice for panels whose retained history starts inside the
+    /// selected range — the honesty bar the retention ruling set. A retained panel with full coverage
+    /// says nothing, which is how the operator can tell the difference.
+    /// </summary>
+    private async Task UpdateRetentionNoticeAsync(DashboardFilter filter, IEnumerable<PanelDefinition> panels)
+    {
+        var retainedPanels = panels.Where(p => p.PanelType == "TimeSeries" && CachingExecutor.RetainsHistory(p.Id)).ToList();
+        if (retainedPanels.Count == 0)
+        {
+            _retentionNotice = "";
+            await SafeStateHasChanged();
+            return;
+        }
+
+        // History is recorded PER SERVER, so a combined multi-instance view has no history of its own
+        // and never will. Saying "nothing retained yet" there would be false: the samples exist, filed
+        // under each server. See MetricHistoryCollectorService.ResolveInstanceNames.
+        if ((filter.Instances?.Length ?? 0) > 1)
+        {
+            _retentionNotice = "Retained history is recorded for one server at a time, so the combined "
+                + "view has none of its own. Select a single instance to see the retained trend.";
+            await SafeStateHasChanged();
+            return;
+        }
+
+        var shortPanels = new List<string>();
+        var sampledPanels = new List<string>();
+        foreach (var panel in retainedPanels)
+        {
+            var coverage = await CachingExecutor.GetRetentionCoverageAsync(panel.Id, filter);
+
+            if (coverage.IsShortOfWindow(filter.TimeFrom))
+            {
+                shortPanels.Add(coverage.EarliestRetainedLocal is DateTime e
+                    ? $"{panel.Title} (retained from {e:d MMM yyyy HH:mm})"
+                    : $"{panel.Title} (nothing retained yet)");
+            }
+
+            if (coverage.IsDownsampled)
+            {
+                sampledPanels.Add(
+                    $"{panel.Title} ({coverage.RowCount} retained points against a "
+                    + $"{coverage.PointCap}-point chart limit)");
+            }
+        }
+
+        _retentionNotice = BuildRetentionNotice(shortPanels, sampledPanels);
+        await SafeStateHasChanged();
+    }
+
+    /// <summary>
+    /// The retention honesty text, from the two distinct ways a retained line can be less than it
+    /// looks. Short of window means history does not reach back far enough and the early part of the
+    /// line was never recorded. Sampled means history reaches all the way and the chart is drawing a
+    /// subset of it. A panel can be both. Silence still means the line is whole, which is the only
+    /// reason the notice is worth reading. Static and pure so a test can assert each branch without a
+    /// rendered dashboard.
+    /// </summary>
+    internal static string BuildRetentionNotice(
+        IReadOnlyList<string> shortPanels, IReadOnlyList<string> sampledPanels)
+    {
+        var parts = new List<string>();
+
+        if (shortPanels.Count > 0)
+        {
+            parts.Add(
+                $"Retained history does not cover the whole selected range for: {string.Join("; ", shortPanels)}. "
+                + "The earlier part of those lines is not missing data, it was never recorded. Retention "
+                + "started with this version and records from now on.");
+        }
+
+        if (sampledPanels.Count > 0)
+        {
+            parts.Add(
+                $"This range holds more retained points than the chart draws for: {string.Join("; ", sampledPanels)}. "
+                + "Those lines are drawn from a subset of the retained points, spread across the whole "
+                + "range. Every point on them is a real measurement, and a short spike between two of "
+                + "them is not on the chart. Select a shorter range to see every retained point.");
+        }
+
+        return string.Join(" ", parts);
+    }
+
+    private void ToggleBaseline()
+    {
+        _showBaseline = !_showBaseline;
+        if (!_showBaseline)
+        {
+            _baselineResults.Clear();
+            _baselineNotice = "";
+            StateHasChanged();
+        }
+        else
+        {
+            // Trigger baseline load with current filter
+            var filter = BuildFilter();
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await LoadBaselineDataAsync(filter);
+                }
+                catch (Exception ex) { Logger.LogDebug(ex, "Baseline toggle load failed"); }
+            });
+        }
+    }
+
+}
+

@@ -1,0 +1,452 @@
+{
+  "capturedUtc": "2026-08-23T19:23:01.4462633Z",
+  "target": ".\\new2022",
+  "serverVersion": "16.00.4262",
+  "sqlServerStartTime": "2026-08-17T07:04:12.630",
+  "panelId": "livewaits.verdict",
+  "capturedBy": "WaitVerdictPanelTests.Capture_the_rendered_rows_from_a_real_instance",
+  "captureSubstitution": "The SHIPPED panel SQL with exactly one literal replaced: \u0027w.pct \u003E= 10.0\u0027 -\u003E \u0027w.pct \u003E= 0\u0027. The capture instance is idle and has been up for days, so no wait type reaches 10% of its uptime and the shipped query returns zero rows there. TOP (10), ORDER BY, the allow-list, the category CASE and the verdict CASE are all the shipped text byte for byte. The shipped floor is exercised against the unmodified query by the live smoke in the same file.",
+  "sqlExecuted": "DECLARE @uptime_ms bigint; SELECT @uptime_ms = CASE WHEN DATEDIFF(DAY, osi.sqlserver_start_time, SYSDATETIME()) \u003E= 24 THEN CONVERT(bigint, DATEDIFF(SECOND, osi.sqlserver_start_time, SYSDATETIME())) * 1000 ELSE CONVERT(bigint, DATEDIFF(MILLISECOND, osi.sqlserver_start_time, SYSDATETIME())) END FROM sys.dm_os_sys_info AS osi; SELECT TOP (10) [Category] = w.category, [Wait Type] = w.wait_type, [% of uptime] = CONVERT(decimal(18,2), w.pct), [Avg wait ms] = CONVERT(decimal(18,2), w.avg_ms), [Hours] = CONVERT(decimal(18,2), w.wait_time_ms / 3600000.0), [Verdict] = CASE WHEN w.category IN (N\u0027Locking\u0027, N\u0027Memory\u0027, N\u0027I/O\u0027, N\u0027TempDB Contention\u0027, N\u0027Transaction Log\u0027, N\u0027CPU\u0027) THEN CASE WHEN w.pct \u003E= 50.0 OR w.avg_ms \u003E= 1000.0 THEN N\u0027High\u0027 WHEN w.pct \u003E= 20.0 OR w.avg_ms \u003E= 250.0 THEN N\u0027Medium\u0027 ELSE N\u0027Low\u0027 END WHEN w.category = N\u0027Parallelism\u0027 THEN CASE WHEN w.pct \u003E= 100.0 THEN N\u0027Medium\u0027 ELSE N\u0027Low\u0027 END ELSE N\u0027Low\u0027 END FROM (SELECT dows.wait_type, dows.wait_time_ms, pct = dows.wait_time_ms * 100.0 / NULLIF(@uptime_ms, 0), avg_ms = dows.wait_time_ms * 1.0 / NULLIF(dows.waiting_tasks_count, 0), category = CASE WHEN dows.wait_type IN (N\u0027PAGEIOLATCH_SH\u0027, N\u0027PAGEIOLATCH_EX\u0027, N\u0027IO_COMPLETION\u0027, N\u0027IO_RETRY\u0027) THEN N\u0027I/O\u0027 WHEN dows.wait_type IN (N\u0027RESOURCE_SEMAPHORE\u0027, N\u0027RESOURCE_SEMAPHORE_QUERY_COMPILE\u0027, N\u0027CMEMTHREAD\u0027, N\u0027SLEEP_BPOOL_STEAL\u0027) THEN N\u0027Memory\u0027 WHEN dows.wait_type IN (N\u0027CXPACKET\u0027, N\u0027CXCONSUMER\u0027, N\u0027CXSYNC_PORT\u0027, N\u0027CXSYNC_CONSUMER\u0027) THEN N\u0027Parallelism\u0027 WHEN dows.wait_type IN (N\u0027SOS_SCHEDULER_YIELD\u0027, N\u0027THREADPOOL\u0027, N\u0027RESOURCE_GOVERNOR_IDLE\u0027) THEN N\u0027CPU\u0027 WHEN dows.wait_type IN (N\u0027PAGELATCH_EX\u0027, N\u0027PAGELATCH_SH\u0027, N\u0027PAGELATCH_UP\u0027) THEN N\u0027TempDB Contention\u0027 WHEN dows.wait_type LIKE N\u0027LCK%\u0027 THEN N\u0027Locking\u0027 WHEN dows.wait_type IN (N\u0027WRITELOG\u0027, N\u0027LOGBUFFER\u0027, N\u0027LOG_RATE_GOVERNOR\u0027, N\u0027POOL_LOG_RATE_GOVERNOR\u0027) THEN N\u0027Transaction Log\u0027 WHEN dows.wait_type IN (N\u0027BPSORT\u0027, N\u0027PWAIT_QRY_BPMEMORY\u0027, N\u0027HTREPARTITION\u0027, N\u0027HTBUILD\u0027, N\u0027HTMEMO\u0027, N\u0027HTDELETE\u0027, N\u0027HTREINIT\u0027) THEN N\u0027Query Execution\u0027 WHEN dows.wait_type = N\u0027ASYNC_NETWORK_IO\u0027 THEN N\u0027Network\u0027 WHEN dows.wait_type IN (N\u0027HADR_SYNC_COMMIT\u0027, N\u0027HADR_GROUP_COMMIT\u0027) THEN N\u0027Availability Groups\u0027 WHEN dows.wait_type IN (N\u0027IO_QUEUE_LIMIT\u0027, N\u0027RESMGR_THROTTLED\u0027) THEN N\u0027Azure SQL Throttling\u0027 WHEN dows.wait_type = N\u0027BTREE_INSERT_FLOW_CONTROL\u0027 THEN N\u0027Index Management\u0027 WHEN dows.wait_type = N\u0027WAIT_ON_SYNC_STATISTICS_REFRESH\u0027 THEN N\u0027Statistics\u0027 ELSE N\u0027Other\u0027 END FROM sys.dm_os_wait_stats AS dows WHERE (dows.wait_type IN (N\u0027PAGEIOLATCH_SH\u0027, N\u0027PAGEIOLATCH_EX\u0027, N\u0027RESOURCE_SEMAPHORE\u0027, N\u0027RESOURCE_SEMAPHORE_QUERY_COMPILE\u0027, N\u0027CXPACKET\u0027, N\u0027CXCONSUMER\u0027, N\u0027CXSYNC_PORT\u0027, N\u0027CXSYNC_CONSUMER\u0027, N\u0027SOS_SCHEDULER_YIELD\u0027, N\u0027THREADPOOL\u0027, N\u0027RESOURCE_GOVERNOR_IDLE\u0027, N\u0027CMEMTHREAD\u0027, N\u0027PAGELATCH_EX\u0027, N\u0027PAGELATCH_SH\u0027, N\u0027PAGELATCH_UP\u0027, N\u0027WRITELOG\u0027, N\u0027LOGBUFFER\u0027, N\u0027LOG_RATE_GOVERNOR\u0027, N\u0027POOL_LOG_RATE_GOVERNOR\u0027, N\u0027BPSORT\u0027, N\u0027EXECSYNC\u0027, N\u0027IO_COMPLETION\u0027, N\u0027ASYNC_NETWORK_IO\u0027, N\u0027SLEEP_BPOOL_STEAL\u0027, N\u0027PWAIT_QRY_BPMEMORY\u0027, N\u0027HTREPARTITION\u0027, N\u0027HTBUILD\u0027, N\u0027HTMEMO\u0027, N\u0027HTDELETE\u0027, N\u0027HTREINIT\u0027, N\u0027BTREE_INSERT_FLOW_CONTROL\u0027, N\u0027HADR_SYNC_COMMIT\u0027, N\u0027HADR_GROUP_COMMIT\u0027, N\u0027WAIT_ON_SYNC_STATISTICS_REFRESH\u0027, N\u0027IO_QUEUE_LIMIT\u0027, N\u0027IO_RETRY\u0027, N\u0027RESMGR_THROTTLED\u0027) OR dows.wait_type LIKE N\u0027LCK%\u0027) AND dows.wait_type \u003C\u003E N\u0027SLEEP_TASK\u0027) AS w WHERE w.pct \u003E= 0 ORDER BY w.pct DESC",
+  "rows": [
+    [
+      {
+        "name": "Category",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": false,
+        "value": "Memory"
+      },
+      {
+        "name": "Wait Type",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": false,
+        "value": "SLEEP_BPOOL_STEAL"
+      },
+      {
+        "name": "% of uptime",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": false,
+        "value": "7.23"
+      },
+      {
+        "name": "Avg wait ms",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": false,
+        "value": "16.32"
+      },
+      {
+        "name": "Hours",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": false,
+        "value": "12.16"
+      },
+      {
+        "name": "Verdict",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": false,
+        "value": "Low"
+      }
+    ],
+    [
+      {
+        "name": "Category",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": false,
+        "value": "Parallelism"
+      },
+      {
+        "name": "Wait Type",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": false,
+        "value": "CXCONSUMER"
+      },
+      {
+        "name": "% of uptime",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": false,
+        "value": "5.43"
+      },
+      {
+        "name": "Avg wait ms",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": false,
+        "value": "19.82"
+      },
+      {
+        "name": "Hours",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": false,
+        "value": "9.15"
+      },
+      {
+        "name": "Verdict",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": false,
+        "value": "Low"
+      }
+    ],
+    [
+      {
+        "name": "Category",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": false,
+        "value": "Parallelism"
+      },
+      {
+        "name": "Wait Type",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": false,
+        "value": "CXSYNC_PORT"
+      },
+      {
+        "name": "% of uptime",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": false,
+        "value": "1.60"
+      },
+      {
+        "name": "Avg wait ms",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": false,
+        "value": "53.48"
+      },
+      {
+        "name": "Hours",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": false,
+        "value": "2.69"
+      },
+      {
+        "name": "Verdict",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": false,
+        "value": "Low"
+      }
+    ],
+    [
+      {
+        "name": "Category",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": false,
+        "value": "Locking"
+      },
+      {
+        "name": "Wait Type",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": false,
+        "value": "LCK_M_X"
+      },
+      {
+        "name": "% of uptime",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": false,
+        "value": "0.87"
+      },
+      {
+        "name": "Avg wait ms",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": false,
+        "value": "464.83"
+      },
+      {
+        "name": "Hours",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": false,
+        "value": "1.46"
+      },
+      {
+        "name": "Verdict",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": false,
+        "value": "Medium"
+      }
+    ],
+    [
+      {
+        "name": "Category",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": false,
+        "value": "Transaction Log"
+      },
+      {
+        "name": "Wait Type",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": false,
+        "value": "WRITELOG"
+      },
+      {
+        "name": "% of uptime",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": false,
+        "value": "0.72"
+      },
+      {
+        "name": "Avg wait ms",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": false,
+        "value": "0.91"
+      },
+      {
+        "name": "Hours",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": false,
+        "value": "1.21"
+      },
+      {
+        "name": "Verdict",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": false,
+        "value": "Low"
+      }
+    ],
+    [
+      {
+        "name": "Category",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": false,
+        "value": "Memory"
+      },
+      {
+        "name": "Wait Type",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": false,
+        "value": "CMEMTHREAD"
+      },
+      {
+        "name": "% of uptime",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": false,
+        "value": "0.46"
+      },
+      {
+        "name": "Avg wait ms",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": false,
+        "value": "89.84"
+      },
+      {
+        "name": "Hours",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": false,
+        "value": "0.78"
+      },
+      {
+        "name": "Verdict",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": false,
+        "value": "Low"
+      }
+    ],
+    [
+      {
+        "name": "Category",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": false,
+        "value": "I/O"
+      },
+      {
+        "name": "Wait Type",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": false,
+        "value": "PAGEIOLATCH_SH"
+      },
+      {
+        "name": "% of uptime",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": false,
+        "value": "0.42"
+      },
+      {
+        "name": "Avg wait ms",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": false,
+        "value": "0.77"
+      },
+      {
+        "name": "Hours",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": false,
+        "value": "0.70"
+      },
+      {
+        "name": "Verdict",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": false,
+        "value": "Low"
+      }
+    ],
+    [
+      {
+        "name": "Category",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": false,
+        "value": "Parallelism"
+      },
+      {
+        "name": "Wait Type",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": false,
+        "value": "CXSYNC_CONSUMER"
+      },
+      {
+        "name": "% of uptime",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": false,
+        "value": "0.20"
+      },
+      {
+        "name": "Avg wait ms",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": false,
+        "value": "14.95"
+      },
+      {
+        "name": "Hours",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": false,
+        "value": "0.34"
+      },
+      {
+        "name": "Verdict",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": false,
+        "value": "Low"
+      }
+    ],
+    [
+      {
+        "name": "Category",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": false,
+        "value": "Statistics"
+      },
+      {
+        "name": "Wait Type",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": false,
+        "value": "WAIT_ON_SYNC_STATISTICS_REFRESH"
+      },
+      {
+        "name": "% of uptime",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": false,
+        "value": "0.20"
+      },
+      {
+        "name": "Avg wait ms",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": false,
+        "value": "133.34"
+      },
+      {
+        "name": "Hours",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": false,
+        "value": "0.33"
+      },
+      {
+        "name": "Verdict",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": false,
+        "value": "Low"
+      }
+    ],
+    [
+      {
+        "name": "Category",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": false,
+        "value": "I/O"
+      },
+      {
+        "name": "Wait Type",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": false,
+        "value": "PAGEIOLATCH_EX"
+      },
+      {
+        "name": "% of uptime",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": false,
+        "value": "0.13"
+      },
+      {
+        "name": "Avg wait ms",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": false,
+        "value": "0.56"
+      },
+      {
+        "name": "Hours",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": false,
+        "value": "0.22"
+      },
+      {
+        "name": "Verdict",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": false,
+        "value": "Low"
+      }
+    ]
+  ]
+}

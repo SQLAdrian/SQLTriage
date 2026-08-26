@@ -1,0 +1,88 @@
+/* Bottom-right discreet status badges (mute, no-pants, etc.). */
+/* IMPORTANT: rules below MUST be scoped to the .status-badge--mute /
+   .status-badge--nopants modifier classes. Plain .status-badge is used as
+   a generic inline chip across ~15 pages (Servers, QuickCheck, ComplianceMap,
+   etc.) — applying position:fixed to it yanks every per-row chip out of its
+   container and pins it to the viewport. */
+
+.status-badge--mute,
+.status-badge--nopants {
+    position: fixed;
+    right: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 28px;
+    padding: 0 10px;
+    box-sizing: border-box;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    line-height: 1;
+    cursor: default;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    z-index: 9998;
+    transition: background 120ms, border-color 120ms, color 120ms;
+}
+
+.status-badge--mute i,
+.status-badge--mute svg,
+.status-badge--nopants i,
+.status-badge--nopants svg {
+    font-size: 12px;
+    flex-shrink: 0;
+    display: block;
+}
+
+.status-badge--mute .status-badge-count,
+.status-badge--nopants .status-badge-count {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* Stack order from bottom up — bottom slot first, then 36px gap (28 height + 8 gap). */
+.status-badge--nopants { bottom: 16px; }
+.status-badge--mute    { bottom: 52px; }
+/* Reserve a third slot for future badges: bottom: 88px */
+
+/* Mute badge — clickable to unmute */
+.status-badge--mute {
+    cursor: pointer;
+    border-color: var(--orange);
+    color: var(--orange);
+    background: rgba(255, 140, 0, 0.08);
+}
+
+.status-badge--mute:hover {
+    background: rgba(255, 140, 0, 0.18);
+    color: var(--text-primary);
+}
+
+.status-badge--mute .status-badge-count {
+    color: var(--orange);
+}
+
+/* No-Pants badge — informational only */
+.status-badge--nopants {
+    border-color: rgba(225, 29, 72, 0.4);
+    color: #f87171;
+    background: rgba(225, 29, 72, 0.08);
+}
+
+/* Hide corner badges when generating PDFs (CoreWebView2.PrintToPdfAsync
+ * honours @media print). Without this, the No-Pants chip + mute chip render
+ * on every page of the exported PDF since they use position:fixed.
+ * Scoped to the corner modifier classes only — plain .status-badge is used
+ * as an inline chip on many pages and must remain visible in print. */
+@media print {
+    .status-badge--mute,
+    .status-badge--nopants,
+    .health-badge,
+    .ratelimit-badge,
+    .server-mode-toggle {
+        display: none !important;
+    }
+}

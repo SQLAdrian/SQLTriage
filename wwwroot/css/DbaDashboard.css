@@ -1,0 +1,333 @@
+/* In the name of God, the Merciful, the Compassionate */
+/* DBA Dashboard — Tech-lens landing surface: raw numbers, T-SQL visible, no medals. */
+
+.dba-container {
+    padding: 24px;
+    max-width: 1280px;
+    margin: 0 auto;
+    font-family: var(--font-sans);
+    color: var(--text-primary);
+}
+
+/* ── Empty state ── */
+.dba-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 400px;
+    gap: 16px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 48px;
+}
+
+.dba-empty-icon { font-size: 48px; color: var(--text-secondary); }
+.dba-empty-title { color: var(--text-primary); margin: 0; }
+.dba-empty-text { color: var(--text-secondary); margin: 0; }
+
+.dba-empty-link {
+    margin-top: 8px;
+    padding: 10px 24px;
+    background: var(--accent);
+    color: white;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+/* ── Header ── */
+.dba-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.dba-header-title {
+    margin: 0;
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.dba-header-subtitle {
+    margin: 4px 0 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.dba-quick-links {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.dba-link-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.dba-link-btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent);
+}
+
+/* ── Section shell ── */
+.dba-section {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+}
+
+.dba-section-title {
+    margin: 0 0 14px;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.dba-no-data {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+/* ── Summary strip ── */
+.dba-summary-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 28px;
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+}
+
+.dba-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.dba-stat-value {
+    font-size: 22px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+    line-height: 1;
+}
+
+.dba-stat-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.dba-num-pass { color: var(--green); }
+.dba-num-fail { color: var(--red); }
+
+/* ── Summary table ── */
+.dba-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+}
+
+.dba-table th {
+    text-align: left;
+    padding: 6px 10px;
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid var(--border);
+}
+
+.dba-table td {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+}
+
+/* ── Per-server health grid ── */
+.dba-server-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 16px;
+}
+
+.dba-server-card {
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+}
+
+.dba-server-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.dba-server-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.dba-conn-badge {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 2px 8px;
+    border-radius: 10px;
+}
+
+.dba-conn-online   { background: rgba(52, 209, 122, 0.15); color: var(--green); }
+.dba-conn-offline  { background: rgba(224, 86, 74, 0.15); color: var(--red); }
+.dba-conn-unknown  { background: var(--bg-secondary); color: var(--text-muted); }
+
+.dba-quick-stats {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px 12px;
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+}
+
+.dba-quick-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.dba-quick-stat-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.dba-quick-stat-value {
+    font-size: 13px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+}
+
+.dba-dims {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.dba-dim {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    cursor: help;
+}
+
+.dba-dim-label { color: var(--text-secondary); }
+.dba-dim-value { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text-primary); }
+
+/* An unmeasured dimension now renders rather than vanishing from the card (2026-08-05).
+   Muted so the eye still lands on the measured rows first, and never coloured by band —
+   there is no band, because there is no measurement. */
+.dba-dim-unmeasured .dba-dim-label,
+.dba-dim-unmeasured .dba-dim-value { color: var(--text-muted); font-weight: 500; }
+
+/* ── Findings — T-SQL visible by default ── */
+.dba-findings-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.dba-finding {
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 16px;
+}
+
+.dba-finding-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+}
+
+.dba-finding-sev {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 2px 8px;
+    border-radius: 10px;
+}
+
+.dba-sev-critical, .dba-sev-error { background: rgba(224, 86, 74, 0.15); color: var(--red); }
+.dba-sev-high      { background: rgba(245, 158, 11, 0.15); color: var(--orange); }
+.dba-sev-medium, .dba-sev-warning { background: rgba(251, 191, 36, 0.15); color: var(--yellow); }
+.dba-sev-low       { background: rgba(52, 209, 122, 0.15); color: var(--green); }
+
+.dba-finding-name {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
+.dba-finding-id {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: monospace;
+}
+
+.dba-finding-server {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.dba-finding-sql {
+    font-size: 12px;
+    font-family: monospace;
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: 4px;
+    padding: 8px 12px;
+    overflow-x: auto;
+    color: var(--text-secondary);
+}
+
+.dba-finding-sql pre,
+.dba-finding-sql code {
+    white-space: pre-wrap;
+    word-break: break-word;
+}

@@ -1,0 +1,128 @@
+/* In the name of God, the Merciful, the Compassionate */
+/* Query Plan V2 operator icons — individual PNGs from vscode-mssql */
+/* Toggle: set USE_V2_ICONS = true in queryPlanV2.js                */
+
+[class^="qp-icon2-"],
+[class*=" qp-icon2-"] {
+    display: inline-block;
+    width: 32px;
+    height: 32px;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+}
+
+.qp-icon2-AdaptiveJoin         { background-image: url('qp_icons_v2/adaptive_join.png'); }
+.qp-icon2-Aggregate            { background-image: url('qp_icons_v2/aggregate.png'); }
+.qp-icon2-Apply                { background-image: url('qp_icons_v2/apply.png'); }
+.qp-icon2-ArithmeticExpression { background-image: url('qp_icons_v2/arithmetic_expression.png'); }
+.qp-icon2-Assert               { background-image: url('qp_icons_v2/assert.png'); }
+.qp-icon2-Assign               { background-image: url('qp_icons_v2/assign.png'); }
+.qp-icon2-BatchHashTableBuild  { background-image: url('qp_icons_v2/batch_hash_table_build.png'); }
+.qp-icon2-Bitmap               { background-image: url('qp_icons_v2/bitmap.png'); }
+.qp-icon2-BookmarkLookup       { background-image: url('qp_icons_v2/bookmark_lookup.png'); }
+.qp-icon2-Broadcast            { background-image: url('qp_icons_v2/broadcast.png'); }
+.qp-icon2-ClusteredIndexDelete { background-image: url('qp_icons_v2/clustered_index_delete.png'); }
+.qp-icon2-ClusteredIndexInsert { background-image: url('qp_icons_v2/clustered_index_insert.png'); }
+.qp-icon2-ClusteredIndexMerge  { background-image: url('qp_icons_v2/clustered_index_merge.png'); }
+.qp-icon2-ClusteredIndexScan   { background-image: url('qp_icons_v2/clustered_index_scan.png'); }
+.qp-icon2-ClusteredIndexSeek   { background-image: url('qp_icons_v2/clustered_index_seek.png'); }
+.qp-icon2-ClusteredIndexUpdate { background-image: url('qp_icons_v2/clustered_index_update.png'); }
+.qp-icon2-ClusteredUpdate      { background-image: url('qp_icons_v2/clustered_update.png'); }
+.qp-icon2-Collapse             { background-image: url('qp_icons_v2/collapse.png'); }
+.qp-icon2-ColumnstoreIndexDelete { background-image: url('qp_icons_v2/columnstore_index_delete.png'); }
+.qp-icon2-ColumnstoreIndexInsert { background-image: url('qp_icons_v2/columnstore_index_insert.png'); }
+.qp-icon2-ColumnstoreIndexMerge  { background-image: url('qp_icons_v2/columnstore_index_merge.png'); }
+.qp-icon2-ColumnstoreIndexScan   { background-image: url('qp_icons_v2/columnstore_index_scan.png'); }
+.qp-icon2-ColumnstoreIndexUpdate { background-image: url('qp_icons_v2/columnstore_index_update.png'); }
+.qp-icon2-ComputeScalar        { background-image: url('qp_icons_v2/compute_scalar.png'); }
+.qp-icon2-ComputeToControlNode { background-image: url('qp_icons_v2/compute_to_control_node.png'); }
+.qp-icon2-Concatenation        { background-image: url('qp_icons_v2/concatenation.png'); }
+.qp-icon2-ConstTableGet        { background-image: url('qp_icons_v2/const_table_get.png'); }
+.qp-icon2-ConstantScan         { background-image: url('qp_icons_v2/constant_scan.png'); }
+.qp-icon2-ControlToComputeNodes { background-image: url('qp_icons_v2/control_to_compute_nodes.png'); }
+.qp-icon2-Convert              { background-image: url('qp_icons_v2/convert.png'); }
+.qp-icon2-CursorCatchAll       { background-image: url('qp_icons_v2/cursor_catch_all.png'); }
+.qp-icon2-Declare              { background-image: url('qp_icons_v2/declare.png'); }
+.qp-icon2-Delete               { background-image: url('qp_icons_v2/delete.png'); }
+.qp-icon2-DeletedScan          { background-image: url('qp_icons_v2/deleted_scan.png'); }
+.qp-icon2-Dynamic              { background-image: url('qp_icons_v2/dynamic.png'); }
+.qp-icon2-ExternalBroadcast    { background-image: url('qp_icons_v2/external_broadcast.png'); }
+.qp-icon2-ExternalExport       { background-image: url('qp_icons_v2/external_export.png'); }
+.qp-icon2-ExternalLocalStreaming { background-image: url('qp_icons_v2/external_local_streaming.png'); }
+.qp-icon2-ExternalRoundRobin   { background-image: url('qp_icons_v2/external_round_robin.png'); }
+.qp-icon2-ExternalShuffle      { background-image: url('qp_icons_v2/external_shuffle.png'); }
+.qp-icon2-FetchQuery           { background-image: url('qp_icons_v2/fetch_query.png'); }
+.qp-icon2-Filter               { background-image: url('qp_icons_v2/filter.png'); }
+.qp-icon2-ForeignKeyReferencesCheck { background-image: url('qp_icons_v2/foreign_key_references_check.png'); }
+.qp-icon2-Get                  { background-image: url('qp_icons_v2/get.png'); }
+.qp-icon2-GroupByAggregate     { background-image: url('qp_icons_v2/group_by_aggregate.png'); }
+.qp-icon2-HashMatch            { background-image: url('qp_icons_v2/hash_match.png'); }
+.qp-icon2-HashMatchRoot        { background-image: url('qp_icons_v2/hash_match_root.png'); }
+.qp-icon2-HashMatchTeam        { background-image: url('qp_icons_v2/hash_match_team.png'); }
+.qp-icon2-If                   { background-image: url('qp_icons_v2/if.png'); }
+.qp-icon2-IndexDelete          { background-image: url('qp_icons_v2/index_delete.png'); }
+.qp-icon2-IndexInsert          { background-image: url('qp_icons_v2/index_insert.png'); }
+.qp-icon2-IndexScan            { background-image: url('qp_icons_v2/index_scan.png'); }
+.qp-icon2-IndexSeek            { background-image: url('qp_icons_v2/index_seek.png'); }
+.qp-icon2-IndexSpool           { background-image: url('qp_icons_v2/index_spool.png'); }
+.qp-icon2-IndexUpdate          { background-image: url('qp_icons_v2/index_update.png'); }
+.qp-icon2-Insert               { background-image: url('qp_icons_v2/insert.png'); }
+.qp-icon2-InsertedScan         { background-image: url('qp_icons_v2/inserted_scan.png'); }
+.qp-icon2-Intrinsic            { background-image: url('qp_icons_v2/intrinsic.png'); }
+.qp-icon2-IteratorCatchAll     { background-image: url('qp_icons_v2/iterator_catch_all.png'); }
+.qp-icon2-Join                 { background-image: url('qp_icons_v2/join.png'); }
+.qp-icon2-Keyset               { background-image: url('qp_icons_v2/keyset.png'); }
+.qp-icon2-LanguageConstructCatchAll { background-image: url('qp_icons_v2/language_construct_catch_all.png'); }
+.qp-icon2-Locate               { background-image: url('qp_icons_v2/locate.png'); }
+.qp-icon2-LogRowScan           { background-image: url('qp_icons_v2/log_row_scan.png'); }
+.qp-icon2-MergeInterval        { background-image: url('qp_icons_v2/merge_interval.png'); }
+.qp-icon2-MergeJoin            { background-image: url('qp_icons_v2/merge_join.png'); }
+.qp-icon2-NestedLoops          { background-image: url('qp_icons_v2/nested_loops.png'); }
+.qp-icon2-Parallelism          { background-image: url('qp_icons_v2/parallelism.png'); }
+.qp-icon2-ParameterTableScan   { background-image: url('qp_icons_v2/parameter_table_scan.png'); }
+.qp-icon2-PopulationQuery      { background-image: url('qp_icons_v2/population_query.png'); }
+.qp-icon2-Predict              { background-image: url('qp_icons_v2/predict.png'); }
+.qp-icon2-Print                { background-image: url('qp_icons_v2/print.png'); }
+.qp-icon2-Project              { background-image: url('qp_icons_v2/project.png'); }
+.qp-icon2-Rank                 { background-image: url('qp_icons_v2/rank.png'); }
+.qp-icon2-RefreshQuery         { background-image: url('qp_icons_v2/refresh_query.png'); }
+.qp-icon2-RemoteDelete         { background-image: url('qp_icons_v2/remote_delete.png'); }
+.qp-icon2-RemoteIndexScan      { background-image: url('qp_icons_v2/remote_index_scan.png'); }
+.qp-icon2-RemoteIndexSeek      { background-image: url('qp_icons_v2/remote_index_seek.png'); }
+.qp-icon2-RemoteInsert         { background-image: url('qp_icons_v2/remote_insert.png'); }
+.qp-icon2-RemoteQuery          { background-image: url('qp_icons_v2/remote_query.png'); }
+.qp-icon2-RemoteScan           { background-image: url('qp_icons_v2/remote_scan.png'); }
+.qp-icon2-RemoteUpdate         { background-image: url('qp_icons_v2/remote_update.png'); }
+.qp-icon2-Result               { background-image: url('qp_icons_v2/result.png'); }
+.qp-icon2-RIDLookup            { background-image: url('qp_icons_v2/rid_lookup.png'); }
+.qp-icon2-RowCountSpool        { background-image: url('qp_icons_v2/row_count_spool.png'); }
+.qp-icon2-Segment              { background-image: url('qp_icons_v2/segment.png'); }
+.qp-icon2-Sequence             { background-image: url('qp_icons_v2/sequence.png'); }
+.qp-icon2-SequenceProject      { background-image: url('qp_icons_v2/sequence_project.png'); }
+.qp-icon2-SetFunction          { background-image: url('qp_icons_v2/set_function.png'); }
+.qp-icon2-Shuffle              { background-image: url('qp_icons_v2/shuffle.png'); }
+.qp-icon2-SingleSourceRoundRobin { background-image: url('qp_icons_v2/single_source_round_robin.png'); }
+.qp-icon2-SingleSourceShuffle  { background-image: url('qp_icons_v2/single_source_shuffle.png'); }
+.qp-icon2-Snapshot             { background-image: url('qp_icons_v2/snapshot.png'); }
+.qp-icon2-Sort                 { background-image: url('qp_icons_v2/sort.png'); }
+.qp-icon2-Split                { background-image: url('qp_icons_v2/split.png'); }
+.qp-icon2-Spool                { background-image: url('qp_icons_v2/spool.png'); }
+.qp-icon2-SQL                  { background-image: url('qp_icons_v2/sql.png'); }
+.qp-icon2-StreamAggregate      { background-image: url('qp_icons_v2/stream_aggregate.png'); }
+.qp-icon2-Switch               { background-image: url('qp_icons_v2/switch.png'); }
+.qp-icon2-TableDelete          { background-image: url('qp_icons_v2/table_delete.png'); }
+.qp-icon2-TableInsert          { background-image: url('qp_icons_v2/table_insert.png'); }
+.qp-icon2-TableMerge           { background-image: url('qp_icons_v2/table_merge.png'); }
+.qp-icon2-TableScan            { background-image: url('qp_icons_v2/table_scan.png'); }
+.qp-icon2-TableSpool           { background-image: url('qp_icons_v2/table_spool.png'); }
+.qp-icon2-TableUpdate          { background-image: url('qp_icons_v2/table_update.png'); }
+.qp-icon2-TableValuedFunction  { background-image: url('qp_icons_v2/table_valued_function.png'); }
+.qp-icon2-Top                  { background-image: url('qp_icons_v2/top.png'); }
+.qp-icon2-Trim                 { background-image: url('qp_icons_v2/trim.png'); }
+.qp-icon2-UDX                  { background-image: url('qp_icons_v2/udx.png'); }
+.qp-icon2-Union                { background-image: url('qp_icons_v2/union.png'); }
+.qp-icon2-UnionAll             { background-image: url('qp_icons_v2/union_all.png'); }
+.qp-icon2-Update               { background-image: url('qp_icons_v2/update.png'); }
+.qp-icon2-WindowAggregate      { background-image: url('qp_icons_v2/window_aggregate.png'); }
+.qp-icon2-KeyLookup            { background-image: url('qp_icons_v2/bookmark_lookup.png'); }

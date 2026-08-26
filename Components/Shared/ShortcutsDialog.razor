@@ -1,0 +1,92 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+
+@if (IsVisible)
+{
+    <div class="modal-backdrop" @onclick="Close"></div>
+    <div class="modal-dialog shortcuts-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fa-solid fa-keyboard"></i> Keyboard Shortcuts</h3>
+                <button class="modal-close" @onclick="Close" aria-label="Close">×</button>
+            </div>
+            <div class="modal-body">
+
+                <div class="shortcuts-section">
+                    <h4>Active Page</h4>
+                    <div class="shortcut-item">
+                        <kbd>Ctrl</kbd><kbd>R</kbd>
+                        <span>Run / Scan (Audit Assessment, Vulnerability Assessment)</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>Ctrl</kbd><kbd>P</kbd>
+                        <span>Export PDF (Audit Assessment, VA, Diagnostics Roadmap)</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>Ctrl</kbd><kbd>E</kbd>
+                        <span>Export CSV (Vulnerability Assessment, Diagnostics Roadmap)</span>
+                    </div>
+                </div>
+
+                <div class="shortcuts-section">
+                    <h4>Navigation</h4>
+                    <div class="shortcut-item">
+                        <kbd>Ctrl</kbd><kbd>1</kbd>
+                        <span>Dashboard</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>Ctrl</kbd><kbd>2</kbd>
+                        <span>Instance Overview</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>Ctrl</kbd><kbd>3</kbd> / <kbd>Ctrl</kbd><kbd>Q</kbd>
+                        <span>Audit Assessment</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>Ctrl</kbd><kbd>4</kbd>
+                        <span>Full Audit</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>Ctrl</kbd><kbd>5</kbd> / <kbd>Ctrl</kbd><kbd>H</kbd>
+                        <span>Health Monitor</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>Ctrl</kbd><kbd>6</kbd>
+                        <span>Settings</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>Ctrl</kbd><kbd>7</kbd>
+                        <span>Dashboard Editor</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>Ctrl</kbd><kbd>8</kbd>
+                        <span>Server Management</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>Ctrl</kbd><kbd>9</kbd>
+                        <span>Bulk Edit Checks</span>
+                    </div>
+                </div>
+
+                <div class="shortcuts-section">
+                    <h4>General</h4>
+                    <div class="shortcut-item">
+                        <kbd>?</kbd>
+                        <span>Show this dialog</span>
+                    </div>
+                    <div class="shortcut-item">
+                        <kbd>Esc</kbd>
+                        <span>Close dialog</span>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private void Close() => OnClose.InvokeAsync();
+}

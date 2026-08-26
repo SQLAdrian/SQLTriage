@@ -1,0 +1,42 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using SQLTriage.Data
+<div class="bargauge-item">
+    <div class="bargauge-label">@Label</div>
+    <div class="bargauge-track">
+        <div class="bargauge-fill"
+             style="width: @(Percentage)%; background-color: @ThresholdConfig.GetColor(ThresholdKey, Value);">
+        </div>
+    </div>
+    <div class="bargauge-value" style="color: @ThresholdConfig.GetColor(ThresholdKey, Value);">
+        @FormatValue()@UnitSuffix
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public double Value { get; set; }
+    [Parameter] public double Min { get; set; } = 0;
+    [Parameter] public double Max { get; set; } = 100;
+    [Parameter] public string ThresholdKey { get; set; } = "";
+    [Parameter] public string UnitSuffix { get; set; } = "%";
+    /// <summary>Value format string (e.g., N0, P2, 0.## GB)</summary>
+    [Parameter] public string ValueFormat { get; set; } = "";
+
+    private double Percentage => Max > Min ? Math.Min(100, Math.Max(0, (Value - Min) / (Max - Min) * 100)) : 0;
+
+    private string FormatValue()
+    {
+        if (!string.IsNullOrEmpty(ValueFormat))
+        {
+            try
+            {
+                return Value.ToString(ValueFormat);
+            }
+            catch
+            {
+                // Fall back to default
+            }
+        }
+        return Value.ToString("F1");
+    }
+}

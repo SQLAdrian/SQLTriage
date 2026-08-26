@@ -1,0 +1,449 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/governance"
+@using SQLTriage.Components.Shared
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@using static SQLTriage.Data.Services.GovernanceService
+@using Microsoft.Data.SqlClient
+@using System.Data
+@inject IGovernanceService GovernanceService
+@inject IFindingTranslator FindingTranslator
+@inject CheckExecutionService CheckExecutor
+@inject CheckRepositoryService CheckRepo
+@inject IQuickCheckRunner QuickCheckRunner
+@inject ServerConnectionManager ConnectionManager
+@inject NavigationManager Navigation
+@inject ToastService Toast
+@inject IPrintService PrintService
+@inject IJSRuntime JS
+@inject SQLTriage.Data.Services.AppUserState UserState
+
+<PageTitle>Governance - SQLTriage</PageTitle>
+
+<div class="governance-container @(_dataGridMode ? "data-grid-mode" : "")">
+    <div class="governance-header">
+        <h1>SQL Server Governance</h1>
+        <p>Health assessment and compliance overview</p>
+    </div>
+
+    <!-- Indicative Check Banner -->
+    @if (_isIndicative)
+    {
+        <div class="indicative-banner">
+            <i class="fa-solid fa-info-circle"></i>
+            <span>This is an <strong>indicative assessment</strong> from the Audit Assessment (≤60 seconds). Run a full Vulnerability Assessment for complete governance scoring.</span>
+        </div>
+    }
+
+    <!-- Status Overview -->
+    @if (_governanceScore != null)
+    {
+        // #48 (2026-07-15 fix): Total Checks / Passed / Failed used to sit side by side without
+        // reconciling — Passed+Failed is the SCORED subset (GovernanceService.IsScorable excludes
+        // informational/skipped and errored checks), not the Total. Same math CioDashboard's
+        // governance strip already discloses; named here too so the card explains its own numbers
+        // instead of leaving readers to notice 1095+254 != 1725 on their own.
+        var scoredEvaluated = _governanceScore.PassedFindings + _governanceScore.FailedFindings;
+        var scoredExcluded = _governanceScore.TotalFindings - scoredEvaluated;
+        var scoredErrored = _governanceScore.ErroredFindings;
+        // #48 residual (2026-07-15 fix): scoredExcluded already INCLUDES the errored checks
+        // (GovernanceService.IsSkip treats ErrorMessage != null as skip), so appending
+        // "· N error(s)" after the raw scoredExcluded double-counted them and the caption
+        // summed to one more than TotalFindings. Subtract scoredErrored from the
+        // informational/skipped count so the two figures are disjoint and the sentence foots.
+        // 2026-07-21 (persona board, FIX 2): this was the ONLY surface in the app that disclosed
+        // the exclusion at all — and even here the word "partial" never appeared, so the 45 WARN
+        // results sat anonymously inside "informational/skipped". Partial is now itemised, on the
+        // same disjoint-decomposition rule used above: the three sub-counts still sum to
+        // scoredExcluded, so the sentence foots exactly as it did before.
+        var scoredPartial = _governanceScore.PartialFindings;
+        var scoredExcludedPlain = scoredExcluded - scoredErrored - scoredPartial;
+        var scoredExcludedLabel = scoredExcluded > 0
+            ? string.Join(" · ", new[]
+                {
+                    scoredExcludedPlain > 0 ? $"{scoredExcludedPlain} informational/skipped" : null,
+                    scoredPartial       > 0 ? $"{scoredPartial} partial (ran, could not fully assess)" : null,
+                    scoredErrored       > 0 ? $"{scoredErrored} error{(scoredErrored == 1 ? "" : "s")}" : null,
+                }.Where(s => s != null))
+            : "";
+        <div class="score-overview card-glass" style="display:flex; flex-direction:row; justify-content:space-between; align-items:center; padding:20px 30px; gap:24px; margin-bottom: @(string.IsNullOrEmpty(scoredExcludedLabel) ? "24px" : "8px");">
+            <div style="display:flex; align-items:center; gap:32px;">
+                <div style="display:flex; flex-direction:column;">
+                    <span style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; font-weight:600; margin-bottom:4px;">Governance Score</span>
+                    <div style="display:flex; align-items:baseline; gap:12px;">
+                        <span style="font-size:48px; font-weight:800; color:var(--text-primary); line-height:1; font-family:var(--font-display, inherit);">@_governanceScore.Overall.ToString("F0")</span>
+                        <span style="font-size:16px; color:var(--text-secondary); font-weight:600;">@_governanceScore.Band</span>
+                    </div>
+                </div>
+                @if (_isIndicative)
+                {
+                    <div style="background:var(--accent); color:#000; font-weight:800; padding:4px 10px; border-radius:4px; font-size:12px; letter-spacing:1px;">
+                        INDICATIVE
+                    </div>
+                }
+            </div>
+
+            <div style="display:flex; gap:40px; border-left:1px solid var(--border); padding-left:40px;">
+                <div style="display:flex; flex-direction:column; align-items:flex-start;">
+                    <span style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; font-weight:600; margin-bottom:4px;">Total Checks</span>
+                    <span style="font-size:28px; font-weight:600; color:var(--text-primary); font-family:var(--font-display, inherit);">@_governanceScore.TotalFindings</span>
+                </div>
+                <div style="display:flex; flex-direction:column; align-items:flex-start;">
+                    <span style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; font-weight:600; margin-bottom:4px;">Passed <span style="opacity:.7; font-weight:400; text-transform:none; letter-spacing:normal;">of @scoredEvaluated scored</span></span>
+                    <span style="font-size:28px; font-weight:600; color:var(--green); font-family:var(--font-display, inherit);">@_governanceScore.PassedFindings</span>
+                </div>
+                <div style="display:flex; flex-direction:column; align-items:flex-start;">
+                    <span style="font-size:12px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; font-weight:600; margin-bottom:4px;">Failed <span style="opacity:.7; font-weight:400; text-transform:none; letter-spacing:normal;">of @scoredEvaluated scored</span></span>
+                    <span style="font-size:28px; font-weight:600; color:var(--red); font-family:var(--font-display, inherit);">@_governanceScore.FailedFindings</span>
+                </div>
+            </div>
+        </div>
+        @if (!string.IsNullOrEmpty(scoredExcludedLabel))
+        {
+            <p style="margin:0 0 24px; padding-left:4px; font-size:0.82em; color:var(--text-muted);">
+                Passed + Failed reflect the <strong>@scoredEvaluated scored</strong> checks out of @_governanceScore.TotalFindings total — excludes @scoredExcludedLabel (neither pass nor fail).
+            </p>
+        }
+    }
+    else
+    {
+        <PageLoadingSpinner Message="Computing governance score..." />
+    }
+
+    <!-- Compliance Timeline (Phase 5) — bound to the FULL result set (Wave 2, 2026-07-12
+         fix) so each framework card's Passed/Failed reflects reality. Previously bound to
+         _findings (failures-only), so Passed was structurally always 0.
+         GovernanceTimeline itself now filters to the scorable subset (excludes Informational
+         and Skipped checks) before counting Passed/Failed, so its cards sum to the SAME
+         evaluated total as the header above instead of a second, irreconcilable total over
+         all 1725 results (Wave 2, 2026-07-12 fix — see GovernanceService.IsScorable). -->
+    @if (_allResults.Any())
+    {
+        <div class="timeline-section">
+            <h3 style="margin-bottom: 0;">Compliance Maturity Framework</h3>
+            <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 0;">Mapping of ruleset gaps against standard compliance controls, scored on evaluated checks (excludes informational/skipped).</p>
+            <SQLTriage.Components.Shared.GovernanceTimeline Findings="_allResults" />
+        </div>
+    }
+
+    <!-- Findings — two voices per finding (DBA + governance) -->
+    @if (_translations.Any())
+    {
+        <div class="findings-section">
+            <h3>Key Findings — DBA &amp; governance views</h3>
+            <div class="findings-list">
+                @for (var i = 0; i < _translations.Count; i++)
+                {
+                    var t = _translations[i];
+                    var sev = i < _findings.Count ? _findings[i].Severity : "";
+                    // #47 (2026-07-15 fix): check titles are written as the desired state (e.g.
+                    // "... Is Captured by an Enabled Audit Specification") — a bare title next to
+                    // a CRITICAL severity badge read as an assertion the control IS in place. The
+                    // headline is now the actual problem; the check's own title survives as a
+                    // small caption below it, never as the primary statement.
+                    var headline = i < _findings.Count ? FindingPresentation.ProblemStatement(_findings[i]) : t.CheckName;
+                    <div class="finding-item severity-@sev.ToLowerInvariant()">
+                        <div class="finding-header">
+                            <span class="finding-title">@headline</span>
+                            <span class="finding-severity">@sev</span>
+                        </div>
+                        <div class="finding-check-name" style="font-size:0.8em; opacity:0.6; margin:-4px 0 8px;">@t.CheckName</div>
+                        <div class="finding-voices">
+                            <div class="finding-voice finding-voice-dba">
+                                <h4><i class="fa-solid fa-terminal"></i> DBA view</h4>
+                                <div class="finding-description">@((MarkupString)Markdig.Markdown.ToHtml(t.Dba.TechnicalDetails ?? ""))</div>
+                                @if (!string.IsNullOrWhiteSpace(t.Dba.TSqlRemediation))
+                                {
+                                    <div class="voice-tsql" style="margin-top: 12px;">
+                                        @((MarkupString)Markdig.Markdown.ToHtml(
+                                            t.Dba.TSqlRemediation.Contains("```") 
+                                            ? t.Dba.TSqlRemediation 
+                                            : "```sql\n" + t.Dba.TSqlRemediation + "\n```"
+                                        ))
+                                    </div>
+                                }
+                            </div>
+                            <div class="finding-voice finding-voice-gov">
+                                <h4 style="margin-top: 24px;"><i class="fa-solid fa-building-columns"></i> Governance view</h4>
+                                <div class="finding-description">@((MarkupString)Markdig.Markdown.ToHtml(t.Executive.PlainLanguageSummary ?? ""))</div>
+                                <div class="finding-action"><strong>Risk:</strong> @t.Executive.BusinessRisk</div>
+                                <div class="finding-action"><strong>Controls:</strong> @t.Executive.ComplianceControls</div>
+                                <div class="finding-action"><strong>Recommended:</strong> @t.Executive.RecommendedAction</div>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    <!-- Actions (Wave 2, 2026-07-12: moved below Key Findings so the page reads
+         score overview → framework cards → key findings → actions). -->
+    <div class="action-buttons">
+        <button class="btn @(_dataGridMode ? "btn-primary" : "btn-secondary")" @onclick="() => _dataGridMode = !_dataGridMode">
+            <i class="fa-solid fa-table"></i> Data Grid
+        </button>
+        @* PERMISSIONS, per ACTION rather than per page — see the MayXxx block in @code below for
+           why this page is gated at the handlers and not at the render. *@
+        @if (_isIndicative && MayRunScripts)
+        {
+            <button class="btn btn-primary" @onclick="RunFullAssessment">
+                <i class="fa-solid fa-search"></i> Run Full Vulnerability Assessment
+            </button>
+        }
+        @if (MayExport)
+        {
+            <button class="btn btn-secondary" @onclick="ExportPdf">
+                <i class="fa-solid fa-file-pdf"></i> Export PDF
+            </button>
+        }
+        @if (MayRunChecks)
+        {
+            <button class="btn btn-secondary" @onclick="RunQuickCheck">
+                <i class="fa-solid fa-refresh"></i> Re-run Audit Assessment
+            </button>
+        }
+        @if (BuildModules.DevTools)
+        {
+            <button class="btn btn-info" @onclick="NavigateToValidator">
+                <i class="fa-solid fa-external-link"></i> Open Check Validator
+            </button>
+        }
+    </div>
+
+    <!-- Loading State -->
+    @if (_loading)
+    {
+        <LoadingSpinner Message="@_loadingMessage" />
+    }
+</div>
+
+<!-- Styles extracted to wwwroot/css/Governance.css 2026-05-11 (CLAUDE.md convention).
+     Imported via app.css @import "Governance.css". -->
+
+@code {
+    private bool _dataGridMode = false;
+    private bool _isIndicative = false;
+    private GovernanceScore? _governanceScore;
+    // Full result set (pass + fail) — feeds the framework cards' real Passed/Failed counts.
+    // _findings (below) stays failures-only for the Key Findings list.
+    private List<CheckResult> _allResults = new();
+    private List<CheckResult> _findings = new();
+    private List<FindingTranslation> _translations = new();
+    private bool _loading = false;
+    private string _loadingMessage = "";
+    // Count of currently-enabled checks — the honest denominator for full-vs-indicative
+    // below (never a hardcoded count).
+    private int _enabledCheckTotal;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _loading = true;
+        _loadingMessage = "Loading governance data...";
+
+        try
+        {
+            // Real data: the last in-memory check results across every connected server
+            // (the same source the CIO dashboard scores from). With no scan yet, ComputeIndicative
+            // returns a 0/Emerging score and the Key Findings section stays hidden — the action
+            // buttons prompt the user to run an assessment.
+            var results = new List<CheckResult>();
+            foreach (var conn in ConnectionManager.GetEnabledConnections())
+            {
+                foreach (var server in conn.GetServerList())
+                {
+                    try
+                    {
+                        // int.MaxValue: must cover every result — a fixed 500 cap silently
+                        // truncated larger estates (same bug/fix as the CioDashboard
+                        // GetResults(server, int.MaxValue) call, ruled 2026-07-08).
+                        var rs = CheckExecutor.GetResults(server, int.MaxValue);
+                        if (rs.Count > 0) results.AddRange(rs);
+                    }
+                    catch { /* non-fatal per server */ }
+                }
+            }
+
+            _allResults = results;
+            _governanceScore = await GovernanceService.ComputeIndicativeAsync(results);
+
+            // Honest full-vs-indicative (Wave 2, 2026-07-12) — same rule as the CioDashboard
+            // fix: Full Assessment only when EVERY server with results covers the complete
+            // enabled check set (CheckRepositoryService.GetEnabledChecks()), never a hardcoded
+            // count or a query-string flag trusted from whichever page linked here.
+            _enabledCheckTotal = CheckRepo.GetEnabledChecks().Count;
+            var serverGroups = results
+                .GroupBy(r => r.InstanceName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            _isIndicative = _enabledCheckTotal == 0
+                || serverGroups.Count == 0
+                || serverGroups.Any(g => g
+                    .Select(r => r.CheckId)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Count() < _enabledCheckTotal);
+
+            _findings = results
+                .Where(r => !r.Passed)
+                .OrderByDescending(r => SeverityRank(r.Severity))
+                .ToList();
+
+            // Per-finding dual-voice translation (offline rules engine — no LLM) for the top
+            // findings: the DBA voice (what/why + T-SQL) and the governance voice (risk, controls)
+            // side by side. This is the translation layer FindingTranslator was built for.
+            _translations = _findings.Count > 0
+                ? await FindingTranslator.TranslateFindingsAsync(_findings.Take(8))
+                : new();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("Failed to load governance data", ex.Message);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static int SeverityRank(string? severity) => severity?.ToLowerInvariant() switch
+    {
+        "error" or "critical" => 4,
+        "high" => 3,
+        "warning" or "medium" => 2,
+        "low" => 1,
+        _ => 0
+    };
+
+    // ── PERMISSIONS ────────────────────────────────────────────────────────────────────────
+    //
+    // This page had NO authorization check of any kind: IsAuthorized count 0. A round-4 gate
+    // clicked "Re-run Audit Assessment" as an unauthenticated LAN caller, badge `viewer`, and the
+    // host logged "QuickCheck starting on tcp:localhost,56510" and "QuickCheck finished". It
+    // completed 0 checks only because that sandbox had no licence bundle loaded — nothing in the
+    // code path refused it. The same caller was offered "Run Full Vulnerability Assessment" and
+    // "Export PDF".
+    //
+    // GATED AT THE HANDLERS, NOT AT THE RENDER, and that is deliberate. The rule this round
+    // applied: a page whose PURPOSE IS TO ACT is gated at the render (/fullaudit,
+    // /vulnerabilityassessment, /benchmark, /portal-status); a page whose purpose is to SHOW and
+    // which happens to carry an action is gated at the action (round 3 did exactly this for
+    // AgentJobTimeline, XEvents and EnvironmentView, "because their read surfaces are legitimately
+    // open to every role"). /governance is the compliance overview — the same family as
+    // /compliance-board and /cio, both of which every role reads — so a page-level execute_checks
+    // gate would take the compliance picture away from the Viewer role the product sells.
+    //
+    // One permission per act, chosen from what the act DOES:
+    //   RunQuickCheck      execute_checks  runs the Audit Assessment against a connected instance
+    //   RunFullAssessment  run_scripts     sends the caller to /vulnerabilityassessment, which now
+    //                                      gates on run_scripts — offering a button into a door
+    //                                      the caller cannot open is noise, and the destination
+    //                                      gate is what actually holds
+    //   ExportPdf          export_data     renders the findings to a file on this machine
+    //
+    // ExportPdf is the one worth flagging. Round 3 ruled, in RbacPageGateCensusTests, that local
+    // export of a report the caller may already see is part of a READ surface and not a mutation.
+    // That ruling still stands for the other dashboards; this handler is gated because the round-4
+    // brief named the export handlers on this page specifically. Applying export_data consistently
+    // across the ~20 other dashboards that export is a decision for a round that is asked to make
+    // it, and it is recorded in the round-4 census note rather than changed silently here.
+    //
+    // Plain IsAuthorized, never IsAuthorizedWithBreakGlass — see BreakGlassStaysOnTheTwoRecoverySurfaces.
+    private bool MayRunChecks => UserState.IsAuthorized("execute_checks");
+    private bool MayRunScripts => UserState.IsAuthorized("run_scripts");
+    private bool MayExport => UserState.IsAuthorized("export_data");
+
+    private async Task RunQuickCheck()
+    {
+        // The handler the round-4 gate drove. Everything past this line reaches a client's server.
+        if (!MayRunChecks) return;
+
+        // Get the first connected server
+        var connection = ConnectionManager.GetEnabledConnections().FirstOrDefault();
+        if (connection == null)
+        {
+            Toast.ShowWarning("No server connection", "Please configure a server connection first.");
+            Navigation.NavigateTo(RouteConstants.Servers);
+            return;
+        }
+
+        _loading = true;
+        _loadingMessage = "Running Audit Assessment...";
+
+        try
+        {
+            var progress = new Progress<QuickCheckProgress>(p =>
+            {
+                _loadingMessage = $"Running Audit Assessment... ({p.Completed}/{p.Total})";
+                StateHasChanged();
+            });
+
+            // 2026-07-21: was ServerNames.Split(',')[0], which handed the runner a HOST with the
+            // port stripped — so a server addressed by port was audited on the default port, i.e.
+            // a different server or none at all. ServerAddress.First keeps the port.
+            var firstServer = SQLTriage.Data.Services.ServerAddress.First(connection.ServerNames) ?? connection.ServerNames;
+            var result = await QuickCheckRunner.RunAsync(connection, firstServer, progress);
+            Toast.ShowSuccess("Audit Assessment complete", $"{result.Summary.Passed}/{result.Summary.TotalChecks} passed");
+
+            // Reload data
+            await LoadDataAsync();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("Audit Assessment failed", ex.Message);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void RunFullAssessment()
+    {
+        if (!MayRunScripts) return;
+
+        // Navigate to full vulnerability assessment
+        Navigation.NavigateTo(RouteConstants.VulnerabilityAssessment);
+    }
+
+    // dev-tools module: the invoking button is BuildModules.DevTools-gated (never renders in
+    // community); the body is fenced too so the /check-validator route literal never reaches
+    // a community assembly. The method itself must stay — unreachable markup is still bound.
+    private void NavigateToValidator()
+    {
+#if !SQLT_NO_DEVTOOLS
+        Navigation.NavigateTo(RouteConstants.CheckValidator);
+#endif
+    }
+    private async Task ExportPdf()
+    {
+        if (!MayExport) return;
+
+        _loading = true;
+        _loadingMessage = "Generating PDF...";
+        StateHasChanged();
+        
+        try 
+        {
+            await Task.Delay(100);
+            var result = await PrintService.PrintToPdfAsync("Governance_Report.pdf", true);
+            if (result.Success)
+            {
+                Toast.ShowSuccess("PDF Exported", "Saved to " + result.Path);
+            }
+            else 
+            {
+                // Fallback to browser print if no webview
+                await PrintService.PrintViaBrowserAsync(JS);
+            }
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

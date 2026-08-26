@@ -1,0 +1,12 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+<div class="loading-spinner-container">
+    <div class="loading-spinner"></div>
+    @if (!string.IsNullOrEmpty(Message))
+    {
+        <span class="loading-spinner-text">@Message</span>
+    }
+</div>
+
+@code {
+    [Parameter] public string Message { get; set; } = "Loading...";
+}

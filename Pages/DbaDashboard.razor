@@ -1,0 +1,393 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/dba"
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@using Markdig
+@inject ServerConnectionManager ConnectionManager
+@inject ConnectionHealthService ConnectionHealth
+@inject HealthCheckService HealthCheck
+@inject ExecutiveHealthService HealthService
+@inject CheckExecutionService CheckExecutor
+@inject NavigationManager Navigation
+@inject ToastService Toast
+
+<PageTitle>DBA Dashboard - SQLTriage</PageTitle>
+
+<div class="dba-container">
+
+    @if (_loading)
+    {
+        <LoadingSpinner Message="@_loadingMessage" />
+    }
+    else if (!_hasServers)
+    {
+        <div class="dba-empty-state">
+            <i class="fa-solid fa-server dba-empty-icon"></i>
+            <h2 class="dba-empty-title">No Servers Configured</h2>
+            <p class="dba-empty-text">Connect to a SQL Server instance to see live stats, last-audit results, and raw findings.</p>
+            <div class="dba-empty-actions">
+                <a href="@RouteConstants.Servers" class="dba-empty-link">
+                    <i class="fa-solid fa-plus"></i> Add Server
+                </a>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="dba-header">
+            <div>
+                <h1 class="dba-header-title">DBA Dashboard</h1>
+                <p class="dba-header-subtitle">Raw numbers, T-SQL, and last-run status across the estate.</p>
+            </div>
+            <div class="dba-quick-links">
+                @* FI-3 door pill (2026-07-13): mutual nav back to the exec-terminal surface —
+                   see the matching "DBA view" pill on CioDashboard.razor. *@
+                <a href="@RouteConstants.CioDashboard" class="dba-link-btn"><i class="fa-solid fa-chart-line"></i> Executive view</a>
+                <a href="@RouteConstants.QuickCheck" class="dba-link-btn"><i class="fa-solid fa-stethoscope"></i> Audit</a>
+                <a href="@RouteConstants.BlitzDashboard" class="dba-link-btn"><i class="fa-solid fa-gauge-high"></i> sp_Blitz</a>
+                <a href="@RouteConstants.Governance" class="dba-link-btn"><i class="fa-solid fa-gavel"></i> Governance</a>
+                <a href="@RouteConstants.Health" class="dba-link-btn"><i class="fa-solid fa-heart-pulse"></i> Health</a>
+            </div>
+        </div>
+
+        <!-- Last-audit summary -->
+        <div class="dba-section">
+            <h3 class="dba-section-title">Last Audit Run</h3>
+            <div class="dba-summary-strip">
+                <div class="dba-stat"><span class="dba-stat-value">@_totalChecksRun</span><span class="dba-stat-label">Checks run</span></div>
+                <div class="dba-stat"><span class="dba-stat-value dba-num-pass">@_totalPassed</span><span class="dba-stat-label">Passed</span></div>
+                <div class="dba-stat"><span class="dba-stat-value dba-num-fail">@_totalFailed</span><span class="dba-stat-label">Failed</span></div>
+                <!-- 2026-07-16: scored-basis footing with /governance — SKIP/INFO checks are no
+                     longer folded into Passed above (CheckClassification.IsScorable), so they need
+                     their own named figure or Checks run stops adding up to Passed+Failed+Errors. -->
+                <!-- 2026-07-21 (persona board, FIX 2): Partial (Verdict=WARN) is a SUBSET of
+                     Informational, so it is shown by SPLITTING that tile's number, never by adding
+                     a tile beside an unchanged one. Informational/Skipped now reads
+                     (Informational − Partial) and Partial reads the remainder: the strip still
+                     foots to Checks run exactly as before, and the state the grid calls "Partial"
+                     is finally named on the dashboard a DBA actually reads. -->
+                <div class="dba-stat"><span class="dba-stat-value">@(_totalInformational - _totalPartial)</span><span class="dba-stat-label">Informational/Skipped</span></div>
+                @if (_totalPartial > 0)
+                {
+                    <div class="dba-stat" title="The check ran but could not fully assess the target — typically an under-privileged account. Excluded from scoring: it asserts nothing about the control either way.">
+                        <span class="dba-stat-value">@_totalPartial</span><span class="dba-stat-label">Partial</span>
+                    </div>
+                }
+                <div class="dba-stat"><span class="dba-stat-value @(_totalErrors > 0 ? "dba-num-fail" : "")">@_totalErrors</span><span class="dba-stat-label">Errors</span></div>
+                <div class="dba-stat"><span class="dba-stat-value">@(_totalDurationRestored ? "n/a (restored)" : DurationDisplay(_totalDuration))</span><span class="dba-stat-label">Wall-clock duration</span></div>
+                <div class="dba-stat"><span class="dba-stat-value">@(_lastRunAt.HasValue ? _lastRunAt.Value.ToLocalTime().ToString("MMM d, HH:mm") : "--")</span><span class="dba-stat-label">Last completed</span></div>
+            </div>
+            @if (_relevantSummaries.Count > 0)
+            {
+                <table class="dba-table">
+                    <thead>
+                        <tr>
+                            <th>Server</th>
+                            <th>Total</th>
+                            <th>Passed</th>
+                            <th>Failed</th>
+                            <th>Accepted</th>
+                            <th>Info/Skip</th>
+                            <th title="Ran but could not fully assess the target; excluded from scoring">Partial</th>
+                            <th>Errors</th>
+                            <th>Duration</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var kvp in _relevantSummaries)
+                        {
+                            <tr>
+                                <td>@kvp.Key</td>
+                                <td>@kvp.Value.TotalChecks</td>
+                                <td class="dba-num-pass">@kvp.Value.Passed</td>
+                                <td class="dba-num-fail">@kvp.Value.Failed</td>
+                                <td>@kvp.Value.Accepted</td>
+                                <td>@(kvp.Value.Informational - kvp.Value.Partial)</td>
+                                <td>@kvp.Value.Partial</td>
+                                <td class="@(kvp.Value.Errors > 0 ? "dba-num-fail" : "")">@kvp.Value.Errors</td>
+                                <td>@DurationDisplay(kvp.Value.Duration)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+            else
+            {
+                <p class="dba-no-data">No audit run recorded yet for these servers — run <a href="@RouteConstants.QuickCheck">Audit Assessment</a>.</p>
+            }
+        </div>
+
+        <!-- Per-server health: raw numbers, no medals -->
+        <div class="dba-section">
+            <h3 class="dba-section-title">Per-Server Health</h3>
+            <div class="dba-server-grid">
+                @foreach (var server in _servers)
+                {
+                    var live = _liveHealth.TryGetValue(server, out var lh) ? lh : null;
+                    var eh = _healthScores.TryGetValue(server, out var s) ? s : null;
+                    var connStatus = ConnectionHealth.GetStatus(server);
+                    <div class="dba-server-card">
+                        <div class="dba-server-head">
+                            <span class="dba-server-name"><i class="fa-solid fa-database"></i> @server</span>
+                            <span class="dba-conn-badge dba-conn-@(connStatus.Status.ToString().ToLowerInvariant())">@connStatus.Status</span>
+                        </div>
+                        <div class="dba-quick-stats">
+                            <div class="dba-quick-stat"><span class="dba-quick-stat-label">CPU</span><span class="dba-quick-stat-value">@(live?.CpuDisplayText ?? "--")</span></div>
+                            <div class="dba-quick-stat"><span class="dba-quick-stat-label">Memory</span><span class="dba-quick-stat-value">@(live?.MemoryDisplayText ?? "--")</span></div>
+                            <div class="dba-quick-stat"><span class="dba-quick-stat-label">Blocked</span><span class="dba-quick-stat-value">@(live?.BlockingDisplayText ?? "--")</span></div>
+                            <div class="dba-quick-stat"><span class="dba-quick-stat-label">Deadlocks</span><span class="dba-quick-stat-value">@(live?.DeadlockDisplayText ?? "--")</span></div>
+                            <div class="dba-quick-stat"><span class="dba-quick-stat-label">Top wait</span><span class="dba-quick-stat-value">@(live?.WaitDisplayText ?? "--")</span></div>
+                        </div>
+                        @* Conditioning sweep 2026-08-05. Two changes, one law. (1) The Resource row
+                           used to read "0/100" for a server that never answered, because the
+                           offline branch of ScoreResource fabricated that 0 — fixed at the model.
+                           (2) Unmeasured dimensions used to be filtered out entirely, so the card
+                           silently shrank and nothing said which dimension had gone missing or
+                           why. Every dimension now renders, with its value and its reason drawn
+                           from the same policy the /health breakdown and the portal guard use. *@
+                        @if (eh != null && eh.IsAssessed)
+                        {
+                            <div class="dba-dims">
+                                @foreach (var d in eh.Breakdown.Dimensions)
+                                {
+                                    <div class="dba-dim @(d.HasData ? "" : "dba-dim-unmeasured")" title="@EstateHealthPolicy.DimensionBasis(d)">
+                                        <span class="dba-dim-label">@d.Name</span>
+                                        <span class="dba-dim-value">@EstateHealthPolicy.DimensionValue(d)</span>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <p class="dba-no-data">@EstateHealthPolicy.ServerBasis(eh)</p>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Top findings — T-SQL visible by default (inverse of the exec card's collapse) -->
+        <div class="dba-section">
+            <h3 class="dba-section-title">Top Findings by Severity</h3>
+            @if (_topFindings.Count > 0)
+            {
+                <div class="dba-findings-list">
+                    @foreach (var f in _topFindings)
+                    {
+                        <div class="dba-finding">
+                            <div class="dba-finding-head">
+                                <span class="dba-finding-sev dba-sev-@(f.Severity?.ToLowerInvariant())">@f.Severity</span>
+                                <span class="dba-finding-name">@f.CheckName</span>
+                                <span class="dba-finding-id">@f.CheckId</span>
+                                <span class="dba-finding-server"><i class="fa-solid fa-server"></i> @f.InstanceName</span>
+                            </div>
+                            @if (!string.IsNullOrEmpty(f.RecommendedAction))
+                            {
+                                <div class="dba-finding-sql">@((MarkupString)Markdown.ToHtml(f.RecommendedAction))</div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <p class="dba-no-data">No open findings — run <a href="@RouteConstants.QuickCheck">Audit Assessment</a> to populate this list.</p>
+            }
+        </div>
+    }
+</div>
+
+<!-- Styles in wwwroot/css/DbaDashboard.css (CLAUDE.md convention). Imported via app.css @import. -->
+
+@code {
+    private bool _loading = true;
+    private string _loadingMessage = "Loading DBA Dashboard...";
+    private bool _hasServers;
+    private List<string> _servers = new();
+    private Dictionary<string, CheckExecutionSummary> _relevantSummaries = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, ServerHealthStatus> _liveHealth = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, ExecutiveHealthScore> _healthScores = new(StringComparer.OrdinalIgnoreCase);
+    private List<CheckResult> _topFindings = new();
+    private int _totalChecksRun;
+    private int _totalPassed;
+    private int _totalFailed;
+    private int _totalErrors;
+    private int _totalInformational;
+    // 2026-07-21: subset of _totalInformational — see CheckExecutionSummary.Partial.
+    private int _totalPartial;
+    private TimeSpan _totalDuration;
+    // 2026-07-16 (#dba-wall-clock): true when the aggregate span below can't be trusted as a real
+    // wall-clock duration — see the assignment site for the root cause.
+    private bool _totalDurationRestored;
+    private DateTime? _lastRunAt;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var connections = ConnectionManager.GetEnabledConnections();
+            if (connections.Count == 0) { _hasServers = false; return; }
+
+            _servers = connections.SelectMany(c => c.GetServerList()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (_servers.Count == 0) { _hasServers = false; return; }
+            _hasServers = true;
+
+            _loadingMessage = "Loading last-audit summary...";
+            StateHasChanged();
+
+            // Rehydrate the last persisted run per server (JSON store → SQLite fallback) — the
+            // SAME path /audit and /governance use, so this widget survives an app relaunch.
+            // Wave 3 fix (2026-07-12): the widget previously read CheckExecutor.GetAllSummaries()
+            // alone, which is IN-MEMORY ONLY and comes back empty after any restart — hence the
+            // all-zero "No audit run recorded yet" while a real cached 1725-check run rendered
+            // fine on /audit and /governance. GetResults rehydrates from disk; we reuse it below
+            // for the findings list too.
+            var serverResults = new Dictionary<string, List<CheckResult>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var server in _servers)
+            {
+                try
+                {
+                    // int.MaxValue: cover every result for this server (cap-removal, ruled 2026-07-08).
+                    var rs = CheckExecutor.GetResults(server, int.MaxValue);
+                    if (rs.Count > 0) serverResults[server] = rs;
+                }
+                catch { /* non-fatal per server */ }
+            }
+
+            // Prefer the in-memory run summary (accurate wall-clock start/complete) when present;
+            // otherwise synthesize from the rehydrated results so the widget shows the REAL last
+            // run, not zeros. Error takes precedence over pass/fail exactly as the live run tallies
+            // (ExecuteChecksAsync), so Passed + Failed + Accepted + Errors == TotalChecks reconciles.
+            // #dba-wall-clock (2026-07-16): track whether ANY contributing summary is restored
+            // (synthesized from persisted results, not the live in-memory executor) — see the
+            // _totalDuration computation below for why this gates the aggregate duration display.
+            var anyRestored = false;
+            foreach (var server in _servers)
+            {
+                var live = CheckExecutor.GetLastSummary(server);
+                if (live != null && live.TotalChecks > 0)
+                {
+                    _relevantSummaries[server] = live;
+                }
+                else if (serverResults.TryGetValue(server, out var rs))
+                {
+                    anyRestored = true;
+                    // 2026-07-16: scored basis (CheckClassification), and a new Informational
+                    // bucket, so this synthesized summary agrees with the live-summary tally in
+                    // CheckExecutionService.ExecuteChecksAsync (both now exclude SKIP/INFO from
+                    // Passed/Failed instead of folding them into Passed via raw r.Passed).
+                    // Passed/Accepted/Failed stay MUTUALLY EXCLUSIVE (Passed = raw r.Passed only,
+                    // not CountsAsPass) — matching CheckExecutionService.ExecuteChecksAsync's own
+                    // tally order exactly, so TotalChecks == Passed+Accepted+Failed+Informational+
+                    // Errors foots whether this server's summary came from the live path or here.
+                    _relevantSummaries[server] = new CheckExecutionSummary
+                    {
+                        InstanceName  = server,
+                        TotalChecks   = rs.Count,
+                        Errors        = rs.Count(r => !string.IsNullOrEmpty(r.ErrorMessage)),
+                        Informational = rs.Count(r => string.IsNullOrEmpty(r.ErrorMessage) && !CheckClassification.IsScorable(r)),
+                        // Subset of Informational, same basis as the live tally in
+                        // CheckExecutionService.ExecuteChecksAsync — so a restored run names
+                        // Partial exactly as a live one does (2026-07-21).
+                        Partial       = rs.Count(r => string.IsNullOrEmpty(r.ErrorMessage) && CheckClassification.IsWarn(r)),
+                        Passed        = rs.Count(r => string.IsNullOrEmpty(r.ErrorMessage) && CheckClassification.IsScorable(r) && r.Passed),
+                        Accepted      = rs.Count(r => string.IsNullOrEmpty(r.ErrorMessage) && CheckClassification.IsScorable(r) && !r.Passed && r.IsAccepted),
+                        Failed        = rs.Count(r => string.IsNullOrEmpty(r.ErrorMessage) && CheckClassification.IsScorable(r) && !r.Passed && !r.IsAccepted),
+                        // Restored runs carry no persisted wall-clock; the completion window
+                        // (first→last check ExecutedAt) is a real, non-fabricated span FOR THIS
+                        // SERVER. It is NOT safe to Min/Max across servers below — see there.
+                        StartedAt    = rs.Min(r => r.ExecutedAt),
+                        CompletedAt  = rs.Max(r => r.ExecutedAt),
+                    };
+                }
+            }
+
+            var summaryValues = _relevantSummaries.Values.ToList();
+            _totalChecksRun = summaryValues.Sum(s => s.TotalChecks);
+            _totalPassed = summaryValues.Sum(s => s.Passed);
+            _totalFailed = summaryValues.Sum(s => s.Failed);
+            _totalErrors = summaryValues.Sum(s => s.Errors);
+            _totalInformational = summaryValues.Sum(s => s.Informational);
+            _totalPartial = summaryValues.Sum(s => s.Partial);
+            if (summaryValues.Count > 0)
+            {
+                _lastRunAt = summaryValues.Max(s => s.CompletedAt);
+                // #dba-wall-clock (2026-07-16) ROOT CAUSE: this used to be
+                // Max(CompletedAt) − Min(StartedAt) across EVERY server's summary unconditionally.
+                // Each server's own StartedAt/CompletedAt is a real span (either the live run's
+                // actual wall-clock, or — when restored — that server's own first→last check
+                // ExecutedAt). But different servers' summaries are INDEPENDENT audit runs that can
+                // have executed hours or days apart (e.g. one server's last audit was 08:45, another's
+                // was 22:43 the same day). Taking the earliest StartedAt from one server and the
+                // latest CompletedAt from a completely different server's unrelated run manufactured
+                // a "13h 58m" total that never actually elapsed in any single run — it was the GAP
+                // BETWEEN two unrelated runs, not a duration, sitting directly above per-server
+                // durations of 0m39s/0m25s/0m14s. Only trustworthy when EVERY summary came from the
+                // live in-memory executor (anyRestored == false); otherwise honestly "n/a (restored)"
+                // — the same convention QuickCheck.razor's RehydrateLastRunFromHistory already uses.
+                _totalDurationRestored = anyRestored;
+                _totalDuration = anyRestored
+                    ? TimeSpan.Zero
+                    : summaryValues.Max(s => s.CompletedAt) - summaryValues.Min(s => s.StartedAt);
+            }
+
+            _loadingMessage = "Loading live health...";
+            StateHasChanged();
+            _liveHealth = HealthCheck.GetAllHealth();
+
+            _loadingMessage = "Computing per-server health scores...";
+            StateHasChanged();
+            foreach (var server in _servers)
+            {
+                try { _healthScores[server] = await HealthService.GetHealthScoreAsync(server); }
+                catch
+                {
+                    // Swallowing this left no entry at all, and a missing entry renders as
+                    // "not collected yet" — the wrong sentence for a collection that threw.
+                    // Record the state that was actually observed (2026-08-05).
+                    _healthScores[server] = new ExecutiveHealthScore
+                    {
+                        Severity = HealthSeverity.Unknown,
+                        Message = "Health data unavailable",
+                        CollectionFailed = true
+                    };
+                }
+            }
+
+            _loadingMessage = "Loading findings...";
+            StateHasChanged();
+            // Reuse the results rehydrated above for the last-run summary (avoids a second
+            // per-server disk read of the same persisted run).
+            var allResults = serverResults.Values.SelectMany(rs => rs).ToList();
+
+            // 2026-07-16: !Passed && IsScorable — a SKIP/INFO result rides Passed=true today
+            // (CheckClassification.IsScorable is the shared, defensive filter regardless).
+            _topFindings = allResults
+                .Where(r => !r.Passed && CheckClassification.IsScorable(r))
+                .OrderByDescending(r => SeverityRank(r.Severity))
+                .Take(20)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("Failed to load DBA Dashboard", ex.Message);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static int SeverityRank(string? severity) => severity?.ToLowerInvariant() switch
+    {
+        "critical" or "error" => 4,
+        "high" => 3,
+        "medium" or "warning" => 2,
+        "low" => 1,
+        _ => 0
+    };
+
+    private static string DurationDisplay(TimeSpan d) =>
+        d.TotalHours >= 1 ? $"{(int)d.TotalHours}h {d.Minutes}m" : $"{d.Minutes}m {d.Seconds}s";
+}
