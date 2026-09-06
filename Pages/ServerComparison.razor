@@ -1,0 +1,292 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/compare"
+<PageTitle>SQLTriage - Server Comparison</PageTitle>
+@using SQLTriage.Data.Services
+@using SQLTriage.Data.Models
+@inject ServerConnectionManager ConnectionManager
+@inject ExecutiveHealthService HealthService
+@inject CheckExecutionService CheckExecutor
+@inject IGovernanceService GovernanceService
+@inject NavigationManager Navigation
+@inject ToastService Toast
+@inject UserSettingsService UserSettings
+
+<div class="compare-page">
+    <div class="comp-header">
+        <i class="fa-solid fa-code-compare" style="color:var(--accent);"></i>
+        <div>
+            <h1 class="comp-title">Server Comparison</h1>
+            <p class="comp-subtitle">Side-by-side governance, health, and findings across servers</p>
+        </div>
+    </div>
+
+    <!-- Server selector -->
+    <div class="comp-selector">
+        @foreach (var server in _allServers)
+        {
+            var isSelected = _selectedServers.Contains(server);
+            var maxedOut = _selectedServers.Count >= 3 && !isSelected;
+            <button class="comp-server-btn @(isSelected ? "comp-server-btn-selected" : "")"
+                    disabled="@(maxedOut)"
+                    @onclick="() => ToggleServer(server)">
+                @server
+                @if (isSelected) { <i class="fa-solid fa-check"></i> }
+            </button>
+        }
+        @if (_selectedServers.Count > 0)
+        {
+            <button class="comp-server-btn comp-server-btn-clear" @onclick="ClearServers">
+                <i class="fa-solid fa-xmark"></i> Clear
+            </button>
+        }
+    </div>
+
+    @if (_isLoading)
+    {
+        <PageLoadingSpinner Message="Loading metrics..." />
+    }
+    else if (_selectedServers.Count < 2)
+    {
+        <div class="comp-empty">
+            <i class="fa-solid fa-arrow-up comp-empty-icon"></i>
+            <p>Select 2-3 servers above to compare</p>
+        </div>
+    }
+    else
+    {
+        <!-- Governance Score Comparison -->
+        <div class="comp-section">
+            <h2 class="comp-section-title"><i class="fa-solid fa-scale-balanced"></i> Governance Scores</h2>
+            <div class="comp-score-grid">
+                @foreach (var server in _selectedServers)
+                {
+                    var score = _scores.GetValueOrDefault(server);
+                    @* pages-r2-09 (honesty hunt, 2026-08-28): the colour was
+                       ScoreColor(score?.Overall ?? 0) while the text fell back to "--", and
+                       ScoreColor maps 0 to var(--red). So a server that was never measured - because
+                       CheckExecutor.GetResults returned zero rows, or threw into the bare catch in
+                       LoadMetrics - was painted the SAME red as a genuine 0-49 score, beside servers
+                       that really scored. Proved at hunt time by rendering: .\OLD2017 showed "--" in
+                       color:var(--red) beside .\NEW2022's real 74.
+
+                       This is the exact defect class the health card one section down was
+                       deliberately fixed for (its C4 comment below). The colour now comes from the
+                       measured value or from nothing at all, never from a substituted literal. *@
+                    <div class="comp-score-card" title="@GovernanceBasis(server, score)">
+                        <div class="comp-score-server">@server</div>
+                        <div class="comp-score-value" style="color:@MeasuredScoreColor(score?.Overall)">@(score?.Overall.ToString("F0") ?? "--")</div>
+                        <div class="comp-score-band" style="color:@MeasuredScoreColor(score?.Overall)">@(score is null ? "Not measured" : score.Band.ToString())</div>
+                        <div class="comp-score-detail">
+                            @if (score?.Categories != null)
+                            {
+                                foreach (var cat in score.Categories.Values.OrderByDescending(c => c.Weight))
+                                {
+                                    <div class="comp-score-bar-wrap">
+                                        <span class="comp-score-bar-label">@(cat.Dimension[..3].ToUpper())</span>
+                                        <div class="comp-score-bar-track">
+                                            <div class="comp-score-bar-fill" style="width:@cat.CappedScore%; background:@CategoryColor(cat.PassRate)"></div>
+                                        </div>
+                                        <span style="font-size:10px">@cat.CappedScore.ToString("F0")</span>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Health Metrics Comparison -->
+        <div class="comp-section">
+            <h2 class="comp-section-title"><i class="fa-solid fa-heart-pulse"></i> Health Status</h2>
+            <div class="comp-score-grid">
+                @foreach (var server in _selectedServers)
+                {
+                    var hs = _health.GetValueOrDefault(server);
+                    var sevColor = hs?.Severity switch
+                    {
+                        HealthSeverity.Healthy => "var(--green)",
+                        HealthSeverity.Warning => "var(--yellow)",
+                        HealthSeverity.Critical => "var(--red)",
+                        _ => "var(--text-muted)"
+                    };
+                    @* Gate fix C4 (2026-08-05): this printed hs.Score, which holds 0 in every
+                       state where nothing was measured, so a silent server sat in a comparison
+                       grid reading "0" beside servers that really scored. The "--" fallback fired
+                       only when the server had no entry at all, never when it had an entry
+                       carrying a placeholder. MeasuredScore is null in exactly those states, and
+                       the policy says which kind of unmeasured each one is. *@
+                    <div class="comp-score-card" title="@EstateHealthPolicy.ServerBasis(hs)">
+                        <div class="comp-score-server">@server</div>
+                        <div class="comp-score-value" style="color:@sevColor">@(hs?.MeasuredScore?.ToString() ?? "n/a")</div>
+                        <div class="comp-score-band" style="color:@sevColor">@(hs?.MeasuredScore.HasValue == true ? hs.Severity.ToString() : "Not measured")</div>
+                        <div class="comp-score-message" style="margin-top:8px;font-size:12px;color:var(--text-muted)">
+                            @* A trend is a comparison between two measurements. With no score
+                               measured there is nothing to compare, and the default branch was
+                               printing a confident "Stable" for a server that had said nothing.
+                               SR-11 (2026-08-08) closed the OTHER end of the same claim: a server WITH
+                               a measured score and no history at all still reached that branch, because
+                               HealthTrend has no value for "nothing was compared" and GetTrendAsync
+                               returned Stable for the absent snapshot and for a failed read alike.
+                               MeasuredTrend is null in all three states and the policy says which. *@
+                            @if (hs?.MeasuredScore.HasValue != true)
+                            { <span>@EstateHealthPolicy.ServerBasis(hs)</span> }
+                            else if (hs.MeasuredTrend is null)
+                            { <span>@EstateHealthPolicy.TrendBasis(hs)</span> }
+                            else if (hs.MeasuredTrend == HealthTrend.Improving)
+                            { <span style="color:var(--green)"><i class="fa-solid fa-arrow-trend-up"></i> Improving</span> }
+                            else if (hs.MeasuredTrend == HealthTrend.Degrading)
+                            { <span style="color:var(--red)"><i class="fa-solid fa-arrow-trend-down"></i> Degrading</span> }
+                            else
+                            { <span style="color:var(--yellow)"><i class="fa-solid fa-minus"></i> Stable</span> }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <!-- Cross-Server Findings -->
+        <div class="comp-section">
+            <h2 class="comp-section-title"><i class="fa-solid fa-triangle-exclamation"></i> Cross-Server Findings</h2>
+            @foreach (var server in _selectedServers)
+            {
+                var findings = _findings.GetValueOrDefault(server, new());
+                var critical = findings.Where(f => f.Severity?.Equals("Critical", StringComparison.OrdinalIgnoreCase) == true).Take(3).ToList();
+                if (critical.Count > 0)
+                {
+                    <div class="comp-finding-group">
+                        <div class="comp-finding-server">@server</div>
+                        @foreach (var f in critical)
+                        {
+                            <div class="comp-finding-item">
+                                <span class="comp-finding-severity severity-critical">CRIT</span>
+                                <span class="comp-finding-name">@f.CheckName</span>
+                            </div>
+                        }
+                    </div>
+                }
+            }
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="comp-actions">
+            <button class="cio-action-btn" @onclick='() => Navigation.NavigateTo("/cio")'>
+                <i class="fa-solid fa-crown"></i> CIO Dashboard
+            </button>
+            <button class="cio-action-btn-secondary" @onclick='() => Navigation.NavigateTo("/audit")'>
+                <i class="fa-solid fa-bolt-lightning"></i> Run Quick Check
+            </button>
+        </div>
+    }
+</div>
+
+@code {
+    private List<string> _selectedServers = new();
+    private List<string> _allServers = new();
+    private Dictionary<string, GovernanceScore> _scores = new();
+    private Dictionary<string, ExecutiveHealthScore> _health = new();
+    private Dictionary<string, List<CheckResult>> _findings = new();
+    private bool _isLoading;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (UserSettings.GetFastAppLoad()) await Task.Yield();
+        _allServers = ConnectionManager.GetEnabledConnections()
+            .SelectMany(c => c.GetServerList())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        // Load from query string if present
+        var uri = new Uri(Navigation.Uri);
+        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+        var servers = query["servers"];
+        if (!string.IsNullOrEmpty(servers))
+        {
+            // 2026-07-21: was servers.Split(','), which read the port half of a deep-linked
+            // "host\instance,port" as a second server and rendered a card for it. ServerAddress
+            // understands the port separator; see ServerAddress.SplitList.
+            _selectedServers = SQLTriage.Data.Services.ServerAddress.SplitList(servers);
+            await LoadMetrics();
+        }
+    }
+
+    private async Task ToggleServer(string server)
+    {
+        if (_selectedServers.Contains(server))
+            _selectedServers.Remove(server);
+        else if (_selectedServers.Count < 3)
+            _selectedServers.Add(server);
+
+        if (_selectedServers.Count >= 2)
+            await LoadMetrics();
+        else
+            StateHasChanged();
+    }
+
+    private void ClearServers()
+    {
+        _selectedServers.Clear();
+        _scores.Clear();
+        _health.Clear();
+        _findings.Clear();
+        StateHasChanged();
+    }
+
+    private async Task LoadMetrics()
+    {
+        _isLoading = true;
+        StateHasChanged();
+
+        _scores.Clear();
+        _health.Clear();
+        _findings.Clear();
+
+        foreach (var server in _selectedServers)
+        {
+            try
+            {
+                var results = CheckExecutor.GetResults(server, 500);
+                if (results.Count > 0)
+                {
+                    var score = await GovernanceService.ComputeIndicativeAsync(results);
+                    _scores[server] = score;
+                    _findings[server] = results;
+                }
+            }
+            catch { /* server offline or no results */ }
+
+            try
+            {
+                var hs = await HealthService.GetHealthScoreAsync(server);
+                if (hs != null)
+                    _health[server] = hs;
+            }
+            catch { }
+        }
+
+        _isLoading = false;
+        StateHasChanged();
+    }
+
+    private static string ScoreColor(double score) => score >= 80 ? "var(--green)" : score >= 50 ? "var(--yellow)" : "var(--red)";
+
+    /// <summary>
+    /// pages-r2-09: the governance card's colour, from the MEASURED score or from nothing.
+    /// A null score is not a low score - it is the absence of a measurement, and it gets the
+    /// same muted treatment the health card below uses for exactly this state.
+    /// </summary>
+    private static string MeasuredScoreColor(double? score) =>
+        score is null ? "var(--text-muted)" : ScoreColor(score.Value);
+
+    /// <summary>
+    /// Why this card reads what it reads. LoadMetrics reaches the unmeasured state two ways -
+    /// CheckExecutor.GetResults returned zero rows, or it threw and was swallowed - and neither
+    /// is distinguishable from the other here, so the wording does not claim to know which.
+    /// </summary>
+    private string GovernanceBasis(string server, GovernanceScore? score) =>
+        score is not null
+            ? $"Governance score measured from this server's most recent check results."
+            : $"No governance score for {server}: it produced no check results in this comparison, "
+              + "so no score was computed and its findings are absent from Cross-Server Findings below.";
+    private static string CategoryColor(double passRate) => passRate >= 80 ? "var(--green)" : passRate >= 50 ? "var(--yellow)" : "var(--red)";
+}

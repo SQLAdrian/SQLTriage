@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Dashboard Configuration Schema",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Configuration version number"
+    },
+    "includes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Paths to included dashboard files"
+    },
+    "templates": {
+      "type": "string",
+      "description": "Path pattern for panel templates"
+    },
+    "dashboards": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/dashboard" },
+      "description": "Array of dashboard definitions"
+    },
+    "supportQueries": {
+      "type": "object",
+      "patternProperties": {
+        "^.*$": { "$ref": "#/$defs/queryPair" }
+      },
+      "description": "Support queries for panels"
+    }
+  },
+  "required": ["version"],
+  "anyOf": [
+    { "required": ["dashboards"] },
+    { "required": ["includes"] }
+  ],
+
+  "$defs": {
+    "dashboard": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "navTitle": { "type": "string", "minLength": 1 },
+        "navIcon": { "type": "string", "pattern": "^fa-solid fa-[a-zA-Z0-9-]+$" },
+        "navCategory": { "type": "string", "enum": ["Dashboards", "Tools", "Audits", "Performance Monitor"] },
+        "navOrder": { "type": "integer", "minimum": 1 },
+        "route": { "type": "string", "pattern": "^/[a-zA-Z0-9_-]+$" },
+        "enabled": { "type": "boolean" },
+        "source": { "type": "string" },
+        "defaultDatabase": { "type": "string" },
+        "showAllOption": { "type": "boolean" },
+        "panels": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/panel" }
+        }
+      },
+      "required": ["id", "title", "navTitle", "navIcon", "navCategory", "navOrder", "route", "enabled", "panels"]
+    },
+
+    "panel": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_-]+$" },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "enabled": { "type": "boolean" },
+        "source": { "type": "string" },
+        "panelType": {
+          "type": "string",
+          "enum": ["TimeSeries", "DataGrid", "StatCard", "CheckStatus", "TextCard", "BarGauge", "DeltaStatCard", "BlockingTree", "Deadlock", "XeStatus", "SessionBubble", "HorizontalBar"]
+        },
+        "chartType": { "type": "string" },
+        "height": { "type": "integer", "minimum": 50, "maximum": 2000 },
+        "refreshIntervalSeconds": { "type": ["integer", "null"], "minimum": 5, "maximum": 3600 },
+        "layout": {
+          "type": "object",
+          "properties": {
+            "column": { "type": "integer", "minimum": 0 },
+            "order": { "type": "integer", "minimum": 0 },
+            "spanColumns": { "type": "boolean" }
+          },
+          "required": ["column", "order"]
+        },
+        "query": {
+          "type": "object",
+          "properties": {
+            "source": { "type": "string" },
+            "sqlServer": { "type": "string" }
+          },
+          "required": ["sqlServer"]
+        },
+        "defaultDatabase": { "type": "string" },
+        "statUnit": { "type": "string" },
+        "statThresholdKey": { "type": ["string", "null"] },
+        "barGaugeThresholdKey": { "type": ["string", "null"] },
+        "barGaugeUnitSuffix": { "type": "string" },
+        "valueFormat": { "type": "string" },
+        "colorThresholds": { "type": "array" },
+        "dataGridIsClickable": { "type": "boolean" },
+        "dataGridMaxRows": { "type": "integer" },
+        "dataGridTopRows": { "type": "integer" },
+        "actionColumn": { "type": ["string", "null"] },
+        "actionColumnMode": { "type": ["string", "null"] },
+        "dataGridColumns": { "type": ["array", "null"] },
+        "dataGridColumnColors": { "type": ["array", "null"] }
+      },
+      "required": ["id", "title", "panelType", "height", "layout", "query"]
+    },
+
+    "queryPair": {
+      "type": "object",
+      "properties": {
+        "sqlServer": { "type": "string" },
+        "source": { "type": "string" }
+      },
+      "required": ["sqlServer"]
+    }
+  }
+}

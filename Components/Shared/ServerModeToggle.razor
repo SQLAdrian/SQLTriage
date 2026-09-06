@@ -1,0 +1,194 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using SQLTriage.Data.Services
+@inject ServerModeService ServerMode
+@inject SQLTriage.Data.Services.AppUserState UserState
+@inject IJSRuntime JS
+@implements IDisposable
+
+@* PERMISSION: settings. This component STARTS AND STOPS SERVER MODE — the LAN listener itself —
+   and it had no gate of any kind.
+
+   WHY IT MATTERED, AND WHY THREE ROUNDS DID NOT SEE IT. StatusBar.razor renders <ServerModeToggle />
+   and StatusBar is part of MainLayout, so this control appears on EVERY route — including the
+   AccessDenied pages rounds 1-3 put in front of the gated pages. A caller who is correctly denied
+   /scheduled-tasks was still handed, on that very denial page, a control that can stop and start
+   the server. The page census could not see it: the census enumerates @page routes, and a shared
+   component has no route. That is a whole CLASS of surface, not one page, and the component census
+   in RbacComponentGateCensusTests exists so the class is enumerated rather than stumbled on.
+
+   Round-4 gate, driven live from a non-loopback origin, unauthenticated, badge `viewer`, RBAC
+   enforced: the control rendered on the AccessDenied page for a gated route.
+
+   DENIED RENDERS NOTHING, not an AccessDenied lock. This is chrome in the status bar on every
+   page; a permission notice there would follow the caller around the whole app and say nothing
+   useful. Hiding is the right answer for a control, and the HANDLERS below carry the same gate so
+   hiding is never the only thing standing in the way.
+
+   HATCH SCOPE: plain IsAuthorized. On the WPF desktop AppUserState resolves admin, so the desktop
+   toggle is untouched; on an unconfigured install reached over loopback the bootstrap hatch still
+   opens it, which is how server mode gets started in the first place. Break-glass is NOT used —
+   round 1 scoped it to Settings and Onboarding, and starting a LAN listener is not undoing a bad
+   RBAC configuration. *@
+@* ROUND 7: the early `return` became the boundary. Identical effect, but now the census can see
+   it — the decider stopped asking what these handlers call and started asking whether the markup
+   sits inside <ShellGate>, and a bare `return` in a render body is invisible to that question. *@
+<ShellGate Permission="settings">
+<div class="server-mode-toggle @(_expanded ? "expanded" : "")">
+    @if (ServerMode.IsRunning)
+    {
+        @* Compact pill — always shows the running signal, but stays out of the way.
+           Click to reveal the URL / Diag / Health / Stop panel; click again or
+           click away to collapse. *@
+        <button class="server-mode-pill" @onclick="() => _expanded = !_expanded"
+                title="Server mode is running — click for the address &amp; controls">
+            <span class="server-mode-dot running"></span>
+            <span class="server-mode-pill-label">Server Mode</span>
+            <i class="fa-solid fa-chevron-up server-mode-caret"></i>
+        </button>
+        @if (_expanded)
+        {
+            <div class="server-mode-backdrop" @onclick="() => _expanded = false"></div>
+            <div class="server-mode-panel">
+                <div class="server-mode-status">
+                    <span class="server-mode-dot running"></span>
+                    <span class="server-mode-label">Server Mode</span>
+                </div>
+                @* Two addresses, labelled, because they behave differently. ServerMode.Url is
+                   loopback and is the one this button opens: an unauthenticated caller on
+                   loopback is admitted, which is how the first admin gets configured at all.
+                   ServerMode.LanUrl is the box's hostname, and an unauthenticated caller
+                   arriving there is redirected to /auth/login by InteractiveAppAdmission. Until
+                   2026-08-25 this control opened the LAN address, so clicking it on an install
+                   with no sign-in method configured produced a login page with nothing on it. *@
+                <a href="@ServerMode.Url" target="_blank" class="server-mode-url" @onclick:preventDefault
+                   @onclick="() => OpenUrl(ServerMode.Url!)" title="Open on this machine">
+                    <i class="fa-solid fa-arrow-up-right-from-square"></i> @ServerMode.Url
+                </a>
+                @if (!string.IsNullOrEmpty(ServerMode.LanUrl))
+                {
+                    <div class="server-mode-lan" style="font-size:11px;opacity:.75;margin:2px 0 4px;">
+                        From another machine: <code>@ServerMode.LanUrl</code>. That address needs a
+                        configured sign-in method, so set one up under Settings &rsaquo; Security &amp; Access first.
+                    </div>
+                }
+                <div class="server-mode-links">
+                    <a href="@GetDiagUrl()" target="_blank" class="server-mode-link" @onclick:preventDefault
+                       @onclick="() => OpenUrl(GetDiagUrl())" title="Diagnostic page">
+                        <i class="fa-solid fa-stethoscope"></i> Diag
+                    </a>
+                    <a href="@GetHealthUrl()" target="_blank" class="server-mode-link" @onclick:preventDefault
+                       @onclick="() => OpenUrl(GetHealthUrl())" title="Health check JSON">
+                        <i class="fa-solid fa-heart-pulse"></i> Health
+                    </a>
+                </div>
+                <button class="server-mode-btn stop" @onclick="StopServer" title="Stop server mode">
+                    <i class="fa-solid fa-stop"></i>
+                </button>
+            </div>
+        }
+    }
+    else
+    {
+        <button class="server-mode-btn start" @onclick="StartServer" disabled="@_starting"
+                title="Start server mode — share via browser">
+            @if (_starting)
+            {
+                <i class="fa-solid fa-spinner fa-spin"></i>
+            }
+            else
+            {
+                <i class="fa-solid fa-server"></i>
+            }
+        </button>
+    }
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="server-mode-error">@_error</div>
+    }
+</div>
+</ShellGate>
+
+@code {
+    /// <summary>
+    /// The same gate as the markup, in code. The markup `return` means an unauthorized circuit
+    /// renders no buttons and so registers no handlers — but a gate that lives only in markup is
+    /// one refactor away from being no gate at all, which is the rule rounds 2 and 3 wrote down
+    /// and this component is the reason it is worth repeating on a COMPONENT and not just a page.
+    /// </summary>
+    private bool MayControlServerMode => UserState.IsAuthorized("settings");
+
+    private bool _starting;
+    private bool _expanded;
+    private string? _error;
+
+    protected override void OnInitialized()
+    {
+        ServerMode.OnStateChanged += OnStateChanged;
+    }
+
+    private async Task StartServer()
+    {
+        if (!MayControlServerMode) return;
+
+        _starting = true;
+        _error = null;
+        StateHasChanged();
+
+        try
+        {
+            await ServerMode.StartAsync();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _starting = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task StopServer()
+    {
+        if (!MayControlServerMode) return;
+
+        await ServerMode.StopAsync();
+    }
+
+    private string GetDiagUrl() => $"http://localhost:{ServerMode.Port}/_server/diag";
+    private string GetHealthUrl() => $"http://localhost:{ServerMode.Port}/_server/health";
+
+    private async Task OpenUrl(string url)
+    {
+        // Process.Start with UseShellExecute — process creation on the host. The URL is built from
+        // ServerMode.Port rather than from caller input, but the gate goes on it anyway: the same
+        // shape on Pages/Portal/PortalStatus.OpenLastPayload WAS driven from the LAN into a real
+        // process (OpenWith, PID 27908) on 2026-08-02.
+        if (!MayControlServerMode) return;
+
+        _expanded = false; // collapse the panel once the user acts on it
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url)
+            {
+                UseShellExecute = true
+            });
+        }
+        catch
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", url);
+        }
+    }
+
+    private void OnStateChanged()
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        ServerMode.OnStateChanged -= OnStateChanged;
+    }
+}

@@ -1,0 +1,1815 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/cio"
+@using SQLTriage.Components.Shared
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@using static SQLTriage.Data.Services.GovernanceService
+@using Microsoft.Extensions.Logging
+@inject IGovernanceService GovernanceService
+@inject IGovernanceWeightsProvider GovWeights
+@inject GovernanceHistoryService HistoryService
+@inject ExecutiveHealthService HealthService
+@inject CheckExecutionService CheckExecutor
+@inject ServerConnectionManager ConnectionManager
+@inject ConnectionHealthService ConnectionHealth
+@inject NavigationManager Navigation
+@inject ToastService Toast
+@inject UserSettingsService UserSettings
+@inject LicensingEstimator LicensingEstimator
+@inject PowerEstimateService PowerEstimate
+@inject CheckRepositoryService CheckRepo
+@inject ILogger<CioDashboard> Logger
+
+<PageTitle>CIO Dashboard - SQLTriage</PageTitle>
+
+<div class="cio-container">
+
+    @if (_loading)
+    {
+        <LoadingSpinner Message="@_loadingMessage" />
+    }
+    else if (!_hasServers)
+    {
+        <div class="cio-empty-state">
+            <i class="fa-solid fa-server cio-empty-icon"></i>
+            <h2 class="cio-empty-title">No Servers Configured</h2>
+            <p class="cio-empty-text">Connect to a SQL Server instance to see your governance score, compliance coverage, and risk heatmap.</p>
+            <div class="cio-empty-actions">
+                <a href="/servers" class="cio-empty-link">
+                    <i class="fa-solid fa-plus"></i> Add Server
+                </a>
+            </div>
+        </div>
+    }
+    else
+    {
+        <!-- Header -->
+        <div class="cio-header-row" style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 24px;">
+            <div class="cio-header" style="margin-bottom:0;">
+            <div class="cio-header-icon">
+                <i class="fa-solid fa-chart-line"></i>
+            </div>
+            <div>
+                <h1 class="cio-header-title">CIO Dashboard</h1>
+                <p class="cio-header-subtitle">Executive overview of SQL Server governance and risk</p>
+            </div>
+        </div>
+            <div class="cio-header-actions">
+                @* CIO Executive Report PDF export — gated out of community (Adrian's ruling 2026-07-21).
+                   Const-guarded (not #if) because this is a flat-markup region where a #if directive
+                   is emitted as literal text; BuildModules.Reports.CioExecutive is a compile-time
+                   const so Roslyn prunes the branch, and the report builder is #if-compiled out. *@
+                @if (BuildModules.Reports.CioExecutive)
+                {
+                    <button class="cio-action-btn-export" @onclick="ExportPdf" disabled="@(_isExporting)">
+                        <i class="fa-solid fa-file-pdf"></i> @(_isExporting ? "Exporting..." : "Export PDF Report")
+                    </button>
+                }
+                @* FI-3 door pill (2026-07-13): mutual nav to the tech-terminal surface —
+                   see the matching "Executive view" pill on DbaDashboard.razor. *@
+                <a href="@RouteConstants.DbaDashboard" class="cio-action-btn-secondary" style="text-decoration:none;">
+                    <i class="fa-solid fa-database"></i> DBA view
+                </a>
+                <button class="cio-action-btn-secondary" style="border-radius:50%; width:40px; height:40px; padding:0; display:flex; align-items:center; justify-content:center;">
+                    <i class="fa-regular fa-bell"></i>
+                </button>
+            </div>
+        </div>
+        @if (UserSettings.GetNarrationMode() && _governanceScore != null)
+        {
+            <!-- Insight card (UI Refresh Phase 1a) — the existing Narration output, elevated:
+                 same text, same data, just a more prominent glass treatment (cio-insight-card). -->
+            <div class="cio-narration cio-insight-card card-glass">
+                <i class="fa-solid fa-comment-dots cio-narration-icon"></i>
+                @* 2026-07-21 (persona board, FIX 3): the estate Executive Health score is handed to
+                   the narrator so its opening clause is keyed to the gauge rendered directly below
+                   it. Before this the clause was keyed to the GOVERNANCE score, which is how a
+                   green-bordered "This estate looks reasonably healthy" came to sit immediately
+                   above a 38 / Critical gauge with six CRITICAL findings under it. Null when no
+                   Executive Health exists yet — then the governance score IS the headline number
+                   on this page (see the governance-derived gauge fallback below), so the narrator's
+                   own default is already the right one. *@
+                @* 2026-08-05 (gate fix C2): the rollup travels with the call. The headline clause
+                   buckets Unknown whenever GOVERNANCE has nothing evaluated, and its phrasings
+                   opened "Nothing has been assessed yet" over the top of the Executive Health card
+                   below, which was at that moment printing a mean across N assessed servers and a
+                   caption naming them. Same rollup object as the caption, so the two cannot
+                   disagree about whether anything on this page was measured. *@
+                <p class="cio-narration-text">@NarrationService.Narrate(_governanceScore, _estateHealth?.Score, _estateRollup)</p>
+            </div>
+        }
+<!-- Estate Executive Health (golden CIO headline — ruling 2026-07-11). FI-4b (2026-07-15):
+     lifted out of the hero column into a full-width band above the grid — trapped in the
+     ~510px column, the header row wrapped (the "N Critical" chip stacked under the label)
+     and the giant number had no room to land. -->
+        @if (_estateHealth != null)
+        {
+            <div class="cio-score-card cio-eh-card card-glass">
+                <div class="cio-eh-head">
+                    <div class="cio-score-label">Estate Executive Health</div>
+                    @if (_estateCriticalCount > 0)
+                    {
+                        @* 2026-07-21: unit named in the label. "N Critical" beside a heatmap column
+                           headed "Critical" invited the reader to expect the same number; it now
+                           IS the same number, and says what it counts. *@
+                        <span class="cio-assessment-badge cio-eh-crit" title="Total critical findings across the estate — the sum of the Critical column in the Server Risk Heatmap below.">
+                            <i class="fa-solid fa-triangle-exclamation"></i> @_estateCriticalCount critical finding@(_estateCriticalCount == 1 ? "" : "s")
+                        </span>
+                    }
+                </div>
+                <div class="cio-card-role">Current operating condition across the estate.</div>
+                <div class="cio-eh-body">
+                    <div class="cio-eh-metric">
+                        <!-- Hero gauge (UI Refresh Phase 1a, must-fix #1) — EH-assessed state:
+                             SEVERITY colours only (SeverityColor), never a medal.
+                             FIX ROUND 1, BLOCKER 3 (2026-07-15): aria-hidden used to wrap the
+                             whole gauge, including the numeric readout below — hiding the hero
+                             Executive Health score from assistive tech (a regression; pre-diff
+                             the score was a plain text node). aria-hidden now sits on the
+                             decorative <svg> only; the score readout stays exposed. -->
+                        <div class="cio-gauge">
+                            <svg viewBox="0 0 200 120" class="cio-gauge-svg" aria-hidden="true">
+                                <path class="cio-gauge-track" d="M14,100 A86,86 0 0 1 186,100"></path>
+                                <path class="cio-gauge-fill" style="stroke:@SeverityColor(_estateHealth.Severity); stroke-dashoffset:@GaugeDashOffset(_estateHealth.Score);" d="M14,100 A86,86 0 0 1 186,100"></path>
+                            </svg>
+                            <div class="cio-gauge-readout">
+                                <div class="cio-eh-score" style="color:@SeverityColor(_estateHealth.Severity);">
+                                    @_estateHealth.Score
+                                </div>
+                            </div>
+                        </div>
+                        <span class="cio-eh-band-pill" style="@PillStyle(SeverityColor(_estateHealth.Severity))">@_estateHealth.Severity</span>
+                    </div>
+                    <div class="cio-eh-caption">
+                        @* Conditioning sweep 2026-08-05. This line used to count assessed servers
+                           itself, and an OFFLINE server counted as assessed because the Resource
+                           dimension fabricated a measured 0 — so the caption could read "mean
+                           across 2 assessed servers" while the narration above it said nothing
+                           had been assessed, and the mean itself was dragged by a number nobody
+                           measured. Both counts now come from one rollup, which also names the
+                           servers the number does NOT cover. *@
+                        <div>@EstateHealthPolicy.EstateBasis(_estateRollup)</div>
+                        @{ var feedLine = EstateFeedSubLine(); }
+                        @if (!string.IsNullOrEmpty(feedLine))
+                        {
+                            <!-- Honesty sub-line (P4-ii, ruled 2026-07-12): discloses feed composition
+                                 for Security/Compliance and names any dimension not yet assessed — a
+                                 bare score must never again hide that security wasn't assessed. -->
+                            <div>@feedLine</div>
+                        }
+                        @{ var driverLine = EstateDriverLine(); }
+                        @if (!string.IsNullOrEmpty(driverLine))
+                        {
+                            <!-- Driver-attribution line (Wave 2, 2026-07-12): names the 1-3 biggest
+                                 downward drivers of the estate mean, computed live from DimensionScore
+                                 data across assessed servers — never hardcoded. -->
+                            <div class="cio-eh-caption-driver">@driverLine</div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+        else if (_governanceScore != null)
+        {
+            <!-- No live/VA-derived Executive Health yet, but governance data exists — headline
+                 the governance number (clearly marked indicative) instead of a bare empty-state. -->
+            <div class="cio-score-card cio-eh-card card-glass">
+                <div class="cio-eh-head">
+                    <div class="cio-score-label">Estate Executive Health</div>
+                    <span class="cio-assessment-badge" style="@AssessmentBadgeStyle()">Indicative</span>
+                </div>
+                <div class="cio-card-role">Current operating condition across the estate.</div>
+                <div class="cio-eh-body">
+                    <div class="cio-eh-metric">
+                        <!-- Hero gauge (UI Refresh Phase 1a, must-fix #1) — governance-derived
+                             fallback: the ONLY /cio gauge state that wears a MEDAL colour (via
+                             ScoreColor/BandColor), paired with the existing "Indicative" badge
+                             above. Platinum glows gold (ScoreGlowColor); every other tier glows
+                             its own colour.
+                             FIX ROUND 1, BLOCKER 3 (2026-07-15): aria-hidden moved to the
+                             decorative <svg> only — the numeric readout stays exposed to
+                             assistive tech (see the matching fix on the EH-assessed state above). -->
+                        @* Same conditioning as the governance strip below (2026-08-06): the gauge,
+                           the number and the band pill are the SAME placeholder 0 when no check
+                           returned a pass or a fail, and this is the largest number on the page. *@
+                        <div class="cio-gauge">
+                            <svg viewBox="0 0 200 120" class="cio-gauge-svg" aria-hidden="true">
+                                <path class="cio-gauge-track" d="M14,100 A86,86 0 0 1 186,100"></path>
+                                @if (GovernanceScoredChecks > 0)
+                                {
+                                    <path class="cio-gauge-fill" style="stroke:@ScoreColor(_governanceScore.Overall); stroke-dashoffset:@GaugeDashOffset(_governanceScore.Overall); filter:drop-shadow(0 0 6px @ScoreGlowColor(_governanceScore.Overall));" d="M14,100 A86,86 0 0 1 186,100"></path>
+                                }
+                            </svg>
+                            <div class="cio-gauge-readout">
+                                @if (GovernanceScoredChecks > 0)
+                                {
+                                    <div class="cio-eh-score" style="color:@ScoreColor(_governanceScore.Overall);">
+                                        @_governanceScore.Overall.ToString("F0")
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="cio-eh-empty-value">Unscored</div>
+                                }
+                            </div>
+                        </div>
+                        @if (GovernanceScoredChecks > 0)
+                        {
+                            <span class="cio-eh-band-pill" style="@PillStyle(ScoreColor(_governanceScore.Overall))">@_governanceScore.Band</span>
+                        }
+                    </div>
+                    <div class="cio-eh-caption">
+                        <div>
+                            @(GovernanceScoredChecks > 0
+                                ? "Governance-derived - full Executive Health pending corpus check coverage or live monitoring"
+                                : "No check has returned a pass or a fail yet, so there is no governance-derived figure to headline either.")
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="cio-score-card cio-eh-card card-glass">
+                <div class="cio-eh-head">
+                    <div class="cio-score-label">Estate Executive Health</div>
+                </div>
+                <div class="cio-eh-body">
+                    <div class="cio-eh-metric">
+                        <!-- Hero gauge (UI Refresh Phase 1a, must-fix #1) — not-yet-assessed
+                             state: honest empty gauge, dashed track, no fill, muted glyph. Never
+                             a value the page can't source. -->
+                        <div class="cio-gauge cio-gauge--empty" aria-hidden="true">
+                            <svg viewBox="0 0 200 120" class="cio-gauge-svg">
+                                <path class="cio-gauge-track cio-gauge-track--dashed" d="M14,100 A86,86 0 0 1 186,100"></path>
+                            </svg>
+                            <div class="cio-gauge-readout">
+                                <div class="cio-gauge-empty-glyph">&mdash;</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="cio-eh-caption">
+                        <div class="cio-eh-empty-value">Not yet assessed</div>
+                        <div>
+                            Executive Health scores live performance, security &amp; compliance (corpus checks), resource and blocking signals &mdash; none are populated on this estate yet.
+                            Run an <strong>Audit Assessment</strong> or enable <strong>live monitoring</strong> to light up the estate headline. Governance maturity below is scored from your check results.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+
+<div class="cio-top-layout">
+            <div class="cio-hero-column">
+<!-- Governance strip (Wave 2, 2026-07-12 ruling): governance now renders ONCE on /cio.
+     This compact strip replaces both the old donut-ring detail card AND the per-server
+     "Governance Risk Rating" bars section that used to render further down the page —
+     the full per-server category breakdown lives at /governance; the heatmap below
+     keeps its per-server coverage cells. -->
+        @if (_governanceScore != null)
+        {
+            var stripEvaluated = GovernanceScoredChecks;
+            // Reconciling clause + badge tooltip (Wave 2, 2026-07-12 fix): "evaluated" read as a
+            // coverage gap next to a "Full Assessment" badge (373 of 1725 looked unassessed).
+            // Every one of TotalFindings DID run; the gap is checks excluded from the scored
+            // total (Informational + Skipped, per GovernanceService.IsScorable) — not checks
+            // that were skipped over. Naming that gap here removes the self-contradiction.
+            var stripExcluded = _governanceScore.TotalFindings - stripEvaluated;
+            // A2 (2026-07-13 fix): errors were silently lumped into "informational/skipped"
+            // because GovernanceService.IsSkip treats ErrorMessage != null as SKIP. Errors stay
+            // EXCLUDED from score math (absence of evidence, neither pass nor fail) but the strip
+            // now names them instead of hiding them inside a benign-sounding count.
+            var stripErrored = _governanceScore.ErroredFindings;
+            // Micro-nit fix (2026-07-13): stripExcluded already INCLUDES stripErrored (errors
+            // are one flavour of excluded, per GovernanceService.IsSkip above) — printing both
+            // side by side as "373 informational/skipped · 1 error" read as 374 excluded when
+            // only 373 were. Split them into disjoint counts ("N errored" doesn't need
+            // singular/plural handling — it's a verb, not a counted noun).
+            var stripExcludedNonError = stripExcluded - stripErrored;
+            // 2026-07-21 (persona board, FIX 2): Partial (Verdict=WARN) used to sit INSIDE
+            // stripExcludedNonError, unnamed. The row grid labelled the state "Partial"; every
+            // roll-up above it said "informational/skipped" — so the one state introduced to stop
+            // a degraded run reading as clean was invisible on the executive screen, and its
+            // exclusion moved the score in the FLATTERING direction unannounced.
+            //
+            // It is named here as a DECOMPOSITION of a figure the page already prints, never as an
+            // extra headline number: stripExcludedPlain + stripPartial + stripErrored ==
+            // stripExcluded, exactly as before. No new total and no seventh score — the same
+            // excluded count, honestly itemised. That is the whole reconciliation: this screen was
+            // already accused of carrying too many numbers that disagree, so Partial had to arrive
+            // by splitting an existing one rather than by adding another.
+            var stripPartial = _governanceScore.PartialFindings;
+            var stripExcludedPlain = stripExcludedNonError - stripPartial;
+            var stripExcludedLabel = stripExcluded > 0
+                ? " (" + string.Join(" · ", new[]
+                    {
+                        stripExcludedPlain > 0 ? $"{stripExcludedPlain} informational/skipped" : null,
+                        stripPartial       > 0 ? $"{stripPartial} partial"                     : null,
+                        stripErrored       > 0 ? $"{stripErrored} errored"                     : null,
+                    }.Where(s => s != null)) + ")"
+                : "";
+            var assessmentLabel = _governanceScore.IsIndicative ? "Indicative" : "Full Assessment";
+            var assessmentTitle = _governanceScore.IsIndicative
+                ? "Indicative: only a partial check set has run so far."
+                : $"Full Assessment: every enabled check ran across the estate. {(stripEvaluated > 0 ? $"{stripExcluded} of {_governanceScore.TotalFindings} returned no pass/fail verdict and are excluded from the {stripEvaluated}-check scored total on the left, not from coverage." : $"Not one of the {_governanceScore.TotalFindings} returned a pass/fail verdict, so there is no scored total to show on the left. Coverage is unaffected.")}{(stripPartial > 0 ? $" {stripPartial} of those are Partial — the check ran but could not fully assess the target (typically an under-privileged account), so it asserts nothing about the control either way." : "")}{(stripErrored > 0 ? $" {stripErrored} of those errored during execution — absence of evidence, scored as neither pass nor fail." : "")}";
+            <div class="cio-gov-strip card-glass">
+                <div class="cio-gov-strip-head">
+                    <span class="cio-score-label" style="margin-bottom:0;">Governance Maturity <span style="font-weight:400; opacity:.6; font-size:.75em; text-transform:none; letter-spacing:normal; white-space:nowrap;">(sub-lens)</span></span>
+                    <a href="/governance" class="cio-health-view-full"><i class="fa-solid fa-arrow-up-right-from-square"></i> Full breakdown</a>
+                </div>
+                <div class="cio-card-role">Configuration posture — a component of <strong>Executive Health</strong>'s Security &amp; Compliance dimensions, not a second overall score.</div>
+                <div class="cio-gov-strip-body">
+                    @* The score and the band are printed only when something was actually scored
+                       (2026-08-06). Overall holds a placeholder 0 when stripEvaluated is 0 and Band
+                       reads that 0 as "Emerging", so this strip printed "0 · Emerging" as a verdict
+                       for an estate where not one check returned a pass or a fail. Same treatment
+                       as the mini-rings below: withhold the number, name the state. *@
+                    @if (stripEvaluated > 0)
+                    {
+                        <span class="cio-gov-strip-score" style="color:@ScoreColor(_governanceScore.Overall);">@_governanceScore.Overall.ToString("F0")</span>
+                        <span class="cio-gov-strip-band" style="color:@ScoreColor(_governanceScore.Overall);">@_governanceScore.Band</span>
+                    }
+                    else
+                    {
+                        <span class="cio-gov-strip-score cio-gov-strip-score--unscored"
+                              title="No check returned a pass or a fail, so there is no maturity score and no band to name.">Unscored</span>
+                    }
+                    <span class="cio-gov-strip-counts">@stripEvaluated of @_governanceScore.TotalFindings checks scored@(stripExcludedLabel)</span>
+                    <span class="cio-assessment-badge" title="@assessmentTitle" style="@AssessmentBadgeStyle()">@assessmentLabel</span>
+                </div>
+                @if (stripEvaluated == 0)
+                {
+                    <div class="cio-gov-strip-note">
+                        @(_governanceScore.TotalFindings == 0
+                            ? "No checks have run on this estate yet, so there is no maturity score to show."
+                            : $"All {_governanceScore.TotalFindings} checks that ran returned no pass or fail verdict, so there is no maturity score to show.")
+                    </div>
+                }
+                @if (_governanceScore.IsIndicative)
+                {
+                    <div class="cio-gov-strip-note">
+                        Partial check set — a Full Audit assesses @_enabledCheckTotal+ checks across every dimension; your complete score may differ.
+                    </div>
+                }
+                <!-- Mini-rings (UI Refresh Phase 1a, must-fix #7): per-dimension CategoryScore,
+                     honouring Assessed. An unassessed dimension renders a hollow/dashed ring and
+                     the word "Unassessed" — never a 0% ring (0% reads as total failure). -->
+                @if (_orderedCategories.Count > 0)
+                {
+                    <div class="cio-mini-rings">
+                        @foreach (var cat in _orderedCategories)
+                        {
+                            var pct = (int)Math.Round(cat.RawScore);
+                            <div class="cio-mini-ring@(cat.Assessed ? "" : " cio-mini-ring--unassessed")"
+                                 title="@(cat.Assessed ? $"{cat.Dimension}: {pct}/100 ({cat.PassedCount}/{cat.FindingCount} scored checks passed)" : $"{cat.Dimension}: not yet assessed — no scorable checks ran for this dimension")">
+                                <svg viewBox="0 0 44 44" class="cio-mini-ring-svg" aria-hidden="true">
+                                    <circle class="cio-mini-ring-track" cx="22" cy="22" r="18"></circle>
+                                    @if (cat.Assessed)
+                                    {
+                                        <circle class="cio-mini-ring-fill" cx="22" cy="22" r="18" style="stroke:@ScoreColor(cat.RawScore); stroke-dashoffset:@MiniRingDashOffset(cat.RawScore);"></circle>
+                                    }
+                                </svg>
+                                <div class="cio-mini-ring-value">@(cat.Assessed ? $"{pct}%" : "Unassessed")</div>
+                                <div class="cio-mini-ring-label">@cat.Dimension</div>
+                            </div>
+                        }
+                    </div>
+                }
+                <!-- Segmented completeness bar (UI Refresh Phase 1a, must-fix #3): counts sum
+                     EXACTLY to TotalFindings by construction (Passed + Failed + stripExcludedNonError
+                     + stripErrored == TotalFindings, per the disjoint math above) — errored ticks
+                     are disjoint from informational/skipped and never read as scored.
+                     FIX ROUND 1, BLOCKER 1 (2026-07-15): PROPORTIONAL percentage-width segments,
+                     not one <span> per check. At real scale (TotalFindings=1725) one-span-per-check
+                     plus flex:1 1 0 + 1px gaps needed ~1724px of gap alone inside a 639px bar, so
+                     every tick computed to 0px width and the sole errored tick landed outside the
+                     overflow:hidden bar entirely — the bar read as empty under a label claiming
+                     1725 checks. The exact counts are unchanged and still carried in the legend
+                     and aria-label below; only the rendering unit changes (up to 4 segments, not
+                     N ticks). -->
+                @if (_governanceScore.TotalFindings > 0)
+                {
+                    <div class="cio-completeness">
+                        <div class="cio-completeness-label">Assessment completeness <span class="cio-completeness-total">&middot; @_governanceScore.TotalFindings checks</span></div>
+                        <!-- FIX ROUND 2 (2026-07-16): per-segment title tooltips, so each block is
+                             self-explaining on hover, not just via the bar's own aria-label. The
+                             errored tick also gets a CSS min-width (cio-completeness-tick--errored)
+                             since 1/1725 rounds to a sub-pixel width — the count is still exact
+                             (the legend + aria-label never round), only the rendered sliver gets a
+                             visibility floor. -->
+                        <div class="cio-completeness-bar" role="img" aria-label="@($"{_governanceScore.PassedFindings} passed, {_governanceScore.FailedFindings} failed, {stripExcludedPlain} informational or skipped, {stripPartial} partial, {stripErrored} errored, of {_governanceScore.TotalFindings} total checks")">
+                            @if (_governanceScore.PassedFindings > 0)
+                            {
+                                <span class="cio-completeness-seg cio-completeness-tick--pass" style="width:@(SegPct(_governanceScore.PassedFindings, _governanceScore.TotalFindings))%;" title="@($"Passed: {_governanceScore.PassedFindings} of {_governanceScore.TotalFindings}")"></span>
+                            }
+                            @if (_governanceScore.FailedFindings > 0)
+                            {
+                                <span class="cio-completeness-seg cio-completeness-tick--fail" style="width:@(SegPct(_governanceScore.FailedFindings, _governanceScore.TotalFindings))%;" title="@($"Failed: {_governanceScore.FailedFindings} of {_governanceScore.TotalFindings}")"></span>
+                            }
+                            @if (stripExcludedPlain > 0)
+                            {
+                                <span class="cio-completeness-seg cio-completeness-tick--excluded" style="width:@(SegPct(stripExcludedPlain, _governanceScore.TotalFindings))%;" title="@($"Informational/skipped: {stripExcludedPlain} of {_governanceScore.TotalFindings}")"></span>
+                            }
+                            @* 2026-07-21: Partial gets its own segment carved OUT of the excluded
+                               block above — the bar still sums to TotalFindings by construction. *@
+                            @if (stripPartial > 0)
+                            {
+                                <span class="cio-completeness-seg cio-completeness-tick--partial" style="width:@(SegPct(stripPartial, _governanceScore.TotalFindings))%;" title="@($"Partial: {stripPartial} of {_governanceScore.TotalFindings} — the check ran but could not fully assess the target; excluded from scoring (asserts nothing about the control)")"></span>
+                            }
+                            @if (stripErrored > 0)
+                            {
+                                <span class="cio-completeness-seg cio-completeness-tick--errored" style="width:@(SegPct(stripErrored, _governanceScore.TotalFindings))%;" title="@($"Errored: {stripErrored} of {_governanceScore.TotalFindings} — excluded from scoring (absence of evidence, neither pass nor fail)")"></span>
+                            }
+                        </div>
+                        <div class="cio-completeness-legend">
+                            <span><span class="cio-legend-swatch" style="background:var(--green);"></span> Passed (@_governanceScore.PassedFindings)</span>
+                            <span><span class="cio-legend-swatch" style="background:var(--red);"></span> Failed (@_governanceScore.FailedFindings)</span>
+                            <span><span class="cio-legend-swatch" style="background:var(--text-muted);"></span> Informational/skipped (@stripExcludedPlain)</span>
+                            @if (stripPartial > 0)
+                            {
+                                <span><span class="cio-legend-swatch" style="background:var(--orange);"></span> Partial (@stripPartial)</span>
+                            }
+                            @if (stripErrored > 0)
+                            {
+                                <span><span class="cio-legend-swatch" style="background:var(--orange);"></span> Errored (@stripErrored)</span>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+
+<!-- Server Risk Heatmap -->
+        @if (_serverGov.Count > 0)
+        {
+            <div class="cio-heatmap-section">
+                <div class="cio-section-header">
+                    <i class="fa-solid fa-table-cells cio-heatmap-icon"></i>
+                    <h3 class="cio-section-title">Server Risk Heatmap</h3>
+                </div>
+                <div class="cio-heatmap-scroll">
+                    <table class="cio-heatmap-table">
+                        <thead>
+                            <tr>
+                                <th class="cio-heatmap-th">Server</th>
+                                <th class="cio-heatmap-th cio-heatmap-th-center">Connection</th>
+                                <th class="cio-heatmap-th cio-heatmap-th-center" title="The golden per-server score — see Estate Executive Health above for the estate-wide equivalent">Exec Health</th>
+                                <th class="cio-heatmap-th cio-heatmap-th-center" title="Governance is a sub-lens — see Estate Executive Health for the golden score">Governance <span style="font-weight:400; opacity:.55; font-size:.82em;">(sub-lens)</span></th>
+                                <th class="cio-heatmap-th cio-heatmap-th-center">Open</th>
+                                <th class="cio-heatmap-th cio-heatmap-th-center" title="Critical-severity open findings on this server. The badge on Estate Executive Health above is this column's total.">Critical findings</th>
+                                <th class="cio-heatmap-th cio-heatmap-th-center" title="Governance score history — GovernanceHistoryService.GetTrend, real persisted data">Trend</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var entry in _serverGov)
+                            {
+                                var gov = entry.Value;
+                                var dataAlias = ResolveDisplayAlias(entry.Key);
+                                var connStatus = ConnectionHealth.GetStatus(dataAlias);
+                                var connColor = SeverityColor(connStatus.Status == ConnectionHealthService.ServerStatus.Online ? HealthSeverity.Healthy : connStatus.Status == ConnectionHealthService.ServerStatus.Offline ? HealthSeverity.Critical : HealthSeverity.Unknown);
+                                var open = gov.FailedFindings;
+                                var crit = _serverCritical.TryGetValue(entry.Key, out var cc) ? cc : 0;
+                                var hasHealth = _serverScores.TryGetValue(entry.Key, out var health) && health.IsAssessed;
+                                <tr class="cio-heatmap-row" @onclick="() => NavigateToServer(dataAlias)">
+                                    <td class="cio-heatmap-td cio-heatmap-td-server">
+                                        <i class="fa-solid fa-database"></i>@entry.Key
+                                        @if (!string.Equals(dataAlias, entry.Key, StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            <!-- B1: the connection alias the user entered survives as a display label only (ruling R-B1) -->
+                                            <div class="cio-heatmap-alias" style="font-size:0.72em; opacity:0.55; margin-left:20px;">via @dataAlias</div>
+                                        }
+                                    </td>
+                                    <td class="cio-heatmap-td cio-heatmap-td-center">
+                                        <span class="cio-heatmap-cell" style="background:@connColor;">
+                                            @{
+                                                 var isOnline = connStatus.Status == ConnectionHealthService.ServerStatus.Online;
+                                                 var isOffline = connStatus.Status == ConnectionHealthService.ServerStatus.Offline;
+                                             }
+                                             @if (isOnline) { <i class="fa-solid fa-check"></i> } else if (isOffline) { <i class="fa-solid fa-xmark"></i> } else { <text>?</text> }
+                                        </span>
+                                    </td>
+                                    <td class="cio-heatmap-td cio-heatmap-td-center">
+                                        @if (hasHealth)
+                                        {
+                                            <span class="cio-heatmap-cell" style="background:@SeverityColor(health!.Severity); color:#0b0e14; font-weight:700;"
+                                                  title="@($"Executive Health {health.Score} — {health.Severity}")">@health.Score · @health.Severity</span>
+                                        }
+                                        else
+                                        {
+                                            @* 2026-08-05: this tooltip said "Not yet assessed" for
+                                               every state that is not assessed, including a server
+                                               that did not answer and one whose collection threw. *@
+                                            <span class="cio-heatmap-cell" style="background:var(--text-muted); opacity:0.5;" title="@EstateHealthPolicy.ServerBasis(health)">&mdash;</span>
+                                        }
+                                    </td>
+                                    <td class="cio-heatmap-td cio-heatmap-td-center">
+                                        <span class="cio-heatmap-cell" style="background:@ScoreColor(gov.Overall); color:#0b0e14; font-weight:700;"
+                                              title="@($"Governance score {gov.Overall:F0} — {gov.Band}")">@gov.Overall.ToString("F0") · @gov.Band</span>
+                                    </td>
+                                    <td class="cio-heatmap-td cio-heatmap-td-center">
+                                        <span class="cio-heatmap-cell" style="background:@SeverityColor(open == 0 ? HealthSeverity.Healthy : HealthSeverity.Warning);"
+                                              title="@($"{open} open finding(s)")">@open</span>
+                                    </td>
+                                    <td class="cio-heatmap-td cio-heatmap-td-center">
+                                        <span class="cio-heatmap-cell" style="background:@SeverityColor(crit == 0 ? HealthSeverity.Healthy : HealthSeverity.Critical);"
+                                              title="@($"{crit} critical finding(s)")">@crit</span>
+                                    </td>
+                                    <td class="cio-heatmap-td cio-heatmap-td-center">
+                                        <!-- Score sparkline (UI Refresh Phase 1a, must-fix #5): queried
+                                             per-server against the data alias, populated in
+                                             OnInitializedAsync — see _serverSparkline. -->
+                                        @{ var sparkPts = _serverSparkline.TryGetValue(entry.Key, out var sp) ? sp : null; }
+                                        @if (sparkPts != null && sparkPts.Count >= 2)
+                                        {
+                                            <svg viewBox="0 0 64 24" class="cio-spark-svg" aria-hidden="true">
+                                                <polyline class="cio-spark-line" points="@SparklinePoints(sparkPts)" style="stroke:@ScoreColor(sparkPts[^1].OverallScore);"></polyline>
+                                            </svg>
+                                        }
+                                        else
+                                        {
+                                            <span class="cio-spark-empty">insufficient history</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="cio-legend">
+                    <span><span class="cio-legend-swatch" style="background:var(--green);"></span> Healthy</span>
+                    <span><span class="cio-legend-swatch" style="background:var(--yellow);"></span> Warning</span>
+                    <span><span class="cio-legend-swatch" style="background:var(--red);"></span> Critical</span>
+                    <span><span class="cio-legend-swatch" style="background:var(--text-muted);"></span> Unknown</span>
+                </div>
+            </div>
+        }
+
+<!-- Top 10 High Priority Findings -->
+        <div class="cio-risks-section card-glass">
+            <div class="cio-section-header">
+                <i class="fa-solid fa-triangle-exclamation cio-risks-icon"></i>
+                <h3 class="cio-section-title">Top 10 High Priority Findings</h3>
+            </div>
+            @if (_topRisks.Count > 0)
+            {
+                <div class="cio-risks-list">
+                    @{ int riskIdx = 0; }
+                    @foreach (var risk in _topRisks)
+                    {
+                        var idx = riskIdx++;
+                        var sevColor = risk.Severity?.ToLower() switch
+                        {
+                            "critical" => "var(--red)",
+                            "high" => "var(--orange)",
+                            "medium" => "var(--yellow)",
+                            "low" => "var(--green)",
+                            _ => "var(--text-muted)"
+                        };
+                        var ops = RiskOps(risk.Severity);
+                        <div class="cio-risk-item" style="border-left-color:@sevColor;">
+                            <span class="cio-risk-badge" style="background:@(sevColor)22; color:@sevColor;">
+                                @risk.Severity
+                            </span>
+                            <div class="cio-risk-content">
+                                <!-- #47 (2026-07-15 fix): check TITLES are written as the desired state
+                                     (e.g. "... Is Captured by an Enabled Audit Specification") — printing
+                                     the title as the headline under a CRITICAL badge asserted the control
+                                     WAS in place. The headline is now the actual problem
+                                     (FindingPresentation.ProblemStatement); the check's own title survives
+                                     as a small caption for traceability, never as the primary statement. -->
+                                <div class="cio-risk-name">@FindingPresentation.ProblemStatement(risk)</div>
+                                <div class="cio-risk-server">
+                                    <i class="fa-solid fa-server"></i>@risk.InstanceName
+                                    <span style="opacity:0.6;"> &middot; @risk.CheckName</span>
+                                </div>
+                                @if (!string.IsNullOrEmpty(risk.RecommendedAction))
+                                {
+                                    <button type="button" class="cio-risk-sql-toggle" @onclick="() => ToggleRiskSql(idx)"
+                                            style="background:none; border:none; padding:0; margin-top:6px; font-size:0.78em; color:var(--accent); cursor:pointer; display:flex; align-items:center; gap:4px;">
+                                        <i class="fa-solid @(_expandedRiskSql.Contains(idx) ? "fa-chevron-up" : "fa-chevron-down")"></i> DBA view
+                                    </button>
+                                    @if (_expandedRiskSql.Contains(idx))
+                                    {
+                                        <div class="cio-risk-action">
+                                            <i class="fa-solid fa-arrow-right"></i>@Markdig.Markdown.ToPlainText(risk.RecommendedAction)
+                                        </div>
+                                    }
+                                }
+                                <div class="cio-risk-ops">
+                                    <span class="cio-risk-op">
+                                        <span class="cio-risk-op-label">Next step</span>
+                                        <span class="cio-risk-op-value">@ops.NextStep</span>
+                                    </span>
+                                    <span class="cio-risk-op">
+                                        <span class="cio-risk-op-label">Assigned to</span>
+                                        <span class="cio-risk-op-value">@ops.AssignedTo</span>
+                                    </span>
+                                    <span class="cio-risk-op">
+                                        <span class="cio-risk-op-label">Escalation</span>
+                                        <span class="cio-risk-op-value">@ops.Escalation</span>
+                                    </span>
+                                    <span class="cio-risk-op">
+                                        <span class="cio-risk-op-label">Review by</span>
+                                        <span class="cio-risk-op-value">@ops.Review</span>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="cio-risks-empty">
+                    <i class="fa-solid fa-shield-halved cio-risks-empty-icon"></i>
+                    Run Quick Check to see top risks
+                </div>
+            }
+        </div>
+
+<!-- Governance Trend -->
+        @if (_trendData.Count > 1)
+        {
+            <div class="cio-section">
+                <div class="cio-section-header">
+                    <i class="fa-solid fa-chart-line" style="color:var(--accent);"></i>
+                    <!-- Honesty fix (2026-07-16): this series is HistoryService.GetTrend(_trendServer),
+                         ONE server's own governance history (per #57's per-server write fix) — never
+                         an estate aggregate. It was heading as plain "Governance Trend", which reads
+                         as estate-wide next to the estate-level cards above it. Naming the server here
+                         is the honest minimal fix (option a from the brief); a real estate-aggregate
+                         series is future work, not built here. -->
+                    <h3 class="cio-section-title">Governance Trend &mdash; @_trendServer</h3>
+                    <div class="cio-trend-toggle">
+                        <button class="@(_trendView == "weekly" ? "cio-trend-btn-active" : "cio-trend-btn")" @onclick='() => SetTrendView("weekly")'>Weekly</button>
+                        <button class="@(_trendView == "daily" ? "cio-trend-btn-active" : "cio-trend-btn")" @onclick='() => SetTrendView("daily")'>Daily</button>
+                    </div>
+                </div>
+                <div class="cio-trend-chart">
+                    @* Bucketing fix (2026-07-13): each bar is now a min-to-max RANGE for its
+                       bucket (day or week), not one raw snapshot — a floating segment inside
+                       a fixed-height track, coloured by the bucket's representative band. *@
+                    @foreach (var bucket in _trendData)
+                    {
+                        var lo = Math.Max(0, Math.Min(100, Math.Min(bucket.Min, bucket.Max)));
+                        var hi = Math.Max(0, Math.Min(100, Math.Max(bucket.Min, bucket.Max)));
+                        var span = Math.Max(3, hi - lo);
+                        var color = ScoreColor(bucket.Representative);
+                        <div class="cio-trend-bar-wrapper" title="@TrendTooltip(bucket)">
+                            <div class="cio-trend-track">
+                                <div class="cio-trend-range" style="bottom:@(lo)%; height:@(span)%; background:@color;"></div>
+                            </div>
+                            <div class="cio-trend-label">@bucket.Label</div>
+                        </div>
+                    }
+                </div>
+                @* Honesty (Wave 3, 2026-07-12): a ▲/▼ delta is only truthful across >0 elapsed
+                   days. Two snapshots taken the same day span 0 days — "▲ 0.8 points over 0 days"
+                   asserts a movement over no time. Suppress the delta until history spans a day,
+                   same principle as the power zero-state: never claim a change we can't evidence. *@
+                @* Micro-nit fix (2026-07-13): TrendGlyph's own thresholds are ±0.05, but this
+                   guard used to fire on any nonzero delta — a 0.01 movement rendered the flat
+                   "▬" glyph next to "0.0 points" (honest-but-ugly). Aligning the guard to the
+                   same ±0.05 threshold, and folding every sub-threshold case (including the
+                   A6, 2026-07-13, genuine-zero case) into one "no material change" branch —
+                   anything below 0.05 rounds to 0.0 at the F1 precision shown, so that's the
+                   only phrasing that stays literally true across the whole sub-threshold range. *@
+                @if (SQLTriage.Data.DashboardTrendFormatter.IsMaterialTrendDelta(_trendDelta) && _trendSpanDays > 0)
+                {
+                    <div class="cio-trend-delta">
+                        <span>@TrendGlyph @Math.Abs(_trendDelta).ToString("F1") points over @_trendPeriod</span>
+                    </div>
+                }
+                else if (_trendSpanDays > 0)
+                {
+                    <div class="cio-trend-delta">
+                        <span style="opacity:.6;">No material change (&lt;0.1 points) over @_trendPeriod</span>
+                    </div>
+                }
+                else
+                {
+                    <div class="cio-trend-delta">
+                        <span style="opacity:.6;">Trend baseline set — a change appears once history spans more than one day.</span>
+                    </div>
+                }
+            </div>
+        }
+
+            </div>
+        </div>
+<!-- Quick Actions -->
+        <div class="cio-actions">
+            <button class="cio-action-btn" @onclick='() => Navigation.NavigateTo("/audit")'>
+                <i class="fa-solid fa-bolt-lightning"></i> Run Quick Check
+            </button>
+            <button class="cio-action-btn-secondary" @onclick='() => Navigation.NavigateTo("/fullaudit")'>
+                <i class="fa-solid fa-clipboard-check"></i> Raw Diagnostics
+            </button>
+            <button class="cio-action-btn-secondary" @onclick='() => Navigation.NavigateTo("/governance-report")'>
+                <i class="fa-solid fa-file-lines"></i> View Governance Report
+            </button>
+            <button class="cio-action-btn-secondary" @onclick='() => Navigation.NavigateTo("/compliance-map")' title="Compliance is a governance sub-lens — see Estate Executive Health for the golden score">
+                <i class="fa-solid fa-map"></i> Compliance Map
+            </button>
+            <button class="cio-action-btn-secondary" @onclick='() => Navigation.NavigateTo("/servers")'>
+                <i class="fa-solid fa-plus"></i> Add Server
+            </button>
+        </div>
+
+<!-- Power Savings (sustainability estimate) -->
+        @if (_powerRollup != null && _powerRollup.ServersWithEstimate > 0)
+        {
+            <div class="cio-section card-glass" style="margin-top:24px;">
+                <div class="cio-section-header">
+                    <i class="fa-solid fa-leaf" style="color:#4ade80;"></i>
+                    <span>Power Savings <span style="font-weight:400; opacity:.55; font-size:.8em;">— estimate</span></span>
+                </div>
+                <div style="padding:6px 4px 2px;">
+                    @if (_powerRollup.HasSignal)
+                    {
+                        <p style="margin:0 0 8px; font-size:0.95em;">
+                            Performance tuning could trim an estimated
+                            <strong>@_powerRollup.CutLowPct&ndash;@_powerRollup.CutHighPct%</strong> of compute energy across
+                            <strong>@_powerRollup.ServersWithEstimate</strong> connected server@(_powerRollup.ServersWithEstimate == 1 ? "" : "s")
+                            &mdash; @PowerDriverClause().
+                        </p>
+                    }
+                    else
+                    {
+                        <p style="margin:0 0 8px; font-size:0.95em;">
+                            No tuning-headroom signal detected across
+                            <strong>@_powerRollup.ServersWithEstimate</strong> connected server@(_powerRollup.ServersWithEstimate == 1 ? "" : "s")
+                            &mdash; power plan healthy, no parallelism or index findings.
+                        </p>
+                    }
+                    @if (_powerRollup.ServersQuantified > 0)
+                    {
+                        <div style="display:flex; gap:36px; flex-wrap:wrap; margin-top:10px;">
+                            <div>
+                                <div style="font-size:1.6rem; font-weight:700; color:#4ade80; line-height:1;">$@_powerRollup.CostLow&ndash;$@_powerRollup.CostHigh</div>
+                                <div style="opacity:.6; font-size:.78em; margin-top:4px;">per year, potentially avoidable</div>
+                            </div>
+                            <div>
+                                <div style="font-size:1.6rem; font-weight:700; color:#4ade80; line-height:1;">@_powerRollup.Co2Low&ndash;@_powerRollup.Co2High kg</div>
+                                <div style="opacity:.6; font-size:.78em; margin-top:4px;">CO&#8322;e per year</div>
+                            </div>
+                            <div>
+                                <div style="font-size:1.6rem; font-weight:700; color:#4ade80; line-height:1;">@_powerRollup.KWhLow&ndash;@_powerRollup.KWhHigh</div>
+                                <div style="opacity:.6; font-size:.78em; margin-top:4px;">kWh per year</div>
+                            </div>
+                        </div>
+                        <p style="margin:12px 0 0; opacity:.55; font-size:.76em;">
+                            Quantified across @_powerRollup.ServersQuantified physical host@(_powerRollup.ServersQuantified == 1 ? "" : "s") with &ge;7 days history.
+                            Modelled estimate, not a measurement; realisable only if freed capacity is reclaimed (right-size / consolidate).
+                        </p>
+                    }
+                    else
+                    {
+                        <p style="margin:6px 0 0; opacity:.55; font-size:.76em;">
+                            Absolute energy figures appear only for physical hosts with &ge;7 days history; virtual/cloud hosts show the relative reduction only.
+                            Modelled estimate, not a measurement.
+                        </p>
+                    }
+                </div>
+            </div>
+        }
+    }
+    </div>
+
+@code {
+    private bool _loading = true;
+    private bool _hasServers = false;
+    private string _loadingMessage = "Loading CIO Dashboard...";
+    private GovernanceScore? _governanceScore;
+    // How many governance checks returned a pass or a fail — the only checks a maturity score is
+    // computed from (2026-08-06). GovernanceScore.Overall holds 0 whenever this is 0, because the
+    // composite has to return a number, and Band reads a placeholder 0 as "Emerging": an estate
+    // where NOTHING scored printed "0 · Emerging" as a verdict. Every surface that prints the
+    // score or the band asks this first, and there is ONE definition of it for the page — the
+    // strip, the governance-derived headline and the PDF DTO all read this property, so they
+    // cannot drift into disagreeing about what "scored" means.
+    private int GovernanceScoredChecks =>
+        _governanceScore == null ? 0 : _governanceScore.PassedFindings + _governanceScore.FailedFindings;
+    private Dictionary<string, ExecutiveHealthScore> _serverScores = new(StringComparer.OrdinalIgnoreCase);
+    // Estate ExecutiveHealth — the golden CIO headline (ruling 2026-07-11). Equal-weight mean
+    // of Score across assessed servers; null (render nothing) when no server has been assessed.
+    private ExecutiveHealthScore? _estateHealth;
+    // The counted read behind the caption (2026-08-05). Held so the number in the gauge and the
+    // sentence under it are produced by the SAME pass over the SAME dictionary: two independent
+    // counts of "assessed" on one card is how the card came to contradict itself.
+    private EstateHealthRollup? _estateRollup;
+    private int _estateCriticalCount;
+    // Per-server GOVERNANCE — the populated data behind the heatmap + health cards (the live
+    // health poll is empty in most deployments). Score/band/category-breakdown + critical count.
+    private Dictionary<string, GovernanceScore> _serverGov = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, int> _serverCritical = new(StringComparer.OrdinalIgnoreCase);
+    // UI Refresh Phase 1a (2026-07-15): per-server score-trend sparkline points, keyed
+    // canonically like the dictionaries above. Populated in OnInitializedAsync from
+    // GovernanceHistoryService.GetTrend queried against the DATA alias (must-fix #5) —
+    // never re-queried per render.
+    private Dictionary<string, List<GovernanceTrendPoint>> _serverSparkline = new(StringComparer.OrdinalIgnoreCase);
+    // B1 (2026-07-13, ruling R-B1): canonical server identity. _serverGov/_serverScores/
+    // _serverCritical above are now keyed by ConnectionHealth.ResolveCanonical(alias), not
+    // the raw alias, so two aliases pointing at the SAME physical instance collapse to one
+    // heatmap row / one estate-mean contribution instead of double-counting. The alias the
+    // user entered survives as a display label (_serverAlias) and is what drill-down
+    // navigation + connection-status lookups use — those stay keyed by alias everywhere
+    // else in the app, so only the alias that actually carries data is safe to use there.
+    private Dictionary<string, string> _serverAlias = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, string> _serverDataAlias = new(StringComparer.OrdinalIgnoreCase);
+    private List<CheckResult> _topRisks = new();
+    // Exec findings card: raw remediation T-SQL is DBA detail, collapsed by default on the
+    // executive card. Indices of rows the user has expanded via the "DBA view" toggle.
+    private HashSet<int> _expandedRiskSql = new();
+    private List<CategoryScore> _orderedCategories = new();
+    // Count of currently-enabled checks (CheckRepositoryService.GetEnabledChecks()) — the
+    // honest denominator for "a Full Audit assesses N+ checks" and for deriving full-vs-
+    // indicative below. Never hardcoded (Wave 2, 2026-07-12 fix).
+    private int _enabledCheckTotal;
+
+    // Severity → (NextStep, AssignedTo, EscalationPath, ReviewPeriod).
+    // Mirrors the Alliance Group risk-matrix layout — operationalises each
+    // finding with owner, escalation, and review cadence.
+    private void ToggleRiskSql(int idx)
+    {
+        if (!_expandedRiskSql.Add(idx)) _expandedRiskSql.Remove(idx);
+    }
+
+    private static (string NextStep, string AssignedTo, string Escalation, string Review) RiskOps(string? severity) =>
+        (severity ?? "").ToLowerInvariant() switch
+        {
+            "critical" => ("Urgent attention", "Senior Management", "Executive team",  "1 month"),
+            "high"     => ("Plan intervention", "Senior Management", "General Manager", "3 months"),
+            "medium"   => ("Actively manage",   "BU Manager",        "Senior Management", "6 months"),
+            "low"      => ("Monitor",           "DBA",                "BU Manager",       "6 months"),
+            _          => ("Review",            "DBA",                "BU Manager",       "6 months"),
+        };
+
+    // Trend glyph — shape-only (no colour) for colour-blind safety. Delegates to
+    // DashboardTrendFormatter.TrendGlyph so its threshold stays aligned with
+    // IsMaterialTrendDelta (the render guard above) and is unit-testable directly.
+    private string TrendGlyph => SQLTriage.Data.DashboardTrendFormatter.TrendGlyph(_trendDelta);
+
+    private List<CheckResult> _lastCheckResults = new();
+    private LicensingEstimate? _licensingEstimate;
+    private PowerRollup? _powerRollup;
+    private sealed class PowerRollup
+    {
+        public int ServersWithEstimate;
+        public int ServersQuantified;
+        // Evidence-based estate band — cpu_count-weighted mean of per-server bands (see the
+        // aggregation loop in OnInitializedAsync). 0/0 + HasSignal==false is the honest
+        // "no tuning-headroom evidence anywhere" default, never a fabricated placeholder range.
+        public int CutLowPct, CutHighPct;
+        public bool HasSignal;
+        public Dictionary<string, int> DriverServerCounts = new(StringComparer.OrdinalIgnoreCase);
+        public int KWhLow, KWhHigh, CostLow, CostHigh, Co2Low, Co2High;
+    }
+
+    // Fixed, stable driver order (matches the ruled contribution order); only named
+    // contributions that actually fired on at least one server are included — counts
+    // are real (DriverServerCounts, built from real per-server verdicts).
+    private static readonly string[] _powerDriverOrder = { "power-plan", "parallelism", "index-health" };
+    private string PowerDriverClause()
+    {
+        if (_powerRollup == null) return "";
+        var parts = new List<string>();
+        foreach (var key in _powerDriverOrder)
+        {
+            if (_powerRollup.DriverServerCounts.TryGetValue(key, out var n) && n > 0)
+                parts.Add($"{PowerEstimateService.TuningHeadroomLabels[key]} on {n}");
+        }
+        return string.Join(", ", parts);
+    }
+    private List<TrendBucket> _trendData = new();
+    private string _trendView = "weekly";
+    // Bucketing fix (2026-07-13): the raw connection alias GetTrend(90) was queried against
+    // on initial load — SetTrendView reuses this on every toggle click so it always targets
+    // the same server governance_history rows are actually recorded under (see OnInitializedAsync).
+    private string _trendServer = "";
+    private double _trendDelta;
+    private string _trendPeriod = "";
+    // Elapsed days spanned by the trend history. A delta over 0 days is a movement over no
+    // time — the delta line is suppressed until this is > 0 (Wave 3 honesty fix, 2026-07-12).
+    private int _trendSpanDays;
+    private bool _isExporting;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (UserSettings.GetFastAppLoad()) await Task.Yield();
+        try
+        {
+            _loadingMessage = "Loading server connections...";
+            var connections = ConnectionManager.GetEnabledConnections();
+            if (connections.Count == 0)
+            {
+                _hasServers = false;
+                _loading = false;
+                return;
+            }
+            _hasServers = true;
+
+            var allServers = connections.SelectMany(c => c.GetServerList()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            if (allServers.Count == 0)
+            {
+                _hasServers = false;
+                _loading = false;
+                return;
+            }
+
+            // B1 (2026-07-13): group aliases by canonical server identity BEFORE any
+            // per-server work, so the estate mean, heatmap rows, and governance/critical
+            // dictionaries below are keyed once per PHYSICAL server, not once per alias.
+            var aliasGroups = allServers
+                .GroupBy(s => ConnectionHealth.ResolveCanonical(s), StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            _loadingMessage = "Computing health scores...";
+            StateHasChanged();
+
+            foreach (var group in aliasGroups)
+            {
+                var canonicalKey = group.Key;
+                _serverAlias[canonicalKey] = group.First();
+
+                // A stale/unreachable alias for the same physical box must not blank out
+                // a working one — keep the first result, but prefer the first ASSESSED one.
+                ExecutiveHealthScore? chosen = null;
+                foreach (var alias in group)
+                {
+                    ExecutiveHealthScore candidate;
+                    try
+                    {
+                        candidate = await HealthService.GetHealthScoreAsync(alias);
+                    }
+                    catch (Exception ex)
+                    {
+                        candidate = new ExecutiveHealthScore
+                        {
+                            Score = 0,
+                            Severity = HealthSeverity.Unknown,
+                            Trend = HealthTrend.Stable,
+                            Message = ex.Message,
+                            // This block watched the collection throw, so it is entitled to say
+                            // so; without the flag the estate caption counts this server among
+                            // the never-assessed, which is a different fact (2026-08-05).
+                            CollectionFailed = true
+                        };
+                    }
+                    chosen ??= candidate;
+                    if (candidate.IsAssessed) { chosen = candidate; break; }
+                }
+                _serverScores[canonicalKey] = chosen!;
+            }
+
+            // Estate ExecutiveHealth aggregate (ruling 2026-07-11): equal-weight mean of Score
+            // across ASSESSED servers only. 2026-08-05: the mean, the counts and the caption are
+            // now one pass through EstateHealthPolicy.Summarise, which also carries the band
+            // (identical thresholds to ExecutiveHealthService.ScoreToSeverity, asserted by test
+            // rather than by this comment). Zero assessed servers => no mean => render nothing.
+            _estateRollup = EstateHealthPolicy.Summarise(_serverScores.Values);
+            if (_estateRollup.MeanScore.HasValue)
+            {
+                var meanScore = _estateRollup.MeanScore.Value;
+                _estateHealth = new ExecutiveHealthScore
+                {
+                    // NOTE: this instance is a CARRIER for the estate mean, not a server score.
+                    // Its own Breakdown is empty, so its State reads NotAssessed; read the mean
+                    // from _estateRollup, never this object's IsAssessed/MeasuredScore.
+                    Score = meanScore,
+                    Severity = _estateRollup.Severity!.Value,
+                    Trend = HealthTrend.Stable,
+                    LastUpdated = DateTime.Now,
+                };
+                // 2026-07-21 (persona board, FIX 3): this counted SERVERS whose health severity was
+                // Critical, but the badge it feeds is labelled "N Critical" and sits a few hundred
+                // pixels above a heatmap column also headed "Critical" that counts critical
+                // FINDINGS. Two units, one word, one screen — the badge read 2 while the column
+                // read 6, and nothing on the page said they were measuring different things.
+                //
+                // The badge now counts critical findings, from _serverCritical — the SAME
+                // dictionary the heatmap column renders cell by cell — so the badge is that
+                // column's total by construction and cannot drift from it. _serverCritical is
+                // populated in the results loop further down, so the sum is taken there.
+                _estateCriticalCount = 0;
+            }
+
+            _loadingMessage = "Loading check results...";
+            StateHasChanged();
+
+            foreach (var group in aliasGroups)
+            {
+                var canonicalKey = group.Key;
+                List<CheckResult> serverResults = new();
+                var usedAlias = group.First();
+
+                // B1: try every alias in the canonical group and keep the richest result
+                // set — a check run recorded under one alias for a re-aliased server must
+                // not go missing just because the estate loop landed on a different alias.
+                foreach (var alias in group)
+                {
+                    List<CheckResult> candidate = new();
+                    try
+                    {
+                        // Try persisted results (survive restarts)
+                        var persisted = HistoryService.LoadLatestCheckResults(alias, 7);
+                        if (persisted.Count > 0 && persisted.Any(r => r.EffortHours > 0))
+                            candidate = persisted;
+                    }
+                    catch { /* fall through to live data */ }
+
+                    if (candidate.Count == 0)
+                    {
+                        try
+                        {
+                            // Fall back to live in-memory results (has EffortHours).
+                            // int.MaxValue: the governance score must cover EVERY result — a
+                            // fixed cap (was 500) silently truncated ~547-check estates and the
+                            // headline score was computed over an arbitrary subset (ruled
+                            // 2026-07-08: dashboard shows all).
+                            var live = CheckExecutor.GetResults(alias, int.MaxValue);
+                            if (live.Count > 0) candidate = live;
+                        }
+                        catch { /* non-fatal */ }
+                    }
+
+                    if (candidate.Count > serverResults.Count) { serverResults = candidate; usedAlias = alias; }
+                }
+
+                if (serverResults.Count > 0)
+                {
+                    _serverDataAlias[canonicalKey] = usedAlias;
+                    _lastCheckResults.AddRange(serverResults);
+                    // Per-server governance — the real data behind the heatmap + health cards.
+                    GovernanceScore? serverGov = null;
+                    try { serverGov = await GovernanceService.ComputeIndicativeAsync(serverResults); _serverGov[canonicalKey] = serverGov; }
+                    catch { /* non-fatal */ }
+                    // 2026-07-16: added IsScorable — a Verdict/Severity-INFO or SKIP result rides
+                    // Passed=true (CheckExecutionService), so !r.Passed already excluded it here in
+                    // practice; the explicit filter is defensive (matches _topRisks below) and reads
+                    // the same regardless of which way CheckExecutionService's Passed semantics go.
+                    _serverCritical[canonicalKey] = serverResults.Count(r => !r.Passed && IsScorable(r) && IsCriticalSeverity(r.Severity));
+                    // FIX ROUND 1, BLOCKER 2 (2026-07-15): record THIS server's OWN governance
+                    // score to history, keyed by usedAlias — the same data alias GetTrend below
+                    // (and every per-server sparkline read) queries. Previously the block further
+                    // down (now removed) recorded the ESTATE-wide _governanceScore under every
+                    // connection's server name, so all heatmap rows read a byte-identical history
+                    // regardless of the server's own current score (verified live via the
+                    // decrypted governance-history.db: ".", "NEW2022" and "OLD2017" all showed the
+                    // same 73.3→73.8→73.7 series while NEW2022's own Governance cell read "73 ·
+                    // Gold" against a trend ending 73.7→74 — a self-contradiction). A genuinely
+                    // per-server Trend column requires a per-server score recorded at write time.
+                    if (serverGov != null)
+                    {
+                        try { HistoryService.RecordGovernanceScore(usedAlias, serverGov); }
+                        catch { /* non-fatal — history recording is best-effort */ }
+                    }
+                    // UI Refresh Phase 1a, must-fix #5: query GetTrend with usedAlias (the DATA
+                    // alias, same one _serverDataAlias just recorded) — governance_history rows
+                    // are persisted under the raw connection alias, so querying the canonical
+                    // key here would silently render every sparkline empty on aliased connections.
+                    try { _serverSparkline[canonicalKey] = HistoryService.GetTrend(usedAlias, 30); }
+                    catch { /* non-fatal — sparkline is best-effort; falls back to "insufficient history" */ }
+                }
+            }
+
+            // 2026-07-21 (persona board, FIX 3): the Estate Executive Health badge is the TOTAL of
+            // the heatmap's Critical column, taken from the very dictionary that column renders.
+            // Same source, same unit — the badge cannot say 2 while the column adds to 6.
+            _estateCriticalCount = _serverCritical.Values.Sum();
+
+            _loadingMessage = "Computing governance score...";
+            StateHasChanged();
+
+            if (_lastCheckResults.Count > 0)
+            {
+                _governanceScore = await GovernanceService.ComputeIndicativeAsync(_lastCheckResults);
+
+                // Honest full-vs-indicative (Wave 2, 2026-07-12 fix): ComputeIndicativeAsync
+                // always marks IsIndicative=true regardless of coverage — it was unconditional
+                // here. Full Assessment only when EVERY assessed server's results cover the
+                // complete enabled check set (CheckRepositoryService.GetEnabledChecks(), never
+                // a hardcoded count); anything less is honestly Indicative with the partial-set
+                // note shown below.
+                _enabledCheckTotal = CheckRepo.GetEnabledChecks().Count;
+                var assessedServerNames = _serverGov.Keys.ToList();
+                // B1: _serverGov is keyed canonically now, but _lastCheckResults.InstanceName
+                // still carries whatever alias the checks actually ran under — compare against
+                // _serverDataAlias (the alias whose results were used for this canonical server),
+                // not the canonical key itself, or every full assessment would misread as partial.
+                _governanceScore.IsIndicative = _enabledCheckTotal == 0
+                    || assessedServerNames.Count == 0
+                    || assessedServerNames.Any(server =>
+                    {
+                        var dataAlias = _serverDataAlias.TryGetValue(server, out var da) ? da : server;
+                        return _lastCheckResults
+                            .Where(r => string.Equals(r.InstanceName, dataAlias, StringComparison.OrdinalIgnoreCase))
+                            .Select(r => r.CheckId)
+                            .Distinct(StringComparer.OrdinalIgnoreCase)
+                            .Count() < _enabledCheckTotal;
+                    });
+
+                // FIX ROUND 1, BLOCKER 2 (2026-07-15): the estate-wide blanket recording that
+                // used to live here — stamping this ESTATE-aggregate _governanceScore into
+                // history under every connection's server name — is REMOVED. Each server's own
+                // governance score is now recorded once, per server, at the point it's computed
+                // in the per-server loop above (see the "serverGov != null" block). Recording an
+                // estate figure under every server name here would re-introduce the exact defect
+                // that fix closes (byte-identical trends across servers with different scores).
+
+                // #50 (2026-07-15 fix): the header says "Top 10" but this took only 5, silently
+                // withholding real findings (incl. Reliability criticals — CHECKDB/backup gaps —
+                // that the /dba panel already surfaces). Take(10) so the panel shows what it
+                // promises instead of quietly under-delivering.
+                // 2026-07-16: !Passed && IsScorable — a SKIP/INFO result must never surface as a
+                // "risk" (see CheckClassification.IsScorable); defensive same as _serverCritical above.
+                _topRisks = _lastCheckResults
+                    .Where(r => !r.Passed && IsScorable(r))
+                    .OrderByDescending(r => SeverityRank(r.Severity))
+                    .Take(10)
+                    .ToList();
+
+                // Licensing probe — fire-and-forget, refreshes UI when done
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        var distinctServers = _lastCheckResults
+                            .Select(r => r.InstanceName)
+                            .Where(n => !string.IsNullOrEmpty(n))
+                            .Distinct(StringComparer.OrdinalIgnoreCase)
+                            .ToList();
+
+                        var facts = new List<ServerLicensingFacts>();
+                        foreach (var srv in distinctServers)
+                        {
+                            var f = await LicensingEstimator.ProbeServerAsync(srv);
+                            if (f != null) facts.Add(f);
+                        }
+
+                        if (facts.Count > 0)
+                        {
+                            _licensingEstimate = LicensingEstimator.Estimate(facts, _governanceScore?.Overall ?? 0);
+                            await InvokeAsync(StateHasChanged);
+                        }
+
+                        // Power roll-up — potential annual energy avoidance across the estate.
+                        // Relative for every reachable server; absolute $/CO2 only where the host
+                        // is physical with >= 7 days history (suppressed on VM/cloud).
+                        // Relative tuning-headroom band: cpu_count-weighted mean of each server's
+                        // EVIDENCE-FIRED band (PowerEstimateService.ComputeTuningHeadroom) — kills
+                        // the old last-server-wins overwrite bug. Weight falls back to 1 when a
+                        // server's cpu_count is unknown (probe failure).
+                        var pr = new PowerRollup();
+                        double weightedLowSum = 0, weightedHighSum = 0, weightSum = 0;
+                        foreach (var srv in distinctServers)
+                        {
+                            var est = await PowerEstimate.GetEstimateAsync(srv);
+                            if (est == null) continue;
+                            pr.ServersWithEstimate++;
+                            double weight = est.CpuCount > 0 ? est.CpuCount : 1;
+                            weightedLowSum += est.TuneCutLowPct * weight;
+                            weightedHighSum += est.TuneCutHighPct * weight;
+                            weightSum += weight;
+                            foreach (var driver in est.TuningHeadroomDrivers)
+                                pr.DriverServerCounts[driver] = pr.DriverServerCounts.GetValueOrDefault(driver) + 1;
+                            if (est.AnnualKWhLow.HasValue)
+                            {
+                                pr.ServersQuantified++;
+                                pr.KWhLow   += est.AnnualKWhLow.Value;
+                                pr.KWhHigh  += est.AnnualKWhHigh ?? 0;
+                                pr.CostLow  += est.AnnualCostLowUsd ?? 0;
+                                pr.CostHigh += est.AnnualCostHighUsd ?? 0;
+                                pr.Co2Low   += est.AnnualCo2KgLow ?? 0;
+                                pr.Co2High  += est.AnnualCo2KgHigh ?? 0;
+                            }
+                        }
+                        if (pr.ServersWithEstimate > 0 && weightSum > 0)
+                        {
+                            pr.CutLowPct = (int)Math.Round(weightedLowSum / weightSum);
+                            pr.CutHighPct = Math.Min(PowerEstimateService.TuningHeadroomHighCap, (int)Math.Round(weightedHighSum / weightSum));
+                            pr.CutLowPct = Math.Max(0, Math.Min(pr.CutLowPct, pr.CutHighPct));
+                            pr.HasSignal = pr.DriverServerCounts.Count > 0;
+                        }
+                        if (pr.ServersWithEstimate > 0)
+                        {
+                            _powerRollup = pr;
+                            await InvokeAsync(StateHasChanged);
+                        }
+                    }
+                    catch { /* non-fatal — licensing panel just won't show */ }
+                });
+            }
+            else
+            {
+                _enabledCheckTotal = CheckRepo.GetEnabledChecks().Count;
+                _governanceScore = new GovernanceScore
+                {
+                    IsIndicative = true,
+                    Overall = 0,
+                    Band = ScoreBand.Emerging,
+                    Categories = new Dictionary<string, CategoryScore>(StringComparer.OrdinalIgnoreCase),
+                    TotalFindings = 0,
+                    PassedFindings = 0,
+                    FailedFindings = 0
+                };
+
+                var defaultCategories = new[] { "Security", "Performance", "Reliability", "Compliance", "Cost" };
+                var weights = new[] { 0.25, 0.20, 0.20, 0.20, 0.15 };
+                for (int i = 0; i < defaultCategories.Length; i++)
+                {
+                    _governanceScore.Categories[defaultCategories[i]] = new CategoryScore
+                    {
+                        Dimension = defaultCategories[i],
+                        Weight = weights[i],
+                        RawScore = 0,
+                        CappedScore = 0,
+                        Ceiling = 100,
+                        FindingCount = 0,
+                        PassedCount = 0
+                    };
+                }
+            }
+
+            _orderedCategories = _governanceScore.Categories.Values
+                .OrderByDescending(c => c.Weight)
+                .ToList();
+
+            // Load trend data
+            try
+            {
+                var firstServer = allServers.FirstOrDefault() ?? "";
+                // Bucketing fix (2026-07-13): persist the RAW alias used here so SetTrendView
+                // (below) reads the identical server on every toggle click. SetTrendView used to
+                // re-derive its own "first server" from _serverScores.Keys — canonically-keyed
+                // per the same-day B1 ruling (e.g. "MSI\OLD2017") — while governance_history rows
+                // are recorded under the raw connection alias (e.g. ".\old2017", see
+                // HistoryService.RecordGovernanceScore's call site below). The two almost never
+                // matched, so every Weekly/Daily toggle click silently queried a server with zero
+                // history and emptied the chart. Found live while verifying this fix — pre-existing,
+                // not part of the bucketing bug, but it blocked toggle verification so fixed here too.
+                _trendServer = firstServer;
+                if (!string.IsNullOrEmpty(firstServer))
+                {
+                    // Bucketing fix (2026-07-13): always fetch the raw 90-day history, then
+                    // bucket to min/max per day/week per the (default "weekly") toggle — the
+                    // prior code plotted every raw snapshot on load regardless of _trendView,
+                    // only bucketing once the user re-clicked Weekly.
+                    var rawTrend = HistoryService.GetTrend(firstServer, 90);
+                    _trendData = TrendBucketer.BucketTrend(rawTrend, _trendView);
+                    if (_trendData.Count >= 2)
+                    {
+                        _trendDelta = _trendData[^1].Representative - _trendData[0].Representative;
+                        // A6 (2026-07-13): calendar-day span, not elapsed-24h. BucketStart is a
+                        // real DateTime (never a raw strftime string), so this is a plain date
+                        // subtraction — no DateTime.Parse needed.
+                        _trendSpanDays = (_trendData[^1].BucketStart.Date - _trendData[0].BucketStart.Date).Days;
+                        _trendPeriod = SQLTriage.Data.DashboardTrendFormatter.FormatTrendPeriod(_trendSpanDays);
+                    }
+                }
+            }
+            catch { /* trend is best-effort */ }
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("Failed to load CIO Dashboard", ex.Message);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void NavigateToServer(string serverName)
+    {
+        Navigation.NavigateTo($"/dashboard/instance?server={Uri.EscapeDataString(serverName)}");
+    }
+
+    // B1 (2026-07-13): heatmap rows are keyed canonically, but every other per-server
+    // surface in the app (drill-down dashboard, ConnectionHealthService) is still keyed
+    // by the raw alias — this resolves a canonical key back to the alias that actually
+    // carries data (falling back to the first-configured alias, then the key itself).
+    private string ResolveDisplayAlias(string canonicalKey) =>
+        _serverDataAlias.TryGetValue(canonicalKey, out var dataAlias) ? dataAlias
+        : _serverAlias.TryGetValue(canonicalKey, out var alias) ? alias
+        : canonicalKey;
+
+    private static bool IsCriticalSeverity(string? sev) => sev?.ToLowerInvariant() is "error" or "critical";
+
+    // Ring/number colour, aligned to the medal tier (not a health gradient). Single-source band
+    // thresholds via GovWeights.BandFor, so the colour always matches the displayed band name.
+    private string ScoreColor(double score) =>
+        BandColor(GovWeights.Current.BandFor((int)Math.Round(score, MidpointRounding.AwayFromZero)));
+
+    // Refactored 2026-07-15 (UI Refresh Phase 1a, Fable must-fix #2/#4): emit the app.css
+    // medal tokens instead of duplicating their hex values here, so the C# inline styles and
+    // the CSS agree on one source of truth — and so these identity colours never drift from
+    // the tokens that Accessibility.css deliberately leaves un-remapped (a medal ramp, not a
+    // status semantic).
+    private static string BandColor(string? band) => band?.ToLowerInvariant() switch
+    {
+        "platinum" => "var(--medal-platinum)",  // bright silver (the golden glow is applied separately)
+        "gold"     => "var(--medal-gold)",
+        "silver"   => "var(--medal-silver)",
+        "bronze"   => "var(--medal-bronze)",
+        _          => "var(--medal-none)",      // Emerging — un-medaled slate
+    };
+
+    // Glow (halo) colour for the ring + number. Platinum = a silver ring with a GOLDEN glow;
+    // every other tier glows its own colour.
+    private string ScoreGlowColor(double score) =>
+        string.Equals(GovWeights.Current.BandFor((int)Math.Round(score, MidpointRounding.AwayFromZero)),
+                      "Platinum", StringComparison.OrdinalIgnoreCase)
+            ? "var(--medal-platinum-glow)"  // golden glow over the silver platinum ring
+            : ScoreColor(score);            // other tiers glow their own colour
+
+    private string AssessmentBadgeStyle()
+    {
+        if (_governanceScore == null) return "";
+        return _governanceScore.IsIndicative
+            ? "background:rgba(99,102,241,0.12);color:var(--accent);border:1px solid rgba(99,102,241,0.3)"
+            : "background:rgba(34,197,94,0.12);color:var(--green);border:1px solid rgba(34,197,94,0.3)";
+    }
+
+    private static string SeverityColor(HealthSeverity? sev)
+    {
+        return sev switch
+        {
+            HealthSeverity.Healthy => "var(--green)",
+            HealthSeverity.Warning => "var(--yellow)",
+            HealthSeverity.Critical => "var(--red)",
+            _ => "var(--text-muted)"
+        };
+    }
+
+    // FI-4 (2026-07-14): severity/band-tinted pill background for the Estate Executive Health
+    // hero. Presentation-only — derives a translucent background + border from whichever
+    // colour string SeverityColor()/ScoreColor() already computed (never a new colour source),
+    // so the pill always matches the number it sits beside.
+    private static string PillStyle(string color) =>
+        $"color:{color};background:color-mix(in srgb, {color} 16%, transparent);border-color:color-mix(in srgb, {color} 42%, transparent);";
+
+    // ── UI Refresh Phase 1a (2026-07-15): hero gauge + mini-ring + sparkline geometry. Every
+    // value below is a re-application of data the page already computed above (EstateHealth,
+    // GovernanceScore.Categories, GovernanceHistoryService.GetTrend) — no new data path. ──
+
+    // Hero-gauge semicircular arc: fixed radius 86 (see the <path> "d" in the markup). This
+    // constant is the mathematically exact arc length for that radius, so the SVG
+    // stroke-dasharray/offset in CioDashboard.css and this C# share one source of truth.
+    private const double GaugeArcLength = Math.PI * 86; // ≈270.2
+
+    private static string GaugeDashOffset(double scoreOutOf100)
+    {
+        var fraction = Math.Clamp(scoreOutOf100 / 100.0, 0.0, 1.0);
+        return (GaugeArcLength * (1 - fraction)).ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    // Mini-ring donut: fixed radius 18 (see the <circle> markup) — same source-of-truth
+    // principle as the hero gauge above.
+    private const double MiniRingCircumference = 2 * Math.PI * 18; // ≈113.1
+
+    private static string MiniRingDashOffset(double scoreOutOf100)
+    {
+        var fraction = Math.Clamp(scoreOutOf100 / 100.0, 0.0, 1.0);
+        return (MiniRingCircumference * (1 - fraction)).ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    // FIX ROUND 1, BLOCKER 1 (2026-07-15): proportional width for a completeness-bar segment —
+    // count/total as a percentage, never a fixed per-check unit (see the bar markup above for
+    // why one-span-per-check breaks at real scale). Caller guards total > 0.
+    private static string SegPct(int count, int total) =>
+        (total > 0 ? count / (double)total * 100.0 : 0.0).ToString("F3", System.Globalization.CultureInfo.InvariantCulture);
+
+    // Per-server score-sparkline points, plotted on a fixed 0–100 scale (the score's own
+    // range) inside a "0 0 64 24" viewBox — so sparklines read consistently across servers
+    // instead of each auto-scaling to its own min/max. Caller guards Count >= 2; a single
+    // point would draw a degenerate flat line, never a stretched dot.
+    private static string SparklinePoints(List<GovernanceTrendPoint> pts)
+    {
+        var n = pts.Count;
+        var sb = new System.Text.StringBuilder();
+        for (int i = 0; i < n; i++)
+        {
+            double x = n == 1 ? 0 : 64.0 * i / (n - 1);
+            double y = 22.0 - Math.Clamp(pts[i].OverallScore, 0, 100) / 100.0 * 20.0;
+            if (i > 0) sb.Append(' ');
+            sb.Append(x.ToString("F1", System.Globalization.CultureInfo.InvariantCulture))
+              .Append(',')
+              .Append(y.ToString("F1", System.Globalization.CultureInfo.InvariantCulture));
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// P4-ii honesty sub-line (ruled 2026-07-12) for the Estate Executive Health card. Discloses
+    /// how many corpus checks Security/Compliance are fed by across the assessed estate, and names
+    /// BY NAME any dimension that has no data anywhere — closing the live re-review's "no-such-
+    /// subline" security-blind defect (a bare score must never again hide that security wasn't
+    /// assessed). Empty string when nothing is assessed yet (branch doesn't render in that case).
+    ///
+    /// Honesty ruling (2026-07-16, Builder A): the "...from Vulnerability Assessment" branch is
+    /// removed — Executive Health no longer falls back to VA (ExecutiveHealthService.ScoreSecurity/
+    /// ScoreCompliance never emit DimensionSource.VulnerabilityAssessment any more), so a
+    /// dimension is either corpus-fed or unassessed. VA results are shown only on their own page.
+    /// </summary>
+    private string EstateFeedSubLine()
+    {
+        var assessed = _serverScores.Values.Where(s => s.IsAssessed).ToList();
+        if (assessed.Count == 0) return "";
+
+        (DimensionSource Source, int CheckCount, DateTime? AsOf) DimState(Func<HealthScoreBreakdown, DimensionScore> pick)
+        {
+            var dims = assessed.Select(s => pick(s.Breakdown)).ToList();
+            var corpusDims = dims.Where(d => d.Source == DimensionSource.Corpus).ToList();
+            if (corpusDims.Count == 0) return (DimensionSource.None, 0, null);
+
+            var withDates = corpusDims.Where(d => d.AsOf.HasValue).Select(d => d.AsOf!.Value).ToList();
+            DateTime? latest = withDates.Count > 0 ? withDates.Max() : null;
+            return (DimensionSource.Corpus, corpusDims.Sum(d => d.CheckCount), latest);
+        }
+
+        string? Describe(DimensionSource src, int checks, DateTime? asOf) => src switch
+        {
+            // ExecutedAt is stored/serialised UTC (DateTime.UtcNow); localise before formatting,
+            // same as every other timestamp in the app (Alerts.razor, AuditLogViewer.razor,
+            // Benchmark.razor, BuildProfile.razor, CapacityConsolidation.razor) — fixed 2026-07-12,
+            // this sub-line previously rendered the audit a day early against local wall-clock time.
+            DimensionSource.Corpus => asOf.HasValue
+                ? $"{checks} corpus check{(checks == 1 ? "" : "s")} (audit {asOf.Value.ToLocalTime():MMM d})"
+                : $"{checks} corpus check{(checks == 1 ? "" : "s")}",
+            _ => null
+        };
+
+        var sec = DimState(b => b.Security);
+        var comp = DimState(b => b.Compliance);
+
+        var parts = new List<string>();
+        if (sec.Source != DimensionSource.None && sec.Source == comp.Source)
+        {
+            var combinedChecks = sec.CheckCount + comp.CheckCount;
+            var latest = sec.AsOf.HasValue && comp.AsOf.HasValue
+                ? (sec.AsOf > comp.AsOf ? sec.AsOf : comp.AsOf)
+                : sec.AsOf ?? comp.AsOf;
+            parts.Add($"Security & Compliance from {Describe(sec.Source, combinedChecks, latest)}");
+        }
+        else
+        {
+            if (sec.Source != DimensionSource.None) parts.Add($"Security from {Describe(sec.Source, sec.CheckCount, sec.AsOf)}");
+            if (comp.Source != DimensionSource.None) parts.Add($"Compliance from {Describe(comp.Source, comp.CheckCount, comp.AsOf)}");
+        }
+
+        var unassessed = new List<string>();
+        if (sec.Source == DimensionSource.None) unassessed.Add("Security");
+        if (comp.Source == DimensionSource.None) unassessed.Add("Compliance");
+        if (!assessed.Any(s => s.Breakdown.Performance.HasData)) unassessed.Add("Performance");
+        if (!assessed.Any(s => s.Breakdown.Resource.HasData)) unassessed.Add("Resource");
+        if (!assessed.Any(s => s.Breakdown.Blocking.HasData)) unassessed.Add("Blocking");
+        if (unassessed.Count > 0)
+            parts.Add($"{string.Join(" & ", unassessed)} not assessed");
+
+        return string.Join(" · ", parts);
+    }
+
+    /// <summary>
+    /// Driver-attribution line (Wave 2, 2026-07-12): names the 1-3 dimensions dragging the
+    /// estate mean down the most, computed live from DimensionScore data across assessed
+    /// servers — never hardcoded. A dimension whose average is imperfect across EVERY
+    /// assessed server it applies to is named with its average score (e.g. "Compliance
+    /// posture (46/100)"); a dimension that's only bad on SOME assessed servers is instead
+    /// named by how many (e.g. "live performance on 1 server") since an average would
+    /// understate a localised problem. "Biggest driver" uses the same per-dimension weight
+    /// ExecutiveHealthService.ComputeComposite applies, so ranking matches what actually
+    /// moved each server's composite score.
+    ///
+    /// FIX (Wave 2 regression, 2026-07-12): a dimension whose average sits AT OR ABOVE the
+    /// estate composite (_estateHealth.Score) — or is already in the Healthy band (&gt;=71) —
+    /// is LIFTING the mean, not holding it down, and is never named here even if it ranks in
+    /// the top-3 by weighted deficit (which happened when only 2-3 dimensions had any data at
+    /// all: Security at 85/100, the estate's strongest dimension, was named a "drag" on a
+    /// 67 composite). Empty string when nothing is dragging it down.
+    /// </summary>
+    private string EstateDriverLine()
+    {
+        var assessed = _serverScores.Values.Where(s => s.IsAssessed).ToList();
+        if (assessed.Count == 0) return "";
+
+        var dims = new (string Name, Func<HealthScoreBreakdown, DimensionScore> Pick)[]
+        {
+            ("Security", (HealthScoreBreakdown b) => b.Security),
+            ("Compliance", (HealthScoreBreakdown b) => b.Compliance),
+            ("Performance", (HealthScoreBreakdown b) => b.Performance),
+            ("Resource", (HealthScoreBreakdown b) => b.Resource),
+            ("Blocking", (HealthScoreBreakdown b) => b.Blocking),
+        };
+
+        var estateMean = _estateHealth?.Score;
+
+        var drivers = new List<(string Name, double Deficit, int AvgScore, int LowCount, int AssessedCount)>();
+        foreach (var (name, pick) in dims)
+        {
+            var withData = assessed.Select(s => pick(s.Breakdown)).Where(d => d.HasData).ToList();
+            if (withData.Count == 0) continue;
+
+            var avgScore = withData.Average(d => d.Score);
+            var roundedAvg = (int)Math.Round(avgScore);
+
+            // A dimension at/above the estate composite, or already Healthy, is lifting the
+            // score — it is never a "drag", regardless of its weighted deficit rank.
+            if ((estateMean.HasValue && roundedAvg >= estateMean.Value) || roundedAvg >= 71)
+                continue;
+
+            var weight = withData[0].Weight;
+            var deficit = weight * (100 - avgScore);
+            if (deficit < 1) continue; // negligible — not a real driver
+
+            var lowCount = withData.Count(d => d.Score < 71); // below the Healthy threshold
+            drivers.Add((name, deficit, roundedAvg, lowCount, withData.Count));
+        }
+
+        if (drivers.Count == 0) return "";
+
+        var parts = drivers
+            .OrderByDescending(d => d.Deficit)
+            .Take(3)
+            .Select(d =>
+            {
+                bool localised = d.LowCount > 0 && d.LowCount < d.AssessedCount;
+                return localised
+                    ? $"live {d.Name.ToLowerInvariant()} on {d.LowCount} server{(d.LowCount == 1 ? "" : "s")}"
+                    : $"{d.Name} posture ({d.AvgScore}/100)";
+            })
+            .ToList();
+
+        return "Held down by " + JoinNatural(parts);
+    }
+
+    private static string JoinNatural(List<string> parts)
+    {
+        if (parts.Count == 0) return "";
+        if (parts.Count == 1) return parts[0];
+        if (parts.Count == 2) return $"{parts[0]} and {parts[1]}";
+        return string.Join(", ", parts.Take(parts.Count - 1)) + ", and " + parts[^1];
+    }
+
+    private static int SeverityRank(string? severity) => severity?.ToLower() switch
+    {
+        "critical" => 4, "high" => 3, "medium" => 2, "low" => 1, _ => 0
+    };
+
+    private void SetTrendView(string view)
+    {
+        _trendView = view;
+        // Bucketing fix (2026-07-13): use the SAME raw connection alias OnInitializedAsync
+        // resolved (_trendServer), not _serverScores.Keys — those are canonically-keyed
+        // (e.g. "MSI\OLD2017", per the same-day B1 ruling) while governance_history rows are
+        // recorded under the raw alias (e.g. ".\old2017"). The mismatch silently emptied the
+        // trend on every toggle click; found live while verifying this fix.
+        var firstServer = _trendServer;
+        if (!string.IsNullOrEmpty(firstServer))
+        {
+            // Bucketing fix (2026-07-13): both views now fetch the same raw 90-day history and
+            // bucket it here — the weekly branch used to call GetWeeklyAverages(), which
+            // emitted a raw strftime "2026-W28" label as RecordedAt (unparseable downstream,
+            // see TrendBucketerTests). Re-derive the delta/span for whichever view is now
+            // showing, so the delta line always matches what's on screen.
+            var rawTrend = HistoryService.GetTrend(firstServer, 90);
+            _trendData = TrendBucketer.BucketTrend(rawTrend, view);
+            if (_trendData.Count >= 2)
+            {
+                _trendDelta = _trendData[^1].Representative - _trendData[0].Representative;
+                _trendSpanDays = (_trendData[^1].BucketStart.Date - _trendData[0].BucketStart.Date).Days;
+                _trendPeriod = SQLTriage.Data.DashboardTrendFormatter.FormatTrendPeriod(_trendSpanDays);
+            }
+            else
+            {
+                _trendDelta = 0;
+                _trendSpanDays = 0;
+                _trendPeriod = "";
+            }
+            StateHasChanged();
+        }
+    }
+
+    // Bucketing fix (2026-07-13): bucket.Label is already the short, real-date-derived x-axis
+    // label rendered directly — this only adds the hover detail (min/max + sample count when
+    // a bucket folds together more than one raw snapshot).
+    private static string TrendTooltip(TrendBucket b) =>
+        b.SampleCount > 1
+            ? $"{b.Label}: {b.Representative:F1} ({b.Band}) — range {b.Min:F1}–{b.Max:F1} across {b.SampleCount} audits"
+            : $"{b.Label}: {b.Representative:F1} ({b.Band})";
+
+    // Builds the CIO Executive Report DTO straight from the fields this page already computed
+    // and rendered above — every value here is a pass-through (or, where noted, the identical
+    // formula re-applied to the same source object) of the live on-screen state, never a second
+    // data path. This is the DD guarantee for the exported PDF (2026-07-13).
+    private CioExecutiveReport BuildCioReportDto(DateTime nowUtc)
+    {
+        var tz    = TimeZoneInfo.Local.StandardName;
+        var runId = Guid.NewGuid().ToString("N")[..8];
+
+        var displayServers = _serverGov.Keys.Select(ResolveDisplayAlias).ToList();
+        var scope = displayServers.Count == 0 ? "—"
+            : displayServers.Count == 1 ? displayServers[0]
+            : $"{displayServers.Count} servers · {string.Join(", ", displayServers.Take(6))}";
+
+        // Same watermark decision the old WebView2 export used (KEPT, per spec): apply whenever
+        // any connected server is non-production or unset. This one-click export has no per-export
+        // suppress toggle (unlike the FullAudit.razor PdfExportModal, whose _suppressWatermark
+        // defaults to false — i.e. that flow ALSO watermarks non-prod by default, opt-out only) —
+        // so there's nothing to gate this behind; UserSettingsService.GetReportDraftWatermark()
+        // is a DIFFERENT, opt-in-by-default global toggle (ComplianceMap/ReportBundles' own
+        // convention) that would have silently turned this off by default. Not used here.
+        var cioEnvs = ConnectionManager.GetEnabledConnections().Select(c => c.Environment);
+        var watermark = ServerEnvironment.RequiresWatermark(cioEnvs);
+
+        var dto = new CioExecutiveReport
+        {
+            Meta = new AssessmentMeta
+            {
+                Title        = "CIO Executive Report",
+                Company      = UserSettings.GetReportCompanyName(),
+                Subtitle     = scope,
+                Engine       = "Executive Health & Governance assessment",
+                GeneratedUtc = nowUtc.ToString("yyyy-MM-ddTHH:mmZ"),
+                TimezoneId   = tz,
+                RunId        = runId,
+                ColorBlind   = UserSettings.GetColorBlindMode(),
+                Watermark    = watermark,
+                FooterMeta   = $"SQLTriage — CIO Executive Report — {scope} — {nowUtc:yyyy-MM-ddTHH:mmZ} ({tz}) — Run {runId}",
+            },
+
+            EhAssessed   = _estateHealth != null,
+            EhScore      = _estateHealth?.Score ?? 0,
+            EhBand       = _estateHealth?.Severity.ToString() ?? "",
+            EhBasisLine  = EstateHealthPolicy.EstateBasis(_estateRollup),
+            EhFeedLine   = EstateFeedSubLine(),
+            EhDriverLine = EstateDriverLine(),
+
+            // "Assessed" has to mean SCORED here, not "a governance object exists" (2026-08-06).
+            // AssessmentPdf prints "Governance ...: {GovScore:F0} / {GovBand}" with a medal swatch
+            // whenever this is true, so the placeholder 0 and the band read off it reached a client
+            // PDF from an estate where no check returned a pass or a fail. False omits the row.
+            GovAssessed = GovernanceScoredChecks > 0,
+            GovScore    = _governanceScore?.Overall ?? 0,
+            GovBand     = _governanceScore?.Band.ToString() ?? "",
+            TotalChecks = _governanceScore?.TotalFindings ?? 0,
+        };
+
+        if (_governanceScore != null)
+        {
+            // The literal on-screen governance card-role text (Wave 2, cio-card-role) —
+            // Adrian's ruling: governance is a component of EH, never a second overall score.
+            dto.GovSubline = "Configuration posture — a component of Executive Health's Security & Compliance dimensions, not a second overall score.";
+
+            // Same formula as the governance strip above (stripEvaluated/stripExcluded/
+            // stripErrored) — re-applied to the identical _governanceScore fields, not a
+            // second data path.
+            var stripEvaluated = GovernanceScoredChecks;
+            var stripExcluded  = _governanceScore.TotalFindings - stripEvaluated;
+            var stripErrored   = _governanceScore.ErroredFindings;
+            var stripExcludedNonError = stripExcluded - stripErrored;
+            // 2026-07-21 (persona board, FIX 2): Partial (Verdict=WARN) used to sit INSIDE
+            // stripExcludedNonError, unnamed. The row grid labelled the state "Partial"; every
+            // roll-up above it said "informational/skipped" — so the one state introduced to stop
+            // a degraded run reading as clean was invisible on the executive screen, and its
+            // exclusion moved the score in the FLATTERING direction unannounced.
+            //
+            // It is named here as a DECOMPOSITION of a figure the page already prints, never as an
+            // extra headline number: stripExcludedPlain + stripPartial + stripErrored ==
+            // stripExcluded, exactly as before. No new total and no seventh score — the same
+            // excluded count, honestly itemised. That is the whole reconciliation: this screen was
+            // already accused of carrying too many numbers that disagree, so Partial had to arrive
+            // by splitting an existing one rather than by adding another.
+            var stripPartial = _governanceScore.PartialFindings;
+            var stripExcludedPlain = stripExcludedNonError - stripPartial;
+            var stripExcludedLabel = stripExcluded > 0
+                ? " (" + string.Join(" · ", new[]
+                    {
+                        stripExcludedPlain > 0 ? $"{stripExcludedPlain} informational/skipped" : null,
+                        stripPartial       > 0 ? $"{stripPartial} partial"                     : null,
+                        stripErrored       > 0 ? $"{stripErrored} errored"                     : null,
+                    }.Where(s => s != null)) + ")"
+                : "";
+            dto.GovCheckCountLabel = $"{stripEvaluated} of {_governanceScore.TotalFindings} checks scored{stripExcludedLabel}";
+        }
+
+        foreach (var entry in _serverGov)
+        {
+            var gov = entry.Value;
+            var dataAlias = ResolveDisplayAlias(entry.Key);
+            var connStatus = ConnectionHealth.GetStatus(dataAlias);
+            var connLabel = connStatus.Status == ConnectionHealthService.ServerStatus.Online ? "Online"
+                          : connStatus.Status == ConnectionHealthService.ServerStatus.Offline ? "Offline" : "Unknown";
+            var hasHealth = _serverScores.TryGetValue(entry.Key, out var health) && health.IsAssessed;
+            dto.ServerRows.Add(new CioServerRow
+            {
+                Server     = entry.Key,
+                Connection = connLabel,
+                EhAssessed = hasHealth,
+                EhScore    = hasHealth ? health!.Score : 0,
+                EhBand     = hasHealth ? health!.Severity.ToString() : "",
+                GovScore   = gov.Overall,
+                GovBand    = gov.Band.ToString(),
+                Open       = gov.FailedFindings,
+                Critical   = _serverCritical.TryGetValue(entry.Key, out var cc) ? cc : 0,
+            });
+        }
+
+        foreach (var risk in _topRisks)
+        {
+            dto.TopFindings.Add(new CioTopFinding
+            {
+                Name           = FindingPresentation.ProblemStatement(risk),
+                Severity       = risk.Severity ?? "",
+                Server         = risk.InstanceName ?? "",
+                // Same Markdig plain-text conversion the on-screen "DBA view" toggle applies
+                // to this exact field (line ~400 above) — the PDF has no expand/collapse, so
+                // it renders unconditionally.
+                Recommendation = string.IsNullOrWhiteSpace(risk.RecommendedAction)
+                    ? ""
+                    : Markdig.Markdown.ToPlainText(risk.RecommendedAction),
+            });
+        }
+
+        // Power Savings — same guard as the on-screen section (never a fabricated zero).
+        if (_powerRollup != null && _powerRollup.ServersWithEstimate > 0)
+        {
+            dto.Power = new CioPowerBlock
+            {
+                ServersWithEstimate = _powerRollup.ServersWithEstimate,
+                HasSignal           = _powerRollup.HasSignal,
+                CutLowPct           = _powerRollup.CutLowPct,
+                CutHighPct          = _powerRollup.CutHighPct,
+                DriverClause        = PowerDriverClause(),
+                ServersQuantified   = _powerRollup.ServersQuantified,
+                KWhLow  = _powerRollup.KWhLow,  KWhHigh  = _powerRollup.KWhHigh,
+                CostLow = _powerRollup.CostLow, CostHigh = _powerRollup.CostHigh,
+                Co2Low  = _powerRollup.Co2Low,  Co2High  = _powerRollup.Co2High,
+            };
+        }
+
+        // Governance Trend — compact bucketed table (Adrian's ruling: table, not a bar chart),
+        // same >1 guard and same bucketed collection as the on-screen chart (2026-07-13) — the
+        // PDF and the page can never disagree about what a bucket contains.
+        if (_trendData.Count > 1)
+        {
+            foreach (var b in _trendData)
+            {
+                dto.TrendRows.Add(new CioTrendRow { Period = b.Label, Score = b.Representative, Min = b.Min, Max = b.Max, Band = b.Band });
+            }
+        }
+
+        return dto;
+    }
+
+    // Routes the CIO Dashboard export through the shared QuestPDF report engine
+    // (AssessmentPdf.BuildCioExecutiveReport) instead of a WebView2 DOM screenshot — a proper
+    // paginated, print-styled document matching every other SQLTriage report (2026-07-13).
+    // CIO Executive Report export. Gated out of community (Adrian's ruling 2026-07-21): the body —
+    // and its AssessmentPdf.BuildCioExecutiveReport call — is #if-compiled out, so the report
+    // builder never reaches the community assembly. The method stays defined so the const-guarded
+    // button above still compiles.
+    private async Task ExportPdf(MouseEventArgs e)
+    {
+#if SQLT_NO_REPORT_CIO_EXEC
+        await Task.CompletedTask;
+#else
+        if (_isExporting || _loading) return;
+        try
+        {
+            _isExporting = true;
+            StateHasChanged();
+
+            var nowUtc = DateTime.UtcNow;
+            var dto = BuildCioReportDto(nowUtc);
+            var bytes = await Task.Run(() => AssessmentPdf.BuildCioExecutiveReport(dto));
+
+            var outputDir = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "output");
+            System.IO.Directory.CreateDirectory(outputDir);
+            var firstServer = _serverScores.Keys.FirstOrDefault() ?? "CIO";
+            var fileName = $"CIO-Executive-Report_{firstServer.Replace("\\", "_").Replace("/", "_")}_{nowUtc:yyyyMMdd_HHmmssZ}.pdf";
+            var path = System.IO.Path.Combine(outputDir, fileName);
+            await System.IO.File.WriteAllBytesAsync(path, bytes);
+
+            Logger.LogInformation("CIO Executive Report exported: {File}", path);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = path,
+                UseShellExecute = true
+            });
+            Toast.ShowSuccess("PDF exported", $"Saved to {System.IO.Path.GetDirectoryName(path)}");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "CIO Executive Report export failed");
+            Toast.ShowError("PDF export failed", ex.Message);
+        }
+        finally
+        {
+            _isExporting = false;
+            StateHasChanged();
+        }
+#endif
+    }
+}

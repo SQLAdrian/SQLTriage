@@ -1,0 +1,2477 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/audit"
+
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using System.IO
+@using Markdig
+@inject CheckRepositoryService CheckRepo
+@inject CheckExecutionService CheckExecutor
+@inject ServerConnectionManager ConnectionManager
+@inject UserSettingsService UserSettings
+@inject QuickCheckStateService State
+@inject QuickCheckViewState View
+@inject SQLTriage.Data.Services.PrintService PrintSvc
+@inject SQLTriage.Data.Services.ReportPageConfigService ReportPageCfg
+@inject SQLTriage.Data.ToastService Toast
+@inject SQLTriage.Data.Services.Licensing.ISeatRegister Seats
+@inject SQLTriage.Data.Services.KeyboardShortcutService ShortcutSvc
+@inject IJSRuntime JSRuntime
+@inject SQLTriage.Data.Services.AppUserState UserState
+@inject AuditLogService AuditLog
+@inject SQLTriage.Data.Services.Licensing.IDemoRunLedger DemoLedger
+@inject SQLTriage.Data.Services.AcceptedFindingsService AcceptedFindings
+@inject SQLTriage.Data.Services.ChangeItemService ChangeItems
+@inject SQLTriage.Data.Services.GovernanceHistoryService GovHistory
+@inject SQLTriage.Data.Services.AssessmentRehydrationService Rehydration
+@inject SQLTriage.Data.Services.Remediation.CheckResolutionLookup ResolutionLookup
+@inject SQLTriage.Data.Services.Remediation.IRemediationCapability RemediationCapability
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PdfExportModal @ref="_pdfModal"
+    Title="Export Results to PDF"
+    DefaultLandscape="false"
+    DefaultBackgrounds="false"
+    OnConfirm="OnPdfConfirmed" />
+
+<SectionEditorModal IsVisible="_editingSection != null"
+    Section="_editingSection"
+    NativeKeys="_availableNativeKeys"
+    AvailableFields="_qcFields"
+    OnSave="HandleSectionSaved"
+    OnCancel="() => _editingSection = null" />
+
+<AddSectionModal IsVisible="_showAddSection"
+    NativeKeys="_availableNativeKeys"
+    OnAdd="HandleSectionAdded"
+    OnCancel="() => _showAddSection = false" />
+
+@* F6: Accept-finding modal — reason required + optional expiry. Instance-wide (MVP). *@
+@if (_acceptTarget != null)
+{
+    <div class="modal-backdrop" @onclick="CloseAcceptModal"></div>
+    <div class="modal-content accept-modal" @onclick:stopPropagation="true">
+        <div class="modal-header">
+            <h3>Accept finding</h3>
+            <button class="close-btn" @onclick="CloseAcceptModal" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p class="accept-modal-check">
+                <strong>@_acceptTarget.CheckName</strong>
+                <br /><small class="check-id">@_acceptTarget.CheckId · @_acceptTarget.InstanceName</small>
+            </p>
+            <p class="accept-modal-note">
+                This records that the finding is acceptable-by-design on this instance. It is downgraded
+                and excluded from the open-findings score, but stays visible and audited — never hidden.
+            </p>
+            <label class="accept-field">
+                <span>Reason <span class="required">*</span></span>
+                <textarea @bind="_acceptReason" rows="3" placeholder="e.g. This server runs CLR by design; xp_cmdshell required for the deploy job."></textarea>
+            </label>
+            <label class="accept-field">
+                <span>Expiry (optional) — re-surfaces the finding after this date for re-review</span>
+                <input type="date" @bind="_acceptExpiry" />
+            </label>
+            @if (!string.IsNullOrEmpty(_acceptError))
+            {
+                <div class="accept-error">@_acceptError</div>
+            }
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" @onclick="CloseAcceptModal">Cancel</button>
+            <button class="btn btn-primary" @onclick="ConfirmAcceptance" disabled="@(_acceptSaving || !MayDecideAcceptance)"
+                    title="@(MayDecideAcceptance ? null : AcceptanceRefusal)">Accept finding</button>
+        </div>
+    </div>
+}
+
+@* #88: Log-as-change-item modal — the LOG branch beside Accept. Rationale required; optional
+   vendor + due date; the recommended remediation is captured at log time for the vendor handoff. *@
+@if (_logTarget != null)
+{
+    <div class="modal-backdrop" @onclick="CloseLogModal"></div>
+    <div class="modal-content accept-modal" @onclick:stopPropagation="true">
+        <div class="modal-header">
+            <h3>Log as change item</h3>
+            <button class="close-btn" @onclick="CloseLogModal" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p class="accept-modal-check">
+                <strong>@_logTarget.CheckName</strong>
+                <br /><small class="check-id">@_logTarget.CheckId · @_logTarget.InstanceName</small>
+            </p>
+            <p class="accept-modal-note">
+                Records that you're <strong>changing</strong> this finding (not accepting it). It's tracked
+                in the Change Ledger; hand it to a vendor with a due date and the next scan will flag it if
+                it's still failing past the deadline. The finding stays open until confirmed fixed.
+            </p>
+            <label class="accept-field">
+                <span>Rationale <span class="required">*</span></span>
+                <textarea @bind="_logRationale" rows="3" placeholder="e.g. Missing index on Orders.CustomerId; vendor to deploy CREATE INDEX in the next maintenance window."></textarea>
+            </label>
+            <label class="accept-field">
+                <span>Hand to vendor / DBA team (optional)</span>
+                <input type="text" @bind="_logVendor" placeholder="e.g. Contoso Managed DBA" />
+            </label>
+            <label class="accept-field">
+                <span>Due date (optional) — drives the still-failing follow-up flag</span>
+                <input type="date" @bind="_logDue" />
+            </label>
+            @if (!string.IsNullOrEmpty(_logError))
+            {
+                <div class="accept-error">@_logError</div>
+            }
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" @onclick="CloseLogModal">Cancel</button>
+            <button class="btn btn-primary" @onclick="ConfirmLog" disabled="@_logSaving">Log change item</button>
+        </div>
+    </div>
+}
+
+@using SQLTriage.Components.Shared
+
+@if (!_initialized)
+{
+    <PageLoadingSpinner Message="Loading Audit Assessment..." />
+}
+else
+{
+<div class="quickcheck-page">
+    @* FreeStateBanner is now rendered once at MainLayout level *@
+    @if (!string.IsNullOrEmpty(CheckRepo.LoadError))
+    {
+        <div class="qc-loaderror-banner" role="alert">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            <span><strong>Check catalog failed to load.</strong> @CheckRepo.LoadError
+            Results shown may be stale — no fresh checks can run until this is resolved.</span>
+        </div>
+    }
+    <div class="page-header">
+        <div>
+            <h2>Audit Assessment</h2>
+            <p class="page-description">
+                Run SQL health checks from the v2 corpus bundle against configured servers.
+            </p>
+        </div>
+        <div class="header-actions">
+            <div class="header-stats">
+                <span class="stat-pill">@EnabledChecksCount enabled checks</span>
+                <span class="stat-pill">@EnabledServersCount enabled servers</span>
+            </div>
+            <button class="btn btn-sm btn-toggle-diag @(ShowDiagnosticPane ? "active" : "")"
+                    @onclick="ToggleDiagnosticPane" title="Toggle diagnostic output">
+                Diagnostics @(ShowDiagnosticPane ? "ON" : "OFF")
+            </button>
+        </div>
+    </div>
+
+    <div class="qc-layout @(ShowDiagnosticPane ? "with-diag" : "")">
+        <!-- Main Content -->
+        <div class="qc-main">
+            <!-- Server Selection -->
+            <ReportSectionWrapper Section="@GetSection("server-selection")" EditMode="_editMode"
+                IsFirst="@IsFirstSection("server-selection")" IsLast="@IsLastSection("server-selection")"
+                OnMoveUp="s => MoveSection(s, -1)" OnMoveDown="s => MoveSection(s, 1)"
+                OnEdit="s => _editingSection = s" OnDelete="s => DeleteSection(s)"
+                OnToggle="s => ToggleSection(s)">
+            <div class="server-selection card-glass" style="padding: 16px; margin-bottom: 24px;">
+                <div class="server-selection-header" style="margin-bottom: 12px; font-weight: 600;">
+                    <label>Target Servers:</label>
+                </div>
+
+                @if (Connections.Count == 0)
+                {
+                    <div class="qc-no-servers card-glass" style="margin-top: 16px;">
+                        <i class="fa-solid fa-server qc-no-servers-icon"></i>
+                        <div class="qc-no-servers-msg">No server connections configured.</div>
+                        <a href="/servers" class="qc-add-server-link">
+                            <i class="fa-solid fa-plus"></i> Add Server
+                        </a>
+                    </div>
+                }
+                else
+                {
+                    <ServerSelector AllowAllScope="true"
+                        Items="@ConnectionItems"
+                        SelectedId="@(View.RunAllServers ? null : View.SelectedConnectionId)"
+                        SelectedIdChanged="@OnConnectionSelected" />
+                }
+
+                @* Corpus DEMO allocation banner — shown only on a metered (community/demo) bundle.
+                   Full bundle / DevBridge = unlimited → no banner. *@
+                @if (!_demoUnlimited && _demoStatus is not null)
+                {
+                    <div class="demo-allocation-banner">
+                        <i class="fa-solid fa-flask"></i>
+                        <span>@DemoBannerText</span>
+                        @* Live countdown to the next free slot — shown only when the allowance is spent.
+                           A single global client-side ticker (registered once in OnAfterRenderAsync)
+                           updates it every second. No server round-trip, no re-render — pure DOM. *@
+                        @if (DemoUnlockUtcIso is not null)
+                        {
+                            <span class="demo-allocation-countdown demo-countdown" data-unlock-utc="@DemoUnlockUtcIso">
+                                <i class="fa-solid fa-hourglass-half"></i>
+                                next slot in <span class="demo-countdown-value">…</span>
+                            </span>
+                        }
+                        @if (!_demoMultiAllowed)
+                        {
+                            @* Provenance-neutral on purpose: this note fires whenever the allocation
+                               is 1, which a paid licence can legitimately be minted at. Naming the
+                               community build here would misdescribe those installs. *@
+                            <span class="demo-allocation-note">Single instance per run on this allocation.</span>
+                        }
+                    </div>
+                }
+
+                @* Run-mode control — only meaningful for multi-server (All scope) runs.
+                   Mirrors Raw Diagnostics: sequential vs parallel + per-server stagger.
+                   This toggle picks how many SERVERS run at once; it does not change how many
+                   queries run at once against any one instance (that is the separate control
+                   below). *@
+                @if (View.RunAllServers && EnabledConnections.Count > 1)
+                {
+                    <div class="run-all-group">
+                        <div class="run-mode-toggle">
+                            <button class="run-mode-btn @(_parallelMode ? "" : "active")"
+                                    @onclick="() => _parallelMode = false" disabled="@State.IsRunning"
+                                    title="Run each server one at a time">
+                                <i class="fa-solid fa-list-ol"></i> Sequential
+                            </button>
+                            <button class="run-mode-btn @(_parallelMode ? "active" : "")"
+                                    @onclick="() => _parallelMode = true" disabled="@State.IsRunning"
+                                    title="Start all servers concurrently, staggered by delay">
+                                <i class="fa-solid fa-bolt"></i> Parallel
+                            </button>
+                        </div>
+                        @if (_parallelMode)
+                        {
+                            <div class="delay-input-group" title="Seconds to wait before starting each subsequent server">
+                                <i class="fa-solid fa-stopwatch" style="color:var(--text-secondary);font-size:12px;"></i>
+                                <input type="number" min="0" max="300" step="1"
+                                       @bind="_parallelDelaySeconds"
+                                       style="width:104px;padding:3px 6px;border-radius:4px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);font-size:12px;"
+                                       disabled="@State.IsRunning" />
+                                <span style="font-size:11px;color:var(--text-muted);">s delay</span>
+                            </div>
+                        }
+                    </div>
+                }
+
+                @* Per-run override for concurrent queries per instance. Sits beside the run-mode
+                   toggle above and is deliberately NOT inside its multi-server condition: the
+                   motivating case is dialling one run down against a single small client box.
+                   Blank = use the saved Settings default. *@
+                <div class="run-all-group">
+                    <div class="delay-input-group" title="How many audit queries run at once against each instance. Lower is gentler on a busy production server: it lowers the peak, not the total, and the run takes correspondingly longer.">
+                        <i class="fa-solid fa-gauge-simple-high" style="color:var(--text-secondary);font-size:12px;"></i>
+                        <span style="font-size:11px;color:var(--text-muted);">Queries per instance</span>
+                        <input type="number" min="@UserSettingsService.AuditConcurrencyMin" max="@UserSettingsService.AuditConcurrencyMax" step="1"
+                               placeholder="@_auditConcurrencyDefault"
+                               @bind="_auditConcurrencyOverride" @bind:event="onchange"
+                               style="width:104px;padding:3px 6px;border-radius:4px;border:1px solid var(--border);background:var(--bg-secondary);color:var(--text-primary);font-size:12px;"
+                               disabled="@State.IsRunning" />
+                        <span style="font-size:11px;color:var(--text-muted);">
+                            this run only; blank = default @_auditConcurrencyDefault. Lower is gentler on a busy server.
+                        </span>
+                    </div>
+                </div>
+
+                @* Per-run category filter. Same this-run-only idiom as "Queries per instance" above:
+                   the chip state is a page-local field, so a fresh page load starts with every
+                   category on and nothing is written to the operator's settings. Unticking excludes
+                   those checks from the RUN, not just from the grid — gentler on the target server —
+                   and every surface of a filtered run says so (see State.CategoryExclusionNotice). *@
+                @if (CategoryOptions.Count > 0)
+                {
+                    <div class="qc-category-filter">
+                        <div class="qc-category-filter-head">
+                            <i class="fa-solid fa-filter" style="color:var(--text-secondary);font-size:12px;"></i>
+                            <span>Check categories</span>
+                            <span class="qc-category-filter-hint">
+                                this run only; all categories run unless you untick one. A fresh page load turns them all back on.
+                            </span>
+                        </div>
+                        <div class="ss-buttons qc-category-chips">
+                            @foreach (var opt in CategoryOptions)
+                            {
+                                <button type="button" class="ss-btn @(opt.Included ? "selected" : "")"
+                                        @onclick="() => ToggleCategory(opt.Category)"
+                                        disabled="@State.IsRunning"
+                                        title="@(opt.Included
+                                                 ? $"{opt.Category}: {opt.CheckCount} check(s) included in the next run"
+                                                 : $"{opt.Category}: {opt.CheckCount} check(s) excluded from the next run")">
+                                    @if (opt.Included)
+                                    {
+                                        <i class="fa-solid fa-circle-check"></i>
+                                    }
+                                    <span>@opt.Category</span>
+                                    <span class="qc-category-count">@opt.CheckCount</span>
+                                </button>
+                            }
+                        </div>
+                        @* Future tense on purpose — it describes the run about to start, never one
+                           that has happened. Null (and so absent) while every category is on. *@
+                        @if (PlannedExclusionSummary != null)
+                        {
+                            <div class="qc-category-planned">
+                                <i class="fa-solid fa-circle-info"></i>
+                                <span>@PlannedExclusionSummary</span>
+                            </div>
+                        }
+                    </div>
+                }
+
+                <div class="action-row">
+                    <button class="btn btn-primary btn-run" @onclick="RunChecks"
+                            disabled="@(State.IsRunning || (!View.RunAllServers && string.IsNullOrEmpty(View.SelectedConnectionId)) || (View.RunAllServers && EnabledConnections.Count == 0))">
+                        @if (State.IsRunning)
+                        {
+                            <span>Running...</span>
+                        }
+                        else
+                        {
+                            <span><i class="fa-solid fa-magnifying-glass"></i> Run Audit Assessment</span>
+                        }
+                    </button>
+
+                    @if (State.IsRunning)
+                    {
+                        <button class="btn btn-danger" @onclick="StopRun" title="Stop the running assessment">
+                            <i class="fa-solid fa-stop"></i> Stop
+                        </button>
+                    }
+
+                    @if (State.Results.Count > 0)
+                    {
+                        <button class="btn btn-secondary" @onclick="ClearResults">Clear Results</button>
+@* Findings PDF + Executive Briefing exports — gated out of community (Adrian's ruling 2026-07-21). *@
+#if !SQLT_NO_REPORT_FINDINGS_PDF
+                        <button class="btn btn-secondary" @onclick="ExportQuestPdf"><i class="fa-solid fa-file-pdf"></i> Export PDF</button>
+#endif
+#if !SQLT_NO_REPORT_EXEC_BRIEFING
+                        <button class="btn btn-secondary" @onclick="ExportExecutiveBriefing" title="Microsoft-style 5-focus-area executive briefing"><i class="fa-solid fa-file-lines"></i> Briefing</button>
+#endif
+                    }
+
+                    <label class="qc-force-fresh" title="Reload the check catalog from the v2 corpus bundle before running. Use after a corpus regeneration to pick up new/recategorised checks without restarting the app.">
+                        <input type="checkbox" @bind="_forceFresh" disabled="@State.IsRunning" />
+                        <span>Force fresh (reload catalog)</span>
+                    </label>
+
+                </div>
+            </div>
+            </ReportSectionWrapper>
+
+            @if (State.IsRunning)
+            {
+                <div class="progress-section">
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: @State.Progress%"></div>
+                    </div>
+                    <span class="progress-text">
+                        @State.ProgressMessage (@State.Progress%)
+                    </span>
+                </div>
+            }
+
+            @if (State.Results.Count > 0)
+            {
+                <ReportSectionWrapper Section="@GetSection("summary-cards")" EditMode="_editMode"
+                    IsFirst="@IsFirstSection("summary-cards")" IsLast="@IsLastSection("summary-cards")"
+                    OnMoveUp="s => MoveSection(s, -1)" OnMoveDown="s => MoveSection(s, 1)"
+                    OnEdit="s => _editingSection = s" OnDelete="s => DeleteSection(s)"
+                    OnToggle="s => ToggleSection(s)">
+                <!-- Execution Info -->
+                <div class="execution-info">
+                    <span>Executed at @State.ExecutionTime.ToString("HH:mm:ss") | Duration: @State.ExecutionDuration</span>
+                    @* "attempted", not "tested": the counter behind it increments outside both
+                       catch blocks, so a target that threw is counted identically to one that
+                       succeeded (pages-r1-12, ruled 2026-08-28). The count itself is honest as a
+                       count of attempts, and the coverage sentence a few lines below names how
+                       many of them produced nothing - so the label is what needed correcting. *@
+                    <span>@State.ServersTested server(s) attempted</span>
+                </div>
+
+                @* ── Seat-licence exclusion banner ──
+                   The rehydrate gate drops unseated instances from this grid; say so right where the
+                   counts are read, or the totals silently understate the estate and pass for whole. *@
+                @if (_seatNotice != null)
+                {
+                    <div class="qc-seat-notice">
+                        <i class="fa-solid fa-circle-info"></i>
+                        <span>@_seatNotice</span>
+                    </div>
+                }
+
+                @* ── Coverage notice ──
+                   Same argument as the seat banner above, one line further down the same funnel: the
+                   counts beside it are computed over a narrower or a degraded run, so the narrowing
+                   is named right where the counts are read. Conditioned on the run's own measurement
+                   (both halves are set after execution and are null when there was nothing to say),
+                   so a complete unfiltered run renders exactly as it always has.
+
+                   IT READS THE SAME PROPERTY THE EXPORTS DO, State.CoverageNoteForReports, which is
+                   what makes the sentence on this screen and the sentence on the deliverable the
+                   same sentence. It was State.CategoryExclusionNotice until 2026-08-10, when the
+                   completeness sentence joined the exports and this banner did not: for a cancelled
+                   or partly silent UNFILTERED run the operator's screen then showed the same counts
+                   with no qualifier while the client's PDF called the run degraded. A PDF saying
+                   more than the screen beside it is the benign direction and it is still a
+                   disagreement about one run. *@
+                @if (!string.IsNullOrWhiteSpace(State.CoverageNoteForReports))
+                {
+                    <div class="qc-seat-notice qc-category-notice">
+                        <i class="fa-solid @(State.CategoryExclusionNotice != null ? "fa-filter" : "fa-circle-exclamation")"></i>
+                        <span>@State.CoverageNoteForReports</span>
+                    </div>
+                }
+
+                <!-- Per-Server Summary -->
+                @if (State.ServerSummaries.Count > 0)
+                {
+                    <div class="server-summaries">
+                        @foreach (var summary in State.ServerSummaries)
+                        {
+                            <div class="server-summary-card @(summary.Failed > 0 ? "has-failures" : summary.Errors > 0 ? "has-errors" : "all-passed")">
+                                <div class="server-summary-name">
+                                    @summary.InstanceName
+                                    @if (IsImportedServer(summary.InstanceName))
+                                    {
+                                        <span class="imported-tag" title="Results imported into this build — not executed live on this instance."><i class="fa-solid fa-file-import"></i> Imported</span>
+                                    }
+                                </div>
+                                <div class="server-summary-stats">
+                                    @if (summary.Passed > 0)
+                                    {
+                                        <span class="ss-passed" title="Passed"><i class="fa-solid fa-check"></i> @summary.Passed</span>
+                                    }
+                                    <span class="ss-failed" title="Findings"><i class="fa-solid fa-xmark"></i> @summary.Failed</span>
+                                    @if (summary.Accepted > 0)
+                                    {
+                                        <span class="ss-accepted" title="Accepted-by-design"><i class="fa-solid fa-circle-check"></i> @summary.Accepted</span>
+                                    }
+                                    <span class="ss-errors" title="Errors"><i class="fa-solid fa-triangle-exclamation"></i> @summary.Errors</span>
+                                    <span class="ss-duration" title="Duration">@summary.Duration.TotalSeconds.ToString("F1")s</span>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+
+                <!-- Clickable Overall Summary Cards -->
+                <div class="results-summary">
+                    @* Audit-first model: results are FINDINGS (things to flag); checks that
+                       pass don't emit a row, so on finding-only tiers PassedCount is ~0. Show the
+                       Passed card only when there's something to show, and label flagged items
+                       "Findings" not "Failed" — honest + on-message, and not a false alarm. *@
+                    @if (PassedCount > 0)
+                    {
+                        <div class="summary-card passed @(View.SelectedFilter == "passed" ? "active-filter" : "")"
+                             @onclick='() => SetFilterFromCard("passed")'>
+                            <span class="summary-icon"><i class="fa-solid fa-check"></i></span>
+                            <span class="summary-count">@PassedCount</span>
+                            <span class="summary-label">Passed</span>
+                        </div>
+                    }
+                    <div class="summary-card failed @(View.SelectedFilter == "failed" ? "active-filter" : "")"
+                         @onclick='() => SetFilterFromCard("failed")'>
+                        <span class="summary-icon"><i class="fa-solid fa-xmark"></i></span>
+                        <span class="summary-count">@FailedCount</span>
+                        <span class="summary-label">Findings</span>
+                    </div>
+                    @if (AcceptedCount > 0)
+                    {
+                        <div class="summary-card accepted @(View.SelectedFilter == "accepted" ? "active-filter" : "")"
+                             @onclick='() => SetFilterFromCard("accepted")'>
+                            <span class="summary-icon"><i class="fa-solid fa-circle-check"></i></span>
+                            <span class="summary-count">@AcceptedCount</span>
+                            <span class="summary-label">Accepted</span>
+                        </div>
+                    }
+                    <div class="summary-card errors @(View.SelectedFilter == "errors" ? "active-filter" : "")"
+                         @onclick='() => SetFilterFromCard("errors")'>
+                        <span class="summary-icon"><i class="fa-solid fa-triangle-exclamation"></i></span>
+                        <span class="summary-count">@ErrorCount</span>
+                        <span class="summary-label">Errors</span>
+                    </div>
+                    @if (SkippedCount > 0)
+                    {
+                        <div class="summary-card skipped @(View.SelectedFilter == "skipped" ? "active-filter" : "")"
+                             @onclick='() => SetFilterFromCard("skipped")'>
+                            <span class="summary-icon"><i class="fa-solid fa-forward"></i></span>
+                            <span class="summary-count">@SkippedCount</span>
+                            <span class="summary-label">Skipped</span>
+                        </div>
+                    }
+                    @* Ruling #4 (2026-07-20): same argument as the Info card — WARN is excluded from
+                       PassedCount and from FailedCount, so without its own findable bucket a
+                       "could not fully assess" result would vanish from every card entirely. *@
+                    @if (WarnCount > 0)
+                    {
+                        <div class="summary-card warn @(View.SelectedFilter == "partial" ? "active-filter" : "")"
+                             @onclick='() => SetFilterFromCard("partial")'>
+                            <span class="summary-icon"><i class="fa-solid fa-circle-half-stroke"></i></span>
+                            <span class="summary-count">@WarnCount</span>
+                            <span class="summary-label">Partial</span>
+                        </div>
+                    }
+                    @* 2026-07-16: Info now excluded from PassedCount above — it needs its own
+                       findable bucket or an Info result just silently vanishes from every card. *@
+                    @if (InfoCount > 0)
+                    {
+                        <div class="summary-card info @(View.SelectedFilter == "info" ? "active-filter" : "")"
+                             @onclick='() => SetFilterFromCard("info")'>
+                            <span class="summary-icon"><i class="fa-solid fa-circle-info"></i></span>
+                            <span class="summary-count">@InfoCount</span>
+                            <span class="summary-label">Info</span>
+                        </div>
+                    }
+                    <div class="summary-card total @(View.SelectedFilter == "all" ? "active-filter" : "")"
+                         @onclick='() => SetFilterFromCard("all")'>
+                        <span class="summary-icon"><i class="fa-solid fa-clipboard-list"></i></span>
+                        <span class="summary-count">@State.Results.Count</span>
+                        <span class="summary-label">Total</span>
+                    </div>
+                </div>
+                </ReportSectionWrapper>
+
+                <ReportSectionWrapper Section="@GetSection("results-grid")" EditMode="_editMode"
+                    IsFirst="@IsFirstSection("results-grid")" IsLast="@IsLastSection("results-grid")"
+                    OnMoveUp="s => MoveSection(s, -1)" OnMoveDown="s => MoveSection(s, 1)"
+                    OnEdit="s => _editingSection = s" OnDelete="s => DeleteSection(s)"
+                    OnToggle="s => ToggleSection(s)">
+                <!-- Results Filter -->
+                <div class="results-filter">
+                    <label>Status:</label>
+                    <select @bind="View.SelectedFilter" class="filter-select">
+                        <option value="all">All (@State.Results.Count)</option>
+                        <option value="passed">Passed (@PassedCount)</option>
+                        <option value="failed">Findings (@FailedCount)</option>
+                        @if (AcceptedCount > 0)
+                        {
+                            <option value="accepted">Accepted (@AcceptedCount)</option>
+                        }
+                        <option value="errors">Errors (@ErrorCount)</option>
+                        @if (SkippedCount > 0)
+                        {
+                            <option value="skipped">Skipped (@SkippedCount)</option>
+                        }
+                        @if (InfoCount > 0)
+                        {
+                            <option value="info">Info (@InfoCount)</option>
+                        }
+                        @* B2 (2026-07-20): the filter case existed and worked, but no option ever
+                           offered it — the WARN rows were unreachable from the dropdown while also
+                           being (wrongly) listed under Passed. Labelled "Partial" to match the
+                           summary card and the row badge.
+                           2026-07-21 (persona board, FIX 2): the option's underlying VALUE was
+                           "warn" while its label said "Partial" and the row chip said "PARTIAL" —
+                           a third name for one state, visible to anyone reading the DOM or an
+                           exported page, and already spelt "partial" by Pages/Checks.razor's
+                           equivalent filter. The token is now "partial" everywhere in the UI.
+                           WARN remains the CORPUS verdict token (CheckResult.Verdict) and the
+                           internal predicate name — that is the wire format, not a UI name, and
+                           CheckClassification.IsWarnVerdict is the single place the two meet. *@
+                        @if (WarnCount > 0)
+                        {
+                            <option value="partial">Partial (@WarnCount)</option>
+                        }
+                    </select>
+                    <label>Severity:</label>
+                    <select @bind="View.SelectedSeverity" class="filter-select">
+                        <option value="">All Severities</option>
+                        <option value="Critical">Critical</option>
+                        <option value="Warning">Warning</option>
+                        <option value="Info">Info</option>
+                    </select>
+                    <label>Category:</label>
+                    <select @bind="View.SelectedCategory" class="filter-select">
+                        <option value="">All Categories</option>
+                        @foreach (var cat in State.Categories)
+                        {
+                            <option value="@cat">@cat</option>
+                        }
+                    </select>
+                    <label>Server:</label>
+                    <select @bind="View.SelectedServer" class="filter-select">
+                        <option value="">All Servers</option>
+                        @foreach (var srv in ServersInResults)
+                        {
+                            <option value="@srv">@srv</option>
+                        }
+                    </select>
+                    <span class="filter-count">@FilteredResults.Count() results</span>
+                </div>
+
+                <!-- Results Grid -->
+                <div class="results-grid">
+                    <table class="results-table">
+                        <thead>
+                            <tr>
+                                <th>Status</th>
+                                <th>Server</th>
+                                <th>Check</th>
+                                <th>Category</th>
+                                <th>Severity</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var result in FilteredResults)
+                            {
+                                var isExpanded = _expandedResults.Contains(result.CheckId + result.InstanceName);
+                                var hasError   = !string.IsNullOrEmpty(result.ErrorMessage);
+                                var hasMsg     = !string.IsNullOrEmpty(result.Message);
+                                var hasRec     = !string.IsNullOrEmpty(result.RecommendedAction);
+                                var hasDesc    = !string.IsNullOrEmpty(result.Description);
+                                var anyDetail  = hasError || hasMsg || hasRec || hasDesc;
+                                <tr class="@GetRowClass(result)" @onclick="() => ToggleExpandResult(result.CheckId + result.InstanceName)">
+                                    <td class="status-cell">
+                                        @if (result.IsCorrupted)
+                                        {
+                                            <span class="status-badge corrupted" title="@result.ErrorMessage"><i class="fa-solid fa-shield-halved"></i> Corrupted</span>
+                                        }
+                                        else if (!string.IsNullOrEmpty(result.ErrorMessage))
+                                        {
+                                            <span class="status-badge error"><i class="fa-solid fa-triangle-exclamation"></i> Error</span>
+                                        }
+                                        else if (IsSkipped(result))
+                                        {
+                                            <span class="status-badge skipped" title="@result.Message"><i class="fa-solid fa-forward"></i> Skip</span>
+                                        }
+                                        else if (IsWarnVerdict(result))
+                                        {
+                                            <!-- Ruling #4 (2026-07-20): the corpus downgraded a would-be
+                                                 PASS to WARN because the check could not fully assess this
+                                                 target (e.g. an under-privileged caller could not read some
+                                                 databases). NOT a server-configuration failure — it must
+                                                 never render as a Fail — and not a Pass either, because the
+                                                 check never actually asserted the control is correctly set.
+                                                 Excluded from scoring by CheckClassification.IsWarn. -->
+                                            <span class="status-badge warn" title="@result.Message"><i class="fa-solid fa-circle-half-stroke"></i> Partial</span>
+                                        }
+                                        else if (IsInfoVerdict(result))
+                                        {
+                                            <!-- #49 (2026-07-15): a verdict-contract check can genuinely return INFO
+                                                 (an informational note with a computed recommendation, not "this is
+                                                 correctly configured") — riding the same Passed=true scoring tier as
+                                                 PASS/SKIP, but never truthfully a "Pass". See CheckResult.Verdict. -->
+                                            <span class="status-badge info" title="@result.Message"><i class="fa-solid fa-circle-info"></i> Info</span>
+                                        }
+                                        else if (result.Passed)
+                                        {
+                                            <span class="status-badge passed"><i class="fa-solid fa-check"></i> Pass</span>
+                                        }
+                                        else if (result.IsAccepted)
+                                        {
+                                            <span class="status-badge accepted" title="@AcceptanceTooltip(result)"><i class="fa-solid fa-circle-check"></i> Accepted</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="status-badge failed"><i class="fa-solid fa-xmark"></i> Fail</span>
+                                        }
+                                    </td>
+                                    <td class="server-cell">
+                                        @result.InstanceName
+                                        @if (result.ImportedAtUtc != null)
+                                        {
+                                            @* #84: provenance chip — this row's run was IMPORTED into this
+                                                 build (Pages/ImportResults.razor / --import), not executed live
+                                                 here. Orthogonal to the Pass/Fail/Skip/Info status badge; it
+                                                 qualifies WHERE the result came from so it's never mistaken for
+                                                 a locally-executed one. Tooltip carries the import date + file. *@
+                                            <span class="imported-tag" title="@ImportedTooltip(result)"><i class="fa-solid fa-file-import"></i> Imported</span>
+                                        }
+                                    </td>
+                                    <td class="check-name">
+                                        <strong>@result.CheckName</strong>
+                                        <br />
+                                        <small class="check-id">@result.CheckId</small>
+                                    </td>
+                                    <td><span class="category-badge">@result.Category</span></td>
+                                    <td>
+                                        <span class="severity-badge @GetSeverityClass(result.Severity)">
+                                            @result.Severity
+                                        </span>
+                                    </td>
+                                    <td class="description-cell">
+                                        <div class="description-clamp">@((MarkupString)SafeMarkdown.ToHtml(result.Description ?? ""))</div>
+                                        @if (hasDesc && !isExpanded)
+                                        {
+                                            <!-- Wave 2, 2026-07-12: clamp preview only — the full text now renders
+                                                 ONCE, in the expanded detail row below (removes the old duplicate
+                                                 full-text render that used to appear in both places). -->
+                                            <span class="description-more">more &hellip;</span>
+                                        }
+                                    </td>
+                                </tr>
+                                @if (isExpanded && anyDetail)
+                                {
+                                    <tr class="expanded-row">
+                                        <td colspan="8">
+                                            <div class="expanded-detail">
+                                                @if (hasError)
+                                                {
+                                                    @* Surface the underlying SqlException so operators don't have to grep app-.log. *@
+                                                    <div class="detail-section detail-section--error">
+                                                        <strong>Error:</strong>
+                                                        <pre class="detail-error-text">@result.ErrorMessage</pre>
+                                                    </div>
+                                                }
+                                                @if (hasMsg && !hasError)
+                                                {
+                                                    <div class="detail-section">
+                                                        <strong>Message:</strong> @result.Message
+                                                    </div>
+                                                }
+                                                @if (hasDesc)
+                                                {
+                                                    <div class="detail-section">
+                                                        <strong>Description:</strong> 
+                                                        <div class="markdown-content">@((MarkupString)SafeMarkdown.ToHtml(result.Description ?? ""))</div>
+                                                    </div>
+                                                }
+                                                @if (hasRec)
+                                                {
+                                                    <div class="detail-section">
+                                                        <strong>Recommended Action:</strong>
+                                                        <div class="markdown-content">@((MarkupString)SafeMarkdown.ToHtml(result.RecommendedAction ?? ""))</div>
+                                                    </div>
+                                                }
+                                                @* S4: link a failed check straight to its resolution — a one-click gated fix on
+                                                   /remediation, or (for MAINTENANCE checks with no state-flip template) a
+                                                   review-only script generator on /maintenance-recommendations. *@
+                                                @if (!result.Passed && !result.IsAccepted && Resolution(result) is { } resolution)
+                                                {
+                                                    <div class="detail-section--resolve">
+                                                        @if (resolution.IsOneClick)
+                                                        {
+                                                            <button class="btn btn-sm btn-primary" @onclick="() => GoToResolution(resolution)" @onclick:stopPropagation="true">
+                                                                <i class="fa-solid fa-screwdriver-wrench"></i> Resolve…
+                                                            </button>
+                                                            <span class="resolve-hint">
+                                                                Opens the gated fix (@resolution.Template!.DisplayName) on Remediation — preview before anything applies.
+                                                            </span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <button class="btn btn-sm btn-outline" @onclick="() => GoToResolution(resolution)" @onclick:stopPropagation="true">
+                                                                <i class="fa-solid fa-file-code"></i> Generate remediation script…
+                                                            </button>
+                                                            <span class="resolve-hint">
+                                                                Maintenance work, not a one-click fix — generates a script on Maintenance Recommendations for you to review and run manually.
+                                                            </span>
+                                                        }
+                                                    </div>
+                                                }
+                                                @* F6: accept/revoke a finding that's acceptable-by-design on this instance. *@
+                                                @if (CanAccept(result))
+                                                {
+                                                    <div class="detail-section detail-section--accept">
+                                                        @if (result.IsAccepted)
+                                                        {
+                                                            <strong>Accepted:</strong>
+                                                            <span class="accept-reason">@result.AcceptanceReason</span>
+                                                            <span class="accept-meta">
+                                                                — @(result.AcceptedBy ?? "unknown")
+                                                                @if (result.AcceptanceExpiresAt.HasValue)
+                                                                {
+                                                                    <text>· expires @result.AcceptanceExpiresAt.Value.ToLocalTime().ToString("yyyy-MM-dd")</text>
+                                                                }
+                                                            </span>
+                                                            <button class="btn btn-sm btn-link accept-revoke" disabled="@(!MayDecideAcceptance)"
+                                                                    title="@(MayDecideAcceptance ? null : AcceptanceRefusal)"
+                                                                    @onclick="() => RevokeAcceptance(result)" @onclick:stopPropagation="true">Revoke</button>
+                                                        }
+                                                        else
+                                                        {
+                                                            <button class="btn btn-sm btn-outline" disabled="@(!MayDecideAcceptance)"
+                                                                    title="@(MayDecideAcceptance ? null : AcceptanceRefusal)"
+                                                                    @onclick="() => OpenAcceptModal(result)" @onclick:stopPropagation="true">
+                                                                <i class="fa-solid fa-circle-check"></i> Accept this finding…
+                                                            </button>
+                                                        }
+                                                    </div>
+                                                }
+                                                @* #88: LOG branch — track this failure as a change item and hand it to the vendor. *@
+                                                @if (CanAccept(result) && !result.IsAccepted)
+                                                {
+                                                    <div class="detail-section detail-section--change">
+                                                        @{ var change = ChangeItemFor(result); }
+                                                        @if (change != null)
+                                                        {
+                                                            <strong>Change item #@change.Id:</strong>
+                                                            <span class="change-status">@ChangeStatusLabel(change.Status)</span>
+                                                            @if (change.DueAt.HasValue)
+                                                            {
+                                                                <span class="accept-meta">· due @change.DueAt.Value.ToLocalTime().ToString("yyyy-MM-dd")</span>
+                                                            }
+                                                            <button class="btn btn-sm btn-link" @onclick="() => Nav.NavigateTo(RouteConstants.ChangeLedger)" @onclick:stopPropagation="true">Open ledger</button>
+                                                        }
+                                                        else
+                                                        {
+                                                            <button class="btn btn-sm btn-outline" @onclick="() => OpenLogModal(result)" @onclick:stopPropagation="true">
+                                                                <i class="fa-solid fa-list-check"></i> Log as change item…
+                                                            </button>
+                                                        }
+                                                    </div>
+                                                }
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                </ReportSectionWrapper>
+            }
+            else if (!State.IsRunning && State.HasRun)
+            {
+                <div class="no-checks">
+                    <p>No checks were executed. Make sure the check corpus is loaded with enabled checks.</p>
+                </div>
+            }
+
+            @if (!string.IsNullOrEmpty(State.StatusMessage))
+            {
+                <div class="status-message @State.StatusClass" role="status">
+                    @State.StatusMessage
+                </div>
+            }
+        </div>
+
+        <!-- Diagnostic Output Pane -->
+        @if (ShowDiagnosticPane)
+        {
+            <div class="qc-diag-pane">
+                <div class="diag-header">
+                    <span>Diagnostic Output</span>
+                    <div class="diag-header-actions">
+                        <button class="btn btn-sm" @onclick="() => State.ClearDiagLog()" title="Clear log">Clear</button>
+                        <button class="btn btn-sm" @onclick="ToggleDiagnosticPane" title="Close pane">X</button>
+                    </div>
+                </div>
+                <div class="diag-scroll" @ref="_diagScrollRef">
+                    @foreach (var entry in State.DiagLog)
+                    {
+                        <div class="diag-entry @entry.Level">
+                            <span class="diag-time">@entry.Timestamp.ToString("HH:mm:ss.fff")</span>
+                            <span class="diag-msg">@entry.Message</span>
+                        </div>
+                    }
+                    @if (State.DiagLog.Count == 0)
+                    {
+                        <div class="diag-empty">Run a check to see diagnostic output here.</div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+</div>
+}
+
+@code {
+    // Page-local UI only — not worth persisting across navigation
+    private PdfExportModal   _pdfModal       = default!;
+    private ElementReference _diagScrollRef;
+    private HashSet<string>  _expandedResults = new();
+    private bool             ShowDiagnosticPane;
+    private bool             _disposed;
+    private bool             _initialized;
+
+    // ── The two permissions this page's non-run actions need ──────────────
+    //
+    // RULED 2026-08-10 (Adrian): every mutating handler on this page is gated. Running the checks
+    // was already gated on execute_checks; these two cover the rest. The page itself stays open,
+    // because reading an audit result is a view.
+    //
+    // settings, the same permission /report-bundles gates risk-owner assignment with, for the same
+    // reason: both write persisted metadata that changes what THIS INSTALL'S reports say for every
+    // later reader, not just for the person clicking.
+    private bool MayEditReportLayout => UserState.IsAuthorized("settings");
+    private bool MayDecideAcceptance => UserState.IsAuthorized("settings");
+
+    private const string LayoutRefusal =
+        "Insufficient permissions. Admin role required to change this install's report layout.";
+
+    private const string AcceptanceRefusal =
+        "Accepting or revoking a finding is restricted to Admin users. It changes what every later "
+        + "reader of this install's reports sees for that check.";
+
+    // ── Report Page Editor ────────────────────────────────────────────────
+    //
+    // ⚠ MEASURED 2026-08-10, so the gates below are not mistaken for a closed live exposure: this
+    // constant is false, so ReportSectionWrapper renders none of the move/edit/delete/toggle
+    // controls, and _showAddSection / _editingSection are never set true anywhere in this file. The
+    // five section handlers are therefore UNREACHABLE from the shipped markup today. They are gated
+    // anyway, because the reachability is a property of one const in a page and the gate is a
+    // property of the handler.
+    private const bool        _editMode = false;
+    private List<ReportSection> _sections          = new();
+    private ReportSection?    _editingSection;
+    private bool              _showAddSection;
+    private ReportPageDefinition? _pageDef;
+
+    private static readonly List<string> AllNativeKeys =
+        new() { "server-selection", "summary-cards", "results-grid", "diagnostics" };
+
+    private static readonly List<ReportFieldInfo> _qcFields = new()
+    {
+        new() { Name = "CheckId",          Type = "string",   Description = "Unique identifier for the check",                     IsKey = true  },
+        new() { Name = "DisplayName",      Type = "string",   Description = "Human-readable check name",                          IsKey = false },
+        new() { Name = "Category",         Type = "string",   Description = "Check category (e.g. Security, Performance)",         IsKey = false },
+        new() { Name = "Severity",         Type = "string",   Description = "Finding severity: Critical, Warning, Info, Pass",     IsKey = false },
+        new() { Name = "Result",           Type = "string",   Description = "Raw result value or finding text",                    IsKey = false },
+        new() { Name = "Details",          Type = "string",   Description = "Extended description or recommendation",              IsKey = false },
+        new() { Name = "ServerName",       Type = "string",   Description = "SQL Server instance that produced this result",       IsKey = true  },
+        new() { Name = "RunDateUtc",       Type = "datetime", Description = "UTC timestamp when the check was executed",           IsKey = false },
+        new() { Name = "IsPass",           Type = "bit",      Description = "1 if the check passed, 0 if it raised a finding",     IsKey = false },
+        new() { Name = "ImplementationType", Type = "string", Description = "How the fix should be applied (e.g. Script, Config)", IsKey = false },
+        new() { Name = "SqlQuery",         Type = "string",   Description = "Suggested remediation SQL, if available",             IsKey = false },
+    };
+
+    private List<string> _availableNativeKeys =>
+        AllNativeKeys.Where(k => !_sections.Any(s => s.NativeKey == k && s.SectionType == "native")).ToList();
+
+    private ReportSection GetSection(string nativeKey)
+    {
+        var s = _sections.FirstOrDefault(x => x.NativeKey == nativeKey && x.SectionType == "native");
+        return s ?? new ReportSection { NativeKey = nativeKey, Title = nativeKey, SectionType = "native", Enabled = true };
+    }
+
+    private bool IsFirstSection(string nativeKey)
+    {
+        var ordered = _sections.OrderBy(s => s.Order).ToList();
+        var idx = ordered.FindIndex(s => s.NativeKey == nativeKey && s.SectionType == "native");
+        return idx <= 0;
+    }
+
+    private bool IsLastSection(string nativeKey)
+    {
+        var ordered = _sections.OrderBy(s => s.Order).ToList();
+        var idx = ordered.FindIndex(s => s.NativeKey == nativeKey && s.SectionType == "native");
+        return idx < 0 || idx == ordered.Count - 1;
+    }
+
+    private void LoadSections()
+    {
+        _pageDef = ReportPageCfg.GetPage("/audit");
+        _sections = _pageDef != null
+            ? _pageDef.Sections.OrderBy(s => s.Order).ToList()
+            : AllNativeKeys.Select((k, i) => new ReportSection { NativeKey = k, Title = k, SectionType = "native", Order = i, Enabled = true }).ToList();
+    }
+
+    private void MoveSection(ReportSection section, int direction)
+    {
+        if (!MayEditReportLayout) { Toast.ShowWarning(LayoutRefusal); return; }
+        if (_pageDef == null) return;
+        ReportPageCfg.MoveSection(_pageDef.Id, section.Id, direction);
+        LoadSections();
+        StateHasChanged();
+    }
+
+    private void DeleteSection(ReportSection section)
+    {
+        if (!MayEditReportLayout) { Toast.ShowWarning(LayoutRefusal); return; }
+        if (_pageDef == null) return;
+        ReportPageCfg.DeleteSection(_pageDef.Id, section.Id);
+        LoadSections();
+        StateHasChanged();
+    }
+
+    private void ToggleSection(ReportSection section)
+    {
+        if (!MayEditReportLayout) { Toast.ShowWarning(LayoutRefusal); return; }
+        if (_pageDef == null) return;
+        section.Enabled = !section.Enabled;
+        ReportPageCfg.UpsertSection(_pageDef.Id, section);
+        LoadSections();
+        StateHasChanged();
+    }
+
+    private void HandleSectionSaved(ReportSection section)
+    {
+        if (!MayEditReportLayout) { Toast.ShowWarning(LayoutRefusal); return; }
+        if (_pageDef == null) return;
+        ReportPageCfg.UpsertSection(_pageDef.Id, section);
+        LoadSections();
+        _editingSection = null;
+        StateHasChanged();
+    }
+
+    private void HandleSectionAdded(ReportSection section)
+    {
+        if (!MayEditReportLayout) { Toast.ShowWarning(LayoutRefusal); return; }
+        if (_pageDef == null) return;
+        section.Order = _sections.Count;
+        ReportPageCfg.UpsertSection(_pageDef.Id, section);
+        LoadSections();
+        _showAddSection = false;
+        StateHasChanged();
+    }
+
+    private void ResetSections()
+    {
+        // Remove all sections and let the service regenerate defaults
+        if (_pageDef == null) return;
+        foreach (var s in _sections.ToList())
+            ReportPageCfg.DeleteSection(_pageDef.Id, s.Id);
+        // Re-seed native keys
+        int i = 0;
+        foreach (var key in AllNativeKeys)
+            ReportPageCfg.UpsertSection(_pageDef.Id, new ReportSection
+            {
+                Id = Guid.NewGuid().ToString("N")[..8],
+                Title = key, NativeKey = key, SectionType = "native", Enabled = true, Order = i++
+            });
+        LoadSections();
+        StateHasChanged();
+    }
+
+    private List<ServerConnection> Connections => ConnectionManager.GetConnections();
+    private List<ServerConnection> EnabledConnections => ConnectionManager.GetEnabledConnections();
+    // Header stat pill. Deliberately catalog-wide and independent of the category filter: it is
+    // worded "enabled checks", a property of the CATALOG, and stays literally true for a filtered
+    // run. What a filtered RUN covered is stated by State.CategoryExclusionNotice instead, beside
+    // the run's own counts — the two describe different things and must not be conflated.
+    private int EnabledChecksCount => CheckRepo.GetEnabledChecks().Count;
+    private int EnabledServersCount => EnabledConnections.SelectMany(c => c.GetServerList()).Count();
+
+    // ── Per-run category filter ──────────────────────────────────────────────
+    // Page-local, exactly like _auditConcurrencyOverride: the component is re-created on every
+    // page load, so a fresh load starts with the set empty = every category included. Nothing is
+    // written to UserSettings and nothing goes on the process-wide QuickCheckStateService — a
+    // dashboard toggle that persisted would silently narrow later runs, including runs nobody
+    // configured. It is also NOT on QuickCheckViewState: that holds view filters (what is SHOWN),
+    // and this decides what is RUN.
+    private readonly HashSet<string> _excludedCategories = new(StringComparer.OrdinalIgnoreCase);
+
+    // The chip row and its preview line have exactly two inputs: the loaded catalog and the
+    // exclusion set. Both are computed from a ~582-item catalog, and the markup reads them on every
+    // render — which during a run is every progress tick, several times a second. Cached against
+    // those two inputs and invalidated explicitly where either changes (ToggleCategory, and each
+    // CheckRepo.LoadChecksAsync). A render never recomputes them.
+    private (IReadOnlyList<CategoryRunOption> Options, string? Planned)? _categoryChipCache;
+
+    private (IReadOnlyList<CategoryRunOption> Options, string? Planned) CategoryChips
+    {
+        get
+        {
+            if (_categoryChipCache == null)
+            {
+                var enabled = CheckRepo.GetEnabledChecks();
+                _categoryChipCache = (
+                    CategoryRunFilter.Options(enabled, _excludedCategories),
+                    _excludedCategories.Count == 0
+                        ? null
+                        : CategoryRunFilter.Apply(enabled, _excludedCategories).PlannedSummary);
+            }
+            return _categoryChipCache.Value;
+        }
+    }
+
+    /// <summary>Chips for the run panel — every category the loaded catalog carries, with counts.</summary>
+    private IReadOnlyList<CategoryRunOption> CategoryOptions => CategoryChips.Options;
+
+    /// <summary>Pre-run preview under the chips; null while every category is included.</summary>
+    private string? PlannedExclusionSummary => CategoryChips.Planned;
+
+    /// <summary>Drop the chip cache. Called wherever the catalog or the exclusion set changes —
+    /// a stale chip row would show counts for a catalog the next run will not use.</summary>
+    private void InvalidateCategoryChips() => _categoryChipCache = null;
+
+    private void ToggleCategory(string category)
+    {
+        // A run assembles its own snapshot, so a click mid-run could not change what is executing;
+        // the chips are disabled during a run anyway, and this guard keeps the two consistent.
+        if (State.IsRunning) return;
+        if (!_excludedCategories.Remove(category)) _excludedCategories.Add(category);
+        InvalidateCategoryChips();
+    }
+
+    /// <summary>Id/Label pairs fed to ServerSelector in id-keyed mode.
+    /// Shows all connections (including disabled) — same set as the old &lt;select&gt;.</summary>
+    private IReadOnlyList<(string Id, string Label)> ConnectionItems =>
+        Connections
+            .Select(conn =>
+            {
+                var label = conn.ServerNames + " (" + conn.AuthenticationDisplay + ")"
+                    + (conn.Environment != null ? $" [{conn.Environment}]" : "")
+                    + (!conn.IsEnabled ? " [DISABLED]" : "");
+                return (conn.Id, label);
+            })
+            .ToList();
+
+    /// <summary>Called by ServerSelector when the user picks a chip or "All servers".
+    /// Maps to the same RunAllServers / SelectedConnectionId / OnServerSelected pattern.</summary>
+    private void OnConnectionSelected(string? id)
+    {
+        if (string.IsNullOrEmpty(id))
+        {
+            View.RunAllServers        = true;
+            View.SelectedConnectionId = string.Empty;
+        }
+        else
+        {
+            View.RunAllServers        = false;
+            View.SelectedConnectionId = id;
+        }
+        OnServerSelected();
+    }
+
+    // SKIP semantics: CheckExecutionService maps permission-denied SqlExceptions to
+    // Passed=true with Message starting "SKIP — ...". The verdict-tier model also
+    // emits "SKIP" verdicts from the check SQL itself. Both flow through this helper.
+    // Gate B2 (2026-07-16): routed through the shared CheckClassification.IsSkip instead of a
+    // local Message-prefix-only check, so this LIVE path foots with the restored-run path
+    // (RehydrateLastRunFromHistory below) and every other surface (/dba, /governance, /cio) for
+    // the identical run — CheckClassification.IsSkip now also honors Verdict=="SKIP" (gate B1).
+    // CheckClassification.IsSkip folds ErrorMessage!=null in as a subset (see
+    // GovernanceService.ErroredFindings) — Errors get their own card/badge, checked first in the
+    // status-badge cascade below and via ErrorCount, so guard it out here to keep the Skipped and
+    // Errors cards partitioned rather than double-counting the same result into both.
+    private static bool IsSkipped(SQLTriage.Data.Models.CheckResult r) =>
+        string.IsNullOrEmpty(r.ErrorMessage) && CheckClassification.IsSkip(r);
+
+    // #49 (2026-07-15): a verdict-contract check's SQL returned INFO — not a SKIP, not a
+    // real PASS. Originally a grid-badge distinction only (Passed/scoring math untouched); as
+    // of 2026-07-16 the counters below (PassedCount, FilteredResults "passed", PDF exports) also
+    // exclude it — an Info result must never be counted as a pass anywhere, not just badged
+    // differently. See CheckResult.Verdict / CheckClassification.IsInfo.
+    // Gate B2 (2026-07-16): routed through CheckClassification.IsInfo (Severity=="INFO" OR
+    // Verdict=="INFO") instead of the local Verdict-only check — the local version missed
+    // Severity-declared INFO checks that the restored-run path and every other surface already
+    // counted, which is exactly why /audit's live counters disagreed with /dba (869/166/111/4 vs
+    // 696/162/288/4). !IsSkipped(r) keeps Skipped and Info partitioned (mirrors the status-badge
+    // cascade below, which checks Skip before Info).
+    // Ruling #4 (2026-07-20): a verdict-contract check returned WARN — it RAN, found nothing wrong,
+    // but could not fully assess the target (typically an under-privileged caller that could not
+    // read every database). Checked BEFORE IsInfoVerdict below so a WARN on a check whose declared
+    // Severity is "Info" still reads as Warn — otherwise the "could not assess" signal is absorbed
+    // by the Info bucket and disappears, which is the exact failure mode this state exists to stop.
+    private static bool IsWarnVerdict(SQLTriage.Data.Models.CheckResult r) =>
+        string.IsNullOrEmpty(r.ErrorMessage) && !IsSkipped(r) && CheckClassification.IsWarn(r);
+
+    // !IsWarnVerdict(r) added 2026-07-20 to keep the Warn and Info cards a strict partition
+    // (mirrors the status-badge cascade below, which now checks Skip → Warn → Info).
+    private static bool IsInfoVerdict(SQLTriage.Data.Models.CheckResult r) =>
+        string.IsNullOrEmpty(r.ErrorMessage) && !IsSkipped(r) && !IsWarnVerdict(r)
+        && CheckClassification.IsInfo(r);
+
+    // 2026-07-16: added !IsInfoVerdict(r) — a verdict-contract INFO result rides Passed=true
+    // (CheckExecutionService) same as PASS/SKIP, and without this it inflated PassedCount past
+    // what /governance's scored PassedFindings counts for the identical result set (the grid
+    // badge above already distinguishes Info from Pass; the counters had not caught up).
+    // 2026-07-20 (ruling #4): added !IsWarnVerdict(r) for exactly the same reason the Info guard
+    // exists — WARN now rides Passed=true, so without this a "could not fully assess" result would
+    // be counted and shown to a client as a passed check. It gets its own card below instead.
+    private int PassedCount  => State.Results.Count(r => r.Passed && !IsSkipped(r) && !IsInfoVerdict(r) && !IsWarnVerdict(r) && string.IsNullOrEmpty(r.ErrorMessage));
+    // F6: an accepted finding is a genuine not-passed result the client signed off on. It drops
+    // OUT of the open-findings count and INTO its own "accepted" count — never a flat "failed",
+    // never a silent pass.
+    // Gate B2 follow-up (2026-07-16): added CheckClassification.IsScorable(r) — mirrors
+    // DbaDashboard's Failed/Accepted definitions. Without it, a not-passed result whose Message/
+    // Verdict ALSO satisfies IsSkip (a contract-anomalous row: Verdict/Message says SKIP but the
+    // check recorded Passed=false) double-counted into both Failed/Accepted AND Skipped, so the
+    // cards summed past State.Results.Count instead of footing to Total. IsScorable excludes
+    // Skip/Info first, same as DbaDashboard/GovernanceService, so every bucket here is a true
+    // partition.
+    private int FailedCount   => State.Results.Count(r => CheckClassification.IsScorable(r) && !r.Passed && !r.IsAccepted && string.IsNullOrEmpty(r.ErrorMessage));
+    private int AcceptedCount => State.Results.Count(r => CheckClassification.IsScorable(r) && !r.Passed && r.IsAccepted && string.IsNullOrEmpty(r.ErrorMessage));
+    private int ErrorCount   => State.Results.Count(r => !string.IsNullOrEmpty(r.ErrorMessage));
+    private int SkippedCount => State.Results.Count(IsSkipped);
+    private int InfoCount    => State.Results.Count(r => IsInfoVerdict(r) && !IsSkipped(r) && string.IsNullOrEmpty(r.ErrorMessage));
+    // Ruling #4: "Partial" — the check ran but could not fully assess the target. Its own bucket
+    // so a degraded run is neither a clean pass nor a wall of false findings. FailedCount above
+    // already excludes it via CheckClassification.IsScorable, so all seven cards stay a partition.
+    private int WarnCount    => State.Results.Count(r => IsWarnVerdict(r) && !IsSkipped(r) && string.IsNullOrEmpty(r.ErrorMessage));
+
+    private List<string> ServersInResults =>
+        State.Results.Select(r => r.InstanceName).Distinct().OrderBy(s => s).ToList();
+
+    // ── #84 imported-run provenance (see ImportProvenance) ────────────────
+    // Tooltip for the grid-row "Imported" chip: when + from which file this row was imported.
+    private static string ImportedTooltip(CheckResult r)
+    {
+        var when = r.ImportedAtUtc?.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+        return string.IsNullOrWhiteSpace(r.ImportSourceFile)
+            ? $"Imported {when} — not executed live on this build."
+            : $"Imported {when} from {r.ImportSourceFile} — not executed live on this build.";
+    }
+
+    // True when this instance's rows on the grid came from an import (drives the summary-card chip).
+    private bool IsImportedServer(string instanceName) =>
+        State.Results.Any(r => string.Equals(r.InstanceName, instanceName, StringComparison.OrdinalIgnoreCase)
+                               && r.ImportedAtUtc != null);
+
+    // Shared per-server restore summary — the SAME CheckClassification basis the rehydrate loop
+    // uses inline, so imported and local runs foot identically (no separate counting path).
+    // BuildRunSummary moved to AssessmentRehydrationService.BuildRunSummary (shared basis).
+
+    // ── F6: Accepted Findings ─────────────────────────────────────────────
+    private CheckResult? _acceptTarget;      // the finding being accepted (null = modal closed)
+    private string       _acceptReason = "";
+    private DateTime?    _acceptExpiry;
+    private string?      _acceptError;
+    private bool         _acceptSaving;
+
+    // ── #88: Change items (the LOG branch beside Accept) ──────────────────
+    private CheckResult? _logTarget;         // the finding being logged (null = modal closed)
+    private string       _logRationale = "";
+    private string       _logVendor = "";
+    private DateTime?    _logDue;
+    private string?      _logError;
+    private bool         _logSaving;
+
+    // The active change item for a finding (badge + ledger link), or null when there's none
+    // OR the last one was confirmed-fixed (so a recurrence can be logged afresh).
+    private ChangeItem? ChangeItemFor(CheckResult r)
+    {
+        var c = ChangeItems.GetLatest(r.InstanceName, r.CheckId);
+        return c != null && c.Status != ChangeItemStatus.ConfirmedFixed ? c : null;
+    }
+
+    private static string ChangeStatusLabel(ChangeItemStatus s) => s switch
+    {
+        ChangeItemStatus.Logged         => "Logged",
+        ChangeItemStatus.HandedToVendor => "Handed to vendor",
+        ChangeItemStatus.ConfirmedFixed => "Confirmed fixed",
+        ChangeItemStatus.StillFailing   => "Still failing",
+        _                               => s.ToString(),
+    };
+
+    private void OpenLogModal(CheckResult r)
+    {
+        _logTarget = r;
+        _logRationale = "";
+        _logVendor = "";
+        _logDue = null;
+        _logError = null;
+        _logSaving = false;
+    }
+
+    private void CloseLogModal()
+    {
+        _logTarget = null;
+        _logError = null;
+    }
+
+    private async Task ConfirmLog()
+    {
+        if (_logTarget == null) return;
+        if (string.IsNullOrWhiteSpace(_logRationale))
+        {
+            _logError = "A rationale is required.";
+            return;
+        }
+
+        _logSaving = true;
+        try
+        {
+            var who = $"{Environment.UserName} ({UserState.Role})";
+            // Capture whatever remediation guidance the finding carries, at log time, so the
+            // handoff to the vendor is reproducible even if the corpus later changes. Honest
+            // null when the finding has no remediation text.
+            var script = !string.IsNullOrWhiteSpace(_logTarget.RecommendedAction)
+                ? _logTarget.RecommendedAction
+                : _logTarget.Eli5Remediation;
+
+            var logged = await ChangeItems.LogChange(
+                _logTarget.InstanceName,
+                _logTarget.CheckId,
+                _logTarget.CheckName,
+                _logRationale.Trim(),
+                remediationScript: string.IsNullOrWhiteSpace(script) ? null : script,
+                decidedBy: who);
+
+            // If a vendor or due date was supplied, hand it off in the same gesture — the
+            // service records both the log and the handoff as distinct audit events.
+            var vendor = string.IsNullOrWhiteSpace(_logVendor) ? null : _logVendor.Trim();
+            DateTime? dueUtc = _logDue.HasValue
+                ? _logDue.Value.Date.AddDays(1).AddSeconds(-1).ToUniversalTime()
+                : null;
+            if (vendor != null || dueUtc.HasValue)
+                await ChangeItems.HandToVendor(logged.Id, vendor, dueUtc, by: who);
+
+            Toast.ShowSuccess($"Change item #{logged.Id} logged: {_logTarget.CheckName}");
+            CloseLogModal();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            _logError = ex.Message;
+        }
+        finally
+        {
+            _logSaving = false;
+        }
+    }
+
+    // A finding is acceptable when it's a genuine not-passed result (not an error, not a SKIP).
+    private static bool CanAccept(CheckResult r) =>
+        !r.Passed
+        && string.IsNullOrEmpty(r.ErrorMessage)
+        && !r.IsCorrupted
+        && !IsSkipped(r);
+
+    // ── S4: failed-check -> resolution deep-link ─────────────────────────────
+    // Only offered for genuine failures (mirrors CanAccept's error/SKIP/corrupted exclusions —
+    // there's nothing to "resolve" for a check that errored or didn't run).
+    // A one-click resolution deep-links to /remediation, which is Content-Removed from the
+    // community build (Adrian's 2026-08-05 licence-binding ruling). This page ships in EVERY
+    // profile, so the offer has to be withdrawn where the target does not exist — otherwise the
+    // community build renders a "Resolve…" button onto a route that 404s. Withdrawn at the
+    // SOURCE of the offer rather than at the button, so no empty container renders either.
+    // The MAINTENANCE branch (/maintenance-recommendations) ships everywhere and is unaffected.
+    private SQLTriage.Data.Services.Remediation.CheckResolution? Resolution(CheckResult r)
+    {
+        if (!CanAccept(r)) return null;
+        var resolution = ResolutionLookup.Resolve(r.CheckId);
+        // TWO independent reasons the one-click target is unreachable, and both withdraw the offer:
+        //   BUILD    — /remediation is Content-Removed from community, so the route 404s. Closed
+        //              2026-08-05 with the rest of the licence binding.
+        //   LICENCE  — in a FULL build the page compiles in and then REFUSES without Full tier +
+        //              the remediation claim. That half was left open, so a full build on a bundle
+        //              without the claim still rendered "Resolve..." and landed the operator on a
+        //              refusal page. Same reading the target page makes (IRemediationCapability is
+        //              gate 2 of RemediationRunner and carries the --devbridge hatch), so the offer
+        //              and the destination cannot disagree.
+        if (resolution is { IsOneClick: true }
+            && (!BuildModules.Premium || !RemediationCapability.IsGranted)) return null;
+        return resolution;
+    }
+
+    private void GoToResolution(SQLTriage.Data.Services.Remediation.CheckResolution resolution)
+    {
+        if (resolution.IsOneClick)
+        {
+#if SQLT_NO_PREMIUM
+            // Unreachable: Resolution() never hands a one-click resolution to this build. It
+            // returns rather than falling through, because the fall-through would send the
+            // operator to a script generator that means something else.
+            return;
+#else
+            Nav.NavigateTo($"{RouteConstants.Remediation}?key={Uri.EscapeDataString(resolution.Template!.Key)}");
+            return;
+#endif
+        }
+
+        var server = View.SelectedServer;
+        var genParam = resolution.Generator switch
+        {
+            SQLTriage.Data.Services.Remediation.MaintenanceGenerator.IndexFragmentation => "index",
+            SQLTriage.Data.Services.Remediation.MaintenanceGenerator.Statistics => "stats",
+            SQLTriage.Data.Services.Remediation.MaintenanceGenerator.CheckDb => "checkdb",
+            _ => null,
+        };
+        var url = "/maintenance-recommendations";
+        var query = new List<string>();
+        if (!string.IsNullOrWhiteSpace(server)) query.Add($"server={Uri.EscapeDataString(server)}");
+        if (genParam is not null) query.Add($"generator={genParam}");
+        if (query.Count > 0) url += "?" + string.Join("&", query);
+        Nav.NavigateTo(url);
+    }
+
+    private static string AcceptanceTooltip(CheckResult r)
+    {
+        var who = string.IsNullOrEmpty(r.AcceptedBy) ? "unknown" : r.AcceptedBy;
+        var exp = r.AcceptanceExpiresAt.HasValue
+            ? $" · expires {r.AcceptanceExpiresAt.Value.ToLocalTime():yyyy-MM-dd}"
+            : "";
+        return $"Accepted by {who}{exp}: {r.AcceptanceReason}";
+    }
+
+    private void OpenAcceptModal(CheckResult r)
+    {
+        _acceptTarget = r;
+        _acceptReason = "";
+        _acceptExpiry = null;
+        _acceptError = null;
+        _acceptSaving = false;
+    }
+
+    private void CloseAcceptModal()
+    {
+        _acceptTarget = null;
+        _acceptError = null;
+    }
+
+    private async Task ConfirmAcceptance()
+    {
+        if (!MayDecideAcceptance) { _acceptError = AcceptanceRefusal; return; }
+        if (_acceptTarget == null) return;
+        if (string.IsNullOrWhiteSpace(_acceptReason))
+        {
+            _acceptError = "A reason is required.";
+            return;
+        }
+
+        _acceptSaving = true;
+        try
+        {
+            // Expiry date is inclusive end-of-day: accept through 23:59:59 local on the chosen day.
+            DateTime? expiresUtc = _acceptExpiry.HasValue
+                ? _acceptExpiry.Value.Date.AddDays(1).AddSeconds(-1).ToUniversalTime()
+                : null;
+
+            // No per-user auth in WPF mode — attribute to the OS user + role (audit story is
+            // the reason field). accepted_by defaults to Environment.UserName if null.
+            var who = $"{Environment.UserName} ({UserState.Role})";
+
+            await AcceptedFindings.Accept(
+                _acceptTarget.InstanceName,
+                _acceptTarget.CheckId,
+                _acceptReason.Trim(),
+                acceptedBy: who,
+                expiresAt: expiresUtc);
+
+            Toast.ShowSuccess($"Finding accepted: {_acceptTarget.CheckName}");
+            CloseAcceptModal();
+            RefreshResultsAnnotations();
+        }
+        catch (Exception ex)
+        {
+            _acceptError = ex.Message;
+        }
+        finally
+        {
+            _acceptSaving = false;
+        }
+    }
+
+    private async Task RevokeAcceptance(CheckResult r)
+    {
+        if (!MayDecideAcceptance) { Toast.ShowWarning(AcceptanceRefusal); return; }
+        try
+        {
+            await AcceptedFindings.Revoke(r.InstanceName, r.CheckId);
+            Toast.ShowInfo($"Acceptance revoked: {r.CheckName}");
+            RefreshResultsAnnotations();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("Could not revoke acceptance", ex.Message);
+        }
+    }
+
+    // Re-apply the acceptance overlay to the rows ALREADY on the grid, so the badge and the counts
+    // reflect the just-changed acceptance without re-running the checks.
+    //
+    // IN PLACE, deliberately. This used to re-IMPORT every server's rows through
+    // CheckExecutor.GetResults, which unions the capped hot cache with the persisted latest-run
+    // store — so on a category-filtered run, one accept click re-imported the very rows the run had
+    // excluded, underneath a notice stating they did not run. The grid holds exactly the rows its
+    // run produced, and an annotation must not be able to change WHICH rows are shown; it may only
+    // change what they say about themselves.
+    //
+    // It also removes the second copy of the acceptance rule that used to live here for the
+    // restored-from-history case: CheckExecutor.AnnotateAcceptances is the one rule, and it is the
+    // same rule GetResults applies, over the same singleton AcceptedFindingsService this page
+    // injects. The old in-page copy cleared the flag on any r.Passed row, stripping a client's
+    // sign-off off an accepted finding that had since degraded to WARN (ruling #4).
+    private void RefreshResultsAnnotations()
+    {
+        CheckExecutor.AnnotateAcceptances(State.Results);
+        State.NotifyStateChanged();
+        StateHasChanged();
+    }
+
+    private IEnumerable<CheckResult> FilteredResults
+    {
+        get
+        {
+            var filtered = State.Results.AsEnumerable();
+
+            filtered = View.SelectedFilter switch
+            {
+                // 2026-07-16: "passed" excludes IsInfoVerdict too (see PassedCount above).
+                // B2 (2026-07-20): and !IsWarnVerdict — this predicate MUST stay identical to
+                // PassedCount's, or the header promises "Passed (N)" and the list renders N plus
+                // every WARN row. The count had the guard from the ruling-#4 slice; the filter did
+                // not, so selecting Passed listed "could not fully assess" rows as passes.
+                "passed"   => filtered.Where(r => r.Passed && !IsSkipped(r) && !IsInfoVerdict(r) && !IsWarnVerdict(r) && string.IsNullOrEmpty(r.ErrorMessage)),
+                // Gate B2 follow-up: IsScorable guard matches FailedCount/AcceptedCount above.
+                "failed"   => filtered.Where(r => CheckClassification.IsScorable(r) && !r.Passed && !r.IsAccepted && string.IsNullOrEmpty(r.ErrorMessage)),
+                "accepted" => filtered.Where(r => CheckClassification.IsScorable(r) && !r.Passed && r.IsAccepted && string.IsNullOrEmpty(r.ErrorMessage)),
+                "errors"   => filtered.Where(r => !string.IsNullOrEmpty(r.ErrorMessage)),
+                "skipped"  => filtered.Where(IsSkipped),
+                "info"     => filtered.Where(r => IsInfoVerdict(r) && !IsSkipped(r) && string.IsNullOrEmpty(r.ErrorMessage)),
+                // Ruling #4: matches WarnCount above.
+                "partial"  => filtered.Where(r => IsWarnVerdict(r) && !IsSkipped(r) && string.IsNullOrEmpty(r.ErrorMessage)),
+                _        => filtered
+            };
+
+            if (!string.IsNullOrEmpty(View.SelectedCategory))
+                filtered = filtered.Where(r => r.Category.Equals(View.SelectedCategory, StringComparison.OrdinalIgnoreCase));
+
+            if (!string.IsNullOrEmpty(View.SelectedServer))
+                filtered = filtered.Where(r => r.InstanceName.Equals(View.SelectedServer, StringComparison.OrdinalIgnoreCase));
+
+            if (!string.IsNullOrEmpty(View.SelectedSeverity))
+                filtered = filtered.Where(r => r.Severity.Equals(View.SelectedSeverity, StringComparison.OrdinalIgnoreCase));
+
+            return filtered;
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (UserSettings.GetFastAppLoad()) await Task.Yield();
+        LoadSections();
+        ShowDiagnosticPane = UserSettings.GetShowDiagnosticPane();
+        _auditConcurrencyDefault = UserSettings.GetAuditMaxConcurrentPerInstance();
+        await CheckRepo.LoadChecksAsync();
+        InvalidateCategoryChips();
+
+        // Re-attach to state change notifications each time the page mounts
+        State.StateChanged += OnStateChanged;
+
+        // Keyboard shortcuts
+        ShortcutSvc.OnRunRequested       += OnShortcutRun;
+#if !SQLT_NO_REPORT_FINDINGS_PDF
+        ShortcutSvc.OnExportPdfRequested += OnShortcutPdf;
+#endif
+
+        // Ensure categories are populated (may have been loaded on a prior visit)
+        if (State.Categories.Count == 0)
+            State.Categories = CheckRepo.GetEnabledChecks()
+                .Select(c => c.Category).Distinct().OrderBy(c => c).ToList();
+
+        RefreshDemoStatus();
+
+        // R1 (2026-07-07): when nothing is in memory (fresh app start), restore the last
+        // saved assessment from history so the page doesn't open empty. Costs one SQLite
+        // read per server; never consumes a demo-gate run. The logic moved to
+        // AssessmentRehydrationService (2026-07-30) so /compliance-map and /compliance-tree
+        // get the same restore without the user having to visit this page first; the guard
+        // condition lives inside EnsureLastRunLoaded now. The seat notice is copied whenever
+        // the pass RAN (not only when it restored rows) — an excluded instance must be named
+        // in the banner even when no run could be restored at all.
+        var wasCold = !State.HasRun && !State.IsRunning && State.Results.Count == 0;
+        Rehydration.EnsureLastRunLoaded();
+        if (wasCold) _seatNotice = Rehydration.LastSeatNotice;
+
+        // #84: surface imported runs that landed AFTER the grid was first populated this session
+        // (imported on /import-results, then /audit opened while State still holds an earlier run).
+        // Idempotent + additive — a no-op right after a rehydrate that already included them, and it
+        // never touches an in-progress live run.
+        if (!State.IsRunning)
+            TopUpImportedServers();
+
+        _initialized = true;
+    }
+
+    // Restore the last recorded assessment (newest row per check per server, <=7 days old)
+    // and re-apply the acceptance overlay — history stores the truthful result; acceptance
+    // is annotate-on-read.
+    /// <summary>Honest banner text when the seat licence excluded configured instances from this
+    /// grid; null when nothing was dropped (unlimited/legacy licence, or every instance seated).</summary>
+    private string? _seatNotice;
+
+    // RehydrateLastRunFromHistory moved verbatim to AssessmentRehydrationService (2026-07-30)
+    // so /compliance-map and /compliance-tree can trigger the same cold-start restore.
+
+    // #84: add any IMPORTED runs that are not already on the grid — for the case where a run was
+    // imported after the grid was first populated this session (RehydrateLastRunFromHistory only
+    // runs on a cold, empty grid). Deliberately ADD-ONLY and idempotent: it skips any instance
+    // already shown, so it never merges into, reorders, or displaces an existing server's rows and
+    // is safe to call on every mount. Newest-run-wins displacement (imported over a NEWER-than-local
+    // run for the same instance) is handled only by the cold rehydrate above — here a server that is
+    // already present is left exactly as the user last saw it.
+    private void TopUpImportedServers()
+    {
+        try
+        {
+            var present = new HashSet<string>(
+                State.Results.Select(r => r.InstanceName), StringComparer.OrdinalIgnoreCase);
+            var added = new List<CheckResult>();
+            foreach (var server in CheckExecutor.GetServersWithResults())
+            {
+                if (string.IsNullOrWhiteSpace(server) || present.Contains(server)) continue;
+                var rows = CheckExecutor.GetResults(server, int.MaxValue);
+                if (rows.Count == 0 || !ImportProvenance.RunIsImported(rows)) continue; // imported runs only
+                added.AddRange(rows);
+                State.ServerSummaries.Add(SQLTriage.Data.Services.AssessmentRehydrationService.BuildRunSummary(server, rows, ImportProvenance.RunImportTime(rows) ?? DateTime.UtcNow));
+                present.Add(server);
+            }
+            if (added.Count == 0) return;
+
+            State.Results.AddRange(added);
+            State.HasRun        = true;
+            State.ServersTested = State.ServerSummaries.Count;
+            // The coverage notice describes ONE run's catalog coverage, and the grid now holds rows
+            // from an imported run as well — a run whose covered categories nothing here records.
+            // The sentence can no longer be true of what is on screen, so it goes rather than being
+            // stretched to cover rows it never measured. An unfiltered grid is unaffected: the
+            // notice is null there already.
+            State.CategoryExclusionNotice = null;
+            // Same for completeness: the imported run's own finish state is not recorded here.
+            State.RunCompletenessNotice = null;
+            // UNION new categories in — never narrow an existing (e.g. live-run) category list.
+            State.Categories    = State.Categories
+                .Concat(added.Select(r => r.Category))
+                .Distinct().OrderBy(c => c).ToList();
+            State.NotifyStateChanged();
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "Failed to top up imported servers for /audit");
+        }
+    }
+
+    // Multi-server run mode (All scope). Mirrors Raw Diagnostics.
+    private bool _parallelMode;
+    private int _parallelDelaySeconds = 2;
+
+    // Per-run concurrency override (queries per instance). Null = fall back to the saved
+    // Settings default, captured into _auditConcurrencyDefault for the placeholder text.
+    private int? _auditConcurrencyOverride;
+    private int _auditConcurrencyDefault = UserSettingsService.AuditConcurrencyDefault;
+
+    public void Dispose()
+    {
+        _disposed = true;
+        State.StateChanged -= OnStateChanged;
+        ShortcutSvc.OnRunRequested       -= OnShortcutRun;
+#if !SQLT_NO_REPORT_FINDINGS_PDF
+        ShortcutSvc.OnExportPdfRequested -= OnShortcutPdf;
+#endif
+    }
+
+    private async Task OnShortcutRun() => await InvokeAsync(RunChecks);
+#if !SQLT_NO_REPORT_FINDINGS_PDF
+    private Task OnShortcutPdf()       { InvokeAsync(ExportQuestPdf); return Task.CompletedTask; }
+#endif
+
+    private void OnStateChanged()
+    {
+        if (!_disposed)
+            InvokeAsync(StateHasChanged);
+    }
+
+    private void OnServerSelected() => StateHasChanged();
+
+    private void SetFilterFromCard(string filter)
+    {
+        View.SelectedFilter = View.SelectedFilter == filter ? "all" : filter;
+        StateHasChanged();
+    }
+
+    private void ToggleDiagnosticPane()
+    {
+        ShowDiagnosticPane = !ShowDiagnosticPane;
+        UserSettings.SetShowDiagnosticPane(ShowDiagnosticPane);
+    }
+
+    private async Task AutoExportQuickCheckResults()
+    {
+        var settings = UserSettings.GetSettings();
+        if (!settings.AutoExportQuickCheckCsv && !settings.AutoExportQuickCheckPdf) return;
+        if (State.Results.Count == 0) return;
+
+        var outputDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "output");
+        Directory.CreateDirectory(outputDir);
+        var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+
+        if (settings.AutoExportQuickCheckCsv)
+        {
+            try
+            {
+                var csv = new System.Text.StringBuilder();
+                csv.AppendLine("Instance,CheckId,CheckName,Category,Severity,Passed,Accepted,AcceptanceReason,ActualValue,ExpectedValue,Message,DurationMs,ExecutedAt");
+                foreach (var r in State.Results)
+                {
+                    var msg = (r.Message ?? "").Replace("\"", "\"\"");
+                    // F6: the acceptance audit story must survive export.
+                    var acceptReason = (r.AcceptanceReason ?? "").Replace("\"", "\"\"");
+                    csv.AppendLine($"\"{r.InstanceName}\",\"{r.CheckId}\",\"{r.CheckName}\",\"{r.Category}\",\"{r.Severity}\",{r.Passed},{r.IsAccepted},\"{acceptReason}\",{r.ActualValue},{r.ExpectedValue},\"{msg}\",{r.DurationMs},\"{r.ExecutedAt:o}\"");
+                }
+                var fileName = $"QuickCheck_{timestamp}.csv";
+                await File.WriteAllTextAsync(Path.Combine(outputDir, fileName), csv.ToString());
+                Toast.ShowInfo($"Audit Assessment CSV exported: {fileName}");
+            }
+            catch (Exception ex)
+            {
+                Toast.ShowError($"CSV export failed: {ex.Message}");
+            }
+        }
+
+        if (settings.AutoExportQuickCheckPdf)
+        {
+            try
+            {
+                await Task.Delay(500); // let UI render final state
+                if (!PrintSvc.IsAvailable)
+                {
+                    await PrintSvc.PrintViaBrowserAsync(JSRuntime);
+                    Toast.ShowInfo("Browser print dialog opened for PDF export.");
+                }
+                else
+                {
+                    var fileName = $"QuickCheck_{timestamp}.pdf";
+                    var qkEnv = ConnectionManager.GetConnection(View.SelectedConnectionId)?.Environment;
+                    var qkWatermark = ServerEnvironment.RequiresWatermark(new[] { qkEnv });
+                    if (qkWatermark)
+                        await JSRuntime.InvokeVoidAsync("eval", "document.body.classList.add('has-draft-watermark');");
+                    var (success, path, error) = await PrintSvc.PrintToPdfAsync(
+                        fileName,
+                        printBackgrounds: false,
+                        orientation: Microsoft.Web.WebView2.Core.CoreWebView2PrintOrientation.Portrait);
+                    if (qkWatermark)
+                        await JSRuntime.InvokeVoidAsync("eval", "document.body.classList.remove('has-draft-watermark');");
+                    if (success)
+                        Toast.ShowInfo($"Audit Assessment PDF exported: {fileName}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Toast.ShowError($"PDF export failed: {ex.Message}");
+            }
+        }
+    }
+
+    // QuestPDF export of the audit (corpus) findings — deterministic, server-side; replaces the
+    // browser-print path. Saves to .\output next to the exe.
+#if !SQLT_NO_REPORT_FINDINGS_PDF
+    private async Task ExportQuestPdf()
+    {
+        try
+        {
+            if (State.Results.Count == 0) { Toast.ShowInfo("No results to export — run an assessment first."); return; }
+
+            var cb      = UserSettings.GetColorBlindMode();
+            var servers = State.Results.Select(r => r.InstanceName).Where(s => !string.IsNullOrEmpty(s))
+                                       .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(s => s).ToList();
+            var runId   = Guid.NewGuid().ToString("N")[..8];
+            var nowUtc  = DateTime.UtcNow;
+            var tz      = TimeZoneInfo.Local.StandardName;
+            var scope   = servers.Count == 1 ? servers[0] : $"{servers.Count} servers";
+
+            var serverSet = servers.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var envs = ConnectionManager.GetConnections()
+                .Where(c => c.GetServerList().Any(n => serverSet.Contains(n))).Select(c => c.Environment).ToList();
+            var watermark = UserSettings.GetReportDraftWatermark()
+                            && SQLTriage.Data.Models.ServerEnvironment.RequiresWatermark(envs);
+
+            var report = new SQLTriage.Data.Services.FindingsReport
+            {
+                Meta = new SQLTriage.Data.Services.AssessmentMeta
+                {
+                    Title        = "Audit Assessment",
+                    Company      = UserSettings.GetReportCompanyName(),
+                    Subtitle     = servers.Count == 1 ? servers[0] : $"{servers.Count} servers · {string.Join(", ", servers.Take(6))}",
+                    Engine       = "Corpus audit checks",
+                    GeneratedUtc = nowUtc.ToString("yyyy-MM-ddTHH:mmZ"),
+                    TimezoneId   = tz,
+                    RunId        = runId,
+                    ColorBlind   = cb,
+                    Watermark    = watermark,
+                    FooterMeta   = $"SQLTriage — Audit Assessment — {scope} — {nowUtc:yyyy-MM-ddTHH:mmZ} ({tz}) — Run {runId}",
+                    // The exact sentence the page shows above the same counts, from the same
+                    // measurement. Empty for an unfiltered run, and the title band then prints
+                    // nothing extra — a client PDF gains a coverage line only when there is one.
+                    CoverageNote = State.CoverageNoteForReports,
+                },
+                Stats =
+                {
+                    new() { Label = "PASSED",   Value = PassedCount.ToString(),       Color = SQLTriage.Data.Services.AssessmentPdf.Pass(cb) },
+                    new() { Label = "FINDINGS", Value = FailedCount.ToString(),       Color = SQLTriage.Data.Services.AssessmentPdf.Fail(cb) },
+                    new() { Label = "ERRORS",   Value = ErrorCount.ToString(),        Color = SQLTriage.Data.Services.AssessmentPdf.Fail(cb) },
+                    // "SERVERS ATTEMPTED", not "SERVERS": the value counts every target the run
+                    // visited, including any that threw, and this chip sits beside PASSED /
+                    // FINDINGS / ERRORS which are measured only from targets that reported
+                    // (pages-r1-12, ruled 2026-08-28). The coverage sentence carried in
+                    // Meta.CoverageNote states how many produced nothing.
+                    new() { Label = "SERVERS ATTEMPTED",  Value = State.ServersTested.ToString(), Color = "#2563eb" },
+                },
+            };
+            // Ruling #4: surface partially-assessed checks on the PDF header when any exist. A
+            // degraded run must not produce a header that reads exactly like a clean one.
+            if (WarnCount > 0)
+                report.Stats.Insert(2, new SQLTriage.Data.Services.StatChip
+                {
+                    Label = "PARTIAL", Value = WarnCount.ToString(),
+                    Color = SQLTriage.Data.Services.AssessmentPdf.Warn(cb),
+                });
+            // F6: surface accepted findings on the PDF header when any exist (never silently folded).
+            if (AcceptedCount > 0)
+                report.Stats.Insert(2, new SQLTriage.Data.Services.StatChip
+                {
+                    Label = "ACCEPTED", Value = AcceptedCount.ToString(),
+                    Color = SQLTriage.Data.Services.AssessmentPdf.AcceptedCol,
+                });
+
+            foreach (var r in State.Results)
+            {
+                // 2026-07-16: IsInfoVerdict branch added (mirrors the results-grid badge order,
+                // line ~423 above) — without it a verdict-INFO check fell through to r.Passed
+                // (true) and exported as a plain "Pass" in the PDF, same defect as the grid had.
+                // 2026-07-20 (ruling #4): IsWarnVerdict branch added ABOVE r.Passed — WARN now
+                // rides Passed=true, so without it a "could not fully assess" check would export
+                // to a client PDF as a plain green Pass. Same defect shape as the Info gap below.
+                var st = (r.IsCorrupted || !string.IsNullOrEmpty(r.ErrorMessage)) ? SQLTriage.Data.Services.FindingState.Error
+                       : IsSkipped(r)                                              ? SQLTriage.Data.Services.FindingState.Skipped
+                       : IsWarnVerdict(r)                                          ? SQLTriage.Data.Services.FindingState.Warn
+                       : IsInfoVerdict(r)                                          ? SQLTriage.Data.Services.FindingState.Info
+                       : r.Passed                                                  ? SQLTriage.Data.Services.FindingState.Pass
+                       : r.IsAccepted                                              ? SQLTriage.Data.Services.FindingState.Accepted
+                       :                                                             SQLTriage.Data.Services.FindingState.Fail;
+                var detail = !string.IsNullOrEmpty(r.ErrorMessage) ? r.ErrorMessage
+                           : !string.IsNullOrEmpty(r.Message)      ? r.Message
+                           :                                          (r.Description ?? "");
+                report.Findings.Add(new SQLTriage.Data.Services.FindingRow
+                {
+                    State = st, Name = r.CheckName, Category = r.Category, Severity = r.Severity,
+                    Server = r.InstanceName, Detail = detail,
+                });
+            }
+
+            var bytes = await Task.Run(() => SQLTriage.Data.Services.AssessmentPdf.BuildFindingsReport(report));
+            var dir   = System.IO.Path.Combine(AppContext.BaseDirectory, "output");
+            System.IO.Directory.CreateDirectory(dir);
+            var label = (servers.Count == 1 ? servers[0] : $"{servers.Count}servers").Replace("\\", "_").Replace("/", "_");
+            var path  = System.IO.Path.Combine(dir, $"AuditAssessment_{label}_{nowUtc:yyyyMMdd_HHmmssZ}_{runId}.pdf");
+            await System.IO.File.WriteAllBytesAsync(path, bytes);
+            Toast.ShowSuccess("PDF exported", System.IO.Path.GetFileName(path));
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("PDF export failed", ex.Message);
+        }
+    }
+#endif
+
+#if !SQLT_NO_REPORT_EXEC_BRIEFING
+    // Microsoft-style executive briefing: dark cover → narrative summary → one page per
+    // focus area. Reuses the same data as ExportQuestPdf but wires the real recommendation
+    // text (RecommendedAction) through to the briefing's plain-English recommendations.
+    private async Task ExportExecutiveBriefing()
+    {
+        try
+        {
+            if (State.Results.Count == 0) { Toast.ShowInfo("No results to export — run an assessment first."); return; }
+
+            var cb      = UserSettings.GetColorBlindMode();
+            var servers = State.Results.Select(r => r.InstanceName).Where(s => !string.IsNullOrEmpty(s))
+                                       .Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(s => s).ToList();
+            var runId   = Guid.NewGuid().ToString("N")[..8];
+            var nowUtc  = DateTime.UtcNow;
+            var tz      = TimeZoneInfo.Local.StandardName;
+            var scope   = servers.Count == 1 ? servers[0] : $"{servers.Count} servers";
+
+            var serverSet = servers.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var envs = ConnectionManager.GetConnections()
+                .Where(c => c.GetServerList().Any(n => serverSet.Contains(n))).Select(c => c.Environment).ToList();
+            var watermark = UserSettings.GetReportDraftWatermark()
+                            && SQLTriage.Data.Models.ServerEnvironment.RequiresWatermark(envs);
+
+            var briefing = new SQLTriage.Data.Services.BriefingReport
+            {
+                Meta = new SQLTriage.Data.Services.AssessmentMeta
+                {
+                    Title        = "Audit Assessment",
+                    Company      = UserSettings.GetReportCompanyName(),
+                    Subtitle     = servers.Count == 1 ? servers[0] : $"{servers.Count} servers · {string.Join(", ", servers.Take(6))}",
+                    Engine       = "Corpus audit checks",
+                    GeneratedUtc = nowUtc.ToString("yyyy-MM-ddTHH:mmZ"),
+                    TimezoneId   = tz,
+                    RunId        = runId,
+                    ColorBlind   = cb,
+                    Watermark    = watermark,
+                    FooterMeta   = $"SQLTriage — Executive Briefing — {scope} — {nowUtc:yyyy-MM-ddTHH:mmZ} ({tz}) — Run {runId}",
+                    // Same sentence, same measurement, on the cover beside the pass-rate donut.
+                    CoverageNote = State.CoverageNoteForReports,
+                },
+            };
+
+            foreach (var r in State.Results)
+            {
+                // 2026-07-16: IsInfoVerdict branch added (mirrors the results-grid badge order,
+                // line ~423 above) — without it a verdict-INFO check fell through to r.Passed
+                // (true) and exported as a plain "Pass" in the PDF, same defect as the grid had.
+                // 2026-07-20 (ruling #4): IsWarnVerdict branch added ABOVE r.Passed — WARN now
+                // rides Passed=true, so without it a "could not fully assess" check would export
+                // to a client PDF as a plain green Pass. Same defect shape as the Info gap below.
+                var st = (r.IsCorrupted || !string.IsNullOrEmpty(r.ErrorMessage)) ? SQLTriage.Data.Services.FindingState.Error
+                       : IsSkipped(r)                                              ? SQLTriage.Data.Services.FindingState.Skipped
+                       : IsWarnVerdict(r)                                          ? SQLTriage.Data.Services.FindingState.Warn
+                       : IsInfoVerdict(r)                                          ? SQLTriage.Data.Services.FindingState.Info
+                       : r.Passed                                                  ? SQLTriage.Data.Services.FindingState.Pass
+                       : r.IsAccepted                                              ? SQLTriage.Data.Services.FindingState.Accepted
+                       :                                                             SQLTriage.Data.Services.FindingState.Fail;
+                briefing.Findings.Add(new SQLTriage.Data.Services.FindingRow
+                {
+                    State          = st,
+                    Name           = r.CheckName,
+                    Category       = r.Category,
+                    Severity       = r.Severity,
+                    Server         = r.InstanceName,
+                    Detail         = r.Message,
+                    Recommendation = !string.IsNullOrWhiteSpace(r.RecommendedAction) ? r.RecommendedAction! : (r.Description ?? ""),
+                });
+            }
+
+            var bytes = await Task.Run(() => SQLTriage.Data.Services.AssessmentPdf.BuildExecutiveBriefing(briefing));
+            var dir   = System.IO.Path.Combine(AppContext.BaseDirectory, "output");
+            System.IO.Directory.CreateDirectory(dir);
+            var label = (servers.Count == 1 ? servers[0] : $"{servers.Count}servers").Replace("\\", "_").Replace("/", "_");
+            var path  = System.IO.Path.Combine(dir, $"ExecutiveBriefing_{label}_{nowUtc:yyyyMMdd_HHmmssZ}_{runId}.pdf");
+            await System.IO.File.WriteAllBytesAsync(path, bytes);
+            Toast.ShowSuccess("Briefing exported", System.IO.Path.GetFileName(path));
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("Briefing export failed", ex.Message);
+        }
+    }
+#endif
+
+    private async Task OnPdfConfirmed(PdfExportSettings settings)
+    {
+        await Task.Delay(350);
+        try
+        {
+            if (!PrintSvc.IsAvailable)
+            {
+                // Server mode — use browser's native print dialog
+                await PrintSvc.PrintViaBrowserAsync(JSRuntime);
+                Toast.ShowInfo("Browser print dialog opened — use 'Save as PDF' to export.");
+                return;
+            }
+
+            var orientation = settings.LandscapeOrientation
+                ? Microsoft.Web.WebView2.Core.CoreWebView2PrintOrientation.Landscape
+                : Microsoft.Web.WebView2.Core.CoreWebView2PrintOrientation.Portrait;
+            var qcEnv2 = ConnectionManager.GetConnection(View.SelectedConnectionId)?.Environment;
+            var qcWatermark2 = !settings.SuppressWatermark &&
+                ServerEnvironment.RequiresWatermark(new[] { qcEnv2 });
+            if (qcWatermark2)
+                await JSRuntime.InvokeVoidAsync("eval", "document.body.classList.add('has-draft-watermark');");
+            var (success, path, error) = await PrintSvc.PrintToPdfAsync(
+                settings.FileName,
+                printBackgrounds: settings.PrintBackgrounds,
+                orientation: orientation);
+            if (qcWatermark2)
+                await JSRuntime.InvokeVoidAsync("eval", "document.body.classList.remove('has-draft-watermark');");
+            if (success && path != null)
+                Toast.ShowSuccess($"PDF saved: {System.IO.Path.GetFileName(path)}");
+            else
+                Toast.ShowError($"PDF export failed: {error ?? "WebView not ready."}");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError($"PDF export error: {ex.Message}");
+        }
+    }
+
+    private void ClearResults()
+    {
+        // Two halves, two clears: the estate record on the singleton, this circuit's filters on
+        // the scoped view state. See Data/Services/CircuitViewState.cs.
+        State.ClearResults();
+        View.SelectedFilter   = "all";
+        View.SelectedCategory = string.Empty;
+        View.SelectedServer   = string.Empty;
+        View.SelectedSeverity = string.Empty;
+        _expandedResults.Clear();
+        StateHasChanged();
+    }
+
+    private void ToggleExpandResult(string key)
+    {
+        if (!_expandedResults.Remove(key))
+            _expandedResults.Add(key);
+    }
+
+    // When true, the next run reloads the check catalog from the v2 corpus bundle
+    // first — picks up a corpus regeneration without an app restart (the
+    // catalog is otherwise read once at startup by CheckRepositoryService).
+    private bool _forceFresh;
+
+    // Cancellation source for the in-flight run. Cancelled by the Stop button;
+    // the executor checks the token between checks and aborts SQL reads cleanly.
+    private CancellationTokenSource? _runCts;
+
+    private void StopRun() => _runCts?.Cancel();
+
+    // ── Corpus DEMO allocation (signed in the bundle; metered by DemoRunLedger) ──
+    // Snapshot shown on the page so the operator sees their community allowance.
+    private SQLTriage.Data.Services.Licensing.DemoRunDecision? _demoStatus;
+    private bool _demoUnlimited = true;          // true on a full bundle / DevBridge → no banner
+    private bool _demoMultiAllowed = true;       // false when N==1 → "Run all servers" is gated
+
+    private void RefreshDemoStatus()
+    {
+        _demoStatus       = DemoLedger.Status();
+        _demoUnlimited    = _demoStatus.Unlimited;
+        _demoMultiAllowed = _demoStatus.Unlimited || _demoStatus.Allowance > 1;
+    }
+
+    // Pre-computed banner copy (no inline formatting in markup — RZ1006 discipline).
+    // The ENTITLEMENT sentence and the EXHAUSTED sentence both come from the ledger, which words
+    // them from the allocation's provenance. This property used to build its own copy and opened
+    // every variant with "Community version:", which is false for a paid Full licence minted at a
+    // small allocation — the exact claim that cost a client. Add copy to the seam, not here.
+    private string DemoBannerText
+    {
+        get
+        {
+            var s = _demoStatus;
+            if (s is null || s.Unlimited) return string.Empty;
+
+            var remaining = Math.Max(0, s.Allowance - s.InstancesUsed);
+            if (remaining > 0)
+                return $"{DemoLedger.DescribeAllowance()} — {remaining} remaining in this window. " +
+                       "Raw Diagnostics and Vulnerability Assessment are unlimited.";
+
+            // Allowance spent: the ledger's own refusal copy already carries the provenance-correct
+            // lead and the next-unlock time, so render it rather than paraphrasing it.
+            return s.BlockReason ?? DemoLedger.DescribeAllowance();
+        }
+    }
+
+    // ISO-8601 (UTC) instant the next demo slot frees — the seed for the client-side countdown.
+    // Non-null ONLY when the allowance is spent (remaining <= 0) and the ledger reported an unlock
+    // time. UnlocksUtc is UTC (ledger arithmetic off DateTime.UtcNow), so "o" emits a Z-suffixed
+    // string JavaScript's Date.parse handles directly.
+    private string? DemoUnlockUtcIso =>
+        _demoStatus is { Unlimited: false } s
+        && (s.Allowance - s.InstancesUsed) <= 0
+        && s.UnlocksUtc is { } u
+            ? u.ToString("o", System.Globalization.CultureInfo.InvariantCulture)
+            : null;
+
+    // Registers ONE global 1-second ticker that updates every .demo-countdown[data-unlock-utc]
+    // element's .demo-countdown-value text in place. Purely client-side: no Blazor re-render, no
+    // SignalR/WebView round-trip, so a blocked banner counts down live without any server chatter.
+    // Idempotent (guards window.__sqltDemoCountdown), so re-registering on a later render is a no-op.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            await JSRuntime.InvokeVoidAsync("eval", DemoCountdownTickerJs);
+    }
+
+    private const string DemoCountdownTickerJs = @"
+(function(){
+  if (window.__sqltDemoCountdown) return;
+  var p = function(n){ return (n<10?'0':'')+n; };
+  var fmt = function(ms){
+    if (ms <= 0) return 'now — refresh to run';
+    var s = Math.floor(ms/1000), h = Math.floor(s/3600), m = Math.floor((s%3600)/60), x = s%60;
+    return (h>0 ? h+'h ' : '') + (h>0 ? p(m) : m) + 'm ' + p(x) + 's';
+  };
+  window.__sqltDemoCountdown = setInterval(function(){
+    var els = document.querySelectorAll('.demo-countdown[data-unlock-utc]');
+    for (var i=0;i<els.length;i++){
+      var el = els[i], t = Date.parse(el.getAttribute('data-unlock-utc'));
+      var out = el.querySelector('.demo-countdown-value');
+      if (out && !isNaN(t)) out.textContent = fmt(t - Date.now());
+    }
+  }, 1000);
+})();";
+
+    // Decide whether the requested corpus run is admissible against the demo allowance.
+    // Returns false + a human reason when blocked. Diagnostics/VA never call this.
+    //
+    // Delegates WHOLLY to IDemoRunLedger.TryAdmitRun — the one admission rule shared with the CLI
+    // (`--audit`) lane. This method previously re-derived the over-allocation check and paraphrased
+    // the refusal, so the two lanes could give a client two different accounts of one licence.
+    private bool TryAdmitDemoRun(IReadOnlyList<string> instances, out string blockReason)
+    {
+        var admission = DemoLedger.TryAdmitRun(instances);
+        blockReason = admission.Allowed ? string.Empty : (admission.BlockReason ?? string.Empty);
+        return admission.Allowed;
+    }
+
+    private async Task RunChecks()
+    {
+        if (!UserState.IsAuthorized("execute_checks"))
+        {
+            Toast.ShowWarning("Insufficient permissions. Operator role required to run checks.");
+            return;
+        }
+        if (_forceFresh)
+        {
+            await CheckRepo.LoadChecksAsync();
+            InvalidateCategoryChips();   // the reloaded catalog may carry different categories
+            State.AddDiagEntry($"=== Catalog reloaded: {CheckRepo.Checks.Count} checks ===", "info");
+        }
+        CheckExecutor.ClearAllResults();
+        _runCts?.Dispose();
+        _runCts = new CancellationTokenSource();
+        var ct = _runCts.Token;
+        State.IsRunning       = true;
+        State.Progress        = 0;
+        State.ProgressMessage = "Starting...";
+        State.Results.Clear();
+        State.ServerSummaries.Clear();
+        // The old run's coverage sentence goes out with the old run's rows; the new one is written
+        // below, once the new run's exclusion has actually been measured.
+        State.CategoryExclusionNotice = null;
+        State.RunCompletenessNotice = null;
+        State.ClearDiagLog();
+        State.ExecutionTime   = DateTime.Now;
+        State.ServersTested   = 0;
+        State.NotifyStateChanged();
+
+        var overallStart = DateTime.UtcNow;
+        State.AddDiagEntry("=== Audit Assessment started ===", "info");
+
+        try
+        {
+            var targets = new List<(ServerConnection Connection, string Server)>();
+
+            if (View.RunAllServers)
+            {
+                foreach (var conn in EnabledConnections)
+                    foreach (var server in conn.GetServerList())
+                        targets.Add((conn, server));
+            }
+            else
+            {
+                var connection = ConnectionManager.GetConnection(View.SelectedConnectionId);
+                if (connection == null)
+                {
+                    State.StatusMessage = "Connection not found.";
+                    State.StatusClass   = "error";
+                    State.AddDiagEntry("ERROR: Connection not found", "error");
+                    return;
+                }
+                foreach (var server in connection.GetServerList())
+                    targets.Add((connection, server));
+            }
+
+            if (targets.Count == 0)
+            {
+                State.StatusMessage = "No servers to check.";
+                State.StatusClass   = "error";
+                State.AddDiagEntry("ERROR: No servers to check", "error");
+                return;
+            }
+
+            // ── Corpus DEMO gate ──────────────────────────────────────────────
+            // The community bundle meters corpus runs to N distinct instances / 24h (signed in
+            // the bundle; tier-agnostic; full bundle ships N=0 = unlimited → no-op). Diagnostics
+            // and VA are NOT gated — only this corpus run. Block BEFORE any target executes.
+            var demoInstances = targets.Select(t => t.Server)
+                                       .Distinct(StringComparer.OrdinalIgnoreCase)
+                                       .ToList();
+            if (!TryAdmitDemoRun(demoInstances, out var demoBlock))
+            {
+                State.StatusMessage = demoBlock;
+                State.StatusClass   = "warning";
+                State.AddDiagEntry($"DEMO LIMIT: {demoBlock}", "warning");
+                Toast.ShowWarning(demoBlock);
+                return;
+            }
+
+            State.AddDiagEntry($"Targets: {targets.Count} server(s)", "info");
+
+            // ── Per-run category exclusion ───────────────────────────────────
+            // Snapshot the chip state ONCE, here, against the catalog as it stands now, and let
+            // the one predicate feed both the diagnostic counts below and the executor call in
+            // RunOneTarget — a second, separately-derived rule is how a log and a run come to
+            // disagree. The disclosure sentence is built from the SAME measurement, so no surface
+            // can describe this run's coverage differently from another.
+            //
+            // Interactive page only, on purpose: ScheduledTaskEngine and the CLI audit host call
+            // the UNFILTERED CheckExecutionService.ExecuteChecksAsync overload, so a chip on this
+            // dashboard cannot narrow an unattended run.
+            var selection = CategoryRunFilter.Apply(CheckRepo.GetEnabledChecks(), _excludedCategories);
+            Func<SqlCheck, bool> filter = selection.Predicate;
+
+            // Adrian's ruling, 2026-08-05: a category-filtered run stays on screen and exportable
+            // with its disclosure, and does NOT write the server's persisted latest-run record —
+            // that record keeps meaning "full assessment", and Checks, RemediationTuner,
+            // ComplianceMap/Tree and /audit's cold start all read it with no notion of coverage.
+            // Carried to the executor as an explicit option off THIS page's selection: the decision
+            // is the category exclusion's, and nothing downstream may infer it from the predicate,
+            // which QuickCheckRunner also uses for runs that must keep persisting.
+            var persistThisRun = !selection.ExcludesAnyCategory;
+            if (!persistThisRun)
+                State.AddDiagEntry(
+                    "This run is category-filtered, so it will not be saved as this server's latest run. "
+                    + "The previous full assessment stays on record.", "warning");
+
+            var checksToRun = selection.ChecksToRun;
+            // The coverage sentence is NOT written here. Before anything executes, the only honest
+            // thing to say is what the run INTENDS to skip — which is what the diagnostics get, in
+            // future tense. The notice that sits beside the results is written after the run, from
+            // the rows the run produced (MeasuredDisclosure, below): a run that is cancelled or
+            // loses a server skips more than the filter did, and the plan's arithmetic would state
+            // a smaller loss than the grid under it demonstrates.
+            if (selection.PlannedSummary != null)
+                State.AddDiagEntry(selection.PlannedSummary, "warning");
+            State.AddDiagEntry($"Checks to execute per server: {checksToRun.Count}", "info");
+            State.AddDiagEntry(
+                $"Concurrent queries per instance: {_auditConcurrencyOverride?.ToString() ?? $"{_auditConcurrencyDefault} (Settings default)"}",
+                "info");
+
+            foreach (var g in checksToRun.GroupBy(c => c.Category).OrderBy(g => g.Key))
+                State.AddDiagEntry($"  Category '{g.Key}': {g.Count()} checks", "info");
+            foreach (var g in checksToRun.GroupBy(c => c.Severity).OrderBy(g => g.Key))
+                State.AddDiagEntry($"  Severity '{g.Key}': {g.Count()} checks", "info");
+            foreach (var g in checksToRun.GroupBy(c => c.ExecutionType ?? "scalar").OrderBy(g => g.Key))
+                State.AddDiagEntry($"  ExecutionType '{g.Key}': {g.Count()} checks", "info");
+
+            var allResults    = new List<CheckResult>();
+            int totalTargets  = targets.Count;
+            int completedTargets = 0;
+            var resultsLock = new object();
+
+            // Per-target work. Shared-state mutations (summaries, results, progress) are
+            // guarded by resultsLock so the parallel path is safe; CheckExecutor throttles
+            // per-instance queries to _auditConcurrencyOverride (or the saved Settings default
+            // when it is null) and rents from the shared pool.
+            async Task RunOneTarget(ServerConnection conn, string server)
+            {
+                lock (resultsLock)
+                {
+                    State.ProgressMessage = $"Checking {server}...";
+                    State.AddDiagEntry($"--- Connecting to {server} ---", "info");
+                }
+                State.NotifyStateChanged();
+
+                try
+                {
+                    var summary = await CheckExecutor.ExecuteChecksAsync(conn, server, filter, ct, _auditConcurrencyOverride, persistRun: persistThisRun);
+                    // THIS run's rows, not the best current picture of the instance. GetResults tops
+                    // its capped hot cache up from the persisted latest-run store and then from
+                    // SQLite, so it can hand a narrow run rows no part of that run executed. The
+                    // reproduction is staged in LastRunResultsIsolationTests: with a 58-row previous
+                    // run on disk, GetResults answers 58 rows for an instance whose current run
+                    // covered 13 Encryption checks — 45 of them from the categories the notice
+                    // directly below the grid says did not run.
+                    // GetLastRunResults returns what this call executed and nothing else.
+                    var serverResults = CheckExecutor.GetLastRunResults(server);
+                    // F6: only mention accepted when present, so the common zero case stays terse.
+                    var acceptedNote = summary.Accepted > 0 ? $", {summary.Accepted} accepted" : "";
+                    lock (resultsLock)
+                    {
+                        State.ServerSummaries.Add(summary);
+                        State.AddDiagEntry($"--- {server} complete: {summary.Passed} pass, {summary.Failed} fail{acceptedNote}, {summary.Errors} err ({summary.Duration.TotalSeconds:F1}s) ---", "info");
+                        allResults.AddRange(serverResults);
+                    }
+                    Toast.ShowInfo($"Audit Assessment: {server} — {summary.Passed} pass, {summary.Failed} fail{acceptedNote} ({summary.Duration.TotalSeconds:F1}s)");
+                }
+                catch (OperationCanceledException)
+                {
+                    lock (resultsLock)
+                        State.AddDiagEntry($"--- {server} cancelled ---", "warning");
+                }
+                catch (Exception ex)
+                {
+                    lock (resultsLock)
+                    {
+                        State.AddDiagEntry($"ERROR on {server}: {ex.Message}", "error");
+                        State.ServerSummaries.Add(new CheckExecutionSummary
+                        {
+                            InstanceName  = server,
+                            StartedAt     = DateTime.UtcNow,
+                            CompletedAt   = DateTime.UtcNow,
+                            // The checks this run was going to execute, not the whole catalog: on a
+                            // category-filtered run the catalog count would report errors for checks
+                            // the run never intended to attempt.
+                            Errors        = checksToRun.Count
+                        });
+                    }
+                }
+
+                lock (resultsLock)
+                {
+                    completedTargets++;
+                    State.Progress      = (int)((double)completedTargets / totalTargets * 100);
+                    State.ServersTested = completedTargets;
+                }
+                State.NotifyStateChanged();
+            }
+
+            if (_parallelMode && targets.Count > 1)
+            {
+                // Start each server concurrently, staggered by the configured delay.
+                var tasks = new List<Task>();
+                for (int i = 0; i < targets.Count; i++)
+                {
+                    var (conn, server) = targets[i];
+                    var startDelay = TimeSpan.FromSeconds(_parallelDelaySeconds * i);
+                    tasks.Add(Task.Run(async () =>
+                    {
+                        if (startDelay > TimeSpan.Zero) await Task.Delay(startDelay, ct);
+                        if (ct.IsCancellationRequested) return;
+                        await RunOneTarget(conn, server);
+                    }, ct));
+                }
+                // Stagger tasks cancelled mid-delay surface OCE here; per-target
+                // failures are already caught inside RunOneTarget, so swallow only
+                // the cancellation and keep whatever partial results completed.
+                try { await Task.WhenAll(tasks); }
+                catch (OperationCanceledException) { }
+            }
+            else
+            {
+                foreach (var (conn, server) in targets)
+                {
+                    if (ct.IsCancellationRequested) break;
+                    await RunOneTarget(conn, server);
+                }
+            }
+
+            State.Results = allResults;
+            State.HasRun  = true;
+
+            // ── The coverage sentence, written now, from what this run produced ──────────
+            // "Completed" is measured, not assumed: not cancelled, AND every planned target
+            // actually reported rows. A target that threw (unreachable server) leaves a summary
+            // with no results, and that is a coverage shortfall the category filter did not cause
+            // and must not be allowed to describe. MeasuredDisclosure returns the plain sentence
+            // when the run did what it planned, and an honest one when it did not.
+            //
+            // The empty plan is the exception, and it is a real state: unticking every category
+            // leaves nothing to execute, so no target is asked to report and zero rows is the
+            // CORRECT outcome. Judging that run by "did every target report rows" printed "though
+            // the run did not complete" beside its own "No checks were executed" status. Completion
+            // is therefore gated on the PLAN SIZE, and the planned target count handed to the
+            // disclosure is zero for an empty plan — no target went silent, none was asked.
+            var targetsWithRows = allResults.Select(r => r.InstanceName)
+                                            .Where(n => !string.IsNullOrWhiteSpace(n))
+                                            .Distinct(StringComparer.OrdinalIgnoreCase)
+                                            .Count();
+            var planIsEmpty  = checksToRun.Count == 0;
+            var runCompleted = !ct.IsCancellationRequested && (planIsEmpty || targetsWithRows == totalTargets);
+            // The planned targets, not the ones that answered: a target that reported nothing forms
+            // no group in allResults, so without this count it drops out of the floor entirely and
+            // the healthy server's coverage speaks for a server that ran zero checks.
+            var plannedTargets = planIsEmpty ? 0 : totalTargets;
+            State.CategoryExclusionNotice = selection.MeasuredDisclosure(allResults, runCompleted, plannedTargets);
+            if (State.CategoryExclusionNotice != null)
+                State.AddDiagEntry(State.CategoryExclusionNotice, "warning");
+            // Completeness, from the SAME two counts, and stated whether or not a category filter was
+            // applied. MeasuredDisclosure is null whenever nothing was excluded, so before this an
+            // UNFILTERED run that was cancelled (or that lost a server) produced a PDF header of
+            // counts indistinguishable from a complete assessment's.
+            State.RunCompletenessNotice = QuickCheckStateService.DescribeRunCompleteness(
+                ct.IsCancellationRequested, plannedTargets, targetsWithRows);
+            if (State.RunCompletenessNotice != null)
+                State.AddDiagEntry(State.RunCompletenessNotice, "warning");
+
+            // Claim the demo slot only for instances that ACTUALLY produced results — a
+            // cancelled/failed instance that never ran must not burn the operator's allowance.
+            // RecordRun is idempotent for an already-claimed instance and a no-op when unlimited.
+            foreach (var inst in allResults.Select(r => r.InstanceName)
+                                           .Where(n => !string.IsNullOrWhiteSpace(n))
+                                           .Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                DemoLedger.RecordRun(inst!);
+            }
+            RefreshDemoStatus();
+
+            // #88 follow-up: an interactive re-scan must fire the same StillFailing sweep the
+            // scheduled path does (App.xaml.cs AssessmentRunCompleted) and the ledger-load re-eval
+            // (ChangeLedger.razor). Keyed on the result's InstanceName stamp — the same value stored
+            // change-items carry as ServerName — so a manual audit flags overdue handed-off items
+            // whose check still fails. Isolated & best-effort: never blocks or faults the run.
+            foreach (var inst in allResults.Select(r => r.InstanceName)
+                                           .Where(n => !string.IsNullOrWhiteSpace(n))
+                                           .Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    var instResults = CheckExecutor.GetResults(inst!, int.MaxValue);
+                    if (instResults.Count > 0)
+                        await ChangeItems.EvaluateFollowUpsAsync(inst!, instResults);
+                }
+                catch (Exception ex)
+                {
+                    State.AddDiagEntry($"Follow-up sweep skipped for {inst}: {ex.Message}", "warning");
+                }
+            }
+
+            var totalDuration     = DateTime.UtcNow - overallStart;
+            State.ExecutionDuration = $"{totalDuration.TotalSeconds:F1}s";
+            State.Categories = State.Results.Select(r => r.Category).Distinct().OrderBy(c => c).ToList();
+
+            if (ct.IsCancellationRequested)
+            {
+                // "attempted", same relabel as the page header and the PDF chip (pages-r1-12, ruled
+                // 2026-08-28). ServersTested increments outside both catch blocks, so this
+                // sentence used to read as coverage - "from N server(s)" - for a counter that
+                // includes every target that threw. lane9-08: the ruling was applied at two of
+                // the four render sites and these two status lines were left saying the old
+                // thing, which contradicts the contract QuickCheckStateService now states.
+                State.StatusMessage = $"Audit Assessment cancelled - {State.Results.Count} partial result(s) from {State.ServersTested} server(s) attempted.";
+                State.StatusClass   = "warning";
+                State.AddDiagEntry("=== Cancelled by user ===", "warning");
+            }
+            else if (State.Results.Count > 0)
+            {
+                // 2026-07-21 (persona board, FIX 2): this line reported 317 passed / 46 failed /
+                // 2 errors for a 575-check run and simply omitted the 45 Partial — 45 results of
+                // the run the user had just executed, absent from its own completion summary.
+                // Partial is stated whenever it occurred; when it did not, the sentence is
+                // byte-identical to what it always was (no clause claiming "0 partial").
+                var partialClause = WarnCount > 0 ? $", {WarnCount} partial" : "";
+                // "from N server(s) attempted", not "across N server(s)": the four figures beside
+                // it are measured only from targets that reported, while this counter includes
+                // every target that threw. "across" reads as coverage; it never was
+                // (pages-r1-12 / lane9-08). The coverage sentence itself is unchanged and is
+                // rendered by DescribeRunCompleteness a few lines below.
+                State.StatusMessage = $"Audit Assessment completed: {PassedCount} passed, {FailedCount} failed{partialClause}, {ErrorCount} errors from {State.ServersTested} server(s) attempted";
+                State.StatusClass   = FailedCount > 0 || ErrorCount > 0 ? "warning" : "success";
+            }
+            else
+            {
+                State.StatusMessage = "No checks were executed. Make sure checks are enabled in the check corpus";
+                State.StatusClass   = "warning";
+            }
+
+            State.AddDiagEntry($"=== Complete: {State.Results.Count} total results in {State.ExecutionDuration} ===", "info");
+
+            var overallDuration = DateTime.UtcNow - overallStart;
+            var anyFailures = FailedCount > 0 || ErrorCount > 0;
+            AuditLog.LogScriptExecution("QuickCheck", string.Join(",", targets.Select(t => t.Server)),
+                !anyFailures, overallDuration,
+                anyFailures ? $"{FailedCount} failed, {ErrorCount} errors" : null);
+
+            await AutoExportQuickCheckResults();
+        }
+        catch (Exception ex)
+        {
+            State.StatusMessage = $"Error running checks: {ex.Message}";
+            State.StatusClass   = "error";
+            State.AddDiagEntry($"FATAL ERROR: {ex.Message}", "error");
+            System.Diagnostics.Debug.WriteLine($"[QuickCheck] Error: {ex}");
+        }
+        finally
+        {
+            State.IsRunning       = false;
+            State.Progress        = 100;
+            State.ProgressMessage = "Complete";
+            _runCts?.Dispose();
+            _runCts = null;
+            State.NotifyStateChanged();
+        }
+    }
+
+    private string GetRowClass(CheckResult result)
+    {
+        if (!string.IsNullOrEmpty(result.ErrorMessage)) return "row-error";
+        // Ruling #4 (2026-07-20): WARN rides Passed=true, so without this arm a "could not fully
+        // assess" row would carry the green row-passed tint behind its Partial badge.
+        if (IsWarnVerdict(result)) return "row-warn";
+        return result.Passed ? "row-passed" : "row-failed";
+    }
+
+    private string GetSeverityClass(string severity) =>
+        severity?.ToLower() switch
+        {
+            "critical" => "severity-critical",
+            "warning"  => "severity-warning",
+            "info"     => "severity-info",
+            _          => "severity-default"
+        };
+}
+

@@ -1,0 +1,15 @@
+# Captured sp_Blitz CSVs, written by the real DiagnosticScriptRunner.ExportToCsv on Windows, where
+# the writer's record separator is CRLF. Some records carry a newline INSIDE a quoted field, so a
+# normalising checkout would not merely change the line endings, it would change the captured field
+# VALUES - and these files exist to be byte-faithful captures.
+#
+# `text eol=crlf`, never `-text eol=crlf`: the dash means "check the blob out verbatim" and
+# SUPPRESSES the eol beside it. That exact mistake stood for three weeks at the repo root; see the
+# comment on the MaintenanceSolution pin there.
+sp_Blitz-app-written-*.csv text eol=crlf
+
+# The installed script-configurations.json every upgraded install carries: Config/script-configurations.json
+# as it stood at dev main a4c3a1c, in the CRLF form a Windows checkout and an Inno install put on disk.
+# The repair tests assert that everything OUTSIDE the one replaced string literal survives byte for byte,
+# so the fixture's own bytes have to be stable too.
+script-configurations-a4c3a1c.json text eol=crlf

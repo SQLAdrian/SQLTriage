@@ -1,0 +1,426 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!-- Mirror the app's build profile so this property is in scope for the gating
+         ItemGroup below. The -p:SQLTriageProfile=community flag CI passes is global,
+         so it reaches here too; default 'full' matches the app's default. -->
+    <SQLTriageProfile Condition="'$(SQLTriageProfile)' == ''">full</SQLTriageProfile>
+  </PropertyGroup>
+
+  <!-- Community builds Compile-Remove never-ship modules from SQLTriage.dll
+       (Mcp\**, Data\Services\RiskReport\**, and Data\Services\AccessSurface\**
+       — see buildprofile.targets). The tests that bind those types can't compile against
+       a community SQLTriage.dll, so gate them out under the same condition. They still run
+       in full/dev builds (the always-on local gate) where the types exist.
+       The gated-feature test folder Portal\ (Phase D) is the same case: its tests bind
+       types Compile-Removed from the community DLL, so a whole-folder glob gates them
+       out (and auto-covers any future file in that folder) WITHOUT this shared, publicly
+       shipped project file having to name the gated types (Phase D review R7). -->
+  <ItemGroup Condition="'$(SQLTriageProfile)' == 'community'">
+    <Compile Remove="Mcp\McpReadOnlyServiceTests.cs" />
+    <Compile Remove="RiskAssessmentPdfTests.cs" />
+    <Compile Remove="AccessSurfaceLiveSmokeTests.cs" />
+    <Compile Remove="AccessSurfaceAdNestingTests.cs" />
+    <!-- SoD Permissions Matrix slice 2: binds SodBaselineStore/SodBaselineDocument (under
+         Data\Services\AccessSurface\**, Compile-Removed from the community DLL). -->
+    <Compile Remove="SodBaselineDiffTests.cs" />
+    <!-- Offboarding permission trace: binds PrincipalTracePivot / PrincipalTraceService /
+         PrincipalTracePdf / AccessSurfaceCollector (all under Data\Services\AccessSurface\**,
+         Compile-Removed from the community DLL). -->
+    <Compile Remove="PrincipalTracePivotTests.cs" />
+    <Compile Remove="PrincipalTraceBudgetTests.cs" />
+    <Compile Remove="PrincipalTraceLiveSmokeTests.cs" />
+    <!-- Access Surface / SoD coverage prose (2026-08-15): renders Pages\AccessSurface.razor and
+         Pages\SodMatrix.razor, which buildprofile.targets Content-Removes under community, and binds
+         AccessCoverageText / SodMatrixPdf under Data\Services\AccessSurface\**. AccessCoverageProseTests
+         carries the shared render harness, so both files must go together. ⚠ A test file that binds a
+         community-absent symbol and is not named here is the 12-day uncompilable-community defect. -->
+    <Compile Remove="AccessCoverageProseTests.cs" />
+    <Compile Remove="AccessProseLiveSmokeTests.cs" />
+    <!-- Activation-card RENDER tests (2026-08-25): they bind
+         SQLTriage.Components.Shared.ActivateFullAuditCard, which buildprofile.targets
+         Content-Removes under community (it is a never-ship premium surface — see the GatedCanary
+         token in that component). The LOGIC tests beside it, ActivateFullAuditCardTests.cs, bind
+         only LicenseService and stay compiled on both axes. -->
+    <Compile Remove="Licensing\ActivateFullAuditCardRenderTests.cs" />
+    <Compile Remove="Portal\**\*.cs" />
+    <!-- Gated\ (2026-08-04): the general case of everything above, as one folder glob — the same
+         "auto-covers any future file in that folder" reasoning as Portal\ (Phase D review R7).
+         Every file under Gated\ binds a symbol absent from the community assembly. It exists
+         because a test file binding RoadmapReport (in Data\Services\RoadmapPdfBuilder.cs, which
+         buildprofile.targets Compile-Removes when reports."diagnostics-roadmap" != "on") broke the
+         community build, and CI — which builds ONLY the community profile — had therefore failed
+         at BUILD on every run for ~11 days, so dotnet test never ran at all. Fixing that one file
+         uncovered three more, in a category a file-level audit cannot see: members #if-fenced out
+         INSIDE a file that still compiles (AssessmentPdf.BuildFindingsReport /
+         .BuildDbaHandoffBundle behind !SQLT_NO_REPORT_FINDINGS_PDF / !SQLT_NO_REPORT_DBA_HANDOFF),
+         plus a whole missing NAMESPACE (Data.Services.Portal). Put only the gated TEST here, not
+         its whole fixture — see Gated\README.md.
+         ⚠ Do NOT condition any of this on SQLTExclude* properties: buildprofile.targets is
+         imported by SQLTriage.csproj only, so those properties are UNDEFINED here and such a
+         condition would silently evaluate false — a gate that looks present and enforces nothing.
+         Guard: Build\ProfileGatedTestSyncTests.cs. -->
+    <Compile Remove="Gated\**\*.cs" />
+  </ItemGroup>
+
+  <!-- Private\ (2026-08-14): the client Performance Report tree
+       (Data\Services\PerformanceReport\**) is Compile-Removed from BOTH shipped profiles, not only
+       community — buildprofile.targets keeps it out unless -p:SQLTriagePrivate=true is passed. So a
+       test that BINDS the composer, the snapshot model or the report's PDF builder cannot compile in
+       the default profile either, and gating it on the community profile alone would break the
+       ordinary `dotnet test` run.
+       ⚠ THE SECOND CLAUSE IS NOT REDUNDANT, and Build\ProfileGatedTestSyncTests is what caught its
+       absence. buildprofile.targets sets SQLTPerfReport only when
+       'private == true AND profile != community', so the report tree is removed whenever
+       'NOT private OR community' — and 'private + community' is a real combination in which the app
+       refuses the module while the flag is set. Gating on the flag alone would have tried to compile
+       this folder against an assembly that does not contain the types. The condition mirrors the
+       app's own gate, negated, clause for clause.
+       ⚠ These tests run ONLY in a private build. CI never compiles them, so nothing in here may be
+       counted toward a "suite green" claim; the file says so in its own header. -->
+  <ItemGroup Condition="'$(SQLTriagePrivate)' != 'true' OR '$(SQLTriageProfile)' == 'community'">
+    <Compile Remove="Private\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- AdminAuthGateTests asserts that AdminGuard.razor actually RENDERS the
+         "gate is unset" warning off AdminAuth.IsOpenUnprotected. Without the markup in
+         scope that test could only check the flag, and a flag nobody renders is exactly
+         the "asserted but never exercised" defect class. -->
+    <Content Include="..\..\Components\Shared\AdminGuard.razor" Link="Markup\AdminGuard.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- Same reason, for the DESKTOP corpus-demo lane. QuickCheck.razor's admission call and banner
+         copy are private members of a Blazor component, so the only way to hold them to the shared
+         seam is to assert against the real shipped markup. Without this the "the desktop lane
+         delegates" claim is a comment nobody exercises. -->
+    <Content Include="..\..\Pages\QuickCheck.razor" Link="Markup\QuickCheck.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- pages-r2-04 (2026-08-28): the compliance claim that had to go was IN the markup - a green
+         "No vulnerabilities found! Your SQL Server appears to be compliant." rendered on every
+         zero-result terminal state, including a run whose connection carried a whitespace server
+         name so nothing was ever contacted. The measured sentence that replaced it is a C# method
+         a test can drive, but WHICH sentence the page renders is a fact about the .razor, and a
+         later edit could put the compliance line back with every C# test still green. -->
+    <Content Include="..\..\Pages\VulnerabilityAssessment.razor" Link="Markup\VulnerabilityAssessment.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- pages-r2-02 (2026-08-28): the whole defect was ONE ASSIGNMENT in the page's code-behind -
+         State.AssessedServers taken from the target list rather than from the run's reporting set.
+         It is a private member of a Blazor component, so a test cannot reach it; the run type and
+         the coverage sentence it feeds are exercised live, and this file is here so the WIRING
+         between them is asserted against the real shipped source too. Without it the fix could be
+         reverted in one line with every other test in this lane still green. -->
+    <Content Include="..\..\Pages\VulnerabilityAssessment.razor.cs" Link="Markup\VulnerabilityAssessment.razor.cs">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- pages-r1-01 / pages-r1-11 / pages-r2-01 (2026-08-28): all three defects are DECISIONS made
+         in markup off the job-inventory read - whether a diff renders at all, which empty-state
+         sentence prints, and whether a partial sweep's totals carry their scope. The service now
+         returns the read's outcome and the prose is exercised in C#, but WHICH branch each page
+         renders only exists in the .razor. Without these the return-shape fix could be reverted at
+         the call site with every C# test in the lane still green. AgentJobSync/AgentJobGuard are
+         licence-gated pages: this is a source-level lint copy, exactly as for FullAuditUpsellPill
+         above, and does not put either page in any build. -->
+    <Content Include="..\..\Pages\AgentJobSync.razor" Link="Markup\AgentJobSync.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\Pages\AgentJobGuard.razor" Link="Markup\AgentJobGuard.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\Pages\AgentJobTimeline.razor" Link="Markup\AgentJobTimeline.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- pages-r1-03 / pages-r2-07 / pages-r2-08 (2026-08-28): the estate's connection counts. The
+         hero number, the per-row badge, the Test button's own message composition and the
+         Refresh-All attribution all live in this one file; the logic they now call is exercised in
+         C#, and these lints hold the wiring. -->
+    <Content Include="..\..\Pages\Servers.razor" Link="Markup\Servers.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- pages-r2-05 / pages-r1-09 (2026-08-28): the dbatools runner's honesty is half service and
+         half page. The parser and the measured-prose functions are C# a test can drive; WHICH
+         sentence stands where the grid would have been, and whether standard error has a render
+         site at all on the success path, exist only in this markup. The defect was precisely that
+         result.Error was read inside the failure branch, so a lint over the shipped file is what
+         stops the disclosure being moved back inside it. -->
+    <Content Include="..\..\Pages\DbaTools.razor" Link="Markup\DbaTools.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- pages-r1-04 / pages-r2-06 (2026-08-28): the Best Practice executor's completion sentence
+         and its single unlabelled result grid are both markup. The counting is now a C# record a
+         test drives, but "All scripts completed." was a literal in the .razor and could be put
+         back there in one line with every C# test still green. -->
+    <Content Include="..\..\Pages\BestPractice.razor" Link="Markup\BestPractice.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- pages-r1-07 / pages-r1-08 / pages-r2-09 (2026-08-28): three single-page fabrications that
+         live in markup - the flood mute with no render site anywhere in the tree, the Disk IO
+         toolbar pill printing a raw connection GUID where an instance name belongs, and the
+         governance card colouring an unmeasured server the same red as a real 0-49 score. -->
+    <Content Include="..\..\Components\Shared\ToastContainer.razor" Link="Markup\ToastContainer.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\Pages\DiskIo.razor" Link="Markup\DiskIo.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\Pages\ServerComparison.razor" Link="Markup\ServerComparison.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- pages-r1-10 (2026-08-28): "Session N killed." was a literal in this page, fired on the
+         line after KILL returned. The outcome is now measured by a re-read and described in C#;
+         this lint holds the page to rendering that description rather than the old claim. -->
+    <Content Include="..\..\Pages\Sessions.razor" Link="Markup\Sessions.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- B1 (2026-07-20): the Unassessable bucket is the whole point of moving FAIL→WARN out of
+         Resolved. If the classifier files it and no markup renders it, the fix has replaced a
+         false-clean with a silent disappearance — so the rendering is asserted against the real
+         shipped markup, not left to a comment. -->
+    <Content Include="..\..\Pages\BaselineProgress.razor" Link="Markup\BaselineProgress.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- A1/A1b (2026-07-20): the sparkline defect was IN the markup — a raw .Passed feeding a
+         two-state dot chart, and an all-WARN day charting 0. The C# helpers are exercised
+         directly, but the wiring that decides WHICH helper the page calls only exists in the
+         .razor, so it is asserted against the real shipped markup rather than assumed. -->
+    <Content Include="..\..\Pages\CheckTrend.razor" Link="Markup\CheckTrend.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- Persona board, 2026-07-21 (FIX 2 / FIX 3 / FIX 5). Three of this round's defects live
+         ONLY in markup and cannot be reached from C#:
+           • /cio and /dba folded PARTIAL into "informational/skipped" — a rendering decision;
+           • the "N Critical" badge counted servers while the column beside it counted findings;
+           • the adversarial review's PLACEMENT (and the rule that its text is never edited).
+         Asserting these against the real shipped .razor is the only way the claims are
+         exercised rather than merely commented. -->
+    <Content Include="..\..\Pages\CioDashboard.razor" Link="Markup\CioDashboard.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\Pages\DbaDashboard.razor" Link="Markup\DbaDashboard.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\Pages\About.razor" Link="Markup\About.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- security.md repeats the About-page security claims; copied so AboutPageHonestyTests can
+         pin that the ConfuserEx2 claim stays removed there too (honesty-hunt platform-r1-01). -->
+    <Content Include="..\..\docs\security.md" Link="Markup\security.md">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\Pages\Guide.razor" Link="Markup\Guide.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\Pages\Index.razor" Link="Markup\Index.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- 2026-08-02 round 8. The audit page's three startup banners are independent @if blocks, so
+         two of them can render at once and contradict each other. The chain-wide sentences they
+         print now come from AuditLogService.ComposeStartupChainBanners, but "the page has no OTHER
+         source for those sentences" is a claim about the MARKUP and can only be held against the
+         real shipped .razor. See AuditLogStartupBannerTests. -->
+    <Content Include="..\..\Pages\AuditLogViewer.razor" Link="Markup\AuditLogViewer.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- RBAC round 15 (2026-08-03): the enforcement banner asserted, in a hard-coded literal,
+         that RBAC was switched ON — in seven damaged-config states where the switch had never
+         been read, and where the log correctly said DID NOT LOAD. The fix derives every word
+         from RbacService.DescribeEnforcementPosture, and the ONLY way to hold that is to assert
+         against the real shipped markup: a C# test cannot see whether the page renders the
+         computed sentence or a literal beside it.
+         ⚠ Both markup assertions are LINTS over fixed literals, not guarantees — see the doc
+         comments on the tests, and the 2026-08-03 gate that defeated one with a novel sentence. -->
+    <Content Include="..\..\Pages\Settings.razor" Link="Markup\Settings.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- Licence-context navigation (2026-08-25). The address these two components send an operator
+         to is a private method body, so the only way to hold them to the Full Audit tab — the one
+         place the boot-time licence failure renders — is against the real shipped markup. See
+         FullAuditTabIsLinkedTests. FullAuditUpsellPill is Content-Removed from a COMMUNITY app
+         build; copying it here is a source-level lint and does not put it in any build. -->
+    <Content Include="..\..\Components\Shared\FreeStateBanner.razor" Link="Markup\FreeStateBanner.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\Components\Shared\FullAuditUpsellPill.razor" Link="Markup\FullAuditUpsellPill.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- The entry point's own text (2026-08-25). Program.Usage is graded as a shipped string; the
+         XML summary beside it carried the same "browse from any machine" instruction and no
+         runtime string can reach a comment, so LocalBrowserAdminAccessTests lints the source. -->
+    <Content Include="..\..\Program.cs" Link="Markup\Program.cs">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- Conditioning sweep (2026-08-05). EstateHealthPolicyTests pins the SENTENCES; what C#
+         cannot reach is whether each surface calls the policy or quietly composes its own
+         sentence beside it, which is exactly how each prior round removed one over-claim and
+         shipped another. See ConditioningSweepMarkupTests.
+         ⚠ Lints over fixed literals, not a boundary — the rendered matrix is driven live. -->
+    <Content Include="..\..\Pages\Health.razor" Link="Markup\Health.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\Pages\BlockingForensics.razor" Link="Markup\BlockingForensics.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\Pages\IndexAnalysis.razor" Link="Markup\IndexAnalysis.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\Pages\XEvents.razor" Link="Markup\XEvents.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\Components\Shared\BlockingTreeViewer.razor" Link="Markup\BlockingTreeViewer.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\Components\Shared\DeadlockViewer.razor" Link="Markup\DeadlockViewer.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- Gate fix C1 (2026-08-05): the nav badge, which the sweep itself regressed. -->
+    <Content Include="..\..\Components\Shared\HealthBadge.razor" Link="Markup\HealthBadge.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- SR-11 (2026-08-08). Two more surfaces that print a claim off a placeholder-carrying field:
+         /server-comparison's trend cell (conditioned on the SCORE in the 2026-08-05 round, never on
+         there being a snapshot to compare against), and the status-bar power chip, whose relative
+         branch interpolated "tuning headroom ~0-0%" for a server whose checks had never run.
+         The sentences themselves are pinned in C# (EstateHealthPolicyTests,
+         PowerEstimateServiceTuningHeadroomTests); these includes are for the wiring. -->
+    <Content Include="..\..\Pages\ServerComparison.razor" Link="Markup\ServerComparison.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\Components\Layout\PowerChip.razor" Link="Markup\PowerChip.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- 2026-08-09. The same class on a different placeholder-carrying field:
+         ForecastResult.SlopePerDay holds 0 when no line was fitted, and /capacity-planning's disk
+         rows are hand-built from ONE live reading, so its "Stable" badge, "+0.00/day" trend and
+         "R²: 0.000" rendered for every volume, always. The computation is pinned in C#
+         (ForecastSlopeConditioningTests); this include is for the markup wiring. -->
+    <Content Include="..\..\Pages\CapacityPlanning.razor" Link="Markup\CapacityPlanning.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- Demo-discriminator sweep (2026-08-05). Six surfaces read Tier == Full alone, which a
+         -Demo mint satisfies; they now resolve FullTierGate. Four of the six are RAZOR, and there
+         is no bUnit here, so DemoDiscriminatorTests holds them against the real shipped markup.
+         ⚠ Those assertions are LINTS over fixed literals — they prove the gate CALL is written,
+         not that the branch renders. The gate itself is exercised in C# in the same file, and the
+         consolidation surface (a service) is exercised for real. -->
+    <Content Include="..\..\Pages\AdvancedReporting.razor" Link="Markup\AdvancedReporting.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\Pages\Premium.razor" Link="Markup\Premium.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\Pages\Checks.razor" Link="Markup\Checks.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\Pages\CapacityConsolidation.razor" Link="Markup\CapacityConsolidation.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\Components\Layout\NavMenu.razor" Link="Markup\NavMenu.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- The Server Configuration set's licence binding (2026-08-05). /server-configuration is
+         gated at three layers and only one of them is C#; the page and the nav entry are markup.
+         Same lint ceiling as above — see ServerConfigSuiteGateTests. -->
+    <Content Include="..\..\Pages\ServerConfiguration.razor" Link="Markup\ServerConfiguration.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- The two dev-tools engine pages whose nav entry read the dev-capability claim while the
+         page itself did not — direct navigation served the whole tool. See DevToolsClaimFailClosedTests. -->
+    <Content Include="..\..\Pages\AccessSurface.razor" Link="Markup\AccessSurface.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\Pages\SodMatrix.razor" Link="Markup\SodMatrix.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\..\Pages\OffboardingTrace.razor" Link="Markup\OffboardingTrace.razor">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.0" />
+    <PackageReference Include="FluentAssertions" Version="6.12.0" />
+    <PackageReference Include="MailKit" Version="4.16.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
+    <PackageReference Include="xunit" Version="2.5.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.5.3" />
+    <!-- Pin transitive versions to match what the main project's Azure.Core /
+         DacFx chain pulls in (v10). Without these explicit references the test
+         project resolves v8 transitively, producing CS1705 "higher version than
+         referenced" errors when linking against SQLTriage.dll. 2026-05-15. -->
+    <!-- Bumped 10.0.3 -> 10.0.7 so the test build satisfies ModelContextProtocol's
+         transitive floor (Logging.Abstractions/Options >= 10.0.7 via the read-only
+         Mcp/ surface) without an NU1605 downgrade-as-error. Still v10, so the
+         original "match the main project's v10 chain" intent holds. -->
+    <!-- Bumped 10.0.7 -> 10.0.10 (2026-08-01) for the same reason again: the RBAC lane added
+         Microsoft.AspNetCore.Authentication.Negotiate to the main project, whose
+         Caching.Memory dependency raises the floor to >= 10.0.10. Same v10 chain, same intent. -->
+    <!-- Bumped 10.0.10 -> 10.0.11 (2026-08-12), third recurrence, this time with ZERO repo
+         change: the main project's floating refs resolved the newly published 10.0.11, whose
+         Caching.Memory chain raises the floor again. CI failed NU1605 at restore on a diff
+         that touched no package file. Same v10 chain, same intent. -->
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.11" />
+    <PackageReference Include="System.Text.Json" Version="10.0.3" />
+    <!-- Lane C fix (2026-08-20): a real parse gate for the shipped Server Configuration and
+         Hardening .sql (test-project only, the shipped app never parses its own SQL). Pinned
+         to the exact version the main project's Microsoft.SqlServer.DacFx chain already resolves
+         (packages.lock.json), so this is not a new transitive floor. -->
+    <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" Version="161.9142.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\SQLTriage.csproj" />
+    <!-- 4k (2026-08-20): the AppUserState / BootstrapEligibilityProof circular type-init race
+         harness (AppUserStateTypeInitRaceHarnessTests.cs) spawns this exe as a fresh child
+         process per attempt — a type initialiser runs at most once per load context, so the
+         race can only be attempted once per process. ReferenceOutputAssembly=false: this build
+         only needs the harness's OWN output on disk (build-order dependency), never its
+         assembly as a compile-time reference. -->
+    <ProjectReference Include="..\RaceHarness\AppUserStateRaceHarness.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <!-- Copy golden snapshot files alongside the test runner so tests can read them. -->
+  <ItemGroup>
+    <Content Include="..\..\Config\roadmap-mapping.json" Link="Config\roadmap-mapping.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="GoldenFiles\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- B2 Slice 1: source parser fixtures -->
+    <Content Include="Parser\Fixtures\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- Index Analysis reader shapes, 2026-08-13. CAPTURED from a live SQL 2017 instance by
+         IndexAnalysisLiveSmokeTests.Capture_reader_shapes_for_the_offline_tests, not hand-written:
+         IndexAnalysisMapperTests replays these exact declared/CLR types so a mapper that assumes
+         the wrong column type fails here instead of at a customer. Ships in both profiles — the
+         service under test is in every build. -->
+    <Content Include="Fixtures\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <!-- Phase E1: daily-summary golden fixtures (byte-pinned; a byte-identical copy lives in the
+         portal repo under test/fixtures/daily/). Under Portal/ so .publicignore's folder deny and
+         the community Compile-Remove of Portal\**\*.cs cover the whole tree. Conditioned like that
+         Compile Remove: their only consumers are the community-removed Portal tests, so a
+         community test build must not copy them to bin either. -->
+    <Content Include="Portal\fixtures\**\*" Condition="'$(SQLTriageProfile)' != 'community'">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>

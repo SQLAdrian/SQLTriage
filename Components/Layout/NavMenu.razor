@@ -1,0 +1,1010 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using Microsoft.AspNetCore.Components.Routing
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@inject AutoUpdateService UpdateService
+@inject DatabaseAvailabilityService DbAvailability
+@inject DashboardConfigService DashboardConfig
+@inject ServerConnectionManager ConnectionManager
+@inject UserSettingsService UserSettings
+@inject ToastService ToastService
+@inject IJSRuntime JS
+@inject SQLTriage.Data.Services.ConnectionHealthService ConnectionHealth
+@inject SQLTriage.Data.Services.AppUserState UserState
+@inject GlobalInstanceSelector InstanceSelector
+@inject SQLTriage.Data.Services.PanelMetricsService PanelMetrics
+@inject SQLTriage.Data.Services.Licensing.IBundleAccessor Bundle
+@inject SQLTriage.Data.Services.Capacity.IConsolidationModelProvider ConsolidationModel
+@inject SQLTriage.Data.Services.IFeatureGate FeatureGate
+@inject QuickCheckStateService QuickCheckState
+@inject FullAuditStateService FullAuditState
+@inject VulnerabilityAssessmentStateService VaState
+@implements IAsyncDisposable
+
+<div class="nav-menu split-layout @(_collapsed ? "collapsed" : "")">
+    <!-- Slim Bar (Icons Only) -->
+    <div class="nav-slim-bar">
+        <div class="nav-brand-icon-container" title="@($"SQLTriage — {(SQLTriage.Data.BuildModules.Community ? "Community" : "Full")} build")">
+            <img src="images/sqltriage-mark.png" alt="SQLTriage" class="nav-brand-icon" style="height:20px;width:auto;object-fit:contain;vertical-align:middle;" />
+            @* Build-mode dot: grey=community, blue=full, red=devbridge. The uncolourable
+               WPF title can't carry this, so the identity tell lives here in-content. *@
+            <span aria-hidden="true"
+                  style="position:absolute; bottom:2px; right:2px; width:8px; height:8px; border-radius:50%; border:1.5px solid var(--bg-primary,#0A0E0D); background:@SQLTriage.Data.BuildMode.AccentHex;"></span>
+        </div>
+
+        <div class="nav-main-category nc-governance @(_activeCategory == "Governance" ? "active" : "")" @onclick="@(() => SetCategory("Governance"))" title="Governance">
+            <i class="fa-solid fa-gavel"></i>
+        </div>
+        <div class="nav-main-category nc-operations @(_activeCategory == "Operations" ? "active" : "")" @onclick="@(() => SetCategory("Operations"))" title="Operations — command center">
+            <i class="fa-solid fa-gauge-high"></i>
+        </div>
+        <div class="nav-main-category nc-diagnostics @(_activeCategory == "Diagnostics" ? "active" : "")" @onclick="@(() => SetCategory("Diagnostics"))" title="Diagnostics">
+            <i class="fa-solid fa-magnifying-glass"></i>
+        </div>
+        <div class="nav-main-category nc-intelligence @(_activeCategory == "Intelligence" ? "active" : "")" @onclick="@(() => SetCategory("Intelligence"))" title="Intelligence">
+            <i class="fa-solid fa-brain"></i>
+        </div>
+        @* Ask the gate, not the role. A raw `Role != Viewer` bypasses everything
+           AppUserState.IsAuthorized knows: on a DORMANT loopback install every circuit resolves to
+           viewer until sign-in, so the whole Configuration category vanished on an install that
+           has no RBAC to enforce. Break-glass scope, same as Settings itself — the category is how
+           a locked-out operator on the console reaches the page that unlocks them. *@
+        <ShellGate Permission="settings" BreakGlass="true">
+            <div class="nav-main-category nc-config @(_activeCategory == "Config" ? "active" : "")" @onclick="@(() => SetCategory("Config"))" title="Configuration">
+                <i class="fa-solid fa-gear"></i>
+            </div>
+            @* Apply = server-modifying actions. Gated on No-Pants Mode (toggle lives in
+               Settings > Modes): hidden until the operator explicitly opts in, mirroring the
+               Check Validator / Scheduled Tasks hide pattern. *@
+            @if (_noPantsMode)
+            {
+                <div class="nav-main-category nc-apply @(_activeCategory == "Apply" ? "active" : "")" @onclick="@(() => SetCategory("Apply"))" title="Apply — server-modifying actions">
+                    <i class="fa-solid fa-screwdriver-wrench"></i>
+                </div>
+            }
+        </ShellGate>
+
+        <div style="flex-grow:1"></div>
+
+
+        @* Feedback consolidated into the bottom status bar (StatusBar.razor). *@
+
+        <div class="nav-main-category" title="Toggle Sidebar" @onclick="ToggleCollapse">
+            <i class="fa-solid @(_collapsed ? "fa-angles-right" : "fa-angles-left")"></i>
+        </div>
+    </div>
+
+    <!-- Expanded Pane -->
+    @if (!_collapsed)
+    {
+        <div class="nav-expanded-pane nav-cat--@(_activeCategory.ToLowerInvariant())">
+            <div class="nav-expanded-header">
+                <span class="nav-brand-text" style="font-size:16px; font-weight:700;">@(_activeCategory == "Operations" ? "Command Center" : _activeCategory)</span>
+                <span class="nav-tier-badge nav-tier-badge--@(_badgeClass)"
+                      @onclick="GoToTierSettings"
+                      title="@(_badgeTitle)" style="margin-left:auto; cursor:pointer;">
+                    @_badgeText
+                </span>
+            </div>
+
+            <nav class="nav-scrollable-area">
+                @if (_activeCategory == "Governance")
+                {
+                    <div class="nav-section-label">Audits & Reports</div>
+                    <NavLink href="@RouteConstants.QuickCheck" class="nav-link" title="Ctrl+0">
+                        <span class="nav-icon"><i class="fa-solid fa-stethoscope"></i></span><span class="nav-link-text"> Run audit assessment</span>
+                        @if (QuickCheckState.IsRunning) { <span class="nav-spinner"><i class="fa-solid fa-circle-notch fa-spin"></i></span> }
+                    </NavLink>
+                    <NavLink href="@RouteConstants.FullAudit" class="nav-link" title="Ctrl+4">
+                        <span class="nav-icon"><i class="fa-solid fa-bolt-lightning"></i></span><span class="nav-link-text"> Full Diagnostics</span>
+                        @if (FullAuditState.IsRunning) { <span class="nav-spinner"><i class="fa-solid fa-circle-notch fa-spin"></i></span> }
+                    </NavLink>
+                    <NavLink href="@RouteConstants.VulnerabilityAssessment" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-shield-halved"></i></span><span class="nav-link-text"> Microsoft Assessment</span>
+                        @if (VaState.IsRunning) { <span class="nav-spinner"><i class="fa-solid fa-circle-notch fa-spin"></i></span> }
+                    </NavLink>
+                    <NavLink href="@RouteConstants.CioDashboard" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-chart-line"></i></span><span class="nav-link-text"> CIO Dashboard</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.DbaDashboard" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-terminal"></i></span><span class="nav-link-text"> DBA Dashboard</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.BlitzDashboard" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-gauge-high"></i></span><span class="nav-link-text"> sp_Blitz Dashboard</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.Governance" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-gavel"></i></span><span class="nav-link-text"> SQL Server Governance</span>
+                    </NavLink>
+#if !SQLT_NO_DEVTOOLS
+                    @if (BuildModules.DevTools)
+                    {
+                        @if (FeatureGate.IsEnabled(FeatureRegistrar.DevTools))
+                        {
+                            <NavLink href="@RouteConstants.AccessSurface" class="nav-link" title="Structural privilege-graph paths — engine-only, feeds no headline score">
+                                <span class="nav-icon"><i class="fa-solid fa-route"></i></span><span class="nav-link-text"> Access Surface</span>
+                            </NavLink>
+                            <NavLink href="@RouteConstants.SodMatrix" class="nav-link" title="Segregation-of-duties permissions inventory — flat who-has-what, auditor-signable">
+                                <span class="nav-icon"><i class="fa-solid fa-user-lock"></i></span><span class="nav-link-text"> SoD Matrix</span>
+                            </NavLink>
+                            <NavLink href="@RouteConstants.OffboardingTrace" class="nav-link" title="One person, every server: roles, grants and everything they own">
+                                <span class="nav-icon"><i class="fa-solid fa-user-minus"></i></span><span class="nav-link-text"> Offboarding Trace</span>
+                            </NavLink>
+                        }
+                    }
+#endif
+                    <NavLink href="@RouteConstants.DiagnosticsRoadmap" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-map-location-dot"></i></span><span class="nav-link-text"> Diagnostics Roadmap</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.AuditLogViewer" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-clipboard-list"></i></span><span class="nav-link-text"> Audit Log</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.ChangeLedger" class="nav-link" title="Logged change items handed to the vendor — status &amp; follow-up">
+                        <span class="nav-icon"><i class="fa-solid fa-list-check"></i></span><span class="nav-link-text"> Change Ledger</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.ReportBundles" class="nav-link" title="Diagnostic report bundles — PDF & HTML">
+                        <span class="nav-icon"><i class="fa-solid fa-file-pdf"></i></span><span class="nav-link-text"> Report Bundles</span>
+                    </NavLink>
+#if !SQLT_NO_DEVTOOLS
+                    @if (BuildModules.DevTools)
+                    {
+                        @if (FeatureGate.IsEnabled(FeatureRegistrar.DevTools))
+                        {
+                            <NavLink href="@RouteConstants.ImportResults" class="nav-link" title="Land a results JSON exported elsewhere (e.g. a community/redacted capture run) — no live connection required">
+                                <span class="nav-icon"><i class="fa-solid fa-file-import"></i></span><span class="nav-link-text"> Import Results</span>
+                            </NavLink>
+                        }
+                    }
+#endif
+#if !SQLT_NO_PORTAL
+                    @* Portal publish (hosted surface) — const-only outer if so the whole branch,
+                       including the route literal, is pruned from a community assembly. The #if
+                       fence removes the now-undefined RouteConstants.PortalPublish symbol from
+                       the community compile (mirrors the D-0a premium/dev-tools fences). *@
+                    @if (BuildModules.Portal)
+                    {
+                        <div class="nav-section-label" style="margin-top:16px;">Portal</div>
+                        <NavLink href="@RouteConstants.PortalPublish" class="nav-link" title="Publish a diagnostic snapshot to your portal">
+                            <span class="nav-icon"><i class="fa-solid fa-cloud-arrow-up"></i></span><span class="nav-link-text"> Publish to portal</span>
+                        </NavLink>
+                        <NavLink href="@RouteConstants.PortalStatus" class="nav-link" title="Portal status and settings">
+                            <span class="nav-icon"><i class="fa-solid fa-circle-info"></i></span><span class="nav-link-text"> Portal status</span>
+                        </NavLink>
+                    }
+#endif
+
+                    @if (BuildModules.LiveMonitoring && FeatureGate.IsEnabled(FeatureRegistrar.DynamicDashboards) && DashboardConfig.Config.Dashboards.Any(d => d.Enabled && d.NavCategory == "Audits"))
+                    {
+                        <div class="nav-section-label" style="margin-top:16px;">Audit Dashboards</div>
+                        @foreach (var dashboard in DashboardConfig.Config.Dashboards
+                            .Where(d => d.Enabled && d.NavCategory == "Audits")
+                            .OrderBy(d => d.NavOrder))
+                        {
+                            <NavLink href="@dashboard.Route" class="nav-link">
+                                @NavIcon(dashboard.NavIcon) <span class="nav-link-text">@dashboard.NavTitle</span>
+                            </NavLink>
+                        }
+                    }
+#if !SQLT_NO_PREMIUM
+                    @if (BuildModules.Premium)
+                    {
+                        <div class="nav-section-label" style="margin-top:16px;">Get a Pro DBA</div>
+                        <NavLink href="@RouteConstants.AdvancedReporting" class="nav-link">
+                            <span class="nav-icon"><i class="fa-solid fa-file-contract"></i></span><span class="nav-link-text"> Advanced Reporting</span>
+                        </NavLink>
+                        <NavLink href="@RouteConstants.Premium" class="nav-link" title="S-Tier correlations and the complete Full Audit deliverable">
+                            <span class="nav-icon"><i class="fa-solid fa-gem"></i></span><span class="nav-link-text"> Consulting Engagement Features</span>
+                        </NavLink>
+#if !SQLT_NO_PORTAL
+                        @* Export Pack (E3). It sits in THIS section by Adrian's ruling (2026-08-09),
+                           and it is a PORTAL page — Pages/Portal/ExportPack.razor, gated by
+                           SQLTExcludePortal, its route const behind SQLT_NO_PORTAL. So the branch
+                           carries both fences: the premium one it is nested in, and the portal one
+                           that owns the symbol. A build with premium on and portal off would not
+                           compile without this inner fence. *@
+                        @if (BuildModules.Portal)
+                        {
+                            <NavLink href="@RouteConstants.ExportPack" class="nav-link" title="Tokenised export of this estate's audit artefacts, written locally">
+                                <span class="nav-icon"><i class="fa-solid fa-box-archive"></i></span><span class="nav-link-text"> Export Pack</span>
+                            </NavLink>
+                        }
+#endif
+                        @* Pattern 2: teaser shows whenever soft-enabled; the lock icon (HARD gate) signals the page is gated. *@
+                        @if (FeatureGate.IsSoftEnabled(FeatureRegistrar.Consolidation))
+                        {
+                            <NavLink href="@RouteConstants.Consolidation" class="nav-link" title="Estate consolidation &amp; SQL licensing optimisation">
+                                <span class="nav-icon"><i class="fa-solid fa-layer-group"></i></span><span class="nav-link-text"> Consolidation
+                                    @if (!_consolidationUnlocked)
+                                    {
+                                        <i class="fa-solid fa-lock" style="font-size:9px; margin-left:4px; opacity:0.6;"></i>
+                                    }
+                                </span>
+                            </NavLink>
+                        }
+                        <NavLink href="@RouteConstants.Capacity" class="nav-link" title="Disk &amp; CPU growth forecasts">
+                            <span class="nav-icon"><i class="fa-solid fa-chart-line"></i></span><span class="nav-link-text"> Capacity Planning</span>
+                        </NavLink>
+                    }
+#endif
+                    <div class="nav-section-label" style="margin-top:16px;">Reference</div>
+                    <NavLink href="@RouteConstants.ComplianceMap" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-diagram-project"></i></span><span class="nav-link-text"> Compliance Map</span>
+                    </NavLink>
+                    <NavLink href="/compliance-board" class="nav-link" title="Preview — check families wired to frameworks (PCB view)">
+                        <span class="nav-icon"><i class="fa-solid fa-microchip"></i></span><span class="nav-link-text"> Compliance Board</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.ControlHierarchy" class="nav-link" title="Every framework's control hierarchy, joined live to assessment verdicts">
+                        <span class="nav-icon"><i class="fa-solid fa-sitemap"></i></span><span class="nav-link-text"> Control Hierarchy</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.Playbooks" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-book-medical"></i></span><span class="nav-link-text"> Remediation Playbooks</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.Guide" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-map"></i></span><span class="nav-link-text"> Guide</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.About" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-info-circle"></i></span><span class="nav-link-text"> About</span>
+                    </NavLink>
+                }
+                else if (_activeCategory == "Operations")
+                {
+                    @if (BuildModules.Operations)
+                    {
+                        <div class="nav-section-label">Command Center</div>
+                        <NavLink href="@RouteConstants.Environment" class="nav-link">
+                            <span class="nav-icon"><i class="fa-solid fa-gauge-high"></i></span><span class="nav-link-text"> Operations Hub</span>
+                        </NavLink>
+                        <NavLink href="@RouteConstants.AlertsNoc" class="nav-link">
+                            <span class="nav-icon"><i class="fa-solid fa-tower-broadcast"></i></span><span class="nav-link-text"> NOC Board</span>
+                        </NavLink>
+                        <NavLink href="@RouteConstants.Alerts" class="nav-link">
+                            <span class="nav-icon"><i class="fa-solid fa-bell"></i></span><span class="nav-link-text"> Alerting</span>
+                        </NavLink>
+                        <NavLink href="/agent-timeline" class="nav-link">
+                            <span class="nav-icon"><i class="fa-solid fa-clock-rotate-left"></i></span><span class="nav-link-text"> Agent Jobs Timeline</span>
+                        </NavLink>
+                    }
+
+                    <div class="nav-section-label" style="margin-top:16px;">Servers &amp; Control</div>
+                    <NavLink href="@RouteConstants.Servers" class="nav-link" title="Ctrl+8">
+                        <span class="nav-icon"><i class="fa-solid fa-server"></i></span><span class="nav-link-text"> Manage Servers</span>
+                    </NavLink>
+                    @if (BuildModules.Operations)
+                    {
+                        <NavLink href="/replication-map" class="nav-link" title="Preview — transactional replication topology &amp; health (read-only)">
+                            <span class="nav-icon"><i class="fa-solid fa-diagram-next"></i></span><span class="nav-link-text"> Replication Map</span>
+                        </NavLink>
+                    }
+
+                }
+                else if (_activeCategory == "Diagnostics")
+                {
+                    @* PARKED 2026-06-18: Risk Assessment nav links removed (page /riskreport
+                       + service stay wired, URL-reachable). Resume plan: the private meta repo.
+                       Was: a "Consultant Reports" section with the /riskreport link here. *@
+                    <div class="nav-section-label">Deep Dive</div>
+                    <NavLink href="@RouteConstants.ServerConfigDiff" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-code-compare"></i></span><span class="nav-link-text"> Snapshot Diff (History)</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.ChangedObjects" class="nav-link" title="Database object changes detected between scans (Created / Altered / Dropped)">
+                        <span class="nav-icon"><i class="fa-solid fa-clock-rotate-left"></i></span><span class="nav-link-text"> Changed Objects</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.Compare" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-not-equal"></i></span><span class="nav-link-text"> Compare Servers</span>
+                    </NavLink>
+
+                    <div class="nav-section-label" style="margin-top:16px;">Analysis</div>
+                    @if (BuildModules.LiveMonitoring)
+                    {
+                        <NavLink href="@RouteConstants.PerformanceTrends" class="nav-link">
+                            <span class="nav-icon"><i class="fa-solid fa-chart-area"></i></span><span class="nav-link-text"> Performance Trends</span>
+                        </NavLink>
+                    }
+                    <NavLink href="@RouteConstants.IndexAnalysis" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-table-list"></i></span><span class="nav-link-text"> Index Analysis</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.BlockingForensics" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-link-slash"></i></span><span class="nav-link-text"> Blocking Forensics</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.CodeHotspots" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-fire"></i></span><span class="nav-link-text"> Code Hotspots</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.DiskIo" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-hard-drive"></i></span><span class="nav-link-text"> Disk I/O</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.MaintenanceRecommendations" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-broom"></i></span><span class="nav-link-text"> Maintenance Recs</span>
+                    </NavLink>
+@* Performance Analysis Report — full-PRIVATE-build-only consulting deliverable (SPEC 2026-07-16). *@
+@* #if-fenced so the link + its route literal are absent from every non-private binary; the *@
+@* BuildModules.PerfReport const const-prunes the markup when the symbol is undefined. *@
+#if SQLT_PERFREPORT
+                    @if (BuildModules.PerfReport)
+                    {
+                        <NavLink href="@RouteConstants.PerformanceReport" class="nav-link" title="Full-private consulting deliverable — per-instance performance analysis PDF">
+                            <span class="nav-icon"><i class="fa-solid fa-gauge-high"></i></span><span class="nav-link-text"> Performance Report</span>
+                        </NavLink>
+                    }
+#endif
+
+                    @* FullTierOnly below reads FullTierGate, not Bundle.Tier, since 2026-08-05: a -Demo
+                       mint is Full tier (the encrypt verb emits nothing else), so the raw tier test
+                       showed every full-tier-only entry to a trial. The nav carries no sentence of its
+                       own, and does not need one: the only fullTierOnly descriptor in
+                       dashboard-config.json is checks-overview, whose route is /checks — the page that
+                       states the demo reading in words. *@
+                    @if (BuildModules.LiveMonitoring && FeatureGate.IsEnabled(FeatureRegistrar.DynamicDashboards))
+                    {
+                        <div class="nav-section-label" style="margin-top:16px;">Live Dashboards</div>
+                        @foreach (var dashboard in DashboardConfig.Config.Dashboards
+                            .Where(d => d.Enabled && d.NavCategory == "Dashboards" && d.DefaultDatabase == "master"
+                                        && (!d.ExperimentalOnly || _experimentalMode)
+                                        && (!d.FullTierOnly || SQLTriage.Data.Services.Licensing.FullTierGate.IsAvailable(Bundle) || SQLTriage.Data.BuildMode.DevBridgeActive)
+                                        && IsDashboardNavVisible(d, MasterGroupDbPresent(d)))
+                            .OrderBy(d => d.NavOrder))
+                        {
+                            var loadInfo = GetDashboardLoadInfo(dashboard);
+                            <NavLink href="@dashboard.Route" class="nav-link">
+                                @NavIcon(dashboard.NavIcon) <span class="nav-link-text">@dashboard.NavTitle</span>
+                                @if (loadInfo != null)
+                                {
+                                    <span class="nav-load-badge nav-load-badge--@loadInfo.Value.Tier" title="@loadInfo.Value.Tooltip"></span>
+                                }
+                            </NavLink>
+                        }
+                    }
+
+                    @if (BuildModules.LiveMonitoring && FeatureGate.IsEnabled(FeatureRegistrar.DynamicDashboards) && VisibleDashboards("SQLWATCH", _SQLWATCHExists).Count > 0)
+                    {
+                        <div class="nav-section-label" style="margin-top:16px;">SQLWATCH</div>
+                        @foreach (var dashboard in VisibleDashboards("SQLWATCH", _SQLWATCHExists))
+                        {
+                            var loadInfo = GetDashboardLoadInfo(dashboard);
+                            <NavLink href="@($"/dashboard/{dashboard.Id}")" class="nav-link">
+                                @NavIcon(dashboard.NavIcon) <span class="nav-link-text">@dashboard.NavTitle</span>
+                                @if (loadInfo != null)
+                                {
+                                    <span class="nav-load-badge nav-load-badge--@loadInfo.Value.Tier" title="@loadInfo.Value.Tooltip"></span>
+                                }
+                            </NavLink>
+                        }
+                    }
+
+                    @if (BuildModules.LiveMonitoring && FeatureGate.IsEnabled(FeatureRegistrar.DynamicDashboards) && VisibleDashboards("PerformanceMonitor", _performanceMonitorExists).Count > 0)
+                    {
+                        <div class="nav-section-label" style="margin-top:16px;">Performance Monitor</div>
+                        @foreach (var dashboard in VisibleDashboards("PerformanceMonitor", _performanceMonitorExists))
+                        {
+                            var loadInfo = GetDashboardLoadInfo(dashboard);
+                            <NavLink href="@($"/dashboard/{dashboard.Id}")" class="nav-link">
+                                @NavIcon(dashboard.NavIcon) <span class="nav-link-text">@dashboard.NavTitle</span>
+                                @if (loadInfo != null)
+                                {
+                                    <span class="nav-load-badge nav-load-badge--@loadInfo.Value.Tier" title="@loadInfo.Value.Tooltip"></span>
+                                }
+                            </NavLink>
+                        }
+                    }
+                }
+                else if (_activeCategory == "Intelligence")
+                {
+                    <div class="nav-section-label">Knowledge Base</div>
+                    <NavLink href="@RouteConstants.ServerDocs" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-file-lines"></i></span><span class="nav-link-text"> Server Docs</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.Documentation" class="nav-link" title="v2 preview — Server Documentation Generator">
+                        <span class="nav-icon"><i class="fa-solid fa-book"></i></span><span class="nav-link-text"> Doc Generator</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.InstallationHelper" class="nav-link" title="v2 preview — Installation Hardening Checklist">
+                        <span class="nav-icon"><i class="fa-solid fa-list-check"></i></span><span class="nav-link-text"> Hardening Checklist</span>
+                    </NavLink>
+
+
+
+#if !SQLT_NO_DEVTOOLS
+                    @if (BuildModules.DevTools)
+                    {
+                        @* const-only outer if so the whole branch (incl. route literal) is pruned in community *@
+                        @if (_noPantsMode && FeatureGate.IsEnabled(FeatureRegistrar.DevTools))
+                        {
+                            <div class="nav-section-label" style="margin-top:16px;">Advanced</div>
+                            <NavLink href="@RouteConstants.CheckValidator" class="nav-link">
+                                <span class="nav-icon"><i class="fa-solid fa-vial"></i></span><span class="nav-link-text"> Check Validator</span>
+                            </NavLink>
+                        }
+                    }
+#endif
+                }
+                else if (_activeCategory == "Config")
+                {
+                    <div class="nav-section-label">General</div>
+                    @if (BuildModules.Operations)
+                    {
+                        <NavLink href="@RouteConstants.ServiceManagement" class="nav-link">
+                            <span class="nav-icon"><i class="fa-solid fa-microchip"></i></span><span class="nav-link-text"> Service &amp; Updates</span>
+                        </NavLink>
+                        <NavLink href="@RouteConstants.Services" class="nav-link" title="All services &amp; collectors — where each runs and its state">
+                            <span class="nav-icon"><i class="fa-solid fa-diagram-project"></i></span><span class="nav-link-text"> Services</span>
+                        </NavLink>
+                    }
+#if !SQLT_NO_DEVTOOLS
+                    @if (BuildModules.DevTools)
+                    {
+                        @if (FeatureGate.IsEnabled(FeatureRegistrar.DevTools))
+                        {
+                            <NavLink href="@RouteConstants.BuildProfile" class="nav-link" title="Dev builds only — author which modules reach the community build">
+                                <span class="nav-icon"><i class="fa-solid fa-sliders"></i></span><span class="nav-link-text"> Build Profile</span>
+                            </NavLink>
+                            @* PARKED 2026-06-18: Risk Assessment link removed (page + service
+                               stay wired at /riskreport). Resume plan: the private meta repo. *@
+                        }
+                    }
+#endif
+                    <NavLink href="@RouteConstants.AppMetrics" class="nav-link" title="In-app memory, GC &amp; performance metrics">
+                        <span class="nav-icon"><i class="fa-solid fa-microchip"></i></span><span class="nav-link-text"> SQLTriage App Metrics</span>
+                    </NavLink>
+                    <NavLink href="@RouteConstants.DbaTools" class="nav-link">
+                        <span class="nav-icon"><i class="fa-solid fa-toolbox"></i></span><span class="nav-link-text"> DBA Tools</span>
+                    </NavLink>
+                    @if (BuildModules.Operations)
+                    {
+                        @if (_noPantsMode)
+                        {
+                            <NavLink href="@RouteConstants.ScheduledTasks" class="nav-link">
+                                <span class="nav-icon"><i class="fa-solid fa-clock"></i></span><span class="nav-link-text"> Scheduled Tasks</span>
+                            </NavLink>
+                        }
+                    }
+
+                    @if (_experimentalMode)
+                    {
+                        @if (BuildModules.LiveMonitoring || BuildModules.Operations)
+                        {
+                            <div class="nav-section-label" style="margin-top:16px;">Experimental</div>
+                        }
+                        @if (BuildModules.Operations)
+                        {
+                            <NavLink href="@RouteConstants.AlertingConfig" class="nav-link">
+                                <span class="nav-icon"><i class="fa-solid fa-envelope"></i></span><span class="nav-link-text"> Notifications</span>
+                            </NavLink>
+                        }
+                    }
+                }
+                else if (_activeCategory == "Apply" && _noPantsMode)
+                {
+                    @* The licence layer, added 2026-08-05 with the rest of the set: BuildModules.Premium
+                       alone is a BUILD reading, and this entry pointed at a page bound to a customer
+                       licence. Same FeatureGate id the page and the script runner resolve
+                       (ServerHardening -> ServerConfigSuiteGate + the DevBridge hatch), so the three
+                       layers cannot drift. *@
+#if !SQLT_NO_PREMIUM
+                    @if (BuildModules.Premium && FeatureGate.IsEnabled(FeatureRegistrar.ServerHardening))
+                    {
+                        <div class="nav-section-label">Server Configuration</div>
+                        <NavLink href="@RouteConstants.ServerConfiguration" class="nav-link" title="Apply the SQLDBA baseline: sp_configure, hardening, trace flags, alerts/operators/jobs (preview or apply)">
+                            <span class="nav-icon"><i class="fa-solid fa-screwdriver-wrench"></i></span><span class="nav-link-text"> Server Config &amp; Hardening</span>
+                        </NavLink>
+                    }
+#endif
+                    @* Licence-bound since 2026-08-05: the three pages are Content-Removed from
+                       community with ServerConfiguration.razor above, so their route consts do
+                       not exist there — the #if is what keeps this markup compiling, and the
+                       FeatureGate id is the runtime licence layer for a full build. *@
+#if !SQLT_NO_PREMIUM
+                    @if (BuildModules.Premium && FeatureGate.IsEnabled(FeatureRegistrar.Remediation))
+                    {
+                        <NavLink href="@RouteConstants.Remediation" class="nav-link" title="Gated remediation — preview, approve, apply, verify (write capability)">
+                            <span class="nav-icon"><i class="fa-solid fa-screwdriver-wrench"></i></span><span class="nav-link-text"> Remediation</span>
+                        </NavLink>
+                        <NavLink href="@RouteConstants.AgentJobGuard" class="nav-link" title="Add an AG primary-replica guard step to SQL Agent jobs so they only do their work on the primary">
+                            <span class="nav-icon"><i class="fa-solid fa-shield-halved"></i></span><span class="nav-link-text"> AG Job Guard</span>
+                        </NavLink>
+                        <NavLink href="@RouteConstants.AgentJobSync" class="nav-link" title="Make an availability-group secondary's Agent jobs match the primary">
+                            <span class="nav-icon"><i class="fa-solid fa-right-left"></i></span><span class="nav-link-text"> AG Job Sync</span>
+                        </NavLink>
+                    }
+#endif
+
+                    @* Deploy section is Premium-only since the SQLWATCH / Darling PerformanceMonitor
+                       deploy links were unbundled 2026-07-21 (client safety). Dropping Operations from
+                       this condition matters: leaving it would render an empty "Deploy" heading in any
+                       Operations build. *@
+                    @if (BuildModules.Premium)
+                    {
+                        <div class="nav-section-label" style="margin-top:16px;">Deploy</div>
+                    }
+#if !SQLT_NO_PREMIUM
+                    @if (BuildModules.Premium)
+                    {
+                        @* Best Practice Scripts deploy — full-edition only, absent from community. *@
+                        <NavLink href="@RouteConstants.BestPractice" class="nav-link">
+                            <span class="nav-icon"><i class="fa-solid fa-check-double"></i></span><span class="nav-link-text"> Best Practices</span>
+                        </NavLink>
+                    }
+#endif
+                    @* "Deploy SQLWATCH" / "Deploy Darling PM" nav links removed 2026-07-21 —
+                       see RouteConstants.cs "Deployment" for why. Do not re-add. *@
+
+#if !SQLT_NO_DEVTOOLS
+                    @* #if fence added 2026-07-19: this was the only dev-tools nav block in this
+                       file guarded by the const `if` alone. Its two route literals are written
+                       inline (not via RouteConstants), so the preprocessor is what keeps them
+                       out of the community assembly — matching the Governance / Intelligence /
+                       Config dev-tools blocks above. /remediation-lab is listed in
+                       .handoff/gated-routes.txt on the strength of this fence. *@
+                    @if (BuildModules.DevTools)
+                    {
+                        @if (FeatureGate.IsEnabled(FeatureRegistrar.DevTools))
+                        {
+                            <div class="nav-section-label" style="margin-top:16px;">Dev / Lab</div>
+                            <NavLink href="/remediation-tuner" class="nav-link" title="Remediation cost tuner — dev builds only.">
+                                <span class="nav-icon"><i class="fa-solid fa-money-bill-wave"></i></span><span class="nav-link-text"> Remediation Tuner</span>
+                            </NavLink>
+                            <NavLink href="/remediation-lab" class="nav-link" title="Gated remediation lane — live MAXDOP loop (dev builds only).">
+                                <span class="nav-icon"><i class="fa-solid fa-flask"></i></span><span class="nav-link-text"> Remediation Lab</span>
+                            </NavLink>
+                        }
+                    }
+#endif
+                }
+            </nav>
+
+            <div class="nav-bottom-toggles" style="border-top:1px solid var(--border); padding-top: 8px;">
+                @* ── Executive Health Badge — aggregate 0-100 across all connected servers ── *@
+                @{
+                    var healthAll    = ConnectionHealth.AllStatuses;
+                    var healthOnline  = ConnectionHealth.OnlineCount;
+                    var healthOffline = ConnectionHealth.OfflineCount;
+                }
+                @if (healthAll.Count > 0)
+                {
+                    <div class="nav-link-text" style="padding:8px 12px 4px; display:flex; gap:6px; flex-wrap:wrap;">
+                        <SQLTriage.Components.Shared.HealthBadge />
+                        <SQLTriage.Components.Shared.RateLimitBadge />
+                    </div>
+                }
+                @* ── Per-server health strip ──
+                     Scales to large estates (50+ instances): healthy servers collapse into the
+                     green count; only offline/unknown servers get individual rows (capped), with
+                     click-to-expand for the full list. *@
+                @if (healthAll.Count > 0)
+                {
+                    var unhealthy = healthAll.Where(k => k.Value.Status != SQLTriage.Data.Services.ConnectionHealthService.ServerStatus.Online).ToList();
+                    var healthRows = _healthExpanded
+                        ? healthAll.ToList()
+                        : unhealthy.Take(HealthStripMaxRows).ToList();
+                    var healthHiddenCount = _healthExpanded ? 0 : Math.Max(0, unhealthy.Count - HealthStripMaxRows);
+                    <div class="nav-health-strip" style="padding:6px 12px 4px; border-bottom:1px solid var(--border);">
+                        <div class="nav-link-text" style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; cursor:pointer;"
+                             title="@(_healthExpanded ? "Collapse to problem servers only" : "Show all servers")"
+                             @onclick="() => _healthExpanded = !_healthExpanded">
+                            <span style="font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-muted);">Server Health <i class="fa-solid @(_healthExpanded ? "fa-chevron-up" : "fa-chevron-down")" style="font-size:8px; opacity:0.7;"></i></span>
+                            <span style="font-size:10px; color:var(--text-muted);">
+                                @if (healthOffline > 0)
+                                {
+                                    <span style="color:var(--red); font-weight:700;">@healthOffline offline</span>
+                                    @if (healthOnline > 0) { <span> · </span> }
+                                }
+                                @if (healthOnline > 0)
+                                {
+                                    <span style="color:var(--green);">@healthOnline online</span>
+                                }
+                            </span>
+                        </div>
+                        @foreach (var kvp in healthRows)
+                        {
+                            var dot = kvp.Value.Status switch
+                            {
+                                SQLTriage.Data.Services.ConnectionHealthService.ServerStatus.Online  => "var(--green)",
+                                SQLTriage.Data.Services.ConnectionHealthService.ServerStatus.Offline => "var(--red)",
+                                _ => "var(--text-muted)"
+                            };
+                            var tip = kvp.Value.Status == SQLTriage.Data.Services.ConnectionHealthService.ServerStatus.Offline && kvp.Value.Error != null
+                                ? kvp.Value.Error
+                                : kvp.Value.Status.ToString();
+                            <div style="display:flex; align-items:center; gap:5px; padding:1px 0;" title="@tip">
+                                <span style="width:7px; height:7px; border-radius:50%; background:@dot; flex-shrink:0; @(kvp.Value.Status == SQLTriage.Data.Services.ConnectionHealthService.ServerStatus.Offline ? "box-shadow:0 0 4px var(--red); opacity:0.4;" : "")"></span>
+                                <span class="nav-link-text" style="font-size:10px; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">@(string.IsNullOrWhiteSpace(kvp.Key) || kvp.Key == "." ? "(local)" : kvp.Key)</span>
+                            </div>
+                        }
+                        @if (healthHiddenCount > 0)
+                        {
+                            <div class="nav-link-text" style="font-size:10px; color:var(--red); padding:1px 0 1px 12px; cursor:pointer;"
+                                 title="Show all servers" @onclick="() => _healthExpanded = true">+@healthHiddenCount more offline</div>
+                        }
+                    </div>
+                }
+
+                @* ── Install-wide preference switches ─────────────────────────────────────
+                   NOT RENDERED to a caller who may not change settings. Every one of these four
+                   writes UserSettingsService — a SINGLETON holding the INSTALL's settings,
+                   persisted to disk and forwarded from the WPF container — and three of them
+                   broadcast the change into every live circuit. The nav menu renders on every
+                   route, AccessDenied included, so before this gate an unauthenticated LAN caller
+                   sitting on a denial page could flip four install settings for everybody. Proven
+                   2026-08-01: one click on Experimental wrote %APPDATA%\SQLTriage\user-settings.json.
+                   Rounds 4 and 5 both RECORDED these as "not ruled on"; this round rules. *@
+                <ShellGate Permission="settings">
+                <div class="nav-toggle-row" title="Color-Blind Mode: swap red/green to a colorblind-safe palette">
+                    <span class="colorblind-icon @(_colorBlindMode ? "colorblind-active" : "")" aria-hidden="true"><i class="fa-solid fa-eye" style="font-size:13px;"></i></span>
+                    <span class="nav-toggle-label nav-link-text">Color-Blind</span>
+                    <div class="nav-toggle-spacer nav-link-text"></div>
+                    <ToggleSwitch Value="@_colorBlindMode" ValueChanged="ToggleColorBlindMode" />
+                </div>
+                <div class="nav-toggle-row" title="Narration: a senior-DBA plain-language read of your estate on the dashboard">
+                    <span class="colorblind-icon @(_narrationMode ? "colorblind-active" : "")" aria-hidden="true"><i class="fa-solid fa-comment-dots" style="font-size:13px;"></i></span>
+                    <span class="nav-toggle-label nav-link-text">Narration</span>
+                    <div class="nav-toggle-spacer nav-link-text"></div>
+                    <ToggleSwitch Value="@_narrationMode" ValueChanged="ToggleNarrationMode" />
+                </div>
+                <div class="nav-toggle-row" title="Notifications: show or silence toast pop-ups">
+                    <span class="colorblind-icon @(_notificationsEnabled ? "colorblind-active" : "")" aria-hidden="true"><i class="fa-solid @(_notificationsEnabled ? "fa-bell" : "fa-bell-slash")" style="font-size:13px;"></i></span>
+                    <span class="nav-toggle-label nav-link-text">Notifications</span>
+                    <div class="nav-toggle-spacer nav-link-text"></div>
+                    <ToggleSwitch Value="@_notificationsEnabled" ValueChanged="ToggleNotifications" />
+                </div>
+                @* No-Pants Mode switch relocated to Settings > Modes (2026-07-16, #77c):
+                   the main app surface no longer carries a dangerous-mode switch. This
+                   sidebar only reflects the mode (via _noPantsMode) for nav gating. *@
+                <div class="nav-toggle-row" title="Experimental Mode: show preview features">
+                    <span class="experimental-icon @(_experimentalMode ? "experimental-active" : "")"><i class="fa-solid fa-flask" style="font-size:13px;"></i></span>
+                    <span class="nav-toggle-label nav-link-text">Experimental</span>
+                    <div class="nav-toggle-spacer nav-link-text"></div>
+                    <ToggleSwitch Value="@_experimentalMode" ValueChanged="ToggleExperimentalMode" ActiveColor="#f59e0b" />
+                </div>
+                </ShellGate>
+            </div>
+        </div>
+    }
+</div>
+
+@* No-Pants disclaimer modal relocated to Settings > Modes (2026-07-16, #77c). *@
+
+
+
+@code {
+    /// <summary>
+    /// May this circuit write the INSTALL's settings? Guards the four preference switches at the
+    /// bottom of the nav — see the comment beside them. Plain <c>IsAuthorized</c>: round 1 scoped
+    /// break-glass to Settings and Onboarding, and the break-glass call above is the Settings
+    /// shortcut, which is that scope.
+    /// </summary>
+    private bool MayChangeInstallSettings => UserState != null && UserState.IsAuthorized("settings");
+
+    private string _activeCategory = "Governance";
+
+    private void SetCategory(string category)
+    {
+        _activeCategory = category;
+        if (_collapsed) _collapsed = false; // Auto-expand when picking a category
+    }
+
+    private bool _performanceMonitorExists = false;
+    private bool _SQLWATCHExists = false;
+
+    /// <summary>
+    /// Live presence, per DISTINCT <c>requiresDatabase</c> value, of every master-group dashboard
+    /// (<c>NavCategory == "Dashboards"</c>, <c>DefaultDatabase == "master"</c>) that carries one —
+    /// e.g. Replication's "distribution". Resolved once per <see cref="RefreshDbFlags"/> cycle
+    /// alongside <see cref="_SQLWATCHExists"/>/<see cref="_performanceMonitorExists"/>, never per
+    /// render: the master group previously rendered every enabled dashboard unconditionally, so a
+    /// dashboard whose required database was absent (e.g. Replication with no 'distribution' on the
+    /// connected server) still got a nav link that opened to a zero-panel page.
+    /// </summary>
+    private Dictionary<string, bool> _masterGroupDbPresence = new(StringComparer.OrdinalIgnoreCase);
+
+    // ── Bundle tier badge ────────────────────────────────────────────────
+    private SQLTriage.Data.Services.Licensing.Tier _bundleTier = SQLTriage.Data.Services.Licensing.Tier.Free;
+    private bool _bundleUnlocked = false;
+    private bool _consolidationUnlocked = false;
+
+    private string _badgeClass =>
+        !_bundleUnlocked                                                           ? "not-activated"
+        : _bundleTier == SQLTriage.Data.Services.Licensing.Tier.Full              ? "full"
+        :                                                                            "free";
+
+    private string _badgeText =>
+        !_bundleUnlocked                                                           ? "Not Activated"
+        : _bundleTier == SQLTriage.Data.Services.Licensing.Tier.Full              ? "Full"
+        :                                                                            "Free";
+
+    private string _badgeTitle =>
+        !_bundleUnlocked
+            ? "Bundle failed to load — check app log. Click for Settings."
+            : _bundleTier == SQLTriage.Data.Services.Licensing.Tier.Full
+                ? "Full Audit active — click to manage"
+                : "Free tier — click for Settings";
+
+    // The badge reads "Not Activated" / "Free" / "Full", so every reason to click it is a licence
+    // reason. It lands on the tab where the licence lives, and where a failed unlock says why.
+    private void GoToTierSettings() => Navigation.NavigateTo(SQLTriage.Pages.Settings.FullAuditTabUrl);
+
+    [Inject] private NavigationManager Navigation { get; set; } = default!;
+
+    // ── Sidebar collapse ─────────────────────────────────────────────────
+    private bool _collapsed = false;
+    private bool _showAdvanced = false;
+    private bool _showConfigure = false;
+    private void ToggleCollapse() => _collapsed = !_collapsed;
+
+    // Dev-tools visibility is build-time now (BuildModules.DevTools) — the old
+    // MachineName=="MSI"/UserName=="afsul" gate is replaced by build-absence:
+    // community builds compile those pages out entirely (buildprofile.targets).
+
+    // ── No-Pants Mode ────────────────────────────────────────────────────
+    // The switch + disclaimer modal now live in Settings > Modes (#77c). This
+    // component only mirrors the persisted flag so it can gate nav entries
+    // (Apply category, Check Validator, Scheduled Tasks). It stays in sync via
+    // UserSettings.OnNoPantsModeChanged (subscribed in OnInitializedAsync).
+    private bool _noPantsMode = false;
+
+    private void OnNoPantsModeChanged(bool enabled)
+    {
+        _noPantsMode = enabled;
+        // Don't strand the Apply pane when the mode is turned off elsewhere.
+        if (!enabled && _activeCategory == "Apply") _activeCategory = "Governance";
+        InvokeAsync(StateHasChanged);
+    }
+
+    // ── Report / Feedback popover ────────────────────────────────────────
+    // Feedback moved to the bottom status bar (StatusBar.razor).
+
+    // ── Experimental Mode ─────────────────────────────────────────────────
+    private bool _experimentalMode = false;
+    private bool _showMaturityRoadmap = false;
+
+    // The four toggles below each write an INSTALL-wide persisted setting. The render gate keeps
+    // them off a denied caller's screen; these guards make the METHOD refuse as well, because a
+    // control that is only absent from markup is one refactor from present.
+    private void ToggleExperimentalMode(bool v)
+    {
+        if (!MayChangeInstallSettings) return;
+        _experimentalMode = v;
+        UserSettings.SetExperimentalMode(_experimentalMode);
+    }
+
+    // ── Server-health strip ───────────────────────────────────────────────
+    // Collapsed by default: healthy servers live in the count line only; individual
+    // rows are for offline/unknown servers, capped so a 50-instance estate cannot
+    // push the toggles below off-screen. Header click expands the full list.
+    private bool _healthExpanded = false;
+    private const int HealthStripMaxRows = 8;
+
+    // ── Color-Blind Mode ──────────────────────────────────────────────────
+    private bool _colorBlindMode = false;
+
+    private async Task ToggleColorBlindMode(bool v)
+    {
+        if (!MayChangeInstallSettings) return;
+        _colorBlindMode = v;
+        UserSettings.SetColorBlindMode(_colorBlindMode);
+        await ApplyColorBlindBodyClass();
+    }
+
+    private async Task ApplyColorBlindBodyClass()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("document.body.classList.toggle", "colorblind-mode", _colorBlindMode);
+        }
+        catch { /* JS not ready on first navigation — harmless */ }
+    }
+
+    // ── Narration (progressive disclosure: opinionated estate read on demand) ──
+    private bool _narrationMode = false;
+
+    private void ToggleNarrationMode(bool v)
+    {
+        if (!MayChangeInstallSettings) return;
+        _narrationMode = v;
+        UserSettings.SetNarrationMode(_narrationMode);
+    }
+
+    // ── Notifications ─────────────────────────────────────────────────────
+    private bool _notificationsEnabled = true;
+
+    private void ToggleNotifications(bool v)
+    {
+        if (!MayChangeInstallSettings) return;
+        _notificationsEnabled = v;
+        UserSettings.SetNotificationsEnabled(_notificationsEnabled);
+        ToastService.Enabled = _notificationsEnabled;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await UserState.InitAsync();
+        
+        _noPantsMode         = UserSettings.GetNoPantsMode();
+        _experimentalMode    = UserSettings.GetExperimentalMode();
+        _showMaturityRoadmap = UserSettings.GetShowMaturityRoadmap();
+        _colorBlindMode      = UserSettings.GetColorBlindMode();
+        _narrationMode       = UserSettings.GetNarrationMode();
+        _notificationsEnabled = UserSettings.GetNotificationsEnabled();
+        ToastService.Enabled  = _notificationsEnabled;   // sync service to persisted setting on startup
+        _bundleTier          = Bundle.Tier;
+        _bundleUnlocked      = Bundle.IsUnlocked;
+        _consolidationUnlocked = ConsolidationModel.IsUnlocked;
+        Bundle.BundleStateChanged                      += OnBundleStateChanged;
+        FeatureGate.Changed                            += OnFeatureGateChanged;
+        ConnectionManager.OnConnectionChanged          += OnServerChanged;
+        ConnectionHealth.OnStatusChanged               += OnHealthChanged;
+        UserSettings.OnShowMaturityRoadmapChanged      += OnMaturityRoadmapChanged;
+        UserSettings.OnNoPantsModeChanged              += OnNoPantsModeChanged;
+        InstanceSelector.OnInstanceChanged             += OnInstanceChanged;
+        
+        QuickCheckState.StateChanged                   += OnStateChanged;
+        FullAuditState.StateChanged                    += OnStateChanged;
+        VaState.StateChanged                           += OnStateChanged;
+
+        await RefreshDbFlags();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && _colorBlindMode)
+        {
+            await ApplyColorBlindBodyClass();
+        }
+    }
+
+    private void OnMaturityRoadmapChanged(bool enabled)
+    {
+        _showMaturityRoadmap = enabled;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnHealthChanged() => InvokeAsync(StateHasChanged);
+
+    private void OnStateChanged() => InvokeAsync(StateHasChanged);
+
+    private void OnFeatureGateChanged(object? sender, EventArgs e) => InvokeAsync(StateHasChanged);
+
+    private void OnBundleStateChanged(object? sender, EventArgs e)
+    {
+        _bundleTier     = Bundle.Tier;
+        _bundleUnlocked = Bundle.IsUnlocked;
+        _consolidationUnlocked = ConsolidationModel.IsUnlocked;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnServerChanged()
+    {
+        DbAvailability.InvalidateCache();
+        _ = InvokeAsync(async () =>
+        {
+            await RefreshDbFlags();
+            StateHasChanged();
+        });
+    }
+
+    private void OnInstanceChanged(string instanceName)
+    {
+        DbAvailability.InvalidateCache();
+        _ = InvokeAsync(async () =>
+        {
+            await RefreshDbFlags();
+            StateHasChanged();
+        });
+    }
+
+    private async Task RefreshDbFlags()
+    {
+        var pmTask = DbAvailability.DatabaseExistsAsync("PerformanceMonitor");
+        var swTask = DbAvailability.DatabaseExistsAsync("SQLWATCH");
+
+        // Master-group dashboards can each carry their own requiresDatabase (currently only
+        // Replication → "distribution", written generically here). Collect the DISTINCT values
+        // once and resolve them alongside the two flags above — DatabaseAvailabilityService caches
+        // per database name for the cycle, so this adds at most one round-trip per distinct value,
+        // never one per render.
+        var masterGroupDbNames = DashboardConfig.Config.Dashboards
+            .Where(d => d.NavCategory == "Dashboards" && d.DefaultDatabase == "master" && !string.IsNullOrEmpty(d.RequiresDatabase))
+            .Select(d => d.RequiresDatabase!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var masterGroupTasks = masterGroupDbNames
+            .ToDictionary(name => name, name => DbAvailability.DatabaseExistsAsync(name), StringComparer.OrdinalIgnoreCase);
+
+        await Task.WhenAll(new[] { pmTask, swTask }.Concat(masterGroupTasks.Values));
+        _performanceMonitorExists = pmTask.Result;
+        _SQLWATCHExists = swTask.Result;
+        _masterGroupDbPresence = masterGroupTasks.ToDictionary(kv => kv.Key, kv => kv.Value.Result, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private RenderFragment NavIcon(string? icon) => builder =>
+    {
+        builder.OpenElement(0, "span");
+        builder.AddAttribute(1, "class", "nav-icon");
+        if (icon?.StartsWith("fa-") == true)
+        {
+            builder.OpenElement(2, "i");
+            builder.AddAttribute(3, "class", icon);
+            builder.CloseElement();
+        }
+        else
+        {
+            builder.AddContent(2, icon);
+        }
+        builder.CloseElement();
+    };
+
+    /// <summary>
+    /// Per-dashboard nav-visibility test — see <see cref="NavDashboardVisibilityResolver"/> for the
+    /// decision itself and the defect it closes. <paramref name="requiredDbPresent"/> is whichever
+    /// of the two existing live flags (<see cref="_SQLWATCHExists"/>, <see cref="_performanceMonitorExists"/>)
+    /// matches the section this dashboard's <c>DefaultDatabase</c> puts it in; the discovery of those
+    /// flags (RefreshDbFlags/DatabaseExistsAsync) is unchanged — only what they gate is finer-grained.
+    /// </summary>
+    private static bool IsDashboardNavVisible(DashboardDefinition dashboard, bool requiredDbPresent) =>
+        NavDashboardVisibilityResolver.IsVisible(
+            dashboard.RequiresDatabase,
+            dashboard.AllPanels().Select(p => p.RequiresDatabase),
+            requiredDbPresent);
+
+    /// <summary>
+    /// The live-presence answer <see cref="IsDashboardNavVisible"/> needs for a master-group
+    /// dashboard, read from the cache <see cref="RefreshDbFlags"/> populated this cycle — see
+    /// <see cref="NavDashboardVisibilityResolver.DbPresentFromCache"/> for the decision itself.
+    /// </summary>
+    private bool MasterGroupDbPresent(DashboardDefinition dashboard) =>
+        NavDashboardVisibilityResolver.DbPresentFromCache(dashboard.RequiresDatabase, _masterGroupDbPresence);
+
+    /// <summary>
+    /// The nav-visible, ordered dashboards for one <c>DefaultDatabase</c> section (grouping is
+    /// unchanged; only per-dashboard membership now runs through <see cref="IsDashboardNavVisible"/>
+    /// instead of gating the whole section on <paramref name="requiredDbPresent"/> alone).
+    /// </summary>
+    private List<DashboardDefinition> VisibleDashboards(string defaultDatabase, bool requiredDbPresent) =>
+        DashboardConfig.Config.Dashboards
+            .Where(d => d.Enabled && d.DefaultDatabase == defaultDatabase)
+            .Where(d => IsDashboardNavVisible(d, requiredDbPresent))
+            .OrderBy(d => d.NavOrder)
+            .ToList();
+
+    private (string Tier, string Tooltip)? GetDashboardLoadInfo(DashboardDefinition dash)
+    {
+        var panels = dash.Tabs != null && dash.Tabs.Count > 0
+            ? dash.Tabs[0].Panels
+            : dash.Panels;
+        if (panels == null || panels.Count == 0) return null;
+
+        double maxMs = 0;
+        foreach (var panel in panels)
+        {
+            var m = PanelMetrics.GetMetric(panel.Id);
+            if (m != null && m.P95Ms > 0)
+            {
+                if (m.P95Ms > maxMs) maxMs = m.P95Ms;
+            }
+            else if (panel.ExpectedLoadMs is double exp && exp > 0)
+            {
+                if (exp > maxMs) maxMs = exp;
+            }
+        }
+        if (maxMs <= 0) return null;
+
+        var label = maxMs < 1000 ? $"~{maxMs:F0}ms" : $"~{maxMs / 1000.0:F1}s";
+        var tier = maxMs < 500 ? "fast" : (maxMs < 1000 ? "med" : "slow");
+        return (tier, $"Expected load (p95): {label}");
+    }
+
+    async ValueTask IAsyncDisposable.DisposeAsync()
+    {
+        Bundle.BundleStateChanged                  -= OnBundleStateChanged;
+        FeatureGate.Changed                        -= OnFeatureGateChanged;
+        ConnectionManager.OnConnectionChanged      -= OnServerChanged;
+        ConnectionHealth.OnStatusChanged           -= OnHealthChanged;
+        UserSettings.OnShowMaturityRoadmapChanged  -= OnMaturityRoadmapChanged;
+        UserSettings.OnNoPantsModeChanged          -= OnNoPantsModeChanged;
+        InstanceSelector.OnInstanceChanged         -= OnInstanceChanged;
+        
+        QuickCheckState.StateChanged               -= OnStateChanged;
+        FullAuditState.StateChanged                -= OnStateChanged;
+        VaState.StateChanged                       -= OnStateChanged;
+
+        await ValueTask.CompletedTask;
+    }
+}
+
+<!-- Styles extracted to wwwroot/css/NavMenu.css 2026-08-30 (CLAUDE.md convention). -->
