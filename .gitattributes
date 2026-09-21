@@ -1,0 +1,29 @@
+# Deterministic checkout for the SHA-256-pinned embedded Ola Hallengren Maintenance Solution.
+# The remediation install lane (MaintenanceSolutionOpRenderer.ExpectedScriptSha256) verifies the
+# embedded resource's hash at runtime and FAILS CLOSED on mismatch. That hash is computed over the
+# exact vendored release bytes (UTF-8 BOM + CRLF). Without pinning eol, a fresh clone on a machine
+# with core.autocrlf=input/true would check the file out with different line endings, MSBuild would
+# embed different bytes, and the tamper guard would refuse to run the install everywhere but the
+# author's machine. Pin CRLF so the checkout is byte-identical to the pinned hash on every platform.
+#
+# 2026-08-03: this rule read `-text eol=crlf` for three weeks and was SELF-CANCELLING. `-text` means
+# "do no conversion, check the blob out verbatim", which suppresses the `eol=crlf` beside it. The
+# blob is stored LF, so it landed LF, MSBuild embedded LF, and the guard refused to run the install.
+# It went unnoticed because worktrees created BEFORE this rule was added (2026-07-13) had already
+# been converted to CRLF by core.autocrlf=true, and git never re-normalises files already on disk —
+# so the pin held on the old trees and failed on every fresh checkout. `text` (no dash) is what makes
+# git normalise to LF in the index and convert to CRLF on checkout.
+# Do not re-add the dash. RemediationMaintenanceSolutionTests guards this at build time.
+"BPScripts/01. MaintenanceSolution.sql" text eol=crlf
+# The other ten stock Best Practice scripts under BPScripts/ need the same eol=crlf pin, for a
+# related but different reason. Data/Services/ShippedBPScriptRevisions.cs recovers a manifest of
+# every shipped revision's sha256 by hashing each git blob LF->CRLF, because SQLTriage.csproj
+# delivers each file as a plain copy and the payload is CRLF. Before this rule, that CRLF depended
+# entirely on core.autocrlf=true being set at machine/system level on the author's box - a setting
+# that does not travel with a clone. `git check-attr text eol` measured text/eol UNSPECIFIED for 10
+# of these 11 files (2026-09-11): on a fresh checkout without that machine setting, the working tree
+# would land LF, the manifest's CRLF-form hashes would match nothing, and every stock script would
+# classify as operator-modified. IsKnownShipped fails closed to KEEP, so nothing would be silently
+# corrupted - but no shipped improvement would ever refresh, and nothing would report it. Pin it here
+# so the delivered form is a property of the repo, not of whichever machine clones it.
+BPScripts/* text eol=crlf

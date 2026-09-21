@@ -1,0 +1,1549 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <!-- Community Edition build gating: -p:SQLTriageProfile=community excludes gated modules
+       per buildprofile.json. Default is the full/dev superset (no effect). -->
+  <Import Project="buildprofile.targets" />
+
+  <PropertyGroup>
+    <!-- net8 dropped 2026-06-10 in favour of net10 (LTS). Self-contained single-file publish
+         bundles the runtime, so clients need nothing pre-installed regardless of target. -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <UseWPF>true</UseWPF>
+    <!--<UseWindowsForms>true</UseWindowsForms> will get namespace issues when false-->
+    <UseWindowsForms>true</UseWindowsForms>
+    <DefaultItemExcludes>$(DefaultItemExcludes);tools\**;PerformanceMonitor-main\**;PerformanceMonitor_db\**;Tests\**;BenchmarkSuite1\**;Data\DashboardPreloaderService.cs;Data\OptimizedDashboardLoader.cs;publish\**;release\**;lib\**;BPScripts\\Ignore\\*\\*;SQLTriage-RAG-Builder\\*\\***;corpus\**;rag.db</DefaultItemExcludes>
+    <NoWarn>$(NoWarn);CS0169;CS0414;BL0007</NoWarn>
+    <RootNamespace>SQLTriage</RootNamespace>
+    <AssemblyName>SQLTriage</AssemblyName>
+    <Product>SQLTriage</Product>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <PlatformTarget>x64</PlatformTarget>
+    <PublishSingleFile>false</PublishSingleFile>
+    <Platforms>AnyCPU;x64</Platforms>
+    <!-- Only include English satellite resource assemblies � prevents NuGet packages from copying 14+ language folders -->
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <ApplicationIcon>SQLTriage.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Title>SQLTriage</Title>
+    <Authors>Adrian Sullivan</Authors>
+    <Description>An Enterprise grade SQL health check assessment tool. This tool will generate diagnostic outputs for a comprehensive SQL health audit. Incorporating SQLWATCH for database metrics.</Description>
+    <Copyright>Adrian Sullivan</Copyright>
+    <PackageProjectUrl>https://github.com/SQLAdrian/SQLTriage</PackageProjectUrl>
+    <PackageIcon>SQLTriage.png</PackageIcon>
+    <RepositoryUrl>https://github.com/SQLAdrian/SQLTriage</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <!-- Desktop footprint: Workstation GC, NOT Server GC. Server GC allocates one managed
+         heap + one background GC thread per logical core (22 on this CPU) and holds memory
+         aggressively for throughput we don't need on an I/O-bound desktop app — it inflates
+         idle working set by 100-200MB. Workstation GC = single heap, returns memory to the OS.
+         Concurrent kept so background collection stays UI-responsive.
+         To A/B compare without rebuilding: launch with env var DOTNET_gcServer=1 (Server) vs 0. -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <!-- Windows-only: Exclude non-Windows runtimes -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <!-- Disable Blazor hot-reload to suppress _wpftmp.csproj side-project generation -->
+    <RazorHotReload>false</RazorHotReload>
+    <!-- Work around _wpftmp.csproj Razor source generator NullReferenceException.
+         The WPF temp project cannot run the Razor source generator; skip Razor compilation
+         for the temp project only. The main project handles Razor normally. -->
+    <EnableDefaultRazorGenerateItems Condition="$(MSBuildProjectFile.Contains('_wpftmp'))">false</EnableDefaultRazorGenerateItems>
+    <!-- Suppress duplicate AssemblyInfo attributes in the WPF hot-reload temp project -->
+    <GenerateAssemblyInfo Condition="$(MSBuildProjectFile.Contains('_wpftmp'))">false</GenerateAssemblyInfo>
+    <GenerateTargetFrameworkAttribute Condition="$(MSBuildProjectFile.Contains('_wpftmp'))">false</GenerateTargetFrameworkAttribute>
+    <!-- Specify entry point for WPF temp project to avoid CS0017 -->
+    <StartupObject Condition="$(MSBuildProjectFile.Contains('_wpftmp'))">SQLTriage.Program</StartupObject>
+    <!-- Suppress Razor compilation in the WPF hot-reload temp project -->
+    <RazorCompileOnBuild Condition="$(MSBuildProjectFile.Contains('_wpftmp'))">false</RazorCompileOnBuild>
+    <RazorCompileOnPublish Condition="$(MSBuildProjectFile.Contains('_wpftmp'))">false</RazorCompileOnPublish>
+    <!-- Suppress the Razor SDK's duplicate AssemblyInfo generation � standard .NET SDK handles this -->
+    <GenerateRazorTargetAssemblyInfo>false</GenerateRazorTargetAssemblyInfo>
+    <!-- Custom entry point: Program.Main handles both WPF and service modes -->
+    <StartupObject Condition="!$(MSBuildProjectFile.Contains('_wpftmp'))">SQLTriage.Program</StartupObject>
+    <!-- Supply-chain: reproducible builds + lock file -->
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+    <!-- ⚠ EmbedAllSources WAS true until 2026-09-14 and it shipped the entire source tree.
+         MEASURED on the release artifact that ships (build 4053, single-file exe extracted from
+         the zip): 629 source files, 15,945,475 bytes, recovered from the type-17 EMBEDDED_PORTABLE_PDB
+         and PROVED to be the compiler's own input - all 629 blobs hash to the SHA-256 the PDB's
+         Document table records for them. Among them, 128 community-EXCLUDED units (3,890,272 bytes):
+         Portal 39, AccessSurface 20, RiskReport 5, DevBridge 4, Mcp 3, plus 49 community-removed
+         .razor pages whose generated .g.cs carries both markup and @code. The whole
+         community/full/private IP boundary was moot for anyone holding a full zip.
+         This is a SEPARATE property from DebugType below: DebugType=embedded supplies the sequence
+         points and document paths that put file:line into a client's stack trace, and that is kept.
+         EmbedAllSources adds the source TEXT on top of it, and only that is dropped.
+         TO ROLL BACK: set this to true (or `git revert` the commit that changed it). Nothing else
+         depends on it.
+         THE INVARIANT THIS PROPERTY SERVES, AND THE TEST THAT HOLDS IT: the shipped binary must
+         carry NO hand-written first-party source. The guard is
+         Tests\SQLTriage.Tests\EmbeddedSourceCensusTests.cs, fact
+         No_hand_written_source_is_embedded_in_the_shipped_assembly. It reads the compiled
+         assembly's type-17 EMBEDDED_PORTABLE_PDB and counts EmbeddedSource
+         custom-debug-information rows structurally from the PE debug directory, so flipping this
+         property back to true turns it RED. MEASURED by doing exactly that on 2026-09-14: 474
+         hand-written documents, 8,259,363 bytes, plus 79 community-excluded units on top of the
+         49 already known. Do not move this property without running that class. -->
+    <EmbedAllSources>false</EmbedAllSources>
+    <!-- ⚠ THE SECOND HALF, and it is the half that mattered for the IP boundary. EmbedAllSources=false
+         alone took embedded source 629 files -> 165, but every one of the 155 generated *_razor.g.cs
+         SURVIVED, six of them community-EXCLUDED pages whose .g.cs carries markup AND @code. All 165
+         survivors sit under obj\ - i.e. they are UNTRACKED - which is what this property governs.
+         Measured, not assumed. THE RESULT, so nobody has to re-derive it: this property took the
+         remaining 165 down to 155 and eliminated the last 10 non-Razor entries, but the 155
+         *_razor.g.cs are NOT reachable by it either. See the comment above </Project> at the foot
+         of this file for what was tried and failed, and for the lever that does work. -->
+    <EmbedUntrackedSources>false</EmbedUntrackedSources>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+
+  <!-- ASP.NET Core framework for Blazor Server mode (Kestrel, SignalR) -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <!-- ══ blazor.web.js: the file that made server mode a dead UI ════════════════════════════
+       Components/ServerApp.razor loads _framework/blazor.web.js. Nothing in this project ever
+       produced that file, so it 404'd, window.Blazor stayed undefined, and every control in
+       headless/server mode was inert. That is the lane clients run on a locked-down box.
+       PROVEN 2026-07-20, not assumed: a fresh self-contained Release publish had no wwwroot/
+       _framework directory at all, and the running published exe returned 404 for
+       /_framework/blazor.web.js while /themes.js returned 200 (control — the probe could fail).
+       Dropping this one file into the published wwwroot took /_blazor from dead to a connected
+       WebSocket circuit.
+
+       Why it was missing: blazor.web.js ships in Microsoft.AspNetCore.App.Internal.Assets,
+       which the Web SDK references implicitly. That package's own targets gate the asset on
+       '$(UsingMicrosoftNETSdkWeb)' == 'true' AND '$(OutputType)' == 'Exe'. This project is
+       Microsoft.NET.Sdk.Razor + WinExe (a WPF app that also self-hosts Kestrel), so BOTH gates
+       fail and the file is never emitted. Referencing the package alone does not fix it.
+
+       So: take the package for its path only (ExcludeAssets=all keeps its gated targets inert)
+       and let wwwroot/_framework/blazor.web.js ride the same discovery pipeline as themes.js.
+
+       ⚠ wwwroot/_framework/blazor.web.js IS COMMITTED ON PURPOSE. Do not delete it and assume
+       the target below regenerates it. MSBuild expands the SDK's wwwroot/** glob at EVALUATION,
+       before any target executes, so a file a target creates during the build is not in Content
+       for THAT build — it is only picked up by the NEXT one. Measured 2026-07-20: with the file
+       absent at evaluation, blazor.web.js appeared 0 times in staticwebassets.build.json and
+       never reached publish/win-x64/wwwroot; with it present, 1. A staging-target-only fix
+       therefore produces a working second build and a BROKEN first build from a clean clone —
+       which is the failure that would actually reach a client.
+
+       The target below is a refresher and a guard, not the delivery mechanism: it re-copies from
+       the pinned package so a version bump shows up as a reviewable git diff instead of silent
+       drift, and it hard-fails if the package is missing rather than leaving a runtime 404. ══ -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.App.Internal.Assets" Version="10.0.9"
+                      GeneratePathProperty="true" ExcludeAssets="all" PrivateAssets="all" />
+  </ItemGroup>
+
+  <Target Name="StageBlazorWebJs" BeforeTargets="ResolveStaticWebAssetsInputs"
+          Condition="!$(MSBuildProjectFile.Contains('_wpftmp'))">
+    <Error Condition="!Exists('$(PkgMicrosoft_AspNetCore_App_Internal_Assets)\_framework\blazor.web.js')"
+           Text="blazor.web.js not found under '$(PkgMicrosoft_AspNetCore_App_Internal_Assets)'. Without it server mode renders a dead UI, so this is a hard failure rather than a silent 404 at runtime." />
+    <Copy SourceFiles="$(PkgMicrosoft_AspNetCore_App_Internal_Assets)\_framework\blazor.web.js"
+          DestinationFolder="$(MSBuildProjectDirectory)\wwwroot\_framework"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- Exclude orphaned scratch projects and research artefacts from compilation -->
+  <ItemGroup>
+    <Compile Remove="CheckValidator\**" />
+    <Content Remove="CheckValidator\**" />
+    <EmbeddedResource Remove="CheckValidator\**" />
+    <None Remove="CheckValidator\**" />
+    <Compile Remove="CheckMerger\**" />
+    <Content Remove="CheckMerger\**" />
+    <EmbeddedResource Remove="CheckMerger\**" />
+    <None Remove="CheckMerger\**" />
+    <!-- research_output: never built, tested, published, or copied to bin -->
+    <Compile Remove="research_output\**" />
+    <Content Remove="research_output\**" />
+    <EmbeddedResource Remove="research_output\**" />
+    <None Remove="research_output\**" />
+    <Compile Remove="research_logs\**" />
+    <Content Remove="research_logs\**" />
+    <EmbeddedResource Remove="research_logs\**" />
+    <None Remove="research_logs\**" />
+    <Compile Remove="DdgTest\**" />
+    <Content Remove="DdgTest\**" />
+    <EmbeddedResource Remove="DdgTest\**" />
+    <None Remove="DdgTest\**" />
+  </ItemGroup>
+
+  <!-- L1: CC7.2 / SI-7 — SBOM generation (Release only) -->
+  <!-- Writes bin/<config>/sbom.json listing all direct + transitive packages. -->
+  <!-- No new package dependency: uses the dotnet CLI already on PATH. -->
+  <Target Name="GenerateSbom" AfterTargets="Build" Condition="'$(Configuration)' == 'Release' AND !$(MSBuildProjectFile.Contains('_wpftmp'))">
+    <!-- .NET 10 SDK removed the "output" flag from `dotnet list package`; JSON goes to stdout now, so redirect. -->
+    <Exec Command="dotnet list &quot;$(MSBuildProjectFullPath)&quot; package --include-transitive --format json &gt; &quot;$(OutputPath)sbom.json&quot;" ContinueOnError="true" />
+    <Message Text="[SBOM] Written to $(OutputPath)sbom.json" Importance="high" />
+  </Target>
+
+  <!-- The author commissioned an adversarial self-assessment (Pages/About.razor) sealed with a
+       SHA-256, and asked to be held to it on every build. This gate fails the build if the text
+       is edited. Skips wpftmp temp projects. -->
+  <Target Name="VerifyAuthorChecksum" BeforeTargets="Build" Condition="!$(MSBuildProjectFile.Contains('_wpftmp'))">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\build\verify-author-checksum.ps1&quot; -AboutRazorPath &quot;$(MSBuildProjectDirectory)\Pages\About.razor&quot;" />
+  </Target>
+
+  <!-- Release Build Optimizations -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <PublishReadyToRunShowWarnings>true</PublishReadyToRunShowWarnings>
+    <DebugType>embedded</DebugType>
+    <DebugSymbols>true</DebugSymbols>
+    <Optimize>true</Optimize>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- Was trimmed false, trying on true for smaller footprint, fails on winforms and runtimeidentifierinference... so perhaps not worth it-->
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Remove="SqlWatch.Monitor\**" />
+    <Content Remove="PerformanceMonitor-main\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="SqlWatch.Monitor\**" />
+    <Compile Remove="Tests\**" />
+    <Compile Remove="BenchmarkSuite1\**" />
+    <Compile Remove="Release\**" />
+    <Compile Remove="PerformanceMonitor-main\**" />
+    <Compile Remove="Config\Ignore\**" />
+    <Compile Remove="Data\Services\Analysis\**" />
+    <EmbeddedResource Remove="SqlWatch.Monitor\**" />
+    <EmbeddedResource Remove="Tests\**" />
+    <EmbeddedResource Remove="BenchmarkSuite1\**" />
+    <EmbeddedResource Remove="Release\**" />
+    <EmbeddedResource Remove="PerformanceMonitor-main\**" />
+    <None Remove="SqlWatch.Monitor\**" />
+    <None Remove="Tests\**" />
+    <None Remove="BenchmarkSuite1\**" />
+    <None Remove="Release\**" />
+    <None Remove="PerformanceMonitor-main\**" />
+  </ItemGroup>
+
+  <!-- Include Deploy folder in publish output for database scripts.
+       UNBUNDLED 2026-07-21 (client safety): the two collector installers are excluded.
+       Deploy\PerformanceMonitor_db\** (67 files) and Deploy\SQLWATCH_db\** (5 files, incl.
+       the DACPACs) were shipped into every build and publish output by the unconditional
+       glob below. Nothing in the app reads them any more — PMInstallationService and
+       SqlWatchDeploymentService were the only consumers and both are deleted — so they were
+       pure payload: 2.2 MB of ready-to-run installer SQL sitting on a client's server next
+       to a page of instructions telling them how to run it by hand.
+       Removing the UI button but still shipping the scripts would leave the manual install
+       path fully intact, so the exclusion is part of the same safety change.
+       The source files remain in the repo (git history + working tree) so an opt-in path
+       could be rebuilt deliberately; they simply never reach a build output again.
+       See RouteConstants.cs "Deployment". -->
+  <ItemGroup>
+    <Content Include="Deploy\**"
+             Exclude="Deploy\PerformanceMonitor_db\**;Deploy\SQLWATCH_db\**"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!-- Ship the licence so end users + auditors can see it. Per-app DefaultGroupName
+         in Inno Setup also picks it up via .iss [Files]. -->
+    <Content Include="LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <!-- Config\*.json files are auto-included by the SDK (Config is not in DefaultItemExcludes).
+         TargetPath for each is set via Content Update entries below. -->
+    <Content Remove="Config\Ignore\**" />
+    <Content Remove="Config\*.backup" />
+    <Content Remove="Config\*.backup_*" />
+    <!-- Stale bundle backup — never ship (the live free-bundle.dat is the product). -->
+    <Content Remove="Config\free-bundle.dat.bak" />
+    <Content Remove="Config\*.dat.bak" />
+    <!-- examples/ is dev-only (no runtime reader; carries internal .claude agent docs). Never ship. -->
+    <Content Remove="examples\**" />
+    <None Remove="examples\**" />
+    <!-- Curation / research artefacts — keep in repo for tooling, never ship. -->
+    <Content Remove="Config\consolidation-model*.json" />
+    <Content Remove="Config\code_enhanced_final_validated.json" />
+    <Content Remove="Config\control_mappings_lookup.md" />
+    <Content Remove="Config\sql-checks-final.json" />
+    <Content Remove="Config\sql-checks-merged.json" />
+    <Content Remove="Config\sql-checks-voice-rewrite.json" />
+    <Content Remove="Config\sql-checks-voice-rewrite-v2.json" />
+    <Content Remove="Config\sql-checks-with-narrative.json" />
+    <!-- Stray Python tooling outputs at repo root — must not ship in publish. -->
+    <Content Remove="measurement_*.json" />
+    <None Remove="measurement_*.json" />
+
+    <!-- SoD Permissions Matrix preferred-state baseline SAMPLE (slice 2). A commented schema
+         reference for the paid-only SoD engine — a dev/consultant artefact, NOT an app asset. Its
+         .jsonc extension already keeps it out of the SDK's **/*.json Content glob, and the whole
+         Data\Services\AccessSurface\ folder is denied from the public mirror (.publicignore); this
+         explicit Remove is the belt-and-braces so it can never ship in any build (community OR full). -->
+    <Content Remove="Data\Services\AccessSurface\sample-preferred-baseline.jsonc" />
+    <None Remove="Data\Services\AccessSurface\sample-preferred-baseline.jsonc" />
+
+    <!-- Gated Config files — never ship plaintext. Loaded at runtime from the encrypted bundle via IBundleAccessor. -->
+    <Content Remove="Config\control_mappings.json" />
+    <None Remove="Config\control_mappings.json" />
+    <Content Remove="Config\governance-weights.json" />
+    <None Remove="Config\governance-weights.json" />
+    <Content Remove="Config\queries.json" />
+    <None Remove="Config\queries.json" />
+    <Content Remove="Config\ruleset.json" />
+    <None Remove="Config\ruleset.json" />
+    <Content Remove="Config\error-catalog.json" />
+    <None Remove="Config\error-catalog.json" />
+    <Content Remove="Config\roadmap-mapping.json" />
+    <None Remove="Config\roadmap-mapping.json" />
+    <Content Remove="Config\roadmap-aliases.json" />
+    <None Remove="Config\roadmap-aliases.json" />
+    <Content Remove="Config\sql-build-catalogue.json" />
+    <None Remove="Config\sql-build-catalogue.json" />
+    <Content Remove="Config\sql-licensing-pricing.json" />
+    <None Remove="Config\sql-licensing-pricing.json" />
+
+    <!-- Dev-only / unused configs — not installed, not needed at runtime. -->
+    <Content Remove="Config\appsettings.Development.json" />
+    <None Remove="Config\appsettings.Development.json" />
+    <!-- Superseded (pre-fix) panel bodies for DashboardConfigMigrator. EMBEDDED ONLY (below), never
+         shipped to an install's Config\ folder: it is a match table for re-basing stock panels, not
+         runtime config. -->
+    <Content Remove="Config\dashboard-config.superseded.json" />
+    <None Remove="Config\dashboard-config.superseded.json" />
+
+    <!-- Defence-in-depth: corpus directory and rag.db must never reach publish. -->
+    <!-- DefaultItemExcludes above handles the MSBuild glob sweep; these are explicit safety nets. -->
+    <Content Remove="corpus\**" />
+    <None Remove="corpus\**" />
+    <Content Remove="rag.db" />
+    <None Remove="rag.db" />
+
+    <!-- Free-tier bundle — shipped plaintext in installer. No key required. -->
+    <!-- Condition: file may be absent in dev (CI generates it). Dev build proceeds; publish enforced below.
+         CopyToOutputDirectory too (was publish-only) so dev/Debug runs find the Free bundle
+         next to the exe — without it, dev builds boot "NOT ACTIVATED" with an empty catalog. -->
+    <!-- TargetPath is explicit (2026-09-10, lane customer-update-path) so this file's folder is a
+         DECISION and not an accident of which Content item happened to create the directory first.
+         config\, not config.default\: the Free catalogue is regenerated per build and must be refreshed
+         by every upgrade. Seeding it first-run-only would freeze a customer's Free check catalogue at
+         their install date for ever. installer\SQLTriage.iss already ships it 'ignoreversion' for the
+         same reason. -->
+    <Content Include="Config\free-bundle.dat" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Condition="Exists('Config\free-bundle.dat')">
+      <TargetPath>config/free-bundle.dat</TargetPath>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MailKit" Version="4.16.0" />
+    <PackageReference Include="Markdig" Version="1.2.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.Google" Version="8.0.31" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.MicrosoftAccount" Version="8.0.31" />
+    <!-- Windows (Negotiate) auth for server mode: local SAM + domain accounts. Pinned to the
+         10.0 band to match the net10.0 shared framework rather than copying the 8.0 OAuth pins. -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.Negotiate" Version="10.0.12" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebView.Wpf" Version="8.0.*" />
+    <PackageReference Include="Microsoft.SqlServer.DacFx" Version="162.*" />
+    <PackageReference Include="Blazor-ApexCharts" Version="3.*" />
+    <PackageReference Include="Radzen.Blazor" Version="5.*" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.*" />
+    <PackageReference Include="Microsoft.SqlServer.Management.Assessment" Version="1.*" />
+    <PackageReference Include="Microsoft.SqlServer.SqlManagementObjects" Version="172.*" />
+
+    <!-- Pinned EXACT (2026-08-12, was 8.0.*): the cipher stack is version-coherence-sensitive.
+         When a lock regeneration floated the test graph to SQLitePCLRaw.core 2.1.12 against
+         provider.e_sqlcipher 2.1.10, bundle init silently fell back to the unencrypted
+         e_sqlite3 provider and every SqliteCipherReinitTests store came back Plaintext (CI run
+         31580506025). 8.0.29 is what the shipped lock already resolves, so this pin changes
+         nothing in the product; it stops the outside world changing the resolution. Bump it
+         DELIBERATELY, together with bundle_e_sqlcipher below, and run SqliteCipherReinitTests.
+
+         .Core, NOT the Microsoft.Data.Sqlite metapackage (2026-09-02, lane/nu1903-sqlite-core,
+         Adrian's ruling on LANE-2026-09-02-nu1903-SCOUT.md). The two differ by exactly one
+         thing: the metapackage = Microsoft.Data.Sqlite.Core + SQLitePCLRaw.bundle_e_sqlite3.
+         That bundle dragged in SQLitePCLRaw.lib.e_sqlite3 2.1.6, which carries a HIGH NuGet
+         advisory (NU1903 / GHSA-2m69-gcr7-jv3q / CVE-2025-6965 - SQLite below 3.50.2, a 16-bit
+         index truncation reachable through complex attacker-shaped SQL). Eleven NU1903 warnings
+         per build, for a native this application NEVER loads: the provider it loads is
+         e_sqlcipher, from bundle_e_sqlcipher below.
+
+         The warning is gone because the FILE is gone, not because anything was suppressed.
+         .Core depends only on SQLitePCLRaw.core, so the resolved core stays 2.1.10 and the
+         cipher triple (bundle/lib/provider e_sqlcipher 2.1.10) is untouched - which is why this
+         cannot re-arm the 2026-08-12 coherence trap described above.
+
+         SECOND-ORDER, and the reason this beats bumping the native: with no plain provider in
+         the output there is no second SQLitePCLRaw.batteries_v2.dll to win the filename
+         collision, so the 2026-08-12 failure mode - silently falling back to unencrypted
+         e_sqlite3 and writing Plaintext stores - has nowhere to land. It becomes a loud
+         no-provider failure instead of a quiet one.
+
+         ⚠ HONEST LIMIT, so nobody reads this as a security fix: the native we DO load,
+         e_sqlcipher 2.1.10, reports SQLCipher 4.5.2 over SQLite 3.39.2 (measured 2026-08-08,
+         Data/SqliteCipherHelper.cs). That is also below 3.50.2 and carries the same underlying
+         defect, with no advisory filed against it and no fixed version published - the whole
+         SQLCipher line tops out at a DEPRECATED 2.1.11. This change removes a shipped file and
+         eleven true warnings. It does not change our exposure to CVE-2025-6965.
+
+         ExcludeAssets=runtimes is deliberately NOT carried over: it never worked here. It sat
+         on the direct reference and did not suppress the runtime assets of a TRANSITIVELY
+         pulled package, so e_sqlite3.dll shipped next to the exe regardless - observed
+         2026-09-02 as one copy sitting beside SQLTriage.exe in a full-profile output directory
+         (LANE-2026-09-02-nu1903-SCOUT.md sec 1.4, at SHA 7859969c, csproj sqlite lines
+         unchanged from the parent). How many output directories carried it was never counted,
+         so no total for the before-state is claimed here. The AFTER state is measured:
+         2026-09-03, after both axes built, zero files matching e_sqlite3* exist anywhere in the
+         worktree, obj included. -->
+    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="8.0.29" />
+    <!-- SQLCipher native provider — replaces the default SQLite3 bundle with an encrypted one.
+         Microsoft.Data.Sqlite API surface is unchanged; only the native library swaps.
+         Since 2026-09-02 this is the ONLY bundle in the graph, so it is also the only
+         batteries_v2 provider registration: there is nothing left to fall back to. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlcipher" Version="2.1.10" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.*" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.*" />
+    <PackageReference Include="Polly" Version="8.4.2" />
+    <PackageReference Include="Serilog" Version="4.*" />
+    <PackageReference Include="Serilog.Extensions.Logging" Version="8.*" />
+    <PackageReference Include="Serilog.Sinks.File" Version="6.*" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="6.*" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.*" />
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.*" />
+    <PackageReference Include="QuestPDF" Version="2024.10.4" />
+    <!-- Donut/ring charts in PDFs are rendered to PNG via SkiaSharp, then embedded as images
+         (QuestPDF 2024 bundles its own internal Skia and exposes no public SkiaSharp surface). -->
+    <PackageReference Include="SkiaSharp" Version="2.88.8" />
+    <PackageReference Include="Konscious.Security.Cryptography.Argon2" Version="1.3.1" />
+    <PackageReference Include="YamlDotNet" Version="16.*" /> <!-- B2 source parser (#27 v3) -->
+    <PackageReference Include="System.DirectoryServices" Version="10.0.12" /> <!-- Dig Deeper: AD SPN enumeration (Windows-only) -->
+
+
+  </ItemGroup>
+
+  <!-- D2 Phase B: standalone DevBridge loopback library lifted to sibling repo.
+       Local ProjectReference until Phase C publishes the NuGet package.
+       The sibling repo is cloned next to SQLTriage-dev; CI must do the same.
+       COMMUNITY builds exclude it (DevBridge sources are Compile-Removed by
+       buildprofile.targets, and the public repo has neither the sibling repo
+       nor the DevBridge sources — the rebuild gate proved this 2026-06-12). -->
+  <ItemGroup Condition="'$(SQLTriageProfile)' != 'community'">
+    <ProjectReference Include="..\sqltriage-mcp\src\BlazorHybridBridge\BlazorHybridBridge.csproj" />
+  </ItemGroup>
+
+  <!-- Read-only MCP surface (Mcp/): internal-only per D2. The SDK is referenced for
+       full/dev builds only; community Compile-Removes the Mcp/ sources (buildprofile.targets),
+       and the DI callsite (ServiceCollectionExtensions) was removed 2026-08-20 (deregistered
+       from every profile; the package remains unused there). -->
+  <ItemGroup Condition="'$(SQLTriageProfile)' != 'community'">
+    <PackageReference Include="ModelContextProtocol" Version="1.4.0" /> <!-- abstractions-only deps -->
+  </ItemGroup>
+
+  <!-- ══ THE PAYLOAD CONFIG SPLIT (2026-09-10, DECISIONS ruling, lane customer-update-path) ══════
+       Adrian's ruling: "the customer update path is a SHIPPED SCRIPT plus a HARMLESS ZIP, not an
+       in-app installer." Harmless means the artefact cannot destroy customer state HOWEVER it is
+       extracted - including the way it had always actually been used, which is an operator copying
+       the zip over their install directory. Procedure stops being the thing that protects them.
+
+       Every file below is in exactly one of two buckets, and the bucket is the answer to one
+       question: IS AN OPERATOR EXPECTED TO EDIT THIS, AND WOULD THEIR EDIT BE LOST?
+
+         config.default/  OPERATOR-EDITABLE. Shipped as a default; the real file is created in
+                          config\ on first run by Data\Services\ConfigDefaultsSeeder, per file, only
+                          when absent. No upgrade route writes over it, because no upgrade route
+                          writes to config\ at all. installer\SQLTriage.iss ships these
+                          'onlyifdoesntexist' for the same reason and preserves them across the
+                          pre-upgrade uninstall (OperatorConfigNames there is the same set).
+
+         config/          BUILD OR PRODUCT ARTEFACT. Not operator state; MUST be refreshed by every
+                          upgrade. Shipping these first-run-only would be a NEW defect: a stale
+                          version.json is exactly the 2026-08-03 failure where the binary was new and
+                          the service reported the old build to AutoUpdateService and
+                          AzureBlobExportService alike.
+
+       The consequence, and the property that makes the ruling true: extracting the payload over an
+       install overwrites ONLY config\version.json, config\free-bundle.dat,
+       config\health-benchmark.json and config\schemas\ - four files nobody authored. It cannot reach
+       .seat-register-key, .sqlite-cipher-key, portal-settings.json or server-connections.json at all,
+       because those have never been in the payload. If a file is ever moved between these two groups
+       and that property stops holding, the move is wrong. PayloadConfigSplitTests is the tripwire.
+
+       CORRECTED 2026-09-10, SAME DAY, ROUND TWO. The sentence above said "ONLY ... four files" while
+       this project was still shipping docs\compliance\*.md straight into docs\, so extracting the
+       payload over an install also replaced the operator's FILLED-IN compliance pack - their signed
+       sign-off log among it - with our blank templates. The claim was false when it was written, and
+       it was the claim, not just the classification, that made it dangerous: the deploy script's
+       preservation transcript reported "nothing changed" because docs\ was outside the folders it
+       measured. The pack now ships to docs.default\ under the same rule as config.default\. The rule for
+       deciding is unchanged and is stated once, above: would an operator edit it, and would their
+       edit be lost?
+
+       THE LAST EXCEPTION, CLOSED 2026-09-11 - BPScripts\. Round two of this lane claimed the property
+       held "for the whole payload, not only for the config folder". The final cold gate REFUTED that:
+       Pages\BestPractice.razor:87 gives the operator a "Save Script" button, :216 calls
+       BPScriptService.SaveScriptContent, and Data\BPScriptService.cs:67-71 does a plain
+       File.WriteAllText into <install>\BPScripts - a folder that was in $copyItems and in NEITHER
+       $preservedFolders NOR $deliberatelyNotCopied, so the loss was silent as well as total. PROVED by
+       that gate on both routes: the operator's edit survived = False. PRE-EXISTING (`git show
+       90b85aa:tools/Deploy-SQLTriageService.ps1` already had it) and FULL-PROFILE ONLY
+       (buildprofile.targets:170-171 removes BPScripts\** from a community build).
+
+       Lane bpscripts-operator-edits-are-lost closed it the same way this lane closed config\ and
+       docs\: the stock scripts ship as BPScripts.default\ and the app seeds BPScripts\ on first run.
+       See the ItemGroup head comment further down for why the fix is on the PAYLOAD rather than on any
+       route's copy list. A CUSTOMER WHOSE SCRIPTS WERE ALREADY DESTROYED DOES NOT GET THEM BACK; this
+       stops the next loss, it recovers nothing. -->
+  <ItemGroup>
+    <!-- ruleset.json is a gated file — handled by Content Remove above; no Update entry needed. -->
+    <!-- sql-checks.json was retired in commit 100965c and fully removed 2026-05-26 (D5). -->
+
+    <!-- ── config.default\ : OPERATOR-EDITABLE, seeded first-run-only ───────────────────────── -->
+    <!-- DiagnosticScriptRunner.cs:129 writes this file back after an operator changes a script's
+         configuration. ScriptConfigurationMigrator adds newly-shipped entries at load without
+         touching anything already there, so a first-run-only seed does not starve it of new checks. -->
+    <Content Update="Config\script-configurations.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>config.default/script-configurations.json</TargetPath>
+    </Content>
+    <!-- Not in the tree today (no Config\user-settings.json), so this Update matches nothing and the
+         file is in no payload. Kept, and kept in THIS bucket, so that the day one is added it is
+         seeded rather than shipped over: it is per-operator state by its name and by
+         tools\SQLTriageUpdater\Program.cs:289, which uses it as its own do-not-clobber fixture.
+
+         ⚠ PayloadDefaultAbsentReason IS LOAD-BEARING, NOT A COMMENT. From the seeder-stub-freeze lane
+         (2026-09-11) the GenerateShippedConfigDefaultsManifest target below reads this file as an XML
+         TREE and turns every config.default/ TargetPath into a promise the payload must keep. A promise
+         the payload breaks becomes a MissingFromPayload entry the operator is told about at every start.
+         This element is the ONE way to declare an absence DELIBERATE, and declaring it is a decision
+         somebody has to make on purpose: a file that stops shipping tomorrow carries no such element,
+         so it is reported. ⚠ Deleting this element (or renaming it) does not silence anything - it makes
+         this entry LOUDER. Adding it to another entry is the thing to review. The pin is
+         Tests\SQLTriage.Tests\ShippedConfigDefaultsManifestTests.cs,
+         Every_declared_absent_default_has_a_reason_and_is_genuinely_absent_from_the_tree. -->
+    <Content Update="Config\user-settings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>config.default/user-settings.json</TargetPath>
+      <PayloadDefaultAbsentReason>No Config\user-settings.json exists in the tree. The real file is per-operator state that UserSettingsService binds under %APPDATA%\SQLTriage, so nothing reads a config\ copy; this entry exists only so that the day one IS added to the tree it is seeded rather than shipped over the operator's.</PayloadDefaultAbsentReason>
+    </Content>
+    <!-- Operator alert thresholds and recipients. AlertDefinitionMigrator.cs:273,874 write it back. -->
+    <Content Update="Config\alert-definitions.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>config.default/alert-definitions.json</TargetPath>
+    </Content>
+    <!-- The operator's schedule. -->
+    <Content Update="Config\scheduled-tasks.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>config.default/scheduled-tasks.json</TargetPath>
+    </Content>
+    <!-- Carries the admin credential (AdminAuth Hash/Salt — AdminAuthService.cs:212 writes it) and the
+         update kill-switch. The single most destructive file in the payload to overwrite. -->
+    <Content Update="Config\appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>config.default/appsettings.json</TargetPath>
+    </Content>
+    <Content Update="Config\appsettings.Production.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>config.default/appsettings.Production.json</TargetPath>
+    </Content>
+    <!-- appsettings.Development.json is dev-only — handled by Content Remove above; no Update entry needed. -->
+    <!-- The operator's dashboard layout. DashboardConfigService.cs:401 writes it back on every save. -->
+    <Content Update="Config\dashboard-config.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>config.default/dashboard-config.json</TargetPath>
+    </Content>
+    <!-- $/kWh and grid CO2 intensity. PowerEstimateService.cs:225 reads it from disk and its own
+         comment at :44 says "editable per deployment via Config/power-pricing.json" — so an operator
+         IS expected to edit it and their edit WOULD be lost. It had no TargetPath entry at all before
+         this lane, so the SDK's automatic Config\*.json include (see the Content Remove block above)
+         put it in the payload's config\ folder by accident rather than by decision, and a hand
+         extraction over an install replaced the operator's tariff. That is the ZIP route, and this
+         entry closes it.
+
+         THE INNO ROUTE, CORRECTED 2026-09-10 round two. An earlier draft of this comment said the
+         Inno path was "still at the mercy" of the same problem. It was the other way round, and the
+         evidence is a grep at the base commit e9762656: power-pricing appears ZERO times in
+         installer\SQLTriage.iss and ZERO times in this file. Inno therefore never installed it, so it
+         was never recorded in an uninstall log, so the pre-upgrade uninstall could not delete it. The
+         Inno path was SAFE for this file, by omission. What changed is that THIS lane added a [Files]
+         entry for it - which is what puts a file into the uninstall log - and closed the gap that
+         creates in the same commit by adding it to OperatorConfigNames (Result[6]), the list
+         BackupOperatorConfig saves across that uninstall. -->
+    <Content Update="Config\power-pricing.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>config.default/power-pricing.json</TargetPath>
+    </Content>
+
+    <!-- ── config\ : BUILD / PRODUCT ARTEFACTS, refreshed by every upgrade ──────────────────── -->
+    <!-- The build stamp. Read by AutoUpdateService.cs:165, AzureBlobExportService.cs:782,
+         LicenseService.cs:2678, ProductionReadinessGate.cs:38, DailySummaryPublisher.cs:433,
+         AssessmentPdf.cs:468 and CliAuditHost.cs:880. Nothing in the application writes it — proved
+         2026-09-10 by whole-repo census: every production reference is a File.ReadAllText, and the
+         only writers in the tree are test fixtures writing into their own temp folders. -->
+    <Content Update="Config\version.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>config/version.json</TargetPath>
+    </Content>
+    <!-- No disk reader exists: HealthBenchmarkService.cs:155 reads "Config/health-benchmark.json" out
+         of the ENCRYPTED BUNDLE via IBundleAccessor.GetText, not off disk. So an operator edit to the
+         disk copy changes nothing and cannot be lost, and the shipped copy is a build artefact that
+         should track the bundle. Explicit TargetPath so that is recorded rather than inherited. -->
+    <Content Update="Config\health-benchmark.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>config/health-benchmark.json</TargetPath>
+    </Content>
+    <!-- A JSON Schema versioned with the code it describes. No runtime reader at all (whole-repo grep
+         for "dashboard.schema" returns no .cs or .razor hit), so nothing an operator can lose. -->
+    <Content Update="Config\schemas\dashboard.schema.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>config/schemas/dashboard.schema.json</TargetPath>
+    </Content>
+
+  </ItemGroup>
+
+  <!-- == THE PAYLOAD'S PROMISE, MADE MACHINE-READABLE ===========================================
+       THE INVARIANT: every file the payload is SUPPOSED to contain is ACCOUNTED FOR at run time. A
+       shipped default that is promised above and is not in the payload must produce an attention entry
+       from ConfigDefaultsSeeder, never silence.
+
+       WHY IT HAD TO EXIST. A Content Update whose source file is not in the tree matches nothing,
+       contributes nothing to the payload, and emits no warning of any kind - PROVED on this commit by
+       Config\user-settings.json, promised a few lines up and in no build's output. The seeder could not
+       notice: Data\Services\ConfigDefaultsSeeder.cs enumerates what IS in config.default\
+       (Directory.GetFiles), so it cannot fail to copy a file it never looked for. A payload missing
+       config.default\dashboard-config.json therefore reached Data\DashboardConfigService.cs Load,
+       which generated a 3-dashboard stub where the product ships 27 - and, until this lane, PERSISTED
+       it, after which the seeder Kept the stub forever.
+
+       WHY IT IS READ AS AN XML TREE AND NOT AS TEXT. RULED 2026-09-11 (Adrian): a census that scans
+       CHARACTERS is a tripwire, not a guarantee, and must say so in its own words. XmlPeek runs a real
+       XPath 1.0 query over a real XML tree, so a reformat, a line wrap, a re-ordering or a change of
+       attribute quoting cannot move a file out of the promised set. Two line-wrapped offenders kept
+       five character-scanning censuses green on 2026-09-11; that is the defect class this avoids.
+
+       WHY NOT MSBuild ITEM EVALUATION, which would have been shorter. Because a Content Update on an
+       absent file CREATES NO ITEM - @(Content) cannot see a promise whose source is missing, which is
+       exactly the trigger case. An item-evaluation census would have been vacuous for the one defect it
+       exists to catch. The XML tree sees the promise whether or not the file exists.
+
+       ABSENT OR EMPTY IS A FAILURE, NEVER A SKIP. If the XPath selects nothing, the build STOPS. A
+       guard that fails toward "nothing promised" is the IP-boundary defect of 2026-09-11 all over again
+       (a verifier that passed a 174 MB full build as community because it scanned a file it had not
+       built, exit 0).
+
+       THE CONSUMER is Data\Services\ShippedConfigDefaults.cs - the partial class this generates the
+       other half of. The pins are Tests\SQLTriage.Tests\ShippedConfigDefaultsManifestTests.cs.
+       NO _wpftmp CONDITION, DELIBERATELY. The WPF temporary-target-assembly pass compiles the whole
+       project from a generated copy of this file in this same directory, so it needs the generated
+       source too; $(MSBuildProjectDirectory) names this directory in both passes. -->
+  <!-- ⚠ THE HOOK IS SplitResourcesByCulture - PrepareResourceNames WAS TRIED AND IS A SILENT
+       NO-OP, see below - AND THE GENERATED ARTEFACT IS A RESOURCE RATHER THAN A
+       SOURCE FILE, BOTH BECAUSE OF THE WPF TEMPORARY-TARGET-ASSEMBLY PASS. PROVED 2026-09-11: the
+       first attempt generated a C# partial into $(IntermediateOutputPath) and added it to @(Compile).
+       GenerateTemporaryTargetAssembly builds SQLTriage_<hash>_wpftmp.csproj FIRST and compiles the whole
+       project from it; that pass does NOT run this target, and obj\ is outside the Compile glob, so the
+       partial class had no other half and the build failed CS0103 before the real pass ever ran. Proved
+       by a discriminating experiment: the generated file was put on disk by hand and the _wpftmp pass
+       failed identically, so it is the Compile ITEM that is missing there, not the file. A resource is
+       immune - the throwaway temp assembly does not need it, and Data\Services\ShippedConfigDefaults.cs
+       compiles on its own. If the resource is ever missing from the REAL assembly the failure is loud,
+       not silent: ShippedConfigDefaults.IsDerivable goes false and
+       ShippedConfigDefaultsManifestTests.The_builds_promise_is_derivable_and_is_not_empty goes red.
+       ⚠ THE HOOK IS MEASURED, NOT GUESSED, AND THE WRONG HOOK FAILS SILENTLY. Adding an
+       EmbeddedResource after CreateManifestResourceNames has run is a NO-OP with no warning: that
+       target is what stamps ManifestResourceName onto each item, and Csc is handed the result of it
+       rather than @(EmbeddedResource). PROVED 2026-09-11 at -v:diag - BeforeTargets="PrepareResourceNames"
+       put this target at TargetId 44, AFTER CreateManifestResourceNames at 42, and the build SUCCEEDED
+       with the resource simply absent from the assembly. The only thing that caught it was
+       ShippedConfigDefaultsManifestTests.The_builds_promise_is_derivable_and_is_not_empty going red,
+       which is why that test exists. SplitResourcesByCulture runs BEFORE CreateManifestResourceNames,
+       so the item is in the set when the names are assigned. If you move this hook, re-run that test:
+       a dropped resource does not break the build, it silently empties the guard.
+       ⚠ TWO LIMITS THIS TARGET DOES NOT COVER, named so the next reader does not assume it does.
+       (1) The XPath matches CHILD ELEMENT metadata only. Converting ONE item to the attribute form
+       TargetPath="config.default/x.json" silently shrinks the promise set; converting ALL of them trips
+       the Error above. Measured by the cold gate 2026-09-12: zero attribute form metadata in the
+       config.default ItemGroup today, so the promise set is complete as written.
+       (2) The XPath is Condition blind, so the manifest is identical on both build profiles. That is
+       CORRECT today, and measured: no Condition in the config.default ItemGroup, buildprofile.targets
+       removes none of these files, and both axes ship 7. But if anyone ever profile gates one of them,
+       every community operator gets a false THIS INSTALL IS INCOMPLETE at every start, because the
+       promise would still name a file their payload legitimately lacks. Gate that here too, or the
+       diagnostic becomes the defect. -->
+  <Target Name="GenerateShippedConfigDefaultsManifest" BeforeTargets="SplitResourcesByCulture">
+
+    <PropertyGroup>
+      <_ConfigDefaultsPromiseSource>$(MSBuildProjectDirectory)\SQLTriage.csproj</_ConfigDefaultsPromiseSource>
+      <_ConfigDefaultsGenerated>$(IntermediateOutputPath)shipped-config-defaults.manifest.txt</_ConfigDefaultsGenerated>
+    </PropertyGroup>
+
+    <Error Condition="!Exists('$(_ConfigDefaultsPromiseSource)')"
+           Text="GenerateShippedConfigDefaultsManifest cannot read $(_ConfigDefaultsPromiseSource). The promised-defaults set is derived from that file and an empty set is a FALSE CLEAN, so this build stops." />
+
+    <!-- The promise: every Content item whose TargetPath lands in config.default\ and that does NOT
+         declare PayloadDefaultAbsentReason. -->
+    <XmlPeek XmlInputPath="$(_ConfigDefaultsPromiseSource)"
+             Query="//Content[starts-with(TargetPath,'config.default/')][not(PayloadDefaultAbsentReason)]/TargetPath/text()">
+      <Output TaskParameter="Result" ItemName="_ConfigDefaultPromised" />
+    </XmlPeek>
+
+    <!-- The declared exceptions: promised, and the build says in its own words why the payload does not
+         carry one. Accounted for, so not an attention entry - but still reported in the transcript. -->
+    <XmlPeek XmlInputPath="$(_ConfigDefaultsPromiseSource)"
+             Query="//Content[starts-with(TargetPath,'config.default/')][PayloadDefaultAbsentReason]/TargetPath/text()">
+      <Output TaskParameter="Result" ItemName="_ConfigDefaultDeclaredAbsent" />
+    </XmlPeek>
+
+    <Error Condition="'@(_ConfigDefaultPromised)' == ''"
+           Text="GenerateShippedConfigDefaultsManifest selected NO promised config.default entry from $(_ConfigDefaultsPromiseSource). Either the TargetPath spelling changed (the XPath matches 'config.default/' with a FORWARD slash) or the items moved. An empty promise set would let a missing shipped default pass unnoticed, which is the defect this target exists to catch, so this build stops rather than generating a vacuous guard." />
+
+    <MakeDir Directories="$(IntermediateOutputPath)" />
+
+    <WriteLinesToFile File="$(_ConfigDefaultsGenerated)" Overwrite="true" WriteOnlyWhenDifferent="true"
+                      Lines="# GENERATED AT BUILD TIME by the GenerateShippedConfigDefaultsManifest target in SQLTriage.csproj. DO NOT EDIT.;# Derived by XPath 1.0 over SQLTriage.csproj read as an XML TREE. Consumer - Data/Services/ShippedConfigDefaults.cs.;@(_ConfigDefaultPromised-&gt;'promised:%(Identity)');@(_ConfigDefaultDeclaredAbsent-&gt;'declared-absent:%(Identity)')" />
+
+    <ItemGroup>
+      <EmbeddedResource Include="$(_ConfigDefaultsGenerated)">
+        <LogicalName>SQLTriage.Generated.shipped-config-defaults.manifest.txt</LogicalName>
+      </EmbeddedResource>
+      <FileWrites Include="$(_ConfigDefaultsGenerated)" />
+    </ItemGroup>
+  </Target>
+
+  <!-- ── The customer-facing updater ─────────────────────────────────────────────────────────
+       Half two of the same ruling: the update path is a SHIPPED SCRIPT. Until now the only correct
+       updater lived in tools\ (which DefaultItemExcludes keeps out of every build) and a customer had
+       no way to get it, so the actual update procedure was "extract the zip over the install" — the
+       exact act half one above was written to make survivable.
+
+       It ships under a customer-facing NAME and is the SAME FILE, deliberately: tools\tests\Test-
+       DeployScript.ps1 parses this script with the PowerShell AST and exercises its helper functions
+       verbatim, so a forked customer copy would be an untested copy. The repo path keeps its existing
+       name because Adrian runs it from there by muscle memory and a live deploy is pending on it;
+       PayloadConfigSplitTests pins the mapping so the rename cannot silently drift. -->
+  <ItemGroup>
+    <!-- Condition added 2026-09-20 (Adrian ruled; lane public-release): the curated public tree strips
+         tools/ (.handoff/.publicignore), so publish-public.ps1 step 4b rebuilt that tree and died with
+         MSB3030 on this copy. In the dev tree the file exists, so nothing about a dev build or the
+         release zip changes. PayloadConfigSplitTests pins the Install-SQLTriage.ps1 mapping. -->
+    <Content Include="tools\Deploy-SQLTriageService.ps1"
+             Condition="Exists('tools\Deploy-SQLTriageService.ps1')"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest">
+      <TargetPath>Install-SQLTriage.ps1</TargetPath>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="SQLTriage.ico" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Canonical S-mark tile (green-on-ink, 512px) rendered into client-facing PDF reports.
+         Loaded at render time from AppContext.BaseDirectory\Assets\brand\; the QuestPDF builders
+         fall back to the ⛁ glyph if it is absent, so a missing asset never breaks a report. -->
+    <Content Include="Assets\brand\sqltriage-mark.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+
+    <!-- ── Compliance pack (honesty-hunt strings-r1-13) ────────────────────────────────────
+         Pages\AuditLogViewer.razor tells the operator to read
+         docs/compliance/incident-response-runbook.md at four separate moments, and
+         AuditLogService's chain-verification report body names the same file in its "Scope of
+         this report" footer. That file was in the repo and in NOTHING ELSE: .md is not in the
+         SDK's default Content globs, so it was never in the publish output, and
+         installer/SQLTriage.iss had no docs entry at all (grep -ci docs SQLTriage.iss -> 0,
+         measured 2026-08-28 before this line existed). An installed client following the banner
+         found no such file - at the exact moment the app had just declared their audit chain
+         broken, which is the one moment the runbook exists for.
+
+         WHY THE WHOLE FOLDER, NOT JUST THE RUNBOOK. The runbook itself sends the reader on to
+         sign-off-log.md four times (steps 7, and the three chain playbooks), and
+         access-review-procedure.md and vendor-dependency-register.md each do the same. Shipping
+         only the file the banner names would fix one dangling pointer by leaving four more.
+
+         WHY UNGUARDED, like scripts\ and Assets\ in SQLTriage.iss. Nothing gates docs\ out of any
+         build profile: buildprofile.targets carries no Content Remove under docs\, and
+         DefaultItemExcludes above does not name it. So the folder is present in every profile and
+         an unguarded rule is the loud tripwire - if the tree ever loses it, the installer compile
+         aborts instead of silently shipping the dangling pointer this rule exists to close.
+         DocPointerDeliveryTests carries the text tripwire for the whole class.
+
+         WHY IT SHIPS TO docs.default\ AND NOT TO docs\ (2026-09-10, round two of lane
+         customer-update-path). These four documents are OPERATOR STATE by exactly the test stated at
+         the top of this file, and the first draft of this lane got that wrong: sign-off-log.md
+         describes itself as a running evidence record, filled in append-only, never edited
+         historically, that auditors will read; access-review-procedure.md and
+         vendor-dependency-register.md ship with {{placeholder}} values the buyer replaces before
+         their first audit; the runbook carries {{primary-oncall}}. Shipping them into docs\ meant
+         that extracting the release over an install replaced a customer's signed compliance record
+         with our blank template - measured, four files lost, the signature gone.
+
+         So they take the config.default\ treatment: the PRISTINE templates ship here, in a folder
+         nobody authors in and every route may freely overwrite, and Data\Services\ConfigDefaultsSeeder
+         creates docs\compliance\<file> on first run only when it is absent. That keeps BOTH promises
+         at once - a customer who deleted a document gets the current one back, a customer who filled
+         one in keeps theirs, and anyone who wants to see what the current revision says reads
+         docs.default\compliance\ and merges it themselves. The delivery promise the 2026-08-28 fix
+         was written for is unchanged; what is gone is the destruction that paid for it.
+
+         The TargetPath uses %(Filename)%(Extension) so the glob keeps working: a document added to
+         docs\compliance\ ships as a default automatically and is seeded like the rest. -->
+    <Content Include="docs\compliance\*.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest">
+      <TargetPath>docs.default\compliance\%(Filename)%(Extension)</TargetPath>
+    </Content>
+  </ItemGroup>
+
+  <!-- ── Export Pack identity manifest (E3 verify MUST-FIX #1) ─────────────────────────────
+       identity_manifest.sql is what the export lane runs against the selected instance to get
+       the instance's OWN declaration of every real name it knows, so the tokenizer replaces
+       from an authoritative list instead of guessing. Until this line it lived ONLY in the
+       sibling private meta checkout, resolved through MetaRepoPath / SQLTRIAGE_META_REPO —
+       so on a normal install (and on a client's production box, which has no such checkout)
+       every Run refused. Same reason R1b moved the canonical kernel into the app: a client
+       box cannot be asked to hold a private repo.
+
+       The SOURCE sits under Data\Services\Portal\Export\ so the existing portal denies cover
+       it (.handoff\.publicignore Data/Services/Portal/), and the Include is conditioned on
+       the SAME property that Compile-Removes that whole tree — a community build carries
+       neither the code that reads it nor the file. Condition is written here rather than as a
+       Content Remove in buildprofile.targets because that file is imported at the TOP of this
+       one, so a Remove there cannot see an Include added below it.
+
+       It ships as scripts\identity_manifest.sql, beside the other SQL the app runs
+       (sp_Blitz.sql, SQLDBA.ORG.sp_triage.sql). Read-only; it changes no state.
+
+       The Exists() guard is the same one Config\free-bundle.dat carries: the public mirror is
+       published WITHOUT this tree (.publicignore), and a literal Content Include of a file that
+       is not there fails the copy step rather than evaluating away. A build that needs the file
+       and lacks it is caught by ExportPackCompositionTests, not by an MSBuild error. -->
+  <ItemGroup Condition="'$(SQLTExcludePortal)' != 'true' And Exists('Data\Services\Portal\Export\identity_manifest.sql')">
+    <None Remove="Data\Services\Portal\Export\identity_manifest.sql" />
+    <Content Include="Data\Services\Portal\Export\identity_manifest.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <TargetPath>scripts\identity_manifest.sql</TargetPath>
+    </Content>
+  </ItemGroup>
+
+  <!-- Phase 3: BIP39 wordlist for license key encoding/decoding.
+       Run tools\fetch-bip39-wordlist.ps1 once to download the wordlist file.
+       The Condition prevents the build from failing if the file has not been fetched yet. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\bip39-english.txt" Condition="Exists('Resources\bip39-english.txt')" />
+    <!-- Trusted public key for verifying signed update artifacts. Until the real
+         code-signing cert is dropped in (tools\extract-update-pubkey.ps1), this is a
+         placeholder and UpdateSignatureVerifier fails closed. Public key only — never
+         the private key. -->
+    <EmbeddedResource Include="Resources\update-signing-public.pem" Condition="Exists('Resources\update-signing-public.pem')" />
+    <!-- S3: Ola Hallengren's Maintenance Solution (MIT-licensed), embedded so
+         MaintenanceSolutionOpRenderer can load + checksum-verify it at runtime without
+         depending on the loose BPScripts\ copy surviving deployment. BPScripts is excluded
+         from default globbing (DefaultItemExcludes above does not list it, but it also has
+         no implicit EmbeddedResource glob) — Include it explicitly. The Exists() guard is the same
+         one its siblings above carry: the public mirror is published WITHOUT BPScripts
+         (.publicignore), and a literal Include of a file that is not there fails the build rather
+         than evaluating away. -->
+    <EmbeddedResource Include="BPScripts\01. MaintenanceSolution.sql" Condition="Exists('BPScripts\01. MaintenanceSolution.sql')" />
+    <!-- Ruling 2026-08-23 #4: the shipped script-configuration defaults, embedded so an install
+         UPGRADED by Inno (which ships Config\script-configurations.json with onlyifdoesntexist
+         and so keeps the operator's older file) still has the shipped entries available at
+         startup for ScriptConfigurationMigrator to add the missing ones. Embedded rather than
+         shipped as a second loose file because the installer then cannot get it wrong, and
+         because the same Config\ file is ALSO Content (copied to config/ at build) - so both
+         copies come from one source, and ScriptConfigurationMigratorTests byte-compares them to
+         keep it that way. Not profile-gated: this file is Content in every profile. -->
+    <EmbeddedResource Include="Config\script-configurations.json" />
+    <!-- Same shape, same remedy: Config\alert-definitions.json is preserved on upgrade by the
+         installer (onlyifdoesntexist), by AutoUpdateService.ProtectedConfigFiles, by
+         SQLTriageUpdater's ProtectedConfig and by the service deploy script, so a catalogue
+         property added after an install ships never reaches it. valueKind is one such property
+         and it is the only switch that stops six alerts comparing a since-startup counter total
+         to a per-second threshold, so an upgraded install would have kept firing the very false
+         Criticals the fix exists to stop. Embedded so AlertDefinitionMigrator has the shipped
+         catalogue without depending on the installer delivering a second loose copy; the same
+         Config\ file is ALSO Content (copied to config/ at build), and
+         AlertCumulativeRateTests byte-compares the two to keep them one source. Not
+         profile-gated: this file is Content in every profile. -->
+    <EmbeddedResource Include="Config\alert-definitions.json" />
+    <!-- Same shape, same remedy: Config\dashboard-config.json is preserved on upgrade by the installer
+         (onlyifdoesntexist), by AutoUpdateService.ProtectedConfigFiles, by SQLTriageUpdater's
+         ProtectedConfig and by the service deploy script, so a panel this product shipped broken and
+         has since corrected never reaches an existing install — the only prior merge path,
+         PatchMissingDashboards, adds whole DASHBOARDS absent by id (all three generated ones already
+         present) and touches no panel. Embedded so DashboardConfigMigrator has the corrected shipped
+         bodies without depending on the installer delivering a second loose copy; the same Config\
+         file is ALSO Content (copied to config/ at build). Not profile-gated: this file is Content in
+         every profile. -->
+    <EmbeddedResource Include="Config\dashboard-config.json" />
+    <!-- The pre-fix panel bodies the dashboards lane superseded, the match table
+         DashboardConfigMigrator re-bases against. Embedded only; Content-Removed above so it never
+         ships to an install's config\ folder. -->
+    <EmbeddedResource Include="Config\dashboard-config.superseded.json" />
+  </ItemGroup>
+
+  <!-- FAIL the build if the BIP39 wordlist is missing. Community builds have no
+       key-entry surface (the key card is compiled out), so they neither need nor
+       check for the wordlist — and the public repo cannot fetch it (tools/ is private).
+       Every other profile embeds the wordlist (EmbeddedResource above, Exists-conditioned)
+       and its license-key decode/encode throws InvalidOperationException at runtime without it.
+
+       Why an Error at Build and not only at Publish: the Publish-time twin below already
+       errors on the identical condition, but a Build-time warning lets a full build in a
+       tree without the wordlist succeed and produce a binary whose key-entry surface throws
+       on first use — the failure would only surface at publish. The eight facts in
+       Tests/SQLTriage.Tests/Licensing/Bip39MirrorTests.cs now report a visible SKIP on the
+       same condition instead of a silent pass; see that file and Bip39WordlistFactAttribute.cs.
+
+       CONSEQUENCE, intended: a full or private build in a tree that has not run
+       tools\fetch-bip39-wordlist.ps1 now hard-fails at Build, not at Publish. The remedy is
+       one command and it is named in the error text. Community builds are untouched — the
+       target's Condition excludes them, which is what keeps CI (community-only) green. -->
+  <Target Name="EnsureBip39WordlistPresentForBuild" BeforeTargets="Build" Condition="'$(SQLTriageProfile)' != 'community'">
+    <Error Text="[SQLTriage] BIP39 wordlist missing: Resources\bip39-english.txt. License key decode/encode will throw at runtime. Run tools\fetch-bip39-wordlist.ps1 to fetch it." Condition="!Exists('Resources\bip39-english.txt')" />
+  </Target>
+
+  <!-- Refresh SQL Server licensing prices from Microsoft before publish (best-effort). -->
+  <!-- Scrapes https://www.microsoft.com/en-us/sql-server/sql-server-2022-pricing and rewrites -->
+  <!-- Config\sql-licensing-pricing.json (which is then baked into the bundle). Falls back to the -->
+  <!-- committed anchor prices on network failure or missing Python, so it never breaks the build. -->
+  <Target Name="RefreshLicensingPricing" BeforeTargets="Publish" Condition="Exists('scripts\update-licensing-pricing.py')">
+    <Exec Command="python scripts\update-licensing-pricing.py" ContinueOnError="true" />
+  </Target>
+
+  <!-- Fail publish if the Free-tier bundle was not generated. -->
+  <!-- CI: release.yml runs the FreeBundleBuild step before dotnet publish. -->
+  <!-- Local: publish-release.ps1 clones corpus repo and runs CorpusEncryptor before dotnet publish. -->
+  <Target Name="EnsureFreeBundlePresentForPublish" BeforeTargets="Publish">
+    <Error Condition="!Exists('Config\free-bundle.dat')" Text="Config\free-bundle.dat is missing. Run the FreeBundleBuild step (publish-release.ps1 or release.yml) before dotnet publish." />
+  </Target>
+
+  <!-- Fail publish if the BIP39 wordlist was not fetched (full profile only — see
+       EnsureBip39WordlistPresentForBuild for why community skips this). That target now
+       errors at Build too, so this one is the belt to its braces: it still catches a publish
+       that somehow reached this point (an incremental publish over an already-built tree
+       whose wordlist was deleted in between). -->
+  <!-- Run tools\fetch-bip39-wordlist.ps1 once to download the wordlist. -->
+  <Target Name="EnsureBip39WordlistPresentForPublish" BeforeTargets="Publish" Condition="'$(SQLTriageProfile)' != 'community'">
+    <Error Condition="!Exists('Resources\bip39-english.txt')" Text="Resources\bip39-english.txt is missing. Run tools\fetch-bip39-wordlist.ps1 before publish." />
+  </Target>
+
+  <ItemGroup>
+    <!-- ── BPScripts.default\ : OPERATOR-EDITABLE, seeded when absent, refreshed only when stock ──
+         2026-09-11, lane bpscripts-operator-edits-are-lost. THE INVARIANT: no folder the application
+         writes to at runtime may sit on the update overwrite path. Pages\BestPractice.razor:87 gives the
+         operator a Save Script button and Data\BPScriptService.cs:67-71 writes it straight into
+         <install>\BPScripts, so that folder is operator state - and it sat in the deploy script's
+         $copyItems and in neither $preservedFolders nor $deliberatelyNotCopied.
+
+         THE FIX IS ON THE PAYLOAD, NOT ON A COPY LIST, and that is the whole point. The applier every
+         shipped install actually runs is Data\AutoUpdateService.cs:740 -
+         robocopy %SRC% "<appDir>" /E /IS /IT - wholesale, with no /XF and no /XD. A list-driven
+         exclusion cannot reach it, and the by-list updater that could is unshipped
+         (AutoUpdateService.cs:575-582 says so in terms). So the stock scripts stop shipping as
+         BPScripts\ altogether. The SOURCE folder keeps its name - the embedded MaintenanceSolution
+         resource below and the community profile's BPScripts\** removals both address the source -
+         and only the PAYLOAD path moves. Then robocopy has nothing to clobber with, the deploy script
+         has nothing to copy, the installer has nothing to overwrite, and
+         ConfigDefaultsSeeder.RunBPScripts creates <install>\BPScripts, per file, when a file is
+         absent. One change, every route.
+
+         AND IT REFRESHES A FILE IT CAN PROVE IS OURS, ruled by Adrian 2026-09-11 after the cold gate
+         measured what seed-once alone does to installs that already exist. All eleven stock scripts
+         are already present on one, so create-if-absent Kept every one of them - freezing EVERY
+         install at its installed revision, not only the ones somebody had edited. Improvements do
+         reach installs today: that folder's Install-All-Scripts.sql is dated 26 Aug against 10 Jul for
+         the other ten, carried in by the wholesale robocopy. So the pass now hashes each existing file
+         and compares it against ShippedBPScriptRevisions, a manifest of every revision of every stock
+         script this product has ever shipped, recovered from git history. Bytes we shipped are
+         refreshed to the current default; anything else is the operator's and is kept. A single
+         comparison against the CURRENT default cannot do this - on an existing install "differs from
+         the current default" means EITHER an operator edit OR a newer release, and those are not
+         distinguishable without the history.
+
+         CONSEQUENCE, STATED NOT DISCOVERED: an operator who has EDITED a stock script still never
+         receives an improved version of that script again - their bytes are not in the manifest, so it
+         is kept. That is the trade Adrian ruled for on 2026-09-10 (DECISIONS, widget: SEED ONCE, keep
+         the button) and 2026-09-11 does not revisit it. The current
+         revision stays readable in BPScripts.default\ and they merge it themselves. And a customer
+         whose scripts were ALREADY destroyed does not get them back; this stops the next loss only.
+         FAIL-SAFE DIRECTION: a file whose hash is unknown - including one predating the manifest - is
+         treated as operator-modified and KEPT, so the failure mode is a missed improvement rather than
+         a destroyed edit. ShippedBPScriptRevisionsTests is the anti-rot pin: it derives the file set
+         from the TargetPath elements below and goes red if a revision ships unrecorded.
+         RuntimeWriteFolderCensusTests is the standing pin, derived from the code that writes;
+         BPScriptServiceTests exercises the seeding rule and the robocopy shape. -->
+    <None Remove="BPScripts\\Ignore\\*\\*;SQLTriage-RAG-Builder\\*\\***" />
+    <Content Remove="BPScripts\\Ignore\\*\\*;SQLTriage-RAG-Builder\\*\\***" />
+    <!-- ⚠ THE PAYLOAD MUST CONTAIN NO BPScripts\ FOLDER AT ALL, AND WITHOUT THIS LINE IT STILL DID.
+         MEASURED 2026-09-11 on a full Debug publish AFTER the retarget above: the payload held
+         BPScripts.default\ with all eleven scripts AND a second folder, BPScripts\ruleset.json,
+         771 KB. No rule in this file asks for that file. It arrives through the Web SDK's IMPLICIT
+         Content globs - **\*.config and **\*.json carry CopyToPublishDirectory=PreserveNewest - so
+         any .json left in the source BPScripts\ folder publishes into a payload BPScripts\ folder,
+         and the wholesale robocopy at Data\AutoUpdateService.cs:740 (/E /IS /IT, no /XF, no /XD)
+         then creates <install>\BPScripts and writes into it. That is the precise property this lane
+         exists to remove, surviving the retarget by a route no copy list can see.
+
+         NOTHING READS THE FILE: Data\Services\SqlAssessmentService.cs:71 loads
+         Config/ruleset.json out of the licence BUNDLE, never off disk, and no production source
+         resolves BPScripts\ruleset.json. So this removes 771 KB of dead payload as well.
+
+         NO OPERATOR FILE WAS EVER AT RISK FROM IT, and that is worth stating because it is why this
+         is a completeness defect rather than a data-loss one: Pages\BestPractice.razor:216 saves to
+         _editingScript.FileName, and that list comes from BPScriptService.SyncScriptsFromFolder
+         (Data\BPScriptService.cs:75), which enumerates "*.sql" only - so no operator can ever
+         author a file named ruleset.json.
+
+         Content, not None: the SDK's implicit publish globs are **\*.config and **\*.json, so the
+         glob covers every stray of that kind including one added later. The eleven .sql/.ps1 scripts
+         are None items carrying an explicit TargetPath and are untouched. Pinned by
+         RuntimeWriteFolderCensusTests.Nothing_in_the_payload_lands_under_the_operator_scripts_folder,
+         which starts from the FILES ON DISK rather than from this line. -->
+    <Content Remove="BPScripts\**" />
+    <None Update="BPScripts\01. MaintenanceSolution.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>BPScripts.default/01. MaintenanceSolution.sql</TargetPath>
+    </None>
+    <None Update="ConfigScripts\Server Configuration and Hardening.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="BPScripts\03. dba quick view.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>BPScripts.default/03. dba quick view.sql</TargetPath>
+    </None>
+    <None Update="BPScripts\09. Do Stats.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>BPScripts.default/09. Do Stats.sql</TargetPath>
+    </None>
+    <None Update="BPScripts\AddTraceflags.ps1">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>BPScripts.default/AddTraceflags.ps1</TargetPath>
+    </None>
+    <None Update="BPScripts\availibility group job step script replica check.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>BPScripts.default/availibility group job step script replica check.sql</TargetPath>
+    </None>
+    <None Update="BPScripts\doSPNs.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>BPScripts.default/doSPNs.sql</TargetPath>
+    </None>
+    <None Update="BPScripts\find indexes to drop.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>BPScripts.default/find indexes to drop.sql</TargetPath>
+    </None>
+    <None Update="BPScripts\Firewall rules with PowerShell.ps1">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>BPScripts.default/Firewall rules with PowerShell.ps1</TargetPath>
+    </None>
+    <None Update="BPScripts\Install-All-Scripts.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>BPScripts.default/Install-All-Scripts.sql</TargetPath>
+    </None>
+    <None Update="BPScripts\shrinkfile -gradual.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>BPScripts.default/shrinkfile -gradual.sql</TargetPath>
+    </None>
+    <None Update="BPScripts\WeeklyReportSchedule.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <TargetPath>BPScripts.default/WeeklyReportSchedule.sql</TargetPath>
+    </None>
+<None Update="scripts\Check_BP_Servers.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="scripts\sp_ineachdb.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="scripts\sp_PerfCheck.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="scripts\sp_Blitz.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="scripts\SQLDBA.ORG.sp_triage.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="scripts\stpChecklist_Seguranca.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="SQLTriage.png">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+    <!-- SECOND, independent copy rule for Deploy\**. The Content Include near the top of this
+         file is not the only thing that puts these files in the output directory — this None
+         Include does it too, so the collector-installer exclusion has to be repeated here or
+         it is vacuous. Verified against the actual build output, not assumed. -->
+    <None Include="Deploy\**\*.*"
+          Exclude="Deploy\PerformanceMonitor_db\**;Deploy\SQLWATCH_db\**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <!-- Config files are included via Content Include="Config\*.json" above.
+       Do NOT re-declare them as None � that overrides Content and breaks publish. -->
+
+  <ItemGroup>
+     <Resource Include="SQLTriage.png" />
+  </ItemGroup>
+
+  <!-- Organize build output: DLLs to bin/, JSON configs to config/ -->
+  <Target Name="OrganizeBuildOutput" AfterTargets="Build" Condition="'$(PublishDir)' == '' AND ('$(IsPublishing)' == 'true' OR '$(_IsPublishing)' == 'true')">
+    <ItemGroup>
+      <DllFiles Include="$(OutputPath)*.dll" Exclude="$(OutputPath)SQLTriage.dll" />
+      <ConfigFiles Include="$(OutputPath)appsettings*.json" />
+      <ConfigFiles Include="$(OutputPath)dashboard-config.json" Condition="Exists('$(OutputPath)dashboard-config.json')" />
+      <ConfigFiles Include="$(OutputPath)version.json" Condition="Exists('$(OutputPath)version.json')" />
+      <ConfigFiles Include="$(OutputPath)script-configurations.json" Condition="Exists('$(OutputPath)script-configurations.json')" />
+      <ConfigFiles Include="$(OutputPath)user-settings.json" Condition="Exists('$(OutputPath)user-settings.json')" />
+      <ConfigFiles Include="$(OutputPath)SQLTriage.*.json" />
+    </ItemGroup>
+    <MakeDir Directories="$(OutputPath)bin" />
+    <MakeDir Directories="$(OutputPath)config" />
+    <Move SourceFiles="@(DllFiles)" DestinationFolder="$(OutputPath)bin" />
+    <Move SourceFiles="@(ConfigFiles)" DestinationFolder="$(OutputPath)config" />
+  </Target>
+
+  <!-- Remove language folders from publish output -->
+  <Target Name="RemoveLanguageFolders" AfterTargets="Publish" Condition="'$(PublishDir)' != ''">
+    <ItemGroup>
+      <LanguageFolders Include="$(PublishDir)cs;$(PublishDir)de;$(PublishDir)es;$(PublishDir)fr;$(PublishDir)it;$(PublishDir)ja;$(PublishDir)ko;$(PublishDir)pl;$(PublishDir)pt;$(PublishDir)pt-BR;$(PublishDir)ru;$(PublishDir)tr;$(PublishDir)zh-Hans;$(PublishDir)zh-Hant" />
+    </ItemGroup>
+    <RemoveDir Directories="@(LanguageFolders)" ContinueOnError="true" />
+  </Target>
+
+  <!-- Remove non-English language resources to reduce size -->
+  <Target Name="RemoveUnnecessaryLanguageResources" AfterTargets="Build">
+    <ItemGroup>
+      <LanguageFolders Include="$(OutputPath)cs;$(OutputPath)de;$(OutputPath)es;$(OutputPath)fr;$(OutputPath)it;$(OutputPath)ja;$(OutputPath)ko;$(OutputPath)pl;$(OutputPath)pt;$(OutputPath)pt-BR;$(OutputPath)ru;$(OutputPath)tr;$(OutputPath)zh-Hans;$(OutputPath)zh-Hant" />
+    </ItemGroup>
+    <RemoveDir Directories="@(LanguageFolders)" ContinueOnError="true" />
+  </Target>
+
+  <!-- Increment build number on every build -->
+  <Target Name="IncrementBuildNumber" BeforeTargets="BeforeBuild" Condition="'$(CI)' != 'true' AND '$(ContinuousIntegrationBuild)' != 'true'">
+    <Exec Command="powershell -ExecutionPolicy Bypass -File increment-build.ps1" />
+  </Target>
+
+  <!-- Stamp exe file version from Config\version.json on every build -->
+  <Target Name="StampVersionFromJson" AfterTargets="IncrementBuildNumber">
+    <PropertyGroup>
+      <VersionJson>$([System.IO.File]::ReadAllText('Config\version.json'))</VersionJson>
+      <VersionNumber>$([System.Text.RegularExpressions.Regex]::Match($(VersionJson), '"version"\s*:\s*"([^"]+)"').Groups[1].Value)</VersionNumber>
+      <BuildNumber>$([System.Text.RegularExpressions.Regex]::Match($(VersionJson), '"buildNumber"\s*:\s*(\d+)').Groups[1].Value)</BuildNumber>
+      <Version>$(VersionNumber).$(BuildNumber)</Version>
+      <AssemblyVersion>$(VersionNumber).$(BuildNumber)</AssemblyVersion>
+      <FileVersion>$(VersionNumber).$(BuildNumber)</FileVersion>
+      <InformationalVersion>v$(VersionNumber) build $(BuildNumber)</InformationalVersion>
+    </PropertyGroup>
+    <Message Importance="high" Text="Version stamped: $(FileVersion)" />
+  </Target>
+
+  <!-- Authenticode-sign the published exe BEFORE it is zipped, so the release ZIP carries the
+       signed binary. Runs when EITHER -p:SigningThumbprint=<sha1> (the Certum cloud/HSM cert,
+       selected from Cert:\CurrentUser\My — requires a logged-in SimplySign session) OR
+       -p:SigningPfx=<path> (legacy file-based cert) is supplied. Ordinary dev/CI builds skip it.
+       Requires signtool (Windows SDK) on PATH.
+       Timestamping uses Certum's RFC3161 TSA so signatures outlive the certificate. -->
+  <Target Name="SignPublishedExe" AfterTargets="Publish" BeforeTargets="CreateReleaseZip" Condition="'$(Configuration)' == 'Release' AND '$(PublishDir)' != '' AND ('$(SigningPfx)' != '' OR '$(SigningThumbprint)' != '')">
+    <!-- Locate signtool.exe. It is NOT on PATH by default (proven on the release machine
+         2026-07-21: this Exec failed with 9009 'not recognized'), so relying on PATH — as
+         this target used to — meant exe signing could never succeed here. publish-release.ps1
+         resolves it and passes -p:SignToolPath=...; the glob below covers direct msbuild use. -->
+    <ItemGroup Condition="'$(SignToolPath)' == ''">
+      <_SignToolCandidate Include="C:\Program Files (x86)\Windows Kits\10\bin\**\x64\signtool.exe" />
+      <_SignToolCandidate Include="C:\Program Files\Windows Kits\10\bin\**\x64\signtool.exe" />
+    </ItemGroup>
+    <PropertyGroup>
+      <_SignToolAll>@(_SignToolCandidate)</_SignToolAll>
+      <_SignToolExe Condition="'$(SignToolPath)' != ''">$(SignToolPath)</_SignToolExe>
+      <!-- Take the first match. Any Windows SDK signtool.exe signs identically, so picking the
+           newest is not worth nested-property-function gymnastics (MSBuild MSB4184). The
+           supported entry point, publish-release.ps1, resolves the newest and passes
+           -p:SignToolPath explicitly; this glob only serves direct `dotnet msbuild` use. -->
+      <_SignToolExe Condition="'$(_SignToolExe)' == '' AND '$(_SignToolAll)' != ''">$(_SignToolAll.Split(';')[0])</_SignToolExe>
+
+      <_SignPwdArg Condition="'$(SigningPassword)' != ''">/p "$(SigningPassword)"</_SignPwdArg>
+      <!-- Thumbprint wins if both are somehow set; publish-release.ps1 rejects that combination. -->
+      <_SignCredArg Condition="'$(SigningThumbprint)' != ''">/sha1 $(SigningThumbprint)</_SignCredArg>
+      <_SignCredArg Condition="'$(SigningThumbprint)' == ''">/f "$(SigningPfx)" $(_SignPwdArg)</_SignCredArg>
+      <_SignTsaUrl>http://time.certum.pl</_SignTsaUrl>
+    </PropertyGroup>
+
+    <!-- OSS cert guard (Adrian's ruling 2026-07-21, item C): the Open-Source Code Signing
+         certificate (thumbprint below) may sign the COMMUNITY build ONLY. Any other profile
+         (the default full build, or a paid/custom client build) must stay UNSIGNED until the
+         commercial cert exists — signing a paid build with the OSS cert would put a
+         "distributed commercially" claim on a cert Certum can revoke, killing the community
+         build's reputation with it. Fail the publish loudly, naming the ruling. Fail-closed:
+         the exemption is granted ONLY when SQLTriageProfile is exactly 'community'. -->
+    <PropertyGroup>
+      <_NormSigningThumbprint Condition="'$(SigningThumbprint)' != ''">$([System.Text.RegularExpressions.Regex]::Replace('$(SigningThumbprint)', '[^0-9A-Fa-f]', '').ToUpperInvariant())</_NormSigningThumbprint>
+    </PropertyGroup>
+    <Error Condition="'$(_NormSigningThumbprint)' == 'FCC63574AF60CB55D40AEB91531AD7FAACA15537' AND '$(SQLTriageProfile)' != 'community'"
+           Text="[SQLTriage] REFUSING to sign: thumbprint FCC63574AF60CB55D40AEB91531AD7FAACA15537 is the Open-Source Code Signing certificate, which per Adrian's ruling (2026-07-21, item C) signs the COMMUNITY build ONLY. This build's profile is '$(SQLTriageProfile)' — a non-community (full / paid / custom) artifact must stay UNSIGNED until the commercial cert exists. Rebuild with -p:SQLTriageProfile=community, or sign with the commercial certificate." />
+
+    <!-- Fail loudly rather than let the Exec die with a cryptic 9009. -->
+    <Error Condition="'$(_SignToolExe)' == ''"
+           Text="Signing was requested but signtool.exe could not be found. Install the Windows SDK 'Signing Tools for Desktop', or pass -p:SignToolPath=&lt;full path to signtool.exe&gt;." />
+
+    <Message Importance="high" Text="[SQLTriage] Authenticode-signing $(PublishDir)SQLTriage.exe using $(_SignToolExe)" />
+    <Exec Command="&quot;$(_SignToolExe)&quot; sign $(_SignCredArg) /fd SHA256 /tr $(_SignTsaUrl) /td SHA256 &quot;$(PublishDir)SQLTriage.exe&quot;" />
+    <!-- VERIFY GATE: prove the exe really is signed before CreateReleaseZip packages it.
+         Without this the build would happily zip an unsigned exe if signing degraded to a
+         no-op. /pa applies the Authenticode policy Windows itself uses. A non-zero exit
+         fails the build - that is deliberate; an unsigned exe must not reach a release. -->
+    <Message Importance="high" Text="[SQLTriage] Verifying Authenticode signature on $(PublishDir)SQLTriage.exe" />
+    <Exec Command="&quot;$(_SignToolExe)&quot; verify /pa /v &quot;$(PublishDir)SQLTriage.exe&quot;" />
+  </Target>
+
+  <!-- ===================================================================================
+       RELEASE SCRUB - the producer side.
+
+       The private packaging scripts share one copy of this policy. This target pair is the
+       OTHER producer: every build-numbered zip in release\<profile> and every Inno
+       installer is made HERE, not by a packaging script. Until 2026-09-03 it was
+       unguarded - CreateReleaseZip zipped $(PublishDir) directly and BuildInstaller
+       pointed iscc at the same unscrubbed tree, so runtime state sitting in the publish
+       tree (key files, cipher keys, databases, audit logs) was packaged into what shipped.
+
+       WHY THE POLICY IS REPLICATED HERE rather than dot-sourced from that script: calling
+       an external script from AfterTargets="Publish" would make every Release build on
+       every developer and CI box depend on it being present and runnable, and a script
+       whose job is to delete key material is exactly the shape endpoint security software
+       quarantines. A build that cannot run because its scrub script was removed is a worse
+       failure than the one being fixed. The duplication is held together by
+       ReleaseScrubPolicyParityTests, which reads BOTH this file and the ps1 and fails if the
+       two rule sets drift - the same tripwire shape as ProtectedConfigParityTests.
+
+       THE SHAPE IS stage -> scrub -> guard -> zip, and the ORDER is load-bearing:
+         stage  - mirror the publish tree into obj\. The SCRUB then cuts only that throwaway
+                  copy; a developer's publish dir keeps its runtime keys. (The pre-stage
+                  cleanup earlier in this target still deletes test and coverage residue
+                  from $(PublishDir) itself - it is the SCRUB that never touches it.)
+         scrub  - delete everything matching the policy, IN THE STAGE ONLY.
+         guard  - re-walk the stage independently and REFUSE to produce anything if a match
+                  survived. This is the step that decides. A scrub that silently fails to
+                  remove a locked or read-only file can no longer produce a zip, which is the
+                  whole reason the guard is separate from the delete.
+         zip    - and the installer is built from the SAME scrubbed stage, so the two
+                  artifacts cannot disagree about what shipped.
+       =================================================================================== -->
+  <PropertyGroup>
+    <ReleaseScrubStageDir>$(MSBuildProjectDirectory)\obj\release-scrub-stage\$(SQLTriageProfile)</ReleaseScrubStageDir>
+  </PropertyGroup>
+
+  <UsingTask TaskName="ReleaseScrubScan" TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Root ParameterType="System.String" Required="true" />
+      <TotalSeen ParameterType="System.Int32" Output="true" />
+      <Blocked ParameterType="Microsoft.Build.Framework.ITaskItem[]" Output="true" />
+      <BlockedDirs ParameterType="Microsoft.Build.Framework.ITaskItem[]" Output="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System" />
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Collections.Generic" />
+      <Using Namespace="System.Text.RegularExpressions" />
+      <Code Type="Fragment" Language="cs">
+        <![CDATA[
+        // Faithful port of Test-ReleaseScrubMatch in tools\release-scrub.ps1. Rule-name
+        // strings are returned verbatim ("dotentry:", "dir:", "path:", "file:") because the
+        // parity test compares them against the ps1 and a rename here must go red there.
+        //
+        // Directory.EnumerateFiles is used ON PURPOSE: it returns hidden files. The ps1 has
+        // the same hazard and answers it with -Force on every Get-ChildItem. An enumerator
+        // that skipped hidden entries would go blind to exactly the files this exists to
+        // catch - config\.sqlite-cipher-key is written hidden by design - so
+        // VerifyReleaseScrubScannerSeesHiddenFiles re-proves it on every single build
+        // rather than trusting this comment.
+        string[] dirNames = new string[] { "audit-logs", "logs", "output" };
+        string dataCaching = "Data\\Caching";
+        string[] exactPaths = new string[] {
+            "config\\server-connections.json",
+            "config\\notification-channels.json",
+            "config\\alert-thresholds.json",
+            "config\\.baseline-snapshot.json"
+        };
+        string[] filePatterns = new string[] {
+            "*.key", "*hmac*", "*cipher-key*", "*.jsonl", "*.log", "*.db", "*.db-*",
+            "user-settings.json"
+        };
+
+        // PowerShell -like, which is case-insensitive and uses * for any run of characters.
+        Func<string, string, bool> like = (value, pattern) =>
+        {
+            string rx = "^" + Regex.Escape(pattern).Replace("\\*", ".*") + "$";
+            return Regex.IsMatch(value, rx, RegexOptions.IgnoreCase);
+        };
+
+        Func<string, bool, string> matchRule = (rel, isDirectory) =>
+        {
+            rel = rel.Replace('/', '\\').TrimStart('\\');
+            if (rel.Length == 0) return null;
+            string[] segments = rel.Split('\\');
+
+            foreach (string seg in segments)
+                if (seg.Length > 0 && seg[0] == '.') return "dotentry:" + seg;
+
+            foreach (string seg in segments)
+                foreach (string d in dirNames)
+                    if (string.Equals(seg, d, StringComparison.OrdinalIgnoreCase)) return "dir:" + d;
+
+            if (string.Equals(rel, dataCaching, StringComparison.OrdinalIgnoreCase) ||
+                rel.StartsWith(dataCaching + "\\", StringComparison.OrdinalIgnoreCase))
+                return "dir:" + dataCaching;
+
+            foreach (string p in exactPaths)
+                if (string.Equals(rel, p, StringComparison.OrdinalIgnoreCase)) return "path:" + p;
+
+            // Files only. A DIRECTORY named reports.db is not a database, and matching it
+            // would delete a whole tree on a name coincidence.
+            if (!isDirectory)
+            {
+                string leaf = segments[segments.Length - 1];
+                foreach (string pat in filePatterns)
+                    if (like(leaf, pat)) return "file:" + pat;
+            }
+
+            return null;
+        };
+
+        string root = Path.GetFullPath(Root).TrimEnd('\\');
+        Func<string, string, bool, Microsoft.Build.Framework.ITaskItem> mk = (full, rel, isDir) =>
+        {
+            var it = new Microsoft.Build.Utilities.TaskItem(full);
+            it.SetMetadata("Rel", rel + (isDir ? "\\" : ""));
+            it.SetMetadata("Rule", matchRule(rel, isDir));
+            return it;
+        };
+
+        List<Microsoft.Build.Framework.ITaskItem> hits = new List<Microsoft.Build.Framework.ITaskItem>();
+        List<Microsoft.Build.Framework.ITaskItem> dirHits = new List<Microsoft.Build.Framework.ITaskItem>();
+        int seen = 0;
+        if (Directory.Exists(root))
+        {
+            foreach (string full in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+            {
+                seen++;
+                string rel = full.Substring(root.Length).TrimStart('\\');
+                if (matchRule(rel, false) != null) hits.Add(mk(full, rel, false));
+            }
+
+            // Directories are collected too, and NOT only for tidiness. Deleting the files
+            // out of audit-logs\ leaves the empty directory behind, ZipDirectory writes an
+            // entry for it, and Test-ReleaseZipClean in tools\release-scrub.ps1 judges entry
+            // PATHS - so an emptied audit-logs\ would still be reported as an offender in a
+            // zip this target had just certified clean. Shortest paths first so removing a
+            // parent takes its children with it.
+            foreach (string full in Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories))
+            {
+                string rel = full.Substring(root.Length).TrimStart('\\');
+                if (matchRule(rel, true) != null) dirHits.Add(mk(full, rel, true));
+            }
+            dirHits.Sort((a, b) => a.ItemSpec.Length.CompareTo(b.ItemSpec.Length));
+        }
+        TotalSeen = seen;
+        Blocked = hits.ToArray();
+        BlockedDirs = dirHits.ToArray();
+        ]]>
+      </Code>
+    </Task>
+  </UsingTask>
+
+  <!-- Proves, on every Release build, that the scanner above actually returns hidden files.
+       If this ever stops being true the scrub goes silently blind to hidden secrets and the
+       guard passes vacuously - the exact failure mode that shipped four builds. Cheap enough
+       to run every time (one temp dir, two files), and the point is that it is measured at
+       build time rather than asserted in a comment written once. -->
+  <!-- Conditioned on Release for the same reason CreateReleaseZip is: a target's
+       DependsOnTargets are built even when the depending target's own Condition is false, so
+       without this the probe would run on every Debug build too. -->
+  <Target Name="VerifyReleaseScrubScannerSeesHiddenFiles" Condition="'$(Configuration)' == 'Release'">
+    <PropertyGroup>
+      <_ScrubProbeDir>$(MSBuildProjectDirectory)\obj\release-scrub-probe</_ScrubProbeDir>
+    </PropertyGroup>
+    <RemoveDir Directories="$(_ScrubProbeDir)" ContinueOnError="true" />
+    <MakeDir Directories="$(_ScrubProbeDir)" />
+    <WriteLinesToFile File="$(_ScrubProbeDir)\.hidden-probe-key" Lines="probe" Overwrite="true" />
+    <WriteLinesToFile File="$(_ScrubProbeDir)\visible.txt" Lines="probe" Overwrite="true" />
+    <Exec Command="attrib +h &quot;$(_ScrubProbeDir)\.hidden-probe-key&quot;" />
+
+    <ReleaseScrubScan Root="$(_ScrubProbeDir)">
+      <Output TaskParameter="TotalSeen" PropertyName="_ScrubProbeSeen" />
+      <Output TaskParameter="Blocked" ItemName="_ScrubProbeBlocked" />
+    </ReleaseScrubScan>
+
+    <Error Condition="'$(_ScrubProbeSeen)' != '2'"
+           Text="[SQLTriage] Release scrub SELF-TEST FAILED: the scanner saw $(_ScrubProbeSeen) of 2 probe files. It is not enumerating hidden files, so the release scrub would go blind to hidden secrets such as config\.sqlite-cipher-key and the guard would pass vacuously. Refusing to package." />
+    <Error Condition="'@(_ScrubProbeBlocked)' == ''"
+           Text="[SQLTriage] Release scrub SELF-TEST FAILED: the scanner did not flag a hidden dotfile named .hidden-probe-key. The policy matcher is not working. Refusing to package." />
+    <Message Importance="high" Text="[SQLTriage] Release scrub self-test OK: scanner sees hidden files and flags them." />
+    <RemoveDir Directories="$(_ScrubProbeDir)" ContinueOnError="true" />
+  </Target>
+
+  <!-- Create release ZIP after publish -->
+  <Target Name="CreateReleaseZip" AfterTargets="Publish" DependsOnTargets="VerifyReleaseScrubScannerSeesHiddenFiles" Condition="'$(Configuration)' == 'Release' AND '$(PublishDir)' != ''">
+    <PropertyGroup>
+      <VersionJson>$([System.IO.File]::ReadAllText('Config\version.json'))</VersionJson>
+      <VersionNumber>$([System.Text.RegularExpressions.Regex]::Match($(VersionJson), '"version"\s*:\s*"([^"]+)"').Groups[1].Value)</VersionNumber>
+      <BuildNumber>$([System.Text.RegularExpressions.Regex]::Match($(VersionJson), '"buildNumber"\s*:\s*(\d+)').Groups[1].Value)</BuildNumber>
+      <!-- Release artifacts are split by build profile (full|community) into separate
+           folders AND the community zip is name-suffixed, so a private full artifact can
+           never be confused with - or accidentally shipped as - the public community one. -->
+      <ReleaseDir>release\$(SQLTriageProfile)</ReleaseDir>
+      <ZipFileName Condition="'$(SQLTriageProfile)' == 'community'">SQLTriage-v$(VersionNumber)-build$(BuildNumber)-community-win-x64.zip</ZipFileName>
+      <ZipFileName Condition="'$(ZipFileName)' == ''">SQLTriage-v$(VersionNumber)-build$(BuildNumber)-win-x64.zip</ZipFileName>
+      <ZipFilePath>$(ReleaseDir)\$(ZipFileName)</ZipFilePath>
+    </PropertyGroup>
+    <RemoveDir Directories="$(PublishDir)bin" ContinueOnError="true" />
+    <!-- Strip dev/research artefacts that must never ship in a release -->
+    <RemoveDir Directories="$(PublishDir)BPScripts\\Ignore\\*\\*;SQLTriage-RAG-Builder\\*\\*" ContinueOnError="true" />
+    <RemoveDir Directories="$(PublishDir)research_output" ContinueOnError="true" />
+    <RemoveDir Directories="$(PublishDir)research_logs" ContinueOnError="true" />
+    <RemoveDir Directories="$(PublishDir)temp" ContinueOnError="true" />
+    <RemoveDir Directories="$(PublishDir)win-x64" ContinueOnError="true" />
+    <RemoveDir Directories="$(PublishDir).git" ContinueOnError="true" />
+    <!-- Strip test/coverage infrastructure that leaks in from SQLTriage.Tests -->
+    <RemoveDir Directories="$(PublishDir)CodeCoverage" ContinueOnError="true" />
+    <RemoveDir Directories="$(PublishDir)InstrumentationEngine" ContinueOnError="true" />
+    <!-- coverlet + code coverage -->
+    <Delete Files="$(PublishDir)coverlet.collector.dll;$(PublishDir)coverlet.collector.pdb;$(PublishDir)coverlet.collector.deps.json;$(PublishDir)coverlet.collector.targets;$(PublishDir)coverlet.core.dll;$(PublishDir)coverlet.core.pdb" ContinueOnError="true" />
+    <Delete Files="$(PublishDir)Microsoft.CodeCoverage.Core.dll;$(PublishDir)Microsoft.CodeCoverage.Instrumentation.dll;$(PublishDir)Microsoft.CodeCoverage.Interprocess.dll;$(PublishDir)Microsoft.CodeCoverage.props;$(PublishDir)Microsoft.CodeCoverage.targets" ContinueOnError="true" />
+    <Delete Files="$(PublishDir)Microsoft.VisualStudio.CodeCoverage.Shim.dll;$(PublishDir)Microsoft.VisualStudio.TraceDataCollector.dll" ContinueOnError="true" />
+    <!-- xunit + test platform -->
+    <Delete Files="$(PublishDir)xunit.abstractions.dll;$(PublishDir)xunit.assert.dll;$(PublishDir)xunit.core.dll;$(PublishDir)xunit.execution.dotnet.dll" ContinueOnError="true" />
+    <Delete Files="$(PublishDir)xunit.runner.reporters.netcoreapp10.dll;$(PublishDir)xunit.runner.utility.netcoreapp10.dll;$(PublishDir)xunit.runner.visualstudio.dotnetcore.testadapter.dll" ContinueOnError="true" />
+    <Delete Files="$(PublishDir)testhost.dll;$(PublishDir)testhost.exe" ContinueOnError="true" />
+    <Delete Files="$(PublishDir)Microsoft.TestPlatform.CommunicationUtilities.dll;$(PublishDir)Microsoft.TestPlatform.CoreUtilities.dll;$(PublishDir)Microsoft.TestPlatform.CrossPlatEngine.dll;$(PublishDir)Microsoft.TestPlatform.PlatformAbstractions.dll;$(PublishDir)Microsoft.TestPlatform.Utilities.dll" ContinueOnError="true" />
+    <Delete Files="$(PublishDir)Microsoft.VisualStudio.TestPlatform.Common.dll;$(PublishDir)Microsoft.VisualStudio.TestPlatform.ObjectModel.dll" ContinueOnError="true" />
+    <!-- test project outputs -->
+    <Delete Files="$(PublishDir)SQLTriage.Tests.dll;$(PublishDir)SQLTriage.Tests.pdb;$(PublishDir)SQLTriage.Tests.deps.json;$(PublishDir)SQLTriage.Tests.runtimeconfig.json" ContinueOnError="true" />
+    <MakeDir Directories="$(ReleaseDir)" />
+
+    <!-- STAGE. robocopy, not an MSBuild <Copy> over an item glob: robocopy mirrors hidden and
+         system files without being asked, and a stage that quietly dropped the hidden files
+         would make the guard below pass for the wrong reason. /MIR so a stale stage from an
+         earlier build cannot contribute files.
+
+         robocopy's exit code is a BITMASK, not a status: 0-7 mean success (1 = files copied,
+         2 = extra files, 4 = mismatches), 8 and above are real failures. It is captured and
+         judged in MSBuild rather than tested in the shell, because an
+         "if %ERRORLEVEL% GEQ 8" chained after the command with & is expanded when cmd PARSES
+         the line - before robocopy has run - and would silently judge the PREVIOUS command's
+         exit code. -->
+    <RemoveDir Directories="$(ReleaseScrubStageDir)" ContinueOnError="true" />
+    <MakeDir Directories="$(ReleaseScrubStageDir)" />
+    <Exec Command="robocopy &quot;$([System.IO.Path]::GetFullPath('$(PublishDir)').TrimEnd('\'))&quot; &quot;$(ReleaseScrubStageDir)&quot; /MIR /NFL /NDL /NJH /NJS /R:2 /W:1"
+          IgnoreExitCode="true">
+      <Output TaskParameter="ExitCode" PropertyName="_ScrubRobocopyExit" />
+    </Exec>
+    <Error Condition="'$(_ScrubRobocopyExit)' == '' OR $(_ScrubRobocopyExit) &gt;= 8"
+           Text="[SQLTriage] Release scrub: robocopy failed to mirror $(PublishDir) into the scrub stage (exit $(_ScrubRobocopyExit)). Refusing to package from an incomplete stage." />
+
+    <!-- SCRUB the stage. -->
+    <ReleaseScrubScan Root="$(ReleaseScrubStageDir)">
+      <Output TaskParameter="TotalSeen" PropertyName="_ScrubStagedCount" />
+      <Output TaskParameter="Blocked" ItemName="_ScrubToRemove" />
+      <Output TaskParameter="BlockedDirs" ItemName="_ScrubDirsToRemove" />
+    </ReleaseScrubScan>
+    <Error Condition="'$(_ScrubStagedCount)' == '0'"
+           Text="[SQLTriage] Release scrub: the staged tree at $(ReleaseScrubStageDir) is EMPTY. The mirror of $(PublishDir) did not happen. Refusing to package a zip from nothing." />
+    <Message Importance="high" Text="[SQLTriage] Release scrub: staged $(_ScrubStagedCount) files; removing @(_ScrubToRemove->Count()) file(s) and @(_ScrubDirsToRemove->Count()) directory(ies)." />
+    <Message Importance="high" Text="[SQLTriage] Release scrub removing: %(_ScrubToRemove.Rel) [%(_ScrubToRemove.Rule)]" Condition="'@(_ScrubToRemove)' != ''" />
+    <Message Importance="high" Text="[SQLTriage] Release scrub removing dir: %(_ScrubDirsToRemove.Rel) [%(_ScrubDirsToRemove.Rule)]" Condition="'@(_ScrubDirsToRemove)' != ''" />
+    <RemoveDir Directories="@(_ScrubDirsToRemove)" ContinueOnError="true" />
+    <Delete Files="@(_ScrubToRemove)" ContinueOnError="true" />
+
+    <!-- GUARD. An INDEPENDENT re-walk of the stage. The delete above is allowed to fail
+         (a locked or read-only file) - this is the step that decides whether anything may be
+         produced at all, and it refuses by NAME so the failure says what leaked. -->
+    <ReleaseScrubScan Root="$(ReleaseScrubStageDir)">
+      <Output TaskParameter="Blocked" ItemName="_ScrubSurvivors" />
+      <Output TaskParameter="BlockedDirs" ItemName="_ScrubDirSurvivors" />
+    </ReleaseScrubScan>
+    <Error Condition="'@(_ScrubSurvivors)' != '' OR '@(_ScrubDirSurvivors)' != ''"
+           Text="[SQLTriage] REFUSING to package: runtime artefacts survived the release scrub and would have shipped inside $(ZipFileName) and the installer. Offenders: @(_ScrubSurvivors->'%(Rel) [matched %(Rule)]', '; ')@(_ScrubDirSurvivors->'%(Rel) [matched %(Rule)]', '; '). Fix the tree, or the policy in this csproj and in the matching packaging script (they are kept in step by ReleaseScrubPolicyParityTests); do not bypass this check." />
+
+    <!-- ZIP the SCRUBBED stage, never $(PublishDir). -->
+    <ZipDirectory SourceDirectory="$(ReleaseScrubStageDir)" DestinationFile="$(ZipFilePath)" Overwrite="true" />
+    <Message Importance="high" Text="Release ZIP created: $(ZipFilePath)" />
+  </Target>
+
+  <!-- Build Inno Setup installer and convert screenshots after ZIP is created -->
+  <Target Name="BuildInstaller" AfterTargets="CreateReleaseZip" Condition="'$(Configuration)' == 'Release'">
+    <PropertyGroup>
+      <IsccExe Condition="Exists('C:\GitHub\Inno Setup 6\iscc.exe')">C:\GitHub\Inno Setup 6\iscc.exe</IsccExe>
+      <IsccExe Condition="'$(IsccExe)' == '' AND Exists('C:\Program Files (x86)\Inno Setup 6\iscc.exe')">C:\Program Files (x86)\Inno Setup 6\iscc.exe</IsccExe>
+      <IsccExe Condition="'$(IsccExe)' == '' AND Exists('C:\Program Files\Inno Setup 6\iscc.exe')">C:\Program Files\Inno Setup 6\iscc.exe</IsccExe>
+      <FfmpegExe Condition="Exists('C:\GitHub\TranscriptExtractor\ffmpeg.exe')">C:\GitHub\TranscriptExtractor\ffmpeg.exe</FfmpegExe>
+      <ScreenshotSrc>$(MSBuildProjectDirectory)\docs\screenshots\src</ScreenshotSrc>
+      <ScreenshotOut>$(MSBuildProjectDirectory)\docs\screenshots</ScreenshotOut>
+      <!-- Community installers carry a -community filename suffix (matches the zip). -->
+      <SQLTEditionSuffix Condition="'$(SQLTriageProfile)' == 'community'">-community</SQLTEditionSuffix>
+    </PropertyGroup>
+
+    <!-- Generate installer\version.iss with current version/build so iscc doesn't need to parse JSON -->
+    <!-- Use a separate ps1 file rather than inline -Command so we don't fight MSBuild $-property expansion. -->
+    <Exec Command="powershell -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\installer\write-version-iss.ps1&quot;" Condition="'$(IsccExe)' != ''" ContinueOnError="true" />
+
+    <!-- Inno Setup installer - routed into the per-profile release folder (full|community)
+         so the two publish use cases never share an output directory, and pinned to the
+         SCRUBBED STAGE that CreateReleaseZip just produced and guarded.
+         NOT $(PublishDir): that is the raw publish tree. installer\SQLTriage.iss wildcards
+         whole folders (Deploy\, BPScripts.default\, scripts\, wwwroot\, Assets\, docs\compliance\),
+         so any runtime state written inside one of them is packaged by iscc - MEASURED
+         2026-09-03: a dirty tree smuggled scripts\my.sqlite-cipher-key.bak and
+         Assets\HMAC.KEY through, and building from the scrubbed stage dropped both.
+         Whether past installers carried the key files that leaked via the ZIP is UNTESTED:
+         the .iss enumerates Config\ file by file and has no catch-all. The .iss default of
+         ..\publish\win-x64 would be worse still - a stale or wrong-profile tree.
+         The stage is guaranteed scrubbed because CreateReleaseZip refuses to complete while
+         anything matching the policy survives, and this target runs AfterTargets on it. -->
+    <Error Condition="'$(IsccExe)' != '' AND !Exists('$(ReleaseScrubStageDir)')"
+           Text="[SQLTriage] REFUSING to build the installer: the scrubbed stage $(ReleaseScrubStageDir) does not exist, so iscc would have to package the raw publish tree, whose wildcarded folders would ship whatever runtime state they hold." />
+    <Message Importance="high" Text="Building Inno Setup installer from the scrubbed stage..." Condition="'$(IsccExe)' != ''" />
+    <Exec Command="&quot;$(IsccExe)&quot; &quot;/DSourceDir=$(ReleaseScrubStageDir)&quot; &quot;/DOutputDir=$(MSBuildProjectDirectory)\release\$(SQLTriageProfile)&quot; &quot;/DEditionSuffix=$(SQLTEditionSuffix)&quot; installer\SQLTriage.iss" Condition="'$(IsccExe)' != ''" ContinueOnError="true" />
+    <Message Importance="high" Text="iscc.exe not found � skipping installer build" Condition="'$(IsccExe)' == ''" />
+
+    <!-- Convert source screenshots to web-ready JPEGs (1280px wide, q:v 4) -->
+    <Message Importance="high" Text="Converting screenshots for GitHub Pages..." Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)')" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\1-addserver.jpg&quot;                                        -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\1-addserver.jpg&quot;" Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\1-addserver.jpg')" ContinueOnError="true" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\2-whats-new.jpg&quot;                                        -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\2-whats-new.jpg&quot;" Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\2-whats-new.jpg')" ContinueOnError="true" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\3-wait-state.jpg&quot;                                        -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\3-wait-state.jpg&quot;" Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\3-wait-state.jpg')" ContinueOnError="true" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\4-live-sessions.jpg&quot;                                     -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\4-live-sessions.jpg&quot;" Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\4-live-sessions.jpg')" ContinueOnError="true" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\5-database-health.jpg&quot;                                   -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\5-database-health.jpg&quot;" Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\5-database-health.jpg')" ContinueOnError="true" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\6-instance-overview.jpg&quot;                                 -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\6-instance-overview.jpg&quot;" Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\6-instance-overview.jpg')" ContinueOnError="true" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\7-environment-map.jpg&quot;                                  -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\7-environment-map.jpg&quot;" Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\7-environment-map.jpg')" ContinueOnError="true" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\8-servers-easily-monitor-50-instances-or-more.jpg&quot;     -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\8-servers-easily-monitor-50-instances-or-more.jpg&quot;" Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\8-servers-easily-monitor-50-instances-or-more.jpg')" ContinueOnError="true" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\9-run-full-sql-audits.jpg&quot;                             -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\9-run-full-sql-audits.jpg&quot;" Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\9-run-full-sql-audits.jpg')" ContinueOnError="true" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\10-microsoft-sql-vulnerability-assessment.jpg&quot;         -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\10-microsoft-sql-vulnerability-assessment.jpg&quot;" Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\10-microsoft-sql-vulnerability-assessment.jpg')" ContinueOnError="true" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\11-upload-results-securely-to-azure-blob-storage.jpg&quot;  -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\11-upload-results-securely-to-azure-blob-storage.jpg&quot;" Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\11-upload-results-securely-to-azure-blob-storage.jpg')" ContinueOnError="true" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\12-multiple-notification-channels.jpg&quot;               -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\12-multiple-notification-channels.jpg&quot;" Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\12-multiple-notification-channels.jpg')" ContinueOnError="true" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\13-maturity-roadmap.jpg&quot;                               -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\13-maturity-roadmap.jpg&quot;" Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\13-maturity-roadmap.jpg')" ContinueOnError="true" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\14-alerting.jpg&quot;                                        -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\14-alerting.jpg&quot;" Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\14-alerting.jpg')" ContinueOnError="true" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\15-query-plan-viewer.jpg&quot;                              -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\15-query-plan-viewer.jpg&quot;" Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\15-query-plan-viewer.jpg')" ContinueOnError="true" />
+    <Exec Command="&quot;$(FfmpegExe)&quot; -y -i &quot;$(ScreenshotSrc)\16-risk-register-compliance-mapping-ISO-SOC2-NIST.jpg&quot; -vf scale=1280:-1 -q:v 4 &quot;$(ScreenshotOut)\16-risk-register-compliance-mapping-ISO-SOC2-NIST.jpg&quot;" Condition="'$(FfmpegExe)' != '' AND Exists('$(ScreenshotSrc)\16-risk-register-compliance-mapping-ISO-SOC2-NIST.jpg')" ContinueOnError="true" />
+    <Message Importance="high" Text="ffmpeg not found � skipping screenshot conversion" Condition="'$(FfmpegExe)' == ''" />
+  </Target>
+
+  <!-- Remove redundant publish folder and other unnecessary files -->
+  <Target Name="RemoveRedundantPublishFolder" AfterTargets="Build;Publish">
+    <RemoveDir Directories="$(OutputPath)publish;$(OutputPath)BenchmarkSuite1;$(OutputPath)Tests;$(OutputPath)PerformanceMonitor-main;$(PublishDir)publish" ContinueOnError="true" />
+    <Delete Files="$(OutputPath)*.pdb" Condition="'$(Configuration)' == 'Release'" ContinueOnError="true" />
+  </Target>
+
+  <!-- ⚠ A TARGET THAT CLEARED @(EmbeddedFiles) BeforeTargets="CoreCompile" WAS TRIED HERE ON
+       2026-09-14 AND REMOVED THE SAME DAY. Do not re-add it. It ran and changed nothing: the
+       measurement before and after was byte-identical at 165 EmbeddedSource rows / 7,764,693
+       bytes. Whatever embeds the 155 generated *_razor.g.cs does not read that item group at
+       that point in the build, and I could not locate the mechanism - EmbedAllSources does not
+       reach them, EmbedUntrackedSources does not, EmbedRazorGenerateSources is already false by
+       SDK default (Sdk.Razor.CurrentVersion.targets:320) so it was never the cause, and the
+       SourceLink Git untracked-files target does not account for them either. Stated as an
+       unsolved mechanism rather than dressed up: if you need those 155 gone, the lever known to
+       work is DebugType=portable with an unshipped .pdb, and it costs client-side file:line.
+
+       DETECTION EXISTS EVEN THOUGH THE FIX DOES NOT. The guard is
+       Tests\SQLTriage.Tests\EmbeddedSourceCensusTests.cs, fact
+       Community_excluded_embedded_units_do_not_grow_beyond_the_known_residual: it freezes BY NAME
+       the 49 community-excluded units whose source text is still embedded, derived from
+       buildprofile.targets rather than hand-listed, and goes RED if a 50th appears. The same class
+       pins Document and MethodDebugInformation rows non-zero, so a future "fix" for these 155
+       cannot buy itself a clean census by deleting the client-side file:line Adrian chose to
+       keep - that trade is a decision for him, not a side effect of a green gate. -->
+
+</Project>

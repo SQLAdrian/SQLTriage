@@ -1,0 +1,11 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/waitevents"
+<PageTitle>SQLTriage - Wait Events</PageTitle>
+@inject NavigationManager Nav
+
+@code {
+    protected override void OnInitialized()
+    {
+        Nav.NavigateTo("/dashboard/livewaits", replace: true);
+    }
+}

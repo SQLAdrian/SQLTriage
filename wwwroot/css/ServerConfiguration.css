@@ -1,0 +1,194 @@
+/* In the name of God, the Merciful, the Compassionate */
+
+/* ServerConfiguration.razor - multi-instance change-control preview and apply.
+   Added 2026-09-08 with the download / persistent-summary / consolidated-view lane.
+
+   EVERY selector here is prefixed .svcfg- on purpose. app.css @imports this file, so the rules
+   land in the GLOBAL sheet: a bare element or utility selector would restyle the whole app.
+   Presentation lives here rather than inline because UiDebtRatchetTests freezes this page's
+   inline-attribute count and a new one would fail the build. */
+
+/* Link-shaped button. A <button> so it is keyboard-reachable and carries no href a browser
+   could try to navigate to; the download is done in code through blazorDownloadFile. */
+.svcfg-dl,
+.svcfg-link {
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0 0 0 8px;
+    color: #4488ff;
+    font: inherit;
+    font-size: 12.5px;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.svcfg-dl:hover,
+.svcfg-link:hover {
+    color: #8fbcff;
+}
+
+.svcfg-dl:disabled,
+.svcfg-link:disabled {
+    color: var(--text-secondary, #9aa0b4);
+    cursor: default;
+    text-decoration: none;
+}
+
+/* The done/refused/failed tally, rendered as markup. It used to exist only inside a toast, so it
+   disappeared on its own after a few seconds even if nobody navigated anywhere. */
+.svcfg-summary {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 0 0 8px;
+    color: var(--text-secondary, #9aa0b4);
+    font-size: 12.5px;
+}
+
+.svcfg-summary-counts {
+    font-weight: 600;
+    color: #cfe3ff;
+}
+
+.svcfg-consolidated {
+    margin: 8px 0 12px;
+    padding: 14px 16px;
+    max-height: 540px;
+    overflow: auto;
+    background: #0b0b16;
+    border: 1px solid #2a2a44;
+    border-radius: 8px;
+    color: #cfe3ff;
+    font-family: Consolas, monospace;
+    font-size: 12.5px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* ── The per-instance SQL Agent operator picker and its mail-chain badge (2026-09-09).
+      Same rule as everything above: .svcfg- on every selector, because app.css hoists this
+      file into the global sheet. ─────────────────────────────────────────────────────── */
+.svcfg-picker {
+    border: 1px solid #2a2a44;
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin: 12px 0 16px;
+}
+
+.svcfg-picker-row {
+    display: flex;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 8px 0;
+    border-top: 1px solid #2a2a44;
+}
+
+.svcfg-picker-row:first-of-type {
+    border-top: none;
+}
+
+.svcfg-picker-name {
+    min-width: 190px;
+    font-family: Consolas, monospace;
+    color: #cfe3ff;
+}
+
+.svcfg-picker-field {
+    padding: 6px 10px;
+    min-width: 260px;
+    background: #0f0f1e;
+    color: #e6e6f0;
+    border: 1px solid #3a3a5e;
+    border-radius: 4px;
+    font-family: Consolas, monospace;
+}
+
+.svcfg-picker-note {
+    flex-basis: 100%;
+    color: var(--text-secondary, #9aa0b4);
+    font-size: 12px;
+}
+
+.svcfg-picker-warn {
+    flex-basis: 100%;
+    color: #ffb454;
+    font-size: 12px;
+}
+
+/* Agent's fail-safe operator: SHOWN as a candidate, never preselected (gate finding F6). */
+.svcfg-failsafe {
+    flex-basis: 100%;
+    color: var(--text-secondary, #9aa0b4);
+    font-size: 12px;
+    font-style: italic;
+}
+
+/* The last test send's outcome, parked so it outlives the 5,000 ms toast (gate finding F7). */
+.svcfg-send-result {
+    flex-basis: 100%;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-secondary, #9aa0b4);
+    font-size: 12px;
+}
+
+/* The verdict badge. The modifier comes from MailChainVerdict.CssModifier, so the colour and the
+   enum cannot drift apart. */
+.svcfg-verdict {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    border: 1px solid #3a3a5e;
+    color: #cfe3ff;
+}
+
+.svcfg-verdict-works {
+    background: rgba(56, 211, 159, 0.12);
+    border-color: #38d39f;
+    color: #38d39f;
+}
+
+.svcfg-verdict-broken {
+    background: rgba(255, 123, 123, 0.12);
+    border-color: #ff7b7b;
+    color: #ff7b7b;
+}
+
+.svcfg-verdict-unknown {
+    background: rgba(68, 136, 255, 0.10);
+    border-color: #4488ff;
+    color: #8fbcff;
+}
+
+.svcfg-verdict-notconfigured {
+    background: rgba(255, 180, 84, 0.12);
+    border-color: #ffb454;
+    color: #ffb454;
+}
+
+.svcfg-verdict-couldnotread {
+    background: rgba(154, 160, 180, 0.12);
+    border-color: #6b7189;
+    color: var(--text-secondary, #9aa0b4);
+}
+
+/* One line only, with the whole sentence in the title attribute: a 1,000-character Database Mail
+   error would otherwise push every other row off the screen. */
+.svcfg-evidence {
+    flex-basis: 100%;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-secondary, #9aa0b4);
+    font-size: 12px;
+}

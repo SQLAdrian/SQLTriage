@@ -1,0 +1,302 @@
+/* In the name of God, the Merciful, the Compassionate */
+/*
+ * RemediationBatch.css — the batch section on /remediation. Born preview-only (plan item 1.1,
+ * Phase-1 concentrate lane, 2026-09-01); the armed apply, the result surface and the batch-rollback
+ * offer were added in Phase 3 on the same day.
+ *
+ * WHY A STYLESHEET RATHER THAN THE PAGE'S USUAL INLINE STYLES. Pages/Remediation.razor is styled
+ * inline throughout, and UiDebtRatchetTests freezes that file's inline-`style=` count at 275 with
+ * an explicit contract: the number may only go DOWN, and raising it is a human decision made in
+ * that map with a reason — never something a failing CI run gets worked around. A new section is
+ * not a reason to raise it, so this section carries no inline styles at all and the frozen number
+ * is left exactly where the ratchet put it.
+ *
+ * Every value below is copied from the equivalent inline style already used on that page, so the
+ * new section reads as part of it rather than as a visitor. Colours are the app's own tokens
+ * (--border, --text-muted, --green, --orange); the one literal, #ff8a8a, is the error red the
+ * page's other <pre> blocks already use.
+ *
+ * Loaded via the @import in wwwroot/css/app.css, the per-page convention this repo already uses
+ * for RemediationTuner.css, QuickCheck.css and the rest.
+ */
+
+.rbatch-section {
+    margin-top: 24px;
+    border-top: 1px solid var(--border);
+    padding-top: 16px;
+}
+
+.rbatch-icon { margin-right: 6px; }
+
+.rbatch-note,
+.rbatch-info {
+    color: var(--text-muted);
+    margin: 10px 0;
+}
+
+.rbatch-note { font-size: 12px; }
+.rbatch-info { font-size: 13px; margin: 8px 0; }
+
+.rbatch-denominator {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 0 0 10px;
+}
+
+.rbatch-aside {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 12px 0 0;
+}
+
+.rbatch-aside-tight { margin: 6px 0 0; }
+
+/* ── The candidate table ──────────────────────────────────────────────── */
+
+.rbatch-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin-bottom: 12px;
+}
+
+.rbatch-table thead tr {
+    text-align: left;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+}
+
+.rbatch-table th { padding: 6px 8px; }
+.rbatch-table td { padding: 8px; }
+.rbatch-table tbody tr { border-bottom: 1px solid var(--border); }
+
+.rbatch-col-tick { width: 32px; }
+.rbatch-col-price { width: 90px; }
+
+.rbatch-fix-name { font-weight: 600; }
+
+/* An item the app has no target value for: not selectable, and it says why. */
+.rbatch-blocked {
+    font-size: 11px;
+    color: var(--orange);
+    max-width: 420px;
+}
+
+.rbatch-clears {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+/* The credit chip, matching the coin badge on the fix rows above. */
+.rbatch-coin {
+    display: inline-block;
+    padding: 1px 6px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.rbatch-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.rbatch-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+/* ── The reading ──────────────────────────────────────────────────────── */
+
+.rbatch-alert {
+    margin-top: 12px;
+    padding: 10px 14px;
+    border: 1px solid var(--orange);
+    border-radius: 8px;
+    background: rgba(230, 150, 30, 0.08);
+    font-size: 13px;
+}
+
+.rbatch-alert-icon {
+    color: var(--orange);
+    margin-right: 6px;
+}
+
+.rbatch-panel {
+    margin-top: 14px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.rbatch-h { margin: 0 0 8px; }
+
+/* Two numbers side by side, never one: the worst-case reserve and the projected commit. */
+.rbatch-totals {
+    display: flex;
+    gap: 22px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    margin-bottom: 10px;
+}
+
+.rbatch-good { color: var(--green); }
+.rbatch-warn { color: var(--orange); }
+
+.rbatch-runid-note {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 0 0 10px;
+}
+
+.rbatch-runid { font-size: 11px; }
+
+.rbatch-item {
+    padding: 10px 0;
+    border-top: 1px solid var(--border);
+}
+
+.rbatch-item-head {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.rbatch-item-name { font-size: 13px; }
+
+.rbatch-flag { font-size: 12px; color: var(--text-muted); }
+
+.rbatch-pre {
+    white-space: pre-wrap;
+    font-size: 12px;
+    margin: 6px 0 0;
+}
+
+.rbatch-pre-error { color: #ff8a8a; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   PHASE 3 — THE ARMED APPLY, THE RESULT, AND THE BATCH ROLLBACK
+   ════════════════════════════════════════════════════════════════════════
+
+   The two `-arm` blocks below are the ONLY places on the batch surface an apply lives, and that
+   is a structural claim the guards depend on, not a styling one:
+   RemediationBatchPreviewUiTests scans the batch section with these two regions REMOVED and still
+   forbids every apply reach in what is left. So an apply control that drifted out of an armed
+   dialog would lose its class, fall back into the scanned region, and turn the guard red. */
+
+/* The ONE approval dialog. Orange border and tinted ground, copied from the off-recommended route
+   and the two "NOT reversible" confirm boxes already on this page, so the operator meets the same
+   visual shape every time the app is about to change a live server. */
+.rbatch-armed,
+.rbatch-rollback-armed {
+    margin-top: 14px;
+    padding: 12px 14px;
+    border: 1px solid var(--orange);
+    border-radius: 8px;
+    background: rgba(230, 150, 30, 0.08);
+    font-size: 13px;
+}
+
+.rbatch-arm-h {
+    margin: 0 0 8px;
+    font-size: 14px;
+}
+
+.rbatch-arm-icon {
+    color: var(--orange);
+    margin-right: 6px;
+}
+
+.rbatch-arm-lede {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 0 0 10px;
+}
+
+/* The pre-approval item table: name, what it would do, whether it can be undone, price. */
+.rbatch-arm-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    margin: 0 0 10px;
+}
+
+.rbatch-arm-table thead tr {
+    text-align: left;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border);
+}
+
+.rbatch-arm-table th { padding: 5px 8px; }
+.rbatch-arm-table td { padding: 6px 8px; vertical-align: top; }
+.rbatch-arm-table tbody tr { border-bottom: 1px solid var(--border); }
+
+.rbatch-arm-reason {
+    display: block;
+    color: var(--text-muted);
+    max-width: 460px;
+}
+
+/* The acknowledgement. Same shape as the two ConfirmLargeOperation ticks above it. */
+.rbatch-ack {
+    display: block;
+    margin: 10px 0 8px;
+    font-size: 12px;
+}
+
+.rbatch-ack-box { margin-right: 6px; }
+
+.rbatch-refusal {
+    color: var(--orange);
+    font-size: 12px;
+    margin: 0 0 8px;
+}
+
+/* ── The result ───────────────────────────────────────────────────────── */
+
+.rbatch-result {
+    margin-top: 14px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.rbatch-stopped {
+    color: var(--orange);
+    font-size: 12px;
+    margin: 0 0 10px;
+}
+
+.rbatch-result-item {
+    padding: 10px 0;
+    border-top: 1px solid var(--border);
+}
+
+.rbatch-outcome {
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.rbatch-outcome-good { color: var(--green); }
+.rbatch-outcome-warn { color: var(--orange); }
+.rbatch-outcome-bad { color: #ff8a8a; }
+
+/* The plain-words rollback sentence. Never a bare state name. */
+.rbatch-rollback-prose {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 4px;
+    max-width: 640px;
+}
+
+.rbatch-skipped {
+    font-size: 12px;
+    color: var(--text-muted);
+}

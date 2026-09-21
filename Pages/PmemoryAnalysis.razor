@@ -1,0 +1,11 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/pmemory-analysis"
+<PageTitle>SQLTriage - Memory Analysis</PageTitle>
+@inject NavigationManager Nav
+
+@code {
+    protected override void OnInitialized()
+    {
+        Nav.NavigateTo("/memory", replace: true);
+    }
+}

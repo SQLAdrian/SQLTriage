@@ -1,0 +1,698 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/index-analysis"
+@using SQLTriage.Components.Shared
+<PageTitle>SQLTriage - Index Analysis</PageTitle>
+@using System.Text
+@inject ServerConnectionManager ConnectionManager
+@inject IndexAnalysisService IndexAnalysisSvc
+@inject ToastService Toast
+@inject IJSRuntime JS
+
+<div class="ia-page page-fade-in">
+    <div class="ia-header">
+        <i class="fa-solid fa-list-ol"></i>
+        <h2>Index Analysis</h2>
+    </div>
+    <div class="ia-subtitle">Missing, unused, and fragmented indexes</div>
+
+    @* ── Server selector ── *@
+    <div class="ia-toolbar">
+        <div class="toolbar-group">
+            <label class="toolbar-label">Server:</label>
+            <select class="toolbar-select" value="@_selectedServerId" @onchange="OnServerChanged">
+                <option value="">— select server —</option>
+                @foreach (var conn in _enabledConnections)
+                {
+                    <option value="@conn.Id">@conn.ServerNames</option>
+                }
+            </select>
+        </div>
+        <button class="ia-btn ia-btn-primary" @onclick="RefreshAll" disabled="@(_loading || string.IsNullOrEmpty(_selectedServerId))">
+            <i class="fa-solid @(_loading ? "fa-spinner fa-spin" : "fa-rotate")"></i>
+            @(_loading ? "Loading…" : "Analyze")
+        </button>
+    </div>
+
+    @* ── Error ── *@
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="ia-error">
+            <i class="fa-solid fa-triangle-exclamation"></i> @_error
+        </div>
+    }
+
+    @* ── Loading ── *@
+    @if (_loading)
+    {
+        <LoadingSpinner Message="Querying index DMVs…" />
+    }
+    else if (_hasLoaded)
+    {
+        @* ── Scope, 2026-08-13 ──────────────────────────────────────────────────────────────
+           This page used to read ONE database — whichever the connection landed in, which was
+           always master — while its tables carried a Database column that implied otherwise. It
+           now reads the 20 busiest user databases by IO, the same sample four corpus checks
+           take. Every count below is stated because a table that shows twelve databases and
+           silently omits the thirteenth is a claim nobody made on purpose. *@
+        @* ── A read that failed, 2026-08-14 ────────────────────────────────────────────────
+           The ranking read used to be the only uncaught command on this path, so a fifteen
+           second timeout on it replaced the whole page with a red banner. It now degrades:
+           the run chooses no database and says so here. This block is the ONLY thing that
+           distinguishes "we read twenty databases and found nothing" from "we read nothing",
+           because every table below is empty either way. *@
+        @if (!string.IsNullOrEmpty(_rankingFailure))
+        {
+            <div class="ia-error" role="alert">
+                <i class="fa-solid fa-triangle-exclamation"></i> @_rankingFailure
+            </div>
+        }
+        @if (!string.IsNullOrEmpty(_missingReadFailure))
+        {
+            <div class="ia-error" role="alert">
+                <i class="fa-solid fa-triangle-exclamation"></i> @_missingReadFailure
+            </div>
+        }
+
+        <div class="ia-scope">
+            <p class="ia-scope-head"><i class="fa-solid fa-database"></i> @Scope().Headline</p>
+            <p class="ia-scope-sub">@Scope().MetricSentence @IndexAnalysisScopeNarrative.MissingSentence</p>
+        </div>
+
+        @if (_skipped.Count > 0)
+        {
+            <div class="ia-skipped">
+                <p class="ia-skipped-head">
+                    <i class="fa-solid fa-circle-exclamation"></i>
+                    @Scope().SkippedHeadline
+                </p>
+                <ul class="ia-skipped-list">
+                    @foreach (var skip in _skipped)
+                    {
+                        <li>
+                            <span class="ia-skip-db">@skip.Database</span>
+                            <span class="ia-skip-reason">@skip.Reason</span>
+                        </li>
+                    }
+                </ul>
+                @if (Scope().UnlistedCount > 0)
+                {
+                    <p class="ia-skipped-more">@Scope().UnlistedSentence</p>
+                }
+            </div>
+        }
+
+        @* ── Summary cards ── *@
+        <div class="ia-summary">
+            <div class="ia-summary-card">
+                <div class="ia-summary-label">Databases Scanned</div>
+                <div class="ia-summary-value @(_skipped.Count > 0 ? "warn" : "")">@_scanned.Count</div>
+            </div>
+            <div class="ia-summary-card">
+                <div class="ia-summary-label">Missing Indexes</div>
+                <div class="ia-summary-value @(_missingIndexes.Count > 0 ? "warn" : "")">@_missingIndexes.Count</div>
+            </div>
+            <div class="ia-summary-card">
+                <div class="ia-summary-label">Unused Indexes</div>
+                <div class="ia-summary-value @(_unusedIndexes.Count > 10 ? "warn" : "")">@_unusedIndexes.Count</div>
+            </div>
+            <div class="ia-summary-card">
+                <div class="ia-summary-label">Fragmented Indexes</div>
+                <div class="ia-summary-value @(_fragmentedIndexes.Count > 0 ? "warn" : "")">@_fragmentedIndexes.Count</div>
+            </div>
+        </div>
+
+        @* ── Tabs ── *@
+        <div class="ia-tabs">
+            <button class="ia-tab @(_activeTab == "missing" ? "active" : "")" @onclick='() => _activeTab = "missing"'>
+                <i class="fa-solid fa-plus-circle"></i> Missing Indexes
+                <span class="ia-tab-badge">@_missingIndexes.Count</span>
+            </button>
+            <button class="ia-tab @(_activeTab == "unused" ? "active" : "")" @onclick='() => _activeTab = "unused"'>
+                <i class="fa-solid fa-minus-circle"></i> Unused Indexes
+                <span class="ia-tab-badge">@_unusedIndexes.Count</span>
+            </button>
+            <button class="ia-tab @(_activeTab == "fragmented" ? "active" : "")" @onclick='() => _activeTab = "fragmented"'>
+                <i class="fa-solid fa-scissors"></i> Fragmented Indexes
+                <span class="ia-tab-badge">@_fragmentedIndexes.Count</span>
+            </button>
+        </div>
+
+        @* ── Missing Indexes Tab ── *@
+        @if (_activeTab == "missing")
+        {
+            @if (_missingIndexes.Count == 0)
+            {
+                <div class="ia-empty">
+                    <i class="fa-solid fa-circle-info"></i>
+                    @* An empty list after a FAILED read is not an empty list. The old sentence
+                       asserted the instance had no suggestion to give, which is a finding, and it
+                       would have rendered identically over a read that never returned. *@
+                    <p>@MissingEmptyHeadline()</p>
+                    <p class="ia-empty-sub">@UsageWindowSentence()</p>
+                </div>
+            }
+            else
+            {
+                <div class="ia-table-wrapper">
+                    <table class="ia-table">
+                        <thead>
+                            <tr>
+                                <th>Database</th>
+                                <th>Table</th>
+                                <th>Key Columns</th>
+                                <th>Included Columns</th>
+                                <th>Impact Score</th>
+                                <th>User Hits</th>
+                                <th>Avg Impact %</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var idx in _missingIndexes)
+                            {
+                                var isExpanded = _expandedMissing == MissingKey(idx);
+                                <tr class="clickable" @onclick="() => ToggleMissing(idx)">
+                                    <td>@idx.Database</td>
+                                    @* schema.table, 2026-08-14: a bare table name is ambiguous the moment an estate
+                                       has two schemas, and the run now knows which one it is. *@
+                                    <td>@IndexAnalysisRendering.QualifiedTable(idx.Schema, idx.Table)</td>
+                                    <td title="@idx.KeyColumns">@Truncate(idx.KeyColumns, 50)</td>
+                                    <td title="@idx.IncludedColumns">@Truncate(idx.IncludedColumns, 40)</td>
+                                    @* Both impact columns are declared NULLABLE by the server and are
+                                       rendered through the shared absent-value label: a printed
+                                       "0" or "0.00%" would tell an operator the optimizer expects
+                                       this index to help nothing, which is the opposite of "nobody
+                                       read a figure". Same rule as Size MB. *@
+                                    <td class="@GetImpactClass(idx.ImpactScore)" title="@ImpactTitle(idx.ImpactScore)">@IndexAnalysisRendering.Number(idx.ImpactScore, "N0")</td>
+                                    <td>@idx.UserHits.ToString("N0")</td>
+                                    <td title="@ImpactTitle(idx.AvgImpact)">@IndexAnalysisRendering.Percent(idx.AvgImpact, "F2")</td>
+                                </tr>
+                                @if (isExpanded)
+                                {
+                                    <tr class="ia-script-row">
+                                        <td colspan="7">
+                                            <div class="ia-script-content">
+                                                @* The script is one SQL concatenation and every piece
+                                                   of it propagates NULL, so an object the login
+                                                   cannot resolve empties the whole statement. An
+                                                   empty box beside a populated row reads as "no
+                                                   script needed", so say what happened instead. *@
+                                                @if (string.IsNullOrWhiteSpace(idx.SuggestedScript))
+                                                {
+                                                    <p class="ia-empty-sub">No script was returned for this suggestion. The statement is composed by the server from the object name, and it comes back empty when any part of it could not be resolved. The usual cause is an object this login cannot see.</p>
+                                                }
+                                                else
+                                                {
+                                                    <pre class="ia-script-text">@idx.SuggestedScript</pre>
+                                                    <div class="ia-script-actions">
+                                                        <button class="ia-btn" @onclick="() => CopyToClipboard(idx.SuggestedScript)" @onclick:stopPropagation>
+                                                            <i class="fa-solid fa-copy"></i> Copy Script
+                                                        </button>
+                                                    </div>
+                                                }
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        }
+
+        @* ── Unused Indexes Tab ── *@
+        @if (_activeTab == "unused")
+        {
+            @* Conditioning sweep 2026-08-05. This asserted that every index on the box was in
+               use — an outright universal claim, from a query that reads ONE database (the
+               connection targets master and the query filters us.database_id = DB_ID()) and whose
+               source DMV resets when the instance restarts. Two facts the sentence never
+               carried, both now measured and printed. *@
+            @if (_unusedIndexes.Count == 0)
+            {
+                <div class="ia-empty">
+                    <i class="fa-solid fa-circle-info"></i>
+                    <p>@UnusedEmptyHeadline()</p>
+                    <p class="ia-empty-sub">@UsageWindowSentence() @UnusedCoverage()</p>
+                </div>
+            }
+            else
+            {
+                @* The cap is stated ON the populated table, not only on the empty state: TOP 50 is
+                   applied ONCE PER DATABASE, so a full-looking table is up to twenty independently
+                   truncated lists laid end to end. A truncation nobody states is the silent
+                   truncation this page exists to stop making. *@
+                <p class="ia-empty-sub ia-table-scope">@UnusedCoverage()</p>
+                <div class="ia-table-wrapper">
+                    <table class="ia-table">
+                        <thead>
+                            <tr>
+                                <th>Database</th>
+                                <th>Table</th>
+                                <th>Index Name</th>
+                                <th>Type</th>
+                                <th>User Reads</th>
+                                <th>User Writes</th>
+                                <th>Size MB</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var idx in _unusedIndexes)
+                            {
+                                var isHighOverhead = idx.UserWrites > 1000;
+                                <tr class="@(isHighOverhead ? "ia-overhead" : "")">
+                                    <td>@idx.Database</td>
+                                    @* schema.table, 2026-08-14: a bare table name is ambiguous the moment an estate
+                                       has two schemas, and the run now knows which one it is. *@
+                                    <td>@IndexAnalysisRendering.QualifiedTable(idx.Schema, idx.Table)</td>
+                                    <td>@idx.IndexName</td>
+                                    <td>@idx.IndexType</td>
+                                    <td>@idx.UserReads.ToString("N0")</td>
+                                    <td>@idx.UserWrites.ToString("N0")</td>
+                                    @* SizeMB is LEFT JOINed from sys.dm_db_partition_stats and can be
+                                       genuinely absent. A rendered 0.00 would be a measurement we
+                                       never took, so the absent case says so. *@
+                                    <td title="@SizeTitle(idx.SizeMB)">@SizeLabel(idx.SizeMB)</td>
+                                    <td>
+                                        <button class="ia-btn" @onclick="() => CopyDropScript(idx)" title="Copy DROP INDEX script">
+                                            <i class="fa-solid fa-trash-can"></i> DROP script
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        }
+
+        @* ── Fragmented Indexes Tab ── *@
+        @if (_activeTab == "fragmented")
+        {
+            @if (_fragmentedIndexes.Count == 0)
+            {
+                <div class="ia-empty">
+                    <i class="fa-solid fa-circle-info"></i>
+                    <p>@FragEmptyHeadline()</p>
+                    <p class="ia-empty-sub">Indexes below either threshold are not listed. @FragmentedCoverage()</p>
+                </div>
+            }
+            else
+            {
+                <p class="ia-empty-sub ia-table-scope">Indexes below either threshold are not listed. @FragmentedCoverage()</p>
+                <div style="margin-bottom: 12px;">
+                    <button class="ia-btn ia-btn-primary" @onclick="ShowMaintenanceScript">
+                        <i class="fa-solid fa-wrench"></i> Generate Maintenance Script
+                    </button>
+                </div>
+                <div class="ia-table-wrapper">
+                    <table class="ia-table">
+                        <thead>
+                            <tr>
+                                <th>Database</th>
+                                <th>Table</th>
+                                <th>Index Name</th>
+                                <th>Frag %</th>
+                                <th>Pages</th>
+                                <th>Size MB</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var idx in _fragmentedIndexes)
+                            {
+                                <tr>
+                                    <td>@idx.Database</td>
+                                    @* schema.table, 2026-08-14: a bare table name is ambiguous the moment an estate
+                                       has two schemas, and the run now knows which one it is. *@
+                                    <td>@IndexAnalysisRendering.QualifiedTable(idx.Schema, idx.Table)</td>
+                                    <td>@idx.IndexName</td>
+                                    <td class="@GetFragClass(idx.FragPercent)">@idx.FragPercent.ToString("F1")%</td>
+                                    <td>@idx.PageCount.ToString("N0")</td>
+                                    <td title="@SizeTitle(idx.SizeMB)">@SizeLabel(idx.SizeMB)</td>
+                                    <td>
+                                        <span class="ia-action-badge @(idx.Action == "REBUILD" ? "ia-action-rebuild" : "ia-action-reorganize")">
+                                            @idx.Action
+                                        </span>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        }
+    }
+    else if (!_loading && string.IsNullOrEmpty(_error))
+    {
+        <div class="ia-empty">
+            <i class="fa-solid fa-list-ol"></i>
+            <p>Select a server and click <strong>Analyze</strong> to inspect index health.</p>
+        </div>
+    }
+</div>
+
+@* ── Maintenance script modal ── *@
+@if (_showMaintModal)
+{
+    <div class="ia-maint-modal-overlay" @onclick="() => _showMaintModal = false">
+        <div class="ia-maint-modal" @onclick:stopPropagation>
+            <div class="ia-maint-modal-header">
+                <h3><i class="fa-solid fa-wrench" style="margin-right: 8px; color: var(--accent);"></i>Index Maintenance Script</h3>
+                <button class="panel-maximize-close" @onclick="() => _showMaintModal = false" title="Close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="ia-maint-modal-body">
+                <pre>@_maintenanceScript</pre>
+            </div>
+            <div class="ia-maint-modal-footer">
+                <button class="ia-btn" @onclick="() => _showMaintModal = false">Close</button>
+                <button class="ia-btn ia-btn-primary" @onclick="() => CopyToClipboard(_maintenanceScript)">
+                    <i class="fa-solid fa-copy"></i> Copy All
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<ServerConnection> _enabledConnections = new();
+    private string _selectedServerId = "";
+    private bool _loading;
+    private bool _hasLoaded;
+    private string? _error;
+    private string _activeTab = "missing";
+    private string? _expandedMissing;
+
+    // Measured at the same moment as the index reads (2026-08-05), so the empty-state sentences
+    // can be conditioned on it instead of implying an all-time truth. Both DMVs behind the Unused
+    // and Fragmented tabs accumulate since the last instance restart, and so does the IO metric
+    // the databases are ranked by.
+    //
+    // IndexAnalysisResult.ScopeDatabase is deliberately NOT held here any more. It named the one
+    // database those two tabs read; they now read the ranked sample, and keeping a field that
+    // means "the database the first connection landed in" beside sentences about twenty databases
+    // is how a stale qualifier gets rendered next to fresh numbers.
+    private DateTime? _serverStartTime;
+
+    private List<IndexAnalysisMissingRow> _missingIndexes = new();
+    private List<IndexAnalysisUnusedRow> _unusedIndexes = new();
+    private List<IndexAnalysisFragRow> _fragmentedIndexes = new();
+
+    // Which databases the run actually read, which it did not, and what the ranking pass saw
+    // across the whole instance. All three are rendered — see the scope block in the markup.
+    private List<IndexAnalysisDatabase> _scanned = new();
+    private List<IndexAnalysisSkippedDatabase> _skipped = new();
+    private IndexAnalysisRankingCensus _census = new();
+
+    // ── The two reads that can fail without losing the page, 2026-08-14 ──────────────────────
+    // Held separately from _error, which still means "the run did not happen at all". These mean
+    // "the run happened and one read did not", and the difference is what the operator needs: an
+    // empty Unused table under a ranking failure means nothing was read, and under a successful
+    // run it means nothing was found. Nothing else on the page can tell those two apart.
+    private string? _rankingFailure;
+    private string? _missingReadFailure;
+
+    private bool _showMaintModal;
+    private string _maintenanceScript = "";
+
+    protected override void OnInitialized()
+    {
+        _enabledConnections = ConnectionManager.GetEnabledConnections();
+        var current = ConnectionManager.CurrentServer;
+        if (current != null && current.IsEnabled)
+            _selectedServerId = current.Id;
+        else if (_enabledConnections.Count > 0)
+            _selectedServerId = _enabledConnections[0].Id;
+    }
+
+    private void OnServerChanged(ChangeEventArgs e)
+    {
+        _selectedServerId = e.Value?.ToString() ?? "";
+        _hasLoaded = false;
+        _serverStartTime = null;
+
+        _missingIndexes.Clear();
+        _unusedIndexes.Clear();
+        _fragmentedIndexes.Clear();
+        _scanned.Clear();
+        _skipped.Clear();
+        _census = new IndexAnalysisRankingCensus();
+        _error = null;
+        _rankingFailure = null;
+        _missingReadFailure = null;
+    }
+
+    private async Task RefreshAll()
+    {
+        if (string.IsNullOrEmpty(_selectedServerId)) return;
+
+        var conn = ConnectionManager.GetConnection(_selectedServerId);
+        if (conn == null)
+        {
+            _error = "Selected server connection not found.";
+            return;
+        }
+
+        _loading = true;
+        _error = null;
+        _rankingFailure = null;
+        _missingReadFailure = null;
+        _hasLoaded = false;
+        StateHasChanged();
+
+        try
+        {
+            var serverList = conn.GetServerList();
+            if (serverList.Count == 0)
+            {
+                _error = "No servers configured for this connection.";
+                return;
+            }
+
+            var serverName = serverList[0];
+            // The four reads used to be started together on ONE SqlConnection and Task.WhenAll-ed,
+            // with MultipleActiveResultSets forced on to make that legal. MARS allows INTERLEAVED
+            // execution on one thread — it does not make SqlConnection thread-safe, and four tasks
+            // driving one connection is not a supported shape. IndexAnalysisService runs them
+            // serially instead, so no MARS override is applied here any more.
+            var connStr = conn.GetConnectionString(serverName, "master");
+
+            var analysis = await IndexAnalysisSvc.GetAnalysisAsync(connStr);
+
+            _serverStartTime = analysis.ServerStartTime;
+
+            _missingIndexes = analysis.Missing;
+            _unusedIndexes = analysis.Unused;
+            _fragmentedIndexes = analysis.Fragmented;
+            _scanned = analysis.Scanned;
+            _skipped = analysis.Skipped;
+            _census = analysis.Census;
+            _rankingFailure = analysis.RankingFailure;
+            _missingReadFailure = analysis.MissingReadFailure;
+
+            _hasLoaded = true;
+        }
+        catch (Microsoft.Data.SqlClient.SqlException ex)
+        {
+            _error = $"SQL Error: {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            _error = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    // ── The scope sentences, 2026-08-13 ──────────────────────────────────────────────────────
+    // They used to be composed here, and three of them stated numbers the run never measured: the
+    // skipped headline printed the CAPPED LIST LENGTH as "This run did not read N databases", the
+    // scope headline printed "N scanned, M skipped" and invited an operator to add them into an
+    // instance total, and the below-the-cut count included databases whose IO was never read at
+    // all. All three are the house defect class — a sentence conditioned on a different
+    // measurement than the number beside it — and the house ruling is that it is closed by
+    // STRUCTURE, not by care. So they live in IndexAnalysisScopeNarrative, where the offline suite
+    // asserts the exact words against a census, and the page only renders them.
+
+    /// <summary>
+    /// One narrative per render, from THIS run's census and THIS run's list lengths. Built fresh
+    /// rather than cached so it can never describe a previous run's numbers; it is a handful of
+    /// integer comparisons and a string build.
+    /// </summary>
+    private IndexAnalysisScopeNarrative Scope()
+        => IndexAnalysisScopeNarrative.For(_census, _scanned.Count, _skipped.Count);
+
+    private string UnusedCoverage()
+        => Scope().TableCoverage(IndexAnalysisService.UnusedRowsPerDatabase, "unused-index rows");
+
+    private string FragmentedCoverage()
+        => Scope().TableCoverage(IndexAnalysisService.FragmentedRowsPerDatabase, "fragmented-index rows");
+
+    /// <summary>Names what the per-database tables cover, in the words a reader can check.</summary>
+    private string ScannedDatabasesLabel()
+        => _scanned.Count == 1
+            ? _scanned[0].Name
+            : $"the {_scanned.Count} databases this run read";
+
+    /// <summary>
+    /// What an empty Missing table means. It used to be one literal asserting the instance had no
+    /// suggestion to give, which is a FINDING, and it rendered identically over a read that never
+    /// returned. The failure sentence is already on the banner above; this refuses to make the
+    /// claim the banner contradicts.
+    /// </summary>
+    private string MissingEmptyHeadline()
+        => string.IsNullOrEmpty(_missingReadFailure)
+            ? "No missing-index suggestion was returned for the user databases on this instance."
+            : "No missing-index suggestion was read on this run, because the read did not return. Nothing is claimed about this instance.";
+
+    private string UnusedEmptyHeadline()
+        => _scanned.Count == 0
+            ? "This run read no database, so nothing is claimed about unused indexes."
+            : $"No index in {ScannedDatabasesLabel()} went unread while being written to.";
+
+    private string FragEmptyHeadline()
+        => _scanned.Count == 0
+            ? "This run read no database, so nothing is claimed about fragmentation."
+            : $"No index in {ScannedDatabasesLabel()} was over 5% fragmented across more than 1,000 pages.";
+
+    /// <summary>
+    /// Names the window the usage counters cover. Never printed as a bare "none found": both
+    /// sys.dm_db_index_usage_stats and the missing-index DMVs are wiped by a service restart, so
+    /// an index unused only since that restart reads identically to one nobody ever needed.
+    /// </summary>
+    private string UsageWindowSentence()
+        => _serverStartTime.HasValue
+            ? $"Usage counters have been accumulating since the instance last started, "
+              + $"{_serverStartTime.Value:yyyy-MM-dd HH:mm}, and are wiped by a restart."
+            : "Usage counters are wiped by an instance restart, and how long they have been "
+              + "accumulating was not read on this run.";
+
+    /// <summary>Row identity for the expand/collapse toggle. One expression, used by both the
+    /// markup's comparison and the click handler, so the two cannot drift apart.
+    ///
+    /// <para>⚠ THE KEY COLUMNS ARE PART OF IT SINCE 2026-08-14. The key was score + database +
+    /// table, which collides whenever one table produces two suggestions of equal score — and
+    /// ImpactScore became nullable in the same change, so EVERY unmeasured suggestion in one table
+    /// would have shared the empty string and expanded together. The key columns are what actually
+    /// distinguish two suggestions on one table, so they are what disambiguates the row.</para></summary>
+    private static string MissingKey(IndexAnalysisMissingRow idx)
+        => (idx.ImpactScore?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "unmeasured")
+           + "|" + idx.Database + "|" + idx.Table + "|" + idx.KeyColumns;
+
+    private void ToggleMissing(IndexAnalysisMissingRow idx)
+    {
+        var key = MissingKey(idx);
+        _expandedMissing = _expandedMissing == key ? null : key;
+    }
+
+    /// <summary>
+    /// Size as a string, or the absent case said out loud. SizeMB is null when the size join
+    /// found nothing; printing "0.00" there would assert an index occupies no space, which is a
+    /// measurement nobody took. Same rule as the empty-state sentences on this page.
+    /// </summary>
+    private static string SizeLabel(decimal? sizeMb)
+        => IndexAnalysisRendering.Number(sizeMb, "F2");
+
+    private static string SizeTitle(decimal? sizeMb)
+        => sizeMb.HasValue
+            ? $"{sizeMb.Value:F2} MB"
+            : "Size was not returned for this index (no matching row in sys.dm_db_partition_stats), so no size is claimed.";
+
+    /// <summary>
+    /// The hover text behind an absent impact figure. Silent when there IS a figure — a tooltip
+    /// restating the number beside it is noise, and the point of this one is to say what the empty
+    /// cell means.
+    /// </summary>
+    private static string ImpactTitle(decimal? impact)
+        => impact.HasValue
+            ? ""
+            : "The optimizer returned no impact figure for this suggestion, so none is claimed. It is not a zero.";
+
+    private async Task CopyToClipboard(string text)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+            Toast.ShowSuccess("Copied to clipboard");
+        }
+        catch
+        {
+            Toast.ShowError("Failed to copy — check browser permissions");
+        }
+    }
+
+    /// <summary>
+    /// ⚠ QuoteName MOVED, 2026-08-14. It was a private static here; it is now
+    /// <see cref="IndexAnalysisRendering.QuoteName"/>, shared with the client report, because an
+    /// escaping rule that exists on one surface is an escaping rule that is missing from the other.
+    /// The three-part target is built by <see cref="IndexAnalysisRendering.ScriptTarget"/>.
+    ///
+    /// <para>⚠⚠ AND <c>[dbo]</c> IS GONE, which is the whole of this change. It was a literal here
+    /// because the queries projected OBJECT_NAME, which returns a BARE table name, so every script
+    /// this page emitted named <c>dbo.something</c> whether or not the table was in dbo. The
+    /// queries now project OBJECT_SCHEMA_NAME and the scripts name the object that exists. PROVED
+    /// live on .\new2022 against <c>rep.wide</c> and a schema literally named <c>we]ird</c>.</para>
+    /// </summary>
+    private async Task CopyDropScript(IndexAnalysisUnusedRow idx)
+    {
+        // The comment is evidence the operator carries into a change request, so an unmeasured
+        // size says "size not measured" rather than "0.00 MB wasted".
+        var waste = idx.SizeMB.HasValue ? $"{idx.SizeMB.Value:F2} MB wasted" : "size not measured";
+        var target = IndexAnalysisRendering.ScriptTarget(idx.Database, idx.Schema, idx.Table);
+        var script = $"DROP INDEX [{IndexAnalysisRendering.QuoteName(idx.IndexName)}] ON {target}; -- {waste}, {idx.UserWrites:N0} writes, 0 reads";
+        await CopyToClipboard(script);
+    }
+
+    private void ShowMaintenanceScript()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("-- Index Maintenance Script");
+        sb.AppendLine($"-- Generated: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+        sb.AppendLine($"-- Fragmented indexes: {_fragmentedIndexes.Count}");
+        sb.AppendLine();
+
+        foreach (var idx in _fragmentedIndexes)
+        {
+            var target = $"[{IndexAnalysisRendering.QuoteName(idx.IndexName)}] ON "
+                       + IndexAnalysisRendering.ScriptTarget(idx.Database, idx.Schema, idx.Table);
+            if (idx.Action == "REBUILD")
+            {
+                sb.AppendLine($"ALTER INDEX {target} REBUILD;");
+            }
+            else
+            {
+                sb.AppendLine($"ALTER INDEX {target} REORGANIZE;");
+            }
+        }
+
+        _maintenanceScript = sb.ToString();
+        _showMaintModal = true;
+    }
+
+    private static string Truncate(string value, int maxLen)
+    {
+        if (string.IsNullOrEmpty(value)) return "";
+        return value.Length <= maxLen ? value : value[..maxLen] + "…";
+    }
+
+    /// <summary>
+    /// The severity colour behind the impact score. ⚠ AN ABSENT SCORE GETS NO CLASS AT ALL, not
+    /// the low one: "ia-impact-low" is a verdict — the optimizer expects little from this index —
+    /// and applying it to a row nobody measured would say in colour exactly what the "not measured"
+    /// text is there to stop saying in words.
+    /// </summary>
+    private static string GetImpactClass(decimal? score) =>
+        !score.HasValue ? "" :
+        score.Value > 1_000_000 ? "ia-impact-high" :
+        score.Value > 100_000 ? "ia-impact-medium" :
+        "ia-impact-low";
+
+    private static string GetFragClass(double pct) =>
+        pct > 30 ? "ia-frag-high" :
+        pct > 10 ? "ia-frag-medium" :
+        "ia-frag-low";
+}

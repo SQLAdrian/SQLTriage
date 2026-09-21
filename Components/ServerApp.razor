@@ -1,0 +1,102 @@
+@* In the name of God, the Merciful, the Compassionate *@
+@* Server-mode root component — equivalent of wwwroot/index.html for Blazor Server *@
+@using Microsoft.AspNetCore.Components.Web
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SQLTriage — Compliance Platform</title>
+    <base href="/" />
+    <link rel="icon" type="image/x-icon" href="favicon.ico" />
+    <link href="css/app.css" rel="stylesheet" />
+    @* Forms.css, Modal.css and SQLTriage.styles.css were in wwwroot/index.html (the WebView2
+       lane) and NOT here, so server mode rendered every modal in the app with NO rules at all for
+       .modal-backdrop / .modal-content / .modal-close. Measured 2026-08-02 on
+       127.0.0.1:5187/servers: the Add Server dialog and the onboarding wizard drew on top of each
+       other with no backdrop dim and no blur, and the wizard's --bg-panel (a deliberately
+       65%-alpha "glass" colour that only reads over a blurred backdrop) let the page show
+       through — two modals at once, text overlapping and unreadable. Same class as the
+       scripts/themes.js 404 noted below: two host pages, one asset list, kept in step by hand.
+       ServerModeHostAssetsTests now asserts they agree. *@
+    <link href="SQLTriage.styles.css" rel="stylesheet" />
+    <link href="css/Forms.css" rel="stylesheet" />
+    <link href="css/Modal.css" rel="stylesheet" />
+    <link href="css/qp.css" rel="stylesheet" />
+    <link href="css/qp_icons_v2.css" rel="stylesheet" />
+    <link href="fontawesome/css/all.min.css" rel="stylesheet" />
+    <link href="_content/Radzen.Blazor/css/dark-base.css" rel="stylesheet" />
+    <HeadOutlet @rendermode="RenderMode.InteractiveServer" />
+</head>
+<body>
+    <div id="app">
+        <SQLTriage.Components.Layout.MainLayout @rendermode="RenderMode.InteractiveServer" />
+    </div>
+
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="" class="reload">Reload</a>
+        <a class="dismiss">Dismiss</a>
+    </div>
+
+    <script src="_framework/blazor.web.js"></script>
+    <script src="_content/Radzen.Blazor/Radzen.Blazor.js"></script>
+    <script src="scripts/error-handler.js"></script>
+    <script src="scripts/download.js"></script>
+    <script src="scripts/qp.js"></script>
+    <script src="scripts/queryPlan.js"></script>
+    <script src="scripts/queryPlanV2.js"></script>
+    <script src="scripts/environmentView.js"></script>
+    @* welcomeTour.js was in index.html and not here, so WelcomeTourOverlay's keyboard
+       registration hit an undefined window.welcomeTourInterop on every server-mode circuit — it
+       is swallowed by that component's catch, which is why nothing said so. Same for the three
+       background renderers below. *@
+    <script src="scripts/welcomeTour.js"></script>
+    <script src="scripts/bubbleDrag.js"></script>
+    @* themes.js lives at the wwwroot root, not under scripts/ — every other file in this list
+       is under scripts/, so this one was copy-pasted with the wrong prefix and 404'd on every
+       server-mode page load. wwwroot/index.html (the WebView2 lane) always had it right.
+       Verified 2026-07-20 against a running --server build: /scripts/themes.js -> 404,
+       /themes.js -> 200. *@
+    <script src="themes.js"></script>
+    <script src="scripts/codeHotspots.js"></script>
+    <script src="scripts/ambientBg.js"></script>
+    <script src="scripts/parallaxBg.js"></script>
+    <script src="scripts/waveBg.js"></script>
+    <script src="scripts/particleBg.js"></script>
+    <script src="scripts/bgConfig.js"></script>
+
+    @* The per-page command-palette registry and the Ctrl+K listener are INLINE in
+       wwwroot/index.html, so they did not exist in server mode at all: CommandPalette's
+       JS.InvokeVoidAsync("sqltriageCommandPalette.register", ...) faulted on every server-mode
+       circuit and Ctrl+K did nothing. Copied verbatim so the two hosts behave the same.
+       Deliberately NOT a static [JSInvokable] — round 5 removed that, because one process-wide
+       slot meant one browser's Ctrl+K opened another's palette. *@
+    <script>
+        window.addEventListener('beforeprint', function () {
+            var d = new Date();
+            var stamp = d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: '2-digit' })
+                      + ' '
+                      + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+            var dateEl = document.getElementById('print-header-date');
+            if (dateEl) dateEl.textContent = stamp;
+        });
+
+        window.sqltriageCommandPalette = {
+            ref: null,
+            register: function (r) { this.ref = r; },
+            unregister: function () { this.ref = null; }
+        };
+
+        window.addEventListener('keydown', function (e) {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+                e.preventDefault();
+                try {
+                    var p = window.sqltriageCommandPalette;
+                    if (p && p.ref) { p.ref.invokeMethodAsync('OpenCommandPalette'); }
+                } catch (err) { }
+            }
+        });
+    </script>
+</body>
+</html>

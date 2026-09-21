@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    In the name of God, the Merciful, the Compassionate.
+
+    A tiny, non-shipping console harness for the AppUserState / BootstrapEligibilityProof circular
+    type-initialiser hazard documented on AppUserState's static constructor (Data/Services/
+    AppUserState.cs, ~line 307). A CLR type initialiser runs AT MOST ONCE per load context, so the
+    race it exercises can only be attempted ONCE per process — see AppUserStateRaceHarnessProgram
+    for the attempt itself. The driving test (Tests/SQLTriage.Tests/
+    AppUserStateTypeInitRaceHarnessTests.cs) spawns this exe as a FRESH child process per
+    iteration, which is what gives each attempt a genuinely fresh type-init state.
+
+    Never published, never referenced by product code, and not part of any shipped artifact —
+    SQLTriage.csproj's DefaultItemExcludes already excludes the whole Tests\ tree.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <!-- Mirrors SQLTriage.Tests.csproj: the referenced SQLTriage.csproj is a UseWPF project, and
+         matching that setting here is the proven-working shape rather than a leaner guess. -->
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <!-- Test-support infrastructure, not a shipping artifact. -->
+    <IsPublishable>false</IsPublishable>
+    <AssemblyName>AppUserStateRaceHarness</AssemblyName>
+  </PropertyGroup>
+
+  <!-- Mirrors SQLTriage.csproj's own Release-conditioned self-contained shape (that project's
+       "Release Build Optimizations" PropertyGroup). A self-contained referenced project cannot be
+       referenced by a non-self-contained referencing project (NETSDK1151), so this project must
+       match SelfContained under the same Configuration condition. RuntimeIdentifier is required
+       alongside SelfContained (self-contained publish needs a target runtime) and is scoped to
+       Release only, same as SelfContained, so Debug output stays exactly where it was — Release
+       output gains a win-x64 subfolder, which AppUserStateTypeInitRaceHarnessTests.FindHarnessExe
+       accounts for. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\SQLTriage.csproj" />
+  </ItemGroup>
+
+</Project>

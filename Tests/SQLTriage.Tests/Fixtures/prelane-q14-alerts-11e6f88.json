@@ -1,0 +1,140 @@
+{
+  "_comment": "The three alerts of lane Q14 alerts-that-cannot-fire, exactly as they shipped at 11e6f88ce3773dd1819c1d4c9c01c0ee084aba6b (build 4078). Captured from git show by script, not hand-typed: make-fixture.py for the first two and make-fixture-fix2.py for integrity_check_overdue (the project's private evidence archive, evidence/alerts-that-cannot-fire-2026-09-18/builder/ and fix2/edits/). connection_count divides by SERVERPROPERTY('MaxConnections'), which is not a property, so its value is always NULL; sql_response_time's query returns two result sets and the evaluator reads the first, the constant 1; integrity_check_overdue reads only DATABASEPROPERTYEX(name, 'LastGoodCheckDbTime'), which is NULL for every database on SQL Server 14.0.2130.4, so it answers 0 there.",
+  "alerts": [
+    {
+      "id": "sql_response_time",
+      "name": "SQL Server Response Time",
+      "description": "SQL Server response time to a probe query is high",
+      "category": "performance",
+      "enabled": true,
+      "severity": "Warning",
+      "thresholds": {
+        "warning": 1000,
+        "critical": 2000
+      },
+      "unit": "milliseconds",
+      "operator": "greater_than",
+      "durationSeconds": 0,
+      "frequencySeconds": 60,
+      "query": "DECLARE @t DATETIME = GETDATE(); SELECT 1; SELECT DATEDIFF(MILLISECOND, @t, GETDATE()) AS value",
+      "alwaysAlert": false,
+      "primaryChannel": null,
+      "sendEmail": false,
+      "includeInDailySummary": false,
+      "escalate": false,
+      "escalationThresholdEvents": 0,
+      "escalationWindowMinutes": 0,
+      "escalationAfterMinutes": 0,
+      "escalationChannel": null,
+      "nextAlertDelayMinutes": 0,
+      "baselineDeviationPercent": 0,
+      "baselineQueryId": null,
+      "baselineSeries": null,
+      "canBaseline": true,
+      "requiresOnPrem": false
+    },
+    {
+      "id": "connection_count",
+      "name": "User Connections High",
+      "description": "User connection count approaching the configured maximum",
+      "category": "availability",
+      "enabled": true,
+      "severity": "Warning",
+      "thresholds": {
+        "warning": 80,
+        "critical": 90
+      },
+      "unit": "percent",
+      "operator": "greater_than",
+      "durationSeconds": 0,
+      "frequencySeconds": 60,
+      "query": "SELECT CAST(COUNT(*) AS FLOAT) * 100.0 / NULLIF(CAST(SERVERPROPERTY('MaxConnections') AS FLOAT), 0) AS value FROM sys.dm_exec_sessions WHERE is_user_process = 1",
+      "alwaysAlert": false,
+      "primaryChannel": null,
+      "sendEmail": false,
+      "includeInDailySummary": false,
+      "escalate": false,
+      "escalationThresholdEvents": 0,
+      "escalationWindowMinutes": 0,
+      "escalationAfterMinutes": 0,
+      "escalationChannel": null,
+      "nextAlertDelayMinutes": 0,
+      "baselineDeviationPercent": 0,
+      "baselineQueryId": null,
+      "baselineSeries": null,
+      "canBaseline": true,
+      "requiresOnPrem": false
+    },
+    {
+      "id": "integrity_check_overdue",
+      "name": "Integrity Check Overdue",
+      "description": "No DBCC CHECKDB has been run within the threshold period",
+      "category": "backup",
+      "enabled": true,
+      "severity": "Warning",
+      "thresholds": {
+        "warning": 336,
+        "critical": 672
+      },
+      "unit": "hours",
+      "operator": "greater_than",
+      "durationSeconds": 0,
+      "frequencySeconds": 3600,
+      "cooldownMinutes": 60,
+      "query": "SELECT ISNULL(MAX(DATEDIFF(HOUR, CONVERT(DATETIME, DBCC_LastKnownGood), GETDATE())), 0) AS value FROM (SELECT d.name, DATABASEPROPERTYEX(d.name, 'LastGoodCheckDbTime') AS DBCC_LastKnownGood FROM sys.databases d WHERE d.database_id > 4 AND d.state = 0) x WHERE DBCC_LastKnownGood IS NOT NULL",
+      "alwaysAlert": false,
+      "primaryChannel": null,
+      "sendEmail": false,
+      "includeInDailySummary": false,
+      "escalate": false,
+      "escalationThresholdEvents": 0,
+      "escalationWindowMinutes": 0,
+      "escalationAfterMinutes": 0,
+      "escalationChannel": null,
+      "nextAlertDelayMinutes": 0,
+      "baselineDeviationPercent": 0,
+      "baselineQueryId": null,
+      "baselineSeries": null,
+      "canBaseline": false,
+      "requiresOnPrem": false
+    }
+  ],
+  "olderIntegrityCheckOverdueBodies": {
+    "v0.80.0 a0c9566 (no operator)": {
+      "id": "integrity_check_overdue",
+      "name": "Integrity Check Overdue",
+      "description": "No DBCC CHECKDB has been run within the threshold period",
+      "category": "backup",
+      "enabled": false,
+      "severity": "Medium",
+      "thresholds": {
+        "warning": 336,
+        "critical": 672
+      },
+      "unit": "hours",
+      "durationSeconds": 0,
+      "frequencySeconds": 3600,
+      "cooldownMinutes": 60,
+      "query": "SELECT MAX(DATEDIFF(HOUR, DBCC_LastKnownGood, GETDATE())) AS value FROM (SELECT d.name, DATABASEPROPERTYEX(d.name, 'LastGoodCheckDbTime') AS DBCC_LastKnownGood FROM sys.databases d WHERE d.database_id > 4 AND d.state = 0) x WHERE DBCC_LastKnownGood IS NOT NULL",
+      "remediation": null
+    },
+    "6f15efe through ea00b7d (operator, no ISNULL, no CONVERT)": {
+      "id": "integrity_check_overdue",
+      "name": "Integrity Check Overdue",
+      "description": "No DBCC CHECKDB has been run within the threshold period",
+      "category": "backup",
+      "enabled": false,
+      "severity": "Medium",
+      "thresholds": {
+        "warning": 336,
+        "critical": 672
+      },
+      "unit": "hours",
+      "operator": "greater_than",
+      "durationSeconds": 0,
+      "frequencySeconds": 3600,
+      "cooldownMinutes": 60,
+      "query": "SELECT MAX(DATEDIFF(HOUR, DBCC_LastKnownGood, GETDATE())) AS value FROM (SELECT d.name, DATABASEPROPERTYEX(d.name, 'LastGoodCheckDbTime') AS DBCC_LastKnownGood FROM sys.databases d WHERE d.database_id > 4 AND d.state = 0) x WHERE DBCC_LastKnownGood IS NOT NULL"
+    }
+  }
+}

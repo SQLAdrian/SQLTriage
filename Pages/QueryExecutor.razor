@@ -1,0 +1,210 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/query"
+<PageTitle>SQLTriage - Query Executor</PageTitle>
+@using System.Data
+@using Microsoft.Data.SqlClient
+@inject IDbConnectionFactory ConnectionFactory
+@inject ServerConnectionManager ConnectionManager
+@inject AppUserState UserState
+@inject AuditLogService AuditLog
+
+@if (!UserState.IsAuthorized("run_scripts"))
+{
+    <div class="alert alert-danger" style="margin: 32px;">Access denied. Query Executor requires the 'run_scripts' permission. Contact your administrator.</div>
+    return;
+}
+
+<h3>SQL Query Executor</h3>
+
+<div style="display: flex; flex-direction: column; gap: 16px; padding: 16px;">
+    <div>
+        <label>Database:</label>
+        <input @bind="Database" style="margin-left: 8px; padding: 4px;" />
+    </div>
+    
+    <textarea @bind="SqlQuery" rows="10" style="font-family: 'Consolas', monospace; padding: 8px; width: 100%;" 
+              placeholder="Enter SQL query..."></textarea>
+    
+    <div>
+        <button @onclick="ExecuteQuery" disabled="@IsExecuting" class="btn-primary">
+            @(IsExecuting ? "Executing..." : "Execute (F5)")
+        </button>
+        <button @onclick="Clear" class="btn-secondary">Clear</button>
+    </div>
+
+    @if (Messages.Any())
+    {
+        <div style="background: var(--bg-secondary); padding: 12px; border-radius: 4px; font-family: 'Consolas', monospace; font-size: 12px;">
+            <strong>Messages:</strong>
+            @foreach (var msg in Messages)
+            {
+                <div style="color: @(msg.IsError ? "var(--red)" : "var(--green)");">@msg.Text</div>
+            }
+        </div>
+    }
+
+    @for (int i = 0; i < ResultSets.Count; i++)
+    {
+        var set = ResultSets[i];
+        <div style="overflow-x: auto;">
+            @if (ResultSets.Count > 1)
+            {
+                <div style="margin-bottom: 4px; font-weight: 600;">Result set @(i + 1) of @ResultSets.Count &mdash; @set.Rows.Count row(s)</div>
+            }
+            @if (set.Columns.Count == 0)
+            {
+                <div style="color: var(--text-muted);">(no columns)</div>
+            }
+            else
+            {
+                <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                    <thead>
+                        <tr style="background: var(--border);">
+                            @foreach (DataColumn col in set.Columns)
+                            {
+                                <th style="padding: 8px; border: 1px solid var(--border); text-align: left;">@col.ColumnName</th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (DataRow row in set.Rows)
+                        {
+                            <tr style="border-bottom: 1px solid var(--border);">
+                                @foreach (DataColumn col in set.Columns)
+                                {
+                                    <td style="padding: 8px; border: 1px solid var(--border);">@row[col]</td>
+                                }
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                @if (set.Rows.Count == 0)
+                {
+                    <div style="margin-top: 8px; color: var(--text-muted);">(0 rows)</div>
+                }
+                else
+                {
+                    <div style="margin-top: 8px; color: var(--text-muted);">@set.Rows.Count row(s) returned</div>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private string SqlQuery = "";
+    private string Database = "master";
+    private bool IsExecuting = false;
+    private List<DataTable> ResultSets = new();
+    private List<(string Text, bool IsError)> Messages = new();
+
+    private async Task ExecuteQuery()
+    {
+        if (string.IsNullOrWhiteSpace(SqlQuery)) return;
+
+        IsExecuting = true;
+        Messages.Clear();
+        ResultSets = new();
+        StateHasChanged();
+
+        var serverName = ConnectionManager.CurrentServer?.ServerNames ?? "unknown";
+        var querySnippet = SqlQuery.Length > 500 ? SqlQuery[..500] : SqlQuery;
+        var startTime = DateTime.UtcNow;
+        bool success = false;
+        string? errorMessage = null;
+
+        try
+        {
+            // exec-surface-safety: gate the free-form query per-statement for the OS/system-exec
+            // class before it reaches the server. A leading sys.* read cannot shield a trailing
+            // dangerous statement; maintenance DDL/DML passes. On a block, surface the reason and
+            // return without executing (never throw across the Blazor handler). The finally below
+            // still records the blocked attempt in the audit log with success = false.
+            var guard = DangerousExecGuard.Inspect(SqlQuery);
+            if (!guard.IsAllowed)
+            {
+                errorMessage = $"Blocked by dangerous-exec guard: {guard.Reason}";
+                Messages.Add(($"Blocked: {guard.Reason}", true));
+                return;
+            }
+
+            var factory = ConnectionFactory as SqlServerConnectionFactory;
+            using var conn = (SqlConnection)factory!.CreateConnection(Database);
+
+            conn.InfoMessage += (s, e) => Messages.Add((e.Message, false));
+
+            await conn.OpenAsync();
+            serverName = conn.DataSource;
+            Messages.Add(($"Connected to {conn.DataSource} - {conn.Database}", false));
+
+            // F3 (2026-09-07): /query was the ONE query surface with no session safety at all —
+            // CheckExecutionService and DiagnosticScriptRunner both apply SqlSessionSafety, this
+            // page applied nothing, so an ad-hoc query could sit blocked on a customer's production
+            // server until the 300 s command timeout.
+            //
+            // A SEPARATE ROUND-TRIP, never a text prefix: the prefix builder's own note in
+            // SqlSessionSafety says a preamble must not lead a batch whose first statement has to be first, and the
+            // whole point of this page is that an operator pastes arbitrary T-SQL — including
+            // CREATE PROCEDURE, which would fail with "must be the first statement in a query
+            // batch" if we prefixed it. ApplyAsync sets the options on the session instead, so the
+            // pasted batch is still sent verbatim and byte-identical.
+            //
+            // readUncommitted: FALSE — deliberate, and the one place this page differs from the
+            // diagnostic runners. Dirty reads are the right trade for a background health check
+            // that must not block anyone; they are the wrong trade for an operator console, where
+            // the person is reading the rows as an answer and would have no way of knowing the
+            // result included uncommitted work. LOCK_TIMEOUT is a pure availability guard: the
+            // worst it can do is turn a silent hang into a stated error the operator can read.
+            await SqlSessionSafety.ApplyAsync(conn, readUncommitted: false);
+
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = SqlQuery;
+            cmd.CommandTimeout = 300;
+
+            using var reader = await cmd.ExecuteReaderAsync();
+
+            // Load every result set the batch returns, not just the first.
+            // DataTable.Load consumes the current set AND advances the reader to
+            // the next, closing it after the last set -- so we loop on IsClosed
+            // rather than NextResult() (calling NextResult() here would skip every
+            // other set). Batches with no result set (PRINT/DML only) yield a
+            // single zero-column table, which we drop; only real SELECT sets grid.
+            while (!reader.IsClosed)
+            {
+                var table = new DataTable();
+                table.Load(reader);
+                if (table.Columns.Count > 0)
+                {
+                    ResultSets.Add(table);
+                }
+            }
+
+            var elapsed = DateTime.UtcNow - startTime;
+            success = true;
+            Messages.Add(($"Query completed in {elapsed.TotalSeconds:F2}s", false));
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+            Messages.Add(($"Error: {ex.Message}", true));
+        }
+        finally
+        {
+            AuditLog.LogScriptExecution(
+                $"QueryExecutor[{UserState.Role}]: {querySnippet}",
+                serverName,
+                success,
+                DateTime.UtcNow - startTime,
+                errorMessage);
+            IsExecuting = false;
+            StateHasChanged();
+        }
+    }
+
+    private void Clear()
+    {
+        SqlQuery = "";
+        ResultSets = new();
+        Messages.Clear();
+    }
+}

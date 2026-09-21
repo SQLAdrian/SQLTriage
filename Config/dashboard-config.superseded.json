@@ -1,0 +1,2320 @@
+{
+  "_comment": "Superseded (pre-fix) dashboard panel bodies this product shipped and has since corrected in the honesty-hunt dashboards lane (2026-08-26). DashboardConfigMigrator re-bases an installed panel to the current shipped body ONLY when the installed panel (ignoring its enabled toggle) is byte-identical to one of these, i.e. the operator never edited it. An operator-edited panel matches nothing here and is left exactly as it is. enabled is deliberately omitted: it is the operator's toggle and is preserved across a re-base. The last two entries (alwayson/ag.redo_queue, alwayson/ag.send_queue) supersede the 2026-08-26 12:20 bodies rather than pre-fix ones: the retention lane (DECISIONS 2026-08-26 18:23 ruling 4) gave those two panels retainHistory and a description that no longer says 'not a retained historical trend', and an upgraded install would otherwise keep the old wording with retention never switched on. 2026-08-28, strings lane cluster 1 adds three more, and they are the AMPLIFIER trio: memory/pmemory.buffer_pool queried a memory-clerk type that exists on no SQL Server (CACHESTORE_BUFPOOL; the real one is MEMORYCLERK_SQLBUFFERPOOL), and livetempdb/livetempdb.used_mb and livetempdb/livetempdb.version_store_mb read the database-scoped sys.dm_db_file_space_usage unqualified while connected to master. All three returned NULL on every install (PROVED live on both NEW2022 and OLD2017), and the cached stat-card path turned that NULL into a confident 0 badged as fresh data (strings-r2-03, fixed in the same commit). The buffer-pool panel already had two entries here from the dashboards lane's prose fix; this third one covers an install that has already been re-based onto the 84beb1c body and so matches neither of those. 2026-08-28, strings lane cluster 3 adds six more: these are PROSE corrections, where the panel described one measurement while its query performed another, and an operator reading the old wording is being told something false whether or not the query changed. correlation/queryperf.top_queries and livewaits/waits.details each already appear above from the dashboards lane; those earlier entries hold the pre-dashboards-lane bodies, so an install re-based onto the 84beb1c body matched neither and needed the extra entry, exactly as pmemory.buffer_pool did. Two of the six changed more than prose: longqueries/longqueries.querytext stamped every row with getdate() instead of the row's own event_time (PROVED 2026-08-28: the same projection over a row dated 2020-01-02 reported 2026-08-28, a six-year error) and carried defaultDatabase master while its view lives in SQLWATCH (PROVED: Msg 208, Invalid object name, against master on NEW2022), so the query and the defaultDatabase are corrected alongside the wording. Registered here rather than shipped alone because none of these corrections would otherwise reach an install that already has the file.",
+  "supersededPanels": [
+    {
+      "dashboardId": "alwayson",
+      "panelId": "ag.redo_queue",
+      "panel": {
+        "id": "ag.redo_queue",
+        "title": "Redo Queue Trend",
+        "description": "Redo queue size over time. High values mean the secondary is falling behind.",
+        "source": "",
+        "panelType": "TimeSeries",
+        "chartType": "Area",
+        "height": 250,
+        "refreshIntervalSeconds": 10,
+        "layout": {
+          "column": 2,
+          "order": 3,
+          "spanColumns": false
+        },
+        "query": {
+          "source": "sqlwatch",
+          "sqlServer": "SELECT GETDATE() AS [Time], ar.replica_server_name + ' / ' + DB_NAME(drs.database_id) AS [Series], CAST(drs.redo_queue_size AS BIGINT) AS [Value] FROM sys.dm_hadr_database_replica_states drs WITH (NOLOCK) INNER JOIN sys.availability_replicas ar WITH (NOLOCK) ON drs.replica_id = ar.replica_id WHERE drs.is_local = 0 ORDER BY [Value] DESC",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "KB",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "KB",
+        "valueFormat": "N0",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "alwayson",
+      "panelId": "ag.send_queue",
+      "panel": {
+        "id": "ag.send_queue",
+        "title": "Send Queue Trend",
+        "description": "Log send queue size over time across all AG databases. Rising trends indicate network or throughput issues.",
+        "source": "",
+        "panelType": "TimeSeries",
+        "chartType": "Area",
+        "height": 250,
+        "refreshIntervalSeconds": 10,
+        "layout": {
+          "column": 1,
+          "order": 3,
+          "spanColumns": false
+        },
+        "query": {
+          "source": "sqlwatch",
+          "sqlServer": "SELECT GETDATE() AS [Time], ar.replica_server_name + ' / ' + DB_NAME(drs.database_id) AS [Series], CAST(drs.log_send_queue_size AS BIGINT) AS [Value] FROM sys.dm_hadr_database_replica_states drs WITH (NOLOCK) INNER JOIN sys.availability_replicas ar WITH (NOLOCK) ON drs.replica_id = ar.replica_id WHERE drs.is_local = 0 ORDER BY [Value] DESC",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "KB",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "KB",
+        "valueFormat": "N0",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "backuphealth",
+      "panelId": "backuphealth.checksum_detail",
+      "panel": {
+        "id": "backuphealth.checksum_detail",
+        "title": "Checksum & Compression Detail",
+        "description": "Per-database breakdown of whether the most recent full backup used checksum and compression. Sorted by risk: no checksum and no compression first.",
+        "source": "",
+        "panelType": "DataGrid",
+        "chartType": "Line",
+        "height": 300,
+        "refreshIntervalSeconds": null,
+        "layout": {
+          "column": 0,
+          "order": 7,
+          "spanColumns": true
+        },
+        "query": {
+          "source": "",
+          "sqlServer": "SELECT bs.database_name AS [Database], MAX(bs.backup_finish_date) AS [Last Full Backup], CASE MAX(CAST(bs.has_backup_checksums AS INT)) WHEN 1 THEN 'Yes' ELSE 'No' END AS [Checksum], CASE WHEN MAX(bs.compressed_backup_size) < MAX(bs.backup_size) THEN 'Yes' ELSE 'No' END AS [Compressed], CAST(MAX(bs.backup_size)/1024.0/1024.0/1024.0 AS DECIMAL(10,2)) AS [Raw Size GB], CAST(MAX(bs.compressed_backup_size)/1024.0/1024.0/1024.0 AS DECIMAL(10,2)) AS [Compressed Size GB] FROM msdb.dbo.backupset bs WHERE bs.type = 'D' AND bs.backup_finish_date >= DATEADD(DAY,-7,GETDATE()) GROUP BY bs.database_name ORDER BY MAX(CAST(bs.has_backup_checksums AS INT)) ASC, bs.database_name",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "",
+        "valueFormat": "",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "backuphealth",
+      "panelId": "backuphealth.no_compression",
+      "panel": {
+        "id": "backuphealth.no_compression",
+        "title": "Backups Without Compression",
+        "description": "Databases whose most recent full backup was taken without compression. Uncompressed backups consume significantly more storage and take longer to restore.",
+        "source": "",
+        "panelType": "StatCard",
+        "chartType": "Line",
+        "height": 0,
+        "refreshIntervalSeconds": null,
+        "layout": {
+          "column": 0,
+          "order": 5,
+          "spanColumns": false
+        },
+        "query": {
+          "source": "",
+          "sqlServer": "SELECT CAST(COUNT(*) AS FLOAT) AS [Value] FROM (SELECT bs.database_name, MAX(bs.backup_finish_date) AS last_backup FROM msdb.dbo.backupset bs WHERE bs.type = 'D' AND bs.backup_finish_date >= DATEADD(DAY,-7,GETDATE()) AND ISNULL(bs.compressed_backup_size, 0) >= bs.backup_size GROUP BY bs.database_name) x",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": " db",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "",
+        "valueFormat": "N0",
+        "colorThresholds": [
+          {
+            "operator": ">=",
+            "value": 1,
+            "color": "#ff9800",
+            "label": "Warning"
+          },
+          {
+            "operator": ">=",
+            "value": 3,
+            "color": "#ef4444",
+            "label": "Critical"
+          }
+        ],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "checks-overview",
+      "panelId": "checks.all_results",
+      "panel": {
+        "id": "checks.all_results",
+        "title": "All Check Results",
+        "description": "Filterable grid of all check outcomes. TODO: wire.",
+        "source": "",
+        "panelType": "DataGrid",
+        "chartType": "Line",
+        "height": 250,
+        "refreshIntervalSeconds": 300,
+        "layout": {
+          "column": 0,
+          "order": 0,
+          "spanColumns": true
+        },
+        "query": {
+          "source": "sqlwatch",
+          "sqlServer": "",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "%",
+        "valueFormat": "",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null,
+        "dataFreshness": "recent",
+        "complexity": "low"
+      }
+    },
+    {
+      "dashboardId": "checks-overview",
+      "panelId": "checks.category_breakdown",
+      "panel": {
+        "id": "checks.category_breakdown",
+        "title": "Pass/Fail by Category",
+        "description": "Donut of check outcomes by category. TODO: wire.",
+        "source": "",
+        "panelType": "Donut",
+        "chartType": "Line",
+        "height": 250,
+        "refreshIntervalSeconds": 300,
+        "layout": {
+          "column": 1,
+          "order": 3,
+          "spanColumns": true
+        },
+        "query": {
+          "source": "sqlwatch",
+          "sqlServer": "",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "%",
+        "valueFormat": "",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null,
+        "dataFreshness": "recent",
+        "complexity": "low"
+      }
+    },
+    {
+      "dashboardId": "checks-overview",
+      "panelId": "checks.critical_failing",
+      "panel": {
+        "id": "checks.critical_failing",
+        "title": "Critical Failing",
+        "description": "Count of Critical checks currently failing. TODO: wire.",
+        "source": "",
+        "panelType": "StatCard",
+        "chartType": "Line",
+        "height": 150,
+        "refreshIntervalSeconds": 120,
+        "layout": {
+          "column": 0,
+          "order": 1,
+          "spanColumns": false
+        },
+        "query": {
+          "source": "sqlwatch",
+          "sqlServer": "",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "%",
+        "valueFormat": "",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null,
+        "dataFreshness": "recent",
+        "complexity": "low"
+      }
+    },
+    {
+      "dashboardId": "checks-overview",
+      "panelId": "checks.disabled_checks",
+      "panel": {
+        "id": "checks.disabled_checks",
+        "title": "Disabled Checks",
+        "description": "Checks currently disabled. TODO: wire.",
+        "source": "",
+        "panelType": "DataGrid",
+        "chartType": "Line",
+        "height": 250,
+        "refreshIntervalSeconds": 600,
+        "layout": {
+          "column": 0,
+          "order": 2,
+          "spanColumns": true
+        },
+        "query": {
+          "source": "sqlwatch",
+          "sqlServer": "",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "%",
+        "valueFormat": "",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null,
+        "dataFreshness": "recent",
+        "complexity": "low"
+      }
+    },
+    {
+      "dashboardId": "checks-overview",
+      "panelId": "checks.recently_changed",
+      "panel": {
+        "id": "checks.recently_changed",
+        "title": "Recently Changed",
+        "description": "Checks that flipped state in 24h. TODO: wire.",
+        "source": "",
+        "panelType": "DataGrid",
+        "chartType": "Line",
+        "height": 250,
+        "refreshIntervalSeconds": 300,
+        "layout": {
+          "column": 0,
+          "order": 1,
+          "spanColumns": true
+        },
+        "query": {
+          "source": "sqlwatch",
+          "sqlServer": "",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "%",
+        "valueFormat": "",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null,
+        "dataFreshness": "recent",
+        "complexity": "low"
+      }
+    },
+    {
+      "dashboardId": "checks-overview",
+      "panelId": "checks.severity_breakdown",
+      "panel": {
+        "id": "checks.severity_breakdown",
+        "title": "Checks by Severity",
+        "description": "HorizontalBar of Critical/Warning/Info counts. TODO: wire.",
+        "source": "",
+        "panelType": "HorizontalBar",
+        "chartType": "Line",
+        "height": 250,
+        "refreshIntervalSeconds": 300,
+        "layout": {
+          "column": 1,
+          "order": 4,
+          "spanColumns": true
+        },
+        "query": {
+          "source": "sqlwatch",
+          "sqlServer": "",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "%",
+        "valueFormat": "",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null,
+        "dataFreshness": "recent",
+        "complexity": "low"
+      }
+    },
+    {
+      "dashboardId": "checks-overview",
+      "panelId": "checks.total_checks",
+      "panel": {
+        "id": "checks.total_checks",
+        "title": "Total Enabled Checks",
+        "description": "Count of checks with Enabled=true. TODO: wire to ICheckRunner.",
+        "source": "",
+        "panelType": "StatCard",
+        "chartType": "Line",
+        "height": 150,
+        "refreshIntervalSeconds": 600,
+        "layout": {
+          "column": 0,
+          "order": 0,
+          "spanColumns": false
+        },
+        "query": {
+          "source": "sqlwatch",
+          "sqlServer": "",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "%",
+        "valueFormat": "",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null,
+        "dataFreshness": "recent",
+        "complexity": "low"
+      }
+    },
+    {
+      "dashboardId": "checks-overview",
+      "panelId": "checks.warning_failing",
+      "panel": {
+        "id": "checks.warning_failing",
+        "title": "Warning Failing",
+        "description": "Count of Warning checks currently failing. TODO: wire.",
+        "source": "",
+        "panelType": "StatCard",
+        "chartType": "Line",
+        "height": 150,
+        "refreshIntervalSeconds": 120,
+        "layout": {
+          "column": 0,
+          "order": 2,
+          "spanColumns": false
+        },
+        "query": {
+          "source": "sqlwatch",
+          "sqlServer": "",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "%",
+        "valueFormat": "",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null,
+        "dataFreshness": "recent",
+        "complexity": "low"
+      }
+    },
+    {
+      "dashboardId": "correlation",
+      "panelId": "queryperf.top_queries",
+      "panel": {
+        "id": "queryperf.top_queries",
+        "title": "Top N Queries by Duration (Live)",
+        "description": "Real-time top 10 queries by average execution time — identify slow-running queries that need optimization.",
+        "source": "",
+        "panelType": "DataGrid",
+        "chartType": "Line",
+        "height": 350,
+        "refreshIntervalSeconds": 10,
+        "layout": {
+          "column": 0,
+          "order": 6,
+          "spanColumns": true
+        },
+        "query": {
+          "source": "",
+          "sqlServer": "SELECT TOP 10\n    qs.query_hash AS [Query Hash],\n    qs.execution_count AS [Exec Count],\n    CAST(qs.total_elapsed_time / 1000.0 / NULLIF(qs.execution_count,0) AS DECIMAL(14,1)) AS [Avg Duration (ms)],\n    CAST(qs.min_elapsed_time / 1000.0 AS DECIMAL(14,1)) AS [Min (ms)],\n    CAST(qs.max_elapsed_time / 1000.0 AS DECIMAL(14,1)) AS [Max (ms)],\n    qs.last_execution_time AS [Last Exec],\n    LEFT(st.[text], 100) AS [SQL Preview]\nFROM sys.dm_exec_query_stats qs\nCROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st\nORDER BY qs.total_elapsed_time DESC",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "",
+        "valueFormat": "N0",
+        "colorThresholds": [],
+        "dataGridIsClickable": true,
+        "dataGridMaxRows": 10,
+        "dataGridTopRows": 10,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "live",
+      "panelId": "live.cmemthread",
+      "panel": {
+        "id": "live.cmemthread",
+        "title": "CMEMTHREAD NUMA/",
+        "description": "CMEMTHREAD wait time indicating memory grant queue waits. Suggests queries waiting for memory to execute.",
+        "source": "",
+        "panelType": "DeltaStatCard",
+        "chartType": "Line",
+        "height": 120,
+        "refreshIntervalSeconds": 5,
+        "layout": {
+          "column": 0,
+          "order": 8,
+          "spanColumns": false
+        },
+        "query": {
+          "source": "sqlwatch",
+          "sqlServer": "SELECT SUM(CONVERT(BIGINT,CASE WHEN wait_type = 'CMEMTHREAD' THEN wait_time_ms-signal_wait_time_ms ELSE 0 END)) AS [Value] FROM sys.dm_os_wait_stats WITH(NOLOCK)",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "ms",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "",
+        "valueFormat": "",
+        "colorThresholds": [
+          {
+            "operator": ">=",
+            "value": 0,
+            "color": "#107C10",
+            "label": "Normal"
+          },
+          {
+            "operator": ">=",
+            "value": 1,
+            "color": "#FF0000",
+            "label": "Critical"
+          }
+        ],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "live",
+      "panelId": "live.cmemthread",
+      "panel": {
+        "id": "live.cmemthread",
+        "title": "CMEMTHREAD NUMA/",
+        "description": "CMEMTHREAD wait time indicating memory grant queue waits. Suggests queries waiting for memory to execute.",
+        "source": "",
+        "panelType": "DeltaStatCard",
+        "chartType": "Line",
+        "height": 120,
+        "refreshIntervalSeconds": 5,
+        "layout": {
+          "column": 0,
+          "order": 8,
+          "spanColumns": false
+        },
+        "query": {
+          "source": "sqlwatch",
+          "sqlServer": "SELECT SUM(CONVERT(BIGINT,CASE WHEN wait_type = 'CMEMTHREAD' THEN wait_time_ms-signal_wait_time_ms ELSE 0 END)) AS [Value] FROM sys.dm_os_wait_stats WITH(NOLOCK)",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "",
+        "valueFormat": "",
+        "colorThresholds": [
+          {
+            "operator": ">=",
+            "value": 0,
+            "color": "#107C10",
+            "label": "Normal"
+          },
+          {
+            "operator": ">=",
+            "value": 1,
+            "color": "#FF0000",
+            "label": "Critical"
+          }
+        ],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "live",
+      "panelId": "live.poison_waits",
+      "panel": {
+        "id": "live.poison_waits",
+        "title": "Poison Waits",
+        "description": "Cumulative poison wait types (CXPACKET, PAGEIOLATCH, etc.) that indicate performance bottlenecks. Sourced from sys.dm_os_wait_stats.",
+        "source": "",
+        "panelType": "DeltaStatCard",
+        "chartType": "Line",
+        "height": 120,
+        "refreshIntervalSeconds": 5,
+        "layout": {
+          "column": 0,
+          "order": 6,
+          "spanColumns": false
+        },
+        "query": {
+          "source": "sqlwatch",
+          "sqlServer": "SELECT SUM(CONVERT(BIGINT,CASE WHEN wait_type IN('IO_QUEUE_LIMIT', 'IO_RETRY', 'LOG_RATE_GOVERNOR', 'POOL_LOG_RATE_GOVERNOR', 'RESMGR_THROTTLED', 'RESOURCE_SEMAPHORE', 'THREADPOOL') THEN wait_time_ms-signal_wait_time_ms ELSE 0 END)) AS [Value] FROM sys.dm_os_wait_stats WITH(NOLOCK)",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "ms",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "",
+        "valueFormat": "",
+        "colorThresholds": [
+          {
+            "operator": ">=",
+            "value": 0,
+            "color": "#107C10",
+            "label": "Normal"
+          },
+          {
+            "operator": ">=",
+            "value": 1,
+            "color": "#FF0000",
+            "label": "Critical"
+          }
+        ],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "live",
+      "panelId": "live.poison_waits",
+      "panel": {
+        "id": "live.poison_waits",
+        "title": "Poison Waits",
+        "description": "Cumulative poison wait types (CXPACKET, PAGEIOLATCH, etc.) that indicate performance bottlenecks. Sourced from sys.dm_os_wait_stats.",
+        "source": "",
+        "panelType": "DeltaStatCard",
+        "chartType": "Line",
+        "height": 120,
+        "refreshIntervalSeconds": 5,
+        "layout": {
+          "column": 0,
+          "order": 6,
+          "spanColumns": false
+        },
+        "query": {
+          "source": "sqlwatch",
+          "sqlServer": "SELECT SUM(CONVERT(BIGINT,CASE WHEN wait_type IN('IO_QUEUE_LIMIT', 'IO_RETRY', 'LOG_RATE_GOVERNOR', 'POOL_LOG_RATE_GOVERNOR', 'RESMGR_THROTTLED', 'RESOURCE_SEMAPHORE', 'THREADPOOL') THEN wait_time_ms-signal_wait_time_ms ELSE 0 END)) AS [Value] FROM sys.dm_os_wait_stats WITH(NOLOCK)",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "",
+        "valueFormat": "",
+        "colorThresholds": [
+          {
+            "operator": ">=",
+            "value": 0,
+            "color": "#107C10",
+            "label": "Normal"
+          },
+          {
+            "operator": ">=",
+            "value": 1,
+            "color": "#FF0000",
+            "label": "Critical"
+          }
+        ],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "live",
+      "panelId": "live.serializable_locking",
+      "panel": {
+        "id": "live.serializable_locking",
+        "title": "Serializable Locking",
+        "description": "Lock requests per second at SERIALIZABLE isolation level. High values may indicate blocking or deadlock risks.",
+        "source": "",
+        "panelType": "DeltaStatCard",
+        "chartType": "Line",
+        "height": 120,
+        "refreshIntervalSeconds": 5,
+        "layout": {
+          "column": 0,
+          "order": 7,
+          "spanColumns": false
+        },
+        "query": {
+          "source": "sqlwatch",
+          "sqlServer": "SELECT SUM(CONVERT(BIGINT,CASE WHEN wait_type IN('LCK_M_RS_S', 'LCK_M_RS_U', 'LCK_M_RIn_NL','LCK_M_RIn_S', 'LCK_M_RIn_U','LCK_M_RIn_X', 'LCK_M_RX_S', 'LCK_M_RX_U','LCK_M_RX_X') THEN wait_time_ms-signal_wait_time_ms ELSE 0 END)) AS [Value] FROM sys.dm_os_wait_stats WITH(NOLOCK)",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "ms",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "",
+        "valueFormat": "",
+        "colorThresholds": [
+          {
+            "operator": ">=",
+            "value": 0,
+            "color": "#107C10",
+            "label": "Normal"
+          },
+          {
+            "operator": ">=",
+            "value": 1,
+            "color": "#FF0000",
+            "label": "Critical"
+          }
+        ],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "live",
+      "panelId": "live.serializable_locking",
+      "panel": {
+        "id": "live.serializable_locking",
+        "title": "Serializable Locking",
+        "description": "Lock requests per second at SERIALIZABLE isolation level. High values may indicate blocking or deadlock risks.",
+        "source": "",
+        "panelType": "DeltaStatCard",
+        "chartType": "Line",
+        "height": 120,
+        "refreshIntervalSeconds": 5,
+        "layout": {
+          "column": 0,
+          "order": 7,
+          "spanColumns": false
+        },
+        "query": {
+          "source": "sqlwatch",
+          "sqlServer": "SELECT SUM(CONVERT(BIGINT,CASE WHEN wait_type IN('LCK_M_RS_S', 'LCK_M_RS_U', 'LCK_M_RIn_NL','LCK_M_RIn_S', 'LCK_M_RIn_U','LCK_M_RIn_X', 'LCK_M_RX_S', 'LCK_M_RX_U','LCK_M_RX_X') THEN wait_time_ms-signal_wait_time_ms ELSE 0 END)) AS [Value] FROM sys.dm_os_wait_stats WITH(NOLOCK)",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "",
+        "valueFormat": "",
+        "colorThresholds": [
+          {
+            "operator": ">=",
+            "value": 0,
+            "color": "#107C10",
+            "label": "Normal"
+          },
+          {
+            "operator": ">=",
+            "value": 1,
+            "color": "#FF0000",
+            "label": "Critical"
+          }
+        ],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "livewaits",
+      "panelId": "livewaits.active_sessions",
+      "panel": {
+        "id": "livewaits.active_sessions",
+        "title": "Active Wait Sessions",
+        "description": "Currently waiting SQL requests - wait type, duration, database and SQL text from sys.dm_exec_requests.",
+        "source": "",
+        "panelType": "DataGrid",
+        "chartType": "Line",
+        "height": 300,
+        "refreshIntervalSeconds": null,
+        "layout": {
+          "column": 1,
+          "order": 3,
+          "spanColumns": true
+        },
+        "query": {
+          "source": "",
+          "sqlServer": "SELECT r.session_id AS [SPID], r.wait_type AS [Wait Type], r.wait_time AS [Wait ms], r.status AS [Status], DB_NAME(r.database_id) AS [Database], CAST(SUBSTRING(t.text,(r.statement_start_offset/2)+1,(CASE r.statement_end_offset WHEN -1 THEN DATALENGTH(t.text) ELSE r.statement_end_offset END-r.statement_start_offset)/2+1) AS NVARCHAR(200)) AS [SQL Text] FROM sys.dm_exec_requests r CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) t WHERE r.wait_type IS NOT NULL AND r.wait_type NOT IN (N'BROKER_EVENTHANDLER',N'BROKER_RECEIVE_WAITFOR',N'BROKER_TASK_STOP',N'BROKER_TO_FLUSH',N'BROKER_TRANSMITTER',N'CHECKPOINT_QUEUE',N'CHKPT',N'CLR_AUTO_EVENT',N'CLR_MANUAL_EVENT',N'CLR_SEMAPHORE',N'DBMIRRORING_CMD',N'DBMIRROR_DBM_EVENT',N'DBMIRROR_EVENTS_QUEUE',N'DBMIRROR_WORKER_QUEUE',N'DIRTY_PAGE_POLL',N'DISPATCHER_QUEUE_SEMAPHORE',N'EXECSYNC',N'FSAGENT',N'FT_IFTSHC_MUTEX',N'FT_IFTS_SCHEDULER_IDLE_WAIT',N'HADR_CLUSAPI_CALL',N'HADR_FILESTREAM_IOMGR_IOCOMPLETION',N'HADR_LOGCAPTURE_WAIT',N'HADR_NOTIFICATION_DEQUEUE',N'HADR_TIMER_TASK',N'HADR_WORK_QUEUE',N'KSOURCE_WAKEUP',N'LAZYWRITER_SLEEP',N'LOGMGR_QUEUE',N'MEMORY_ALLOCATION_EXT',N'ONDEMAND_TASK_QUEUE',N'PARALLEL_REDO_DRAIN_WORKER',N'PARALLEL_REDO_LOG_CAPTURE',N'PARALLEL_REDO_TRAN_LIST',N'PARALLEL_REDO_WORKER_SYNC',N'PARALLEL_REDO_WORKER_WAIT_WORK',N'POPULATE_LOCK_ORDINALS',N'PREEMPTIVE_OS_FLUSHFILEBUFFERS',N'PREEMPTIVE_XE_GETTARGETSTATE',N'PWAIT_ALL_COMPONENTS_INITIALIZED',N'PWAIT_DIRECTLOGCONSUMER_GETNEXT',N'PWAIT_EXTENSIBILITY_CLEANUP_TASK',N'QDS_ASYNC_QUEUE',N'QDS_CLEANUP_STALE_QUERIES_TASK_MAIN_LOOP_SLEEP',N'QDS_PERSIST_TASK_MAIN_LOOP_SLEEP',N'QDS_SHUTDOWN_QUEUE',N'REDO_THREAD_PENDING_WORK',N'REQUEST_FOR_DEADLOCK_SEARCH',N'RESOURCE_QUEUE',N'SERVER_IDLE_CHECK',N'SLEEP_BPOOL_FLUSH',N'SLEEP_BUFFERPOOL_HELPLW',N'SLEEP_DBSTARTUP',N'SLEEP_DCOMSTARTUP',N'SLEEP_DIAG',N'SLEEP_MASTERDBREADY',N'SLEEP_MASTERMDREADY',N'SLEEP_MASTERUPGRADED',N'SLEEP_MSDBSTARTUP',N'SLEEP_SYSTEMTASK',N'SLEEP_TASK',N'SLEEP_TEMPDBSHRINK',N'SLEEP_TEMPDBSTARTUP',N'SLEEP_WORKER',N'SLEEP_WORKSPACE_MANAGER',N'SNI_HTTP_ACCEPT',N'SOS_WORK_DISPATCHER',N'SP_SERVER_DIAGNOSTICS_SLEEP',N'SQLTRACE_BUFFER_FLUSH',N'SQLTRACE_INCREMENTAL_FLUSH_SLEEP',N'SQLTRACE_WAIT_ENTRIES',N'STARTUP_DEPENDENCY_MANAGER',N'VDI_CLIENT_OTHER',N'WAITFOR',N'WAITFOR_TASKSHUTDOWN',N'WAIT_FOR_RESULTS',N'WAIT_XTP_CKPT_CLOSE',N'WAIT_XTP_HOST_WAIT',N'WAIT_XTP_OFFLINE_CKPT_NEW_LOG',N'WAIT_XTP_RECOVERY',N'XE_DISPATCHER_JOIN',N'XE_DISPATCHER_WAIT',N'XE_TIMER_EVENT') AND r.status NOT IN (N'BROKER_EVENTHANDLER',N'BROKER_RECEIVE_WAITFOR',N'BROKER_TASK_STOP',N'BROKER_TO_FLUSH',N'BROKER_TRANSMITTER',N'CHECKPOINT_QUEUE',N'CHKPT',N'CLR_AUTO_EVENT',N'CLR_MANUAL_EVENT',N'CLR_SEMAPHORE',N'DBMIRRORING_CMD',N'DBMIRROR_DBM_EVENT',N'DBMIRROR_EVENTS_QUEUE',N'DBMIRROR_WORKER_QUEUE',N'DIRTY_PAGE_POLL',N'DISPATCHER_QUEUE_SEMAPHORE',N'EXECSYNC',N'FSAGENT',N'FT_IFTSHC_MUTEX',N'FT_IFTS_SCHEDULER_IDLE_WAIT',N'HADR_CLUSAPI_CALL',N'HADR_FILESTREAM_IOMGR_IOCOMPLETION',N'HADR_LOGCAPTURE_WAIT',N'HADR_NOTIFICATION_DEQUEUE',N'HADR_TIMER_TASK',N'HADR_WORK_QUEUE',N'KSOURCE_WAKEUP',N'LAZYWRITER_SLEEP',N'LOGMGR_QUEUE',N'MEMORY_ALLOCATION_EXT',N'ONDEMAND_TASK_QUEUE',N'PARALLEL_REDO_DRAIN_WORKER',N'PARALLEL_REDO_LOG_CAPTURE',N'PARALLEL_REDO_TRAN_LIST',N'PARALLEL_REDO_WORKER_SYNC',N'PARALLEL_REDO_WORKER_WAIT_WORK',N'POPULATE_LOCK_ORDINALS',N'PREEMPTIVE_OS_FLUSHFILEBUFFERS',N'PREEMPTIVE_XE_GETTARGETSTATE',N'PWAIT_ALL_COMPONENTS_INITIALIZED',N'PWAIT_DIRECTLOGCONSUMER_GETNEXT',N'PWAIT_EXTENSIBILITY_CLEANUP_TASK',N'QDS_ASYNC_QUEUE',N'QDS_CLEANUP_STALE_QUERIES_TASK_MAIN_LOOP_SLEEP',N'QDS_PERSIST_TASK_MAIN_LOOP_SLEEP',N'QDS_SHUTDOWN_QUEUE',N'REDO_THREAD_PENDING_WORK',N'REQUEST_FOR_DEADLOCK_SEARCH',N'RESOURCE_QUEUE',N'SERVER_IDLE_CHECK',N'SLEEP_BPOOL_FLUSH',N'SLEEP_BUFFERPOOL_HELPLW',N'SLEEP_DBSTARTUP',N'SLEEP_DCOMSTARTUP',N'SLEEP_DIAG',N'SLEEP_MASTERDBREADY',N'SLEEP_MASTERMDREADY',N'SLEEP_MASTERUPGRADED',N'SLEEP_MSDBSTARTUP',N'SLEEP_SYSTEMTASK',N'SLEEP_TASK',N'SLEEP_TEMPDBSHRINK',N'SLEEP_TEMPDBSTARTUP',N'SLEEP_WORKER',N'SLEEP_WORKSPACE_MANAGER',N'SNI_HTTP_ACCEPT',N'SOS_WORK_DISPATCHER',N'SP_SERVER_DIAGNOSTICS_SLEEP',N'SQLTRACE_BUFFER_FLUSH',N'SQLTRACE_INCREMENTAL_FLUSH_SLEEP',N'SQLTRACE_WAIT_ENTRIES',N'STARTUP_DEPENDENCY_MANAGER',N'VDI_CLIENT_OTHER',N'WAITFOR',N'WAITFOR_TASKSHUTDOWN',N'WAIT_FOR_RESULTS',N'WAIT_XTP_CKPT_CLOSE',N'WAIT_XTP_HOST_WAIT',N'WAIT_XTP_OFFLINE_CKPT_NEW_LOG',N'WAIT_XTP_RECOVERY',N'XE_DISPATCHER_JOIN',N'XE_DISPATCHER_WAIT',N'XE_TIMER_EVENT') ORDER BY r.wait_time DESC",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "",
+        "valueFormat": "",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 200,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "livewaits",
+      "panelId": "livewaits.active_waits",
+      "panel": {
+        "id": "livewaits.active_waits",
+        "title": "Active Waits",
+        "description": "Requests currently waiting in sys.dm_exec_requests. Background and sleeping sessions excluded.",
+        "source": "",
+        "panelType": "StatCard",
+        "chartType": "Line",
+        "height": 0,
+        "refreshIntervalSeconds": null,
+        "layout": {
+          "column": 0,
+          "order": 7,
+          "spanColumns": false
+        },
+        "query": {
+          "source": "",
+          "sqlServer": "SELECT CAST(COUNT(*) AS FLOAT) AS [Value] FROM sys.dm_exec_requests WHERE wait_type IS NOT NULL AND wait_type NOT IN (N'BROKER_EVENTHANDLER',N'BROKER_RECEIVE_WAITFOR',N'BROKER_TASK_STOP',N'BROKER_TO_FLUSH',N'BROKER_TRANSMITTER',N'CHECKPOINT_QUEUE',N'CHKPT',N'CLR_AUTO_EVENT',N'CLR_MANUAL_EVENT',N'CLR_SEMAPHORE',N'DBMIRRORING_CMD',N'DBMIRROR_DBM_EVENT',N'DBMIRROR_EVENTS_QUEUE',N'DBMIRROR_WORKER_QUEUE',N'DIRTY_PAGE_POLL',N'DISPATCHER_QUEUE_SEMAPHORE',N'EXECSYNC',N'FSAGENT',N'FT_IFTSHC_MUTEX',N'FT_IFTS_SCHEDULER_IDLE_WAIT',N'HADR_CLUSAPI_CALL',N'HADR_FILESTREAM_IOMGR_IOCOMPLETION',N'HADR_LOGCAPTURE_WAIT',N'HADR_NOTIFICATION_DEQUEUE',N'HADR_TIMER_TASK',N'HADR_WORK_QUEUE',N'KSOURCE_WAKEUP',N'LAZYWRITER_SLEEP',N'LOGMGR_QUEUE',N'MEMORY_ALLOCATION_EXT',N'ONDEMAND_TASK_QUEUE',N'PARALLEL_REDO_DRAIN_WORKER',N'PARALLEL_REDO_LOG_CAPTURE',N'PARALLEL_REDO_TRAN_LIST',N'PARALLEL_REDO_WORKER_SYNC',N'PARALLEL_REDO_WORKER_WAIT_WORK',N'POPULATE_LOCK_ORDINALS',N'PREEMPTIVE_OS_FLUSHFILEBUFFERS',N'PREEMPTIVE_XE_GETTARGETSTATE',N'PWAIT_ALL_COMPONENTS_INITIALIZED',N'PWAIT_DIRECTLOGCONSUMER_GETNEXT',N'PWAIT_EXTENSIBILITY_CLEANUP_TASK',N'QDS_ASYNC_QUEUE',N'QDS_CLEANUP_STALE_QUERIES_TASK_MAIN_LOOP_SLEEP',N'QDS_PERSIST_TASK_MAIN_LOOP_SLEEP',N'QDS_SHUTDOWN_QUEUE',N'REDO_THREAD_PENDING_WORK',N'REQUEST_FOR_DEADLOCK_SEARCH',N'RESOURCE_QUEUE',N'SERVER_IDLE_CHECK',N'SLEEP_BPOOL_FLUSH',N'SLEEP_BUFFERPOOL_HELPLW',N'SLEEP_DBSTARTUP',N'SLEEP_DCOMSTARTUP',N'SLEEP_DIAG',N'SLEEP_MASTERDBREADY',N'SLEEP_MASTERMDREADY',N'SLEEP_MASTERUPGRADED',N'SLEEP_MSDBSTARTUP',N'SLEEP_SYSTEMTASK',N'SLEEP_TASK',N'SLEEP_TEMPDBSHRINK',N'SLEEP_TEMPDBSTARTUP',N'SLEEP_WORKER',N'SLEEP_WORKSPACE_MANAGER',N'SNI_HTTP_ACCEPT',N'SOS_WORK_DISPATCHER',N'SP_SERVER_DIAGNOSTICS_SLEEP',N'SQLTRACE_BUFFER_FLUSH',N'SQLTRACE_INCREMENTAL_FLUSH_SLEEP',N'SQLTRACE_WAIT_ENTRIES',N'STARTUP_DEPENDENCY_MANAGER',N'VDI_CLIENT_OTHER',N'WAITFOR',N'WAITFOR_TASKSHUTDOWN',N'WAIT_FOR_RESULTS',N'WAIT_XTP_CKPT_CLOSE',N'WAIT_XTP_HOST_WAIT',N'WAIT_XTP_OFFLINE_CKPT_NEW_LOG',N'WAIT_XTP_RECOVERY',N'XE_DISPATCHER_JOIN',N'XE_DISPATCHER_WAIT',N'XE_TIMER_EVENT') AND status NOT IN (N'BROKER_EVENTHANDLER',N'BROKER_RECEIVE_WAITFOR',N'BROKER_TASK_STOP',N'BROKER_TO_FLUSH',N'BROKER_TRANSMITTER',N'CHECKPOINT_QUEUE',N'CHKPT',N'CLR_AUTO_EVENT',N'CLR_MANUAL_EVENT',N'CLR_SEMAPHORE',N'DBMIRRORING_CMD',N'DBMIRROR_DBM_EVENT',N'DBMIRROR_EVENTS_QUEUE',N'DBMIRROR_WORKER_QUEUE',N'DIRTY_PAGE_POLL',N'DISPATCHER_QUEUE_SEMAPHORE',N'EXECSYNC',N'FSAGENT',N'FT_IFTSHC_MUTEX',N'FT_IFTS_SCHEDULER_IDLE_WAIT',N'HADR_CLUSAPI_CALL',N'HADR_FILESTREAM_IOMGR_IOCOMPLETION',N'HADR_LOGCAPTURE_WAIT',N'HADR_NOTIFICATION_DEQUEUE',N'HADR_TIMER_TASK',N'HADR_WORK_QUEUE',N'KSOURCE_WAKEUP',N'LAZYWRITER_SLEEP',N'LOGMGR_QUEUE',N'MEMORY_ALLOCATION_EXT',N'ONDEMAND_TASK_QUEUE',N'PARALLEL_REDO_DRAIN_WORKER',N'PARALLEL_REDO_LOG_CAPTURE',N'PARALLEL_REDO_TRAN_LIST',N'PARALLEL_REDO_WORKER_SYNC',N'PARALLEL_REDO_WORKER_WAIT_WORK',N'POPULATE_LOCK_ORDINALS',N'PREEMPTIVE_OS_FLUSHFILEBUFFERS',N'PREEMPTIVE_XE_GETTARGETSTATE',N'PWAIT_ALL_COMPONENTS_INITIALIZED',N'PWAIT_DIRECTLOGCONSUMER_GETNEXT',N'PWAIT_EXTENSIBILITY_CLEANUP_TASK',N'QDS_ASYNC_QUEUE',N'QDS_CLEANUP_STALE_QUERIES_TASK_MAIN_LOOP_SLEEP',N'QDS_PERSIST_TASK_MAIN_LOOP_SLEEP',N'QDS_SHUTDOWN_QUEUE',N'REDO_THREAD_PENDING_WORK',N'REQUEST_FOR_DEADLOCK_SEARCH',N'RESOURCE_QUEUE',N'SERVER_IDLE_CHECK',N'SLEEP_BPOOL_FLUSH',N'SLEEP_BUFFERPOOL_HELPLW',N'SLEEP_DBSTARTUP',N'SLEEP_DCOMSTARTUP',N'SLEEP_DIAG',N'SLEEP_MASTERDBREADY',N'SLEEP_MASTERMDREADY',N'SLEEP_MASTERUPGRADED',N'SLEEP_MSDBSTARTUP',N'SLEEP_SYSTEMTASK',N'SLEEP_TASK',N'SLEEP_TEMPDBSHRINK',N'SLEEP_TEMPDBSTARTUP',N'SLEEP_WORKER',N'SLEEP_WORKSPACE_MANAGER',N'SNI_HTTP_ACCEPT',N'SOS_WORK_DISPATCHER',N'SP_SERVER_DIAGNOSTICS_SLEEP',N'SQLTRACE_BUFFER_FLUSH',N'SQLTRACE_INCREMENTAL_FLUSH_SLEEP',N'SQLTRACE_WAIT_ENTRIES',N'STARTUP_DEPENDENCY_MANAGER',N'VDI_CLIENT_OTHER',N'WAITFOR',N'WAITFOR_TASKSHUTDOWN',N'WAIT_FOR_RESULTS',N'WAIT_XTP_CKPT_CLOSE',N'WAIT_XTP_HOST_WAIT',N'WAIT_XTP_OFFLINE_CKPT_NEW_LOG',N'WAIT_XTP_RECOVERY',N'XE_DISPATCHER_JOIN',N'XE_DISPATCHER_WAIT',N'XE_TIMER_EVENT')",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "",
+        "valueFormat": "N0",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "livewaits",
+      "panelId": "waits.details",
+      "panel": {
+        "id": "waits.details",
+        "title": "Wait Event Details",
+        "description": "Detailed wait statistics by wait type showing wait time, wait count, and percentage of total waits from SQLWATCH snapshots.",
+        "source": "",
+        "panelType": "DataGrid",
+        "chartType": "Line",
+        "height": 300,
+        "refreshIntervalSeconds": null,
+        "layout": {
+          "column": 1,
+          "order": 2,
+          "spanColumns": true
+        },
+        "query": {
+          "source": "sqlwatch",
+          "sqlServer": "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; \nSELECT TOP 250\n    h.report_time AS [Time],\n    ISNULL(ws.wait_category, 'Other') AS [Category],\n    mw.wait_type AS [Wait Type],\n    SUM(d.wait_time_ms_delta) AS [Wait Time (ms)],\n    SUM(d.waiting_tasks_count_delta) AS [Waiting Tasks],\n    d.sql_instance\nFROM dbo.sqlwatch_logger_perf_os_wait_stats d WITH (NOLOCK)\nINNER JOIN dbo.sqlwatch_logger_snapshot_header h WITH (NOLOCK)\n    ON h.snapshot_time = d.snapshot_time\n    AND h.snapshot_type_id = d.snapshot_type_id\n    AND h.sql_instance = d.sql_instance\nLEFT JOIN dbo.vw_sqlwatch_meta_wait_stats_category ws WITH (NOLOCK)\n    ON ws.sql_instance = d.sql_instance\n    AND ws.wait_type_id = d.wait_type_id\nLEFT JOIN dbo.sqlwatch_meta_wait_stats mw WITH (NOLOCK)\n    ON mw.sql_instance = d.sql_instance\n    AND mw.wait_type_id = d.wait_type_id\nWHERE h.report_time BETWEEN @TimeFrom AND @TimeTo\n    AND d.sql_instance IN (SELECT value FROM STRING_SPLIT(@SqlInstance, ','))\n    AND d.wait_time_ms_delta > 0\nGROUP BY h.report_time, ISNULL(ws.wait_category, 'Other'), mw.wait_type, d.sql_instance\nORDER BY h.report_time DESC, [Wait Time (ms)] DESC",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "%",
+        "valueFormat": "",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "livewaits",
+      "panelId": "waits.timeseries_category",
+      "panel": {
+        "id": "waits.timeseries_category",
+        "title": "Wait Events by Category",
+        "description": "Wait time trends by category (CPU, I/O, Memory, Lock, Network) over time. Identifies shifting performance bottlenecks.",
+        "source": "",
+        "panelType": "TimeSeries",
+        "chartType": "Area",
+        "height": 250,
+        "refreshIntervalSeconds": null,
+        "layout": {
+          "column": 1,
+          "order": 1,
+          "spanColumns": true
+        },
+        "query": {
+          "source": "sqlwatch",
+          "sqlServer": "\r\nSELECT\r\n    h.report_time AS [Time],\r\n    ISNULL(ws.wait_category, 'Other') AS [Series],\r\n    SUM(d.wait_time_ms_delta) AS [Value]\r\nFROM dbo.sqlwatch_logger_perf_os_wait_stats d WITH (NOLOCK)\r\nINNER JOIN dbo.sqlwatch_logger_snapshot_header h WITH (NOLOCK)\r\n    ON h.snapshot_time = d.snapshot_time\r\n    AND h.snapshot_type_id = d.snapshot_type_id\r\n    AND h.sql_instance = d.sql_instance\r\nLEFT JOIN dbo.vw_sqlwatch_meta_wait_stats_category ws WITH (NOLOCK)\r\n    ON ws.sql_instance = d.sql_instance\r\n    AND ws.wait_type_id = d.wait_type_id\r\nWHERE h.report_time BETWEEN @TimeFrom AND @TimeTo\r\n    AND d.sql_instance IN (SELECT value FROM STRING_SPLIT(@SqlInstance, ','))\r\nGROUP BY h.report_time, ISNULL(ws.wait_category, 'Other')\r\nHAVING SUM(d.wait_time_ms_delta) > 0\r\nORDER BY h.report_time",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "%",
+        "valueFormat": "",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "memory",
+      "panelId": "pmemory.buffer_pool",
+      "panel": {
+        "id": "pmemory.buffer_pool",
+        "title": "Buffer Pool",
+        "description": "Buffer pool memory allocation and page life expectancy trends.",
+        "source": "",
+        "panelType": "StatCard",
+        "chartType": "Line",
+        "height": 250,
+        "refreshIntervalSeconds": null,
+        "layout": {
+          "column": 1,
+          "order": 0,
+          "spanColumns": false
+        },
+        "query": {
+          "source": "sqlwatch",
+          "sqlServer": "SELECT CAST(SUM(pages_kb) / 1024.0 AS DECIMAL(18,2)) AS [Value] FROM sys.dm_os_memory_clerks WHERE type = 'CACHESTORE_BUFPOOL'",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "requiresDatabase": "",
+        "statUnit": "MB",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "%",
+        "valueFormat": "N0",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "memory",
+      "panelId": "pmemory.buffer_pool",
+      "panel": {
+        "id": "pmemory.buffer_pool",
+        "title": "Buffer Pool",
+        "description": "Buffer pool memory allocation and page life expectancy trends.",
+        "source": "",
+        "panelType": "StatCard",
+        "chartType": "Line",
+        "height": 250,
+        "refreshIntervalSeconds": null,
+        "layout": {
+          "column": 1,
+          "order": 0,
+          "spanColumns": false
+        },
+        "query": {
+          "source": "sqlwatch",
+          "sqlServer": "SELECT CAST(SUM(pages_kb) / 1024.0 AS DECIMAL(18,2)) AS [Value] FROM sys.dm_os_memory_clerks WHERE type = 'CACHESTORE_BUFPOOL'",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "MB",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "%",
+        "valueFormat": "N0",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "memory",
+      "panelId": "pmemory.total",
+      "panel": {
+        "id": "pmemory.total",
+        "title": "Total Memory Usage",
+        "description": "Total SQL Server memory usage including committed and target memory from sys.dm_os_sys_info.",
+        "source": "",
+        "panelType": "StatCard",
+        "chartType": "Line",
+        "height": 250,
+        "refreshIntervalSeconds": null,
+        "layout": {
+          "column": 0,
+          "order": 0,
+          "spanColumns": false
+        },
+        "query": {
+          "source": "sqlwatch",
+          "sqlServer": "SELECT CAST( (SELECT SUM(pages_kb) FROM sys.dm_os_memory_clerks) / 1024.0 AS DECIMAL(18,2)) AS [Value]",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "requiresDatabase": "",
+        "statUnit": "MB",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "%",
+        "valueFormat": "N0",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "memory",
+      "panelId": "pmemory.total",
+      "panel": {
+        "id": "pmemory.total",
+        "title": "Total Memory Usage",
+        "description": "Total SQL Server memory usage including committed and target memory from sys.dm_os_sys_info.",
+        "source": "",
+        "panelType": "StatCard",
+        "chartType": "Line",
+        "height": 250,
+        "refreshIntervalSeconds": null,
+        "layout": {
+          "column": 0,
+          "order": 0,
+          "spanColumns": false
+        },
+        "query": {
+          "source": "sqlwatch",
+          "sqlServer": "SELECT CAST( (SELECT SUM(pages_kb) FROM sys.dm_os_memory_clerks) / 1024.0 AS DECIMAL(18,2)) AS [Value]",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "MB",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "%",
+        "valueFormat": "N0",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "pevents",
+      "panelId": "pevents.io_issues",
+      "panel": {
+        "id": "pevents.io_issues",
+        "title": "Slow I/O Requests (system_health)",
+        "description": "I/O requests that exceeded the slow I/O threshold captured by the system_health XEvent session.",
+        "source": "",
+        "panelType": "DataGrid",
+        "chartType": "Line",
+        "height": 260,
+        "refreshIntervalSeconds": 300,
+        "layout": {
+          "column": 0,
+          "order": 5,
+          "spanColumns": true
+        },
+        "query": {
+          "source": "",
+          "sqlServer": "IF EXISTS (SELECT 1 FROM sys.server_event_sessions WHERE name = 'system_health')\nBEGIN\n  SELECT TOP 100\n    xdr.value('(@timestamp)[1]','datetime2')           AS [Time],\n    xdr.value('(data[@name=\"duration\"]/value)[1]','bigint') / 1000 AS [Duration ms],\n    DB_NAME(xdr.value('(data[@name=\"database_id\"]/value)[1]','int')) AS [Database],\n    xdr.value('(data[@name=\"file_id\"]/value)[1]','int') AS [File ID],\n    xdr.value('(data[@name=\"is_retry\"]/value)[1]','bit') AS [Retry]\n  FROM (\n    SELECT CAST(target_data AS XML) AS target_data\n    FROM sys.dm_xe_session_targets t\n    JOIN sys.dm_xe_sessions s ON t.event_session_address = s.address\n    WHERE s.name = 'system_health' AND t.target_name = 'ring_buffer'\n  ) d\n  CROSS APPLY target_data.nodes('//RingBufferTarget/event[@name=''io_request_slow'']') AS x(xdr)\n  ORDER BY [Time] DESC\nEND\nELSE SELECT 'system_health XEvent session not running' AS [Info]",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "requiresDatabase": "",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "",
+        "valueFormat": "N0",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "pevents",
+      "panelId": "pevents.io_issues",
+      "panel": {
+        "id": "pevents.io_issues",
+        "title": "Slow I/O Requests (system_health)",
+        "description": "I/O requests that exceeded the slow I/O threshold captured by the system_health XEvent session.",
+        "source": "",
+        "panelType": "DataGrid",
+        "chartType": "Line",
+        "height": 260,
+        "refreshIntervalSeconds": 300,
+        "layout": {
+          "column": 0,
+          "order": 5,
+          "spanColumns": true
+        },
+        "query": {
+          "source": "",
+          "sqlServer": "IF EXISTS (SELECT 1 FROM sys.server_event_sessions WHERE name = 'system_health')\nBEGIN\n  SELECT TOP 100\n    xdr.value('(@timestamp)[1]','datetime2')           AS [Time],\n    xdr.value('(data[@name=\"duration\"]/value)[1]','bigint') / 1000 AS [Duration ms],\n    DB_NAME(xdr.value('(data[@name=\"database_id\"]/value)[1]','int')) AS [Database],\n    xdr.value('(data[@name=\"file_id\"]/value)[1]','int') AS [File ID],\n    xdr.value('(data[@name=\"is_retry\"]/value)[1]','bit') AS [Retry]\n  FROM (\n    SELECT CAST(target_data AS XML) AS target_data\n    FROM sys.dm_xe_session_targets t\n    JOIN sys.dm_xe_sessions s ON t.event_session_address = s.address\n    WHERE s.name = 'system_health' AND t.target_name = 'ring_buffer'\n  ) d\n  CROSS APPLY target_data.nodes('//RingBufferTarget/event[@name=''io_request_slow'']') AS x(xdr)\n  ORDER BY [Time] DESC\nEND\nELSE SELECT 'system_health XEvent session not running' AS [Info]",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "",
+        "valueFormat": "N0",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "pevents",
+      "panelId": "pevents.memory_broker",
+      "panel": {
+        "id": "pevents.memory_broker",
+        "title": "Memory Broker Notifications (system_health)",
+        "description": "Internal memory rebalancing events — SQL Server redistributing memory between components (buffer pool, plan cache, query workspace).",
+        "source": "",
+        "panelType": "DataGrid",
+        "chartType": "Line",
+        "height": 220,
+        "refreshIntervalSeconds": 300,
+        "layout": {
+          "column": 0,
+          "order": 8,
+          "spanColumns": true
+        },
+        "query": {
+          "source": "",
+          "sqlServer": "IF EXISTS (SELECT 1 FROM sys.server_event_sessions WHERE name = 'system_health')\nBEGIN\n  SELECT TOP 50\n    xdr.value('(@timestamp)[1]','datetime2') AS [Time],\n    xdr.value('(data[@name=\"notifier\"]/value)[1]','varchar(100)')      AS [Notifier],\n    xdr.value('(data[@name=\"notification\"]/value)[1]','varchar(100)')  AS [Notification],\n    xdr.value('(data[@name=\"memory_target_kb\"]/value)[1]','bigint')    AS [Target KB],\n    xdr.value('(data[@name=\"available_memory_kb\"]/value)[1]','bigint') AS [Available KB]\n  FROM (\n    SELECT CAST(target_data AS XML) AS target_data\n    FROM sys.dm_xe_session_targets t\n    JOIN sys.dm_xe_sessions s ON t.event_session_address = s.address\n    WHERE s.name = 'system_health' AND t.target_name = 'ring_buffer'\n  ) d\n  CROSS APPLY target_data.nodes('//RingBufferTarget/event[@name=''memory_broker_ring_buffer_recorded'']') AS x(xdr)\n  ORDER BY [Time] DESC\nEND\nELSE SELECT 'system_health XEvent session not running' AS [Info]",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "requiresDatabase": "",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "",
+        "valueFormat": "N0",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "pevents",
+      "panelId": "pevents.memory_broker",
+      "panel": {
+        "id": "pevents.memory_broker",
+        "title": "Memory Broker Notifications (system_health)",
+        "description": "Internal memory rebalancing events — SQL Server redistributing memory between components (buffer pool, plan cache, query workspace).",
+        "source": "",
+        "panelType": "DataGrid",
+        "chartType": "Line",
+        "height": 220,
+        "refreshIntervalSeconds": 300,
+        "layout": {
+          "column": 0,
+          "order": 8,
+          "spanColumns": true
+        },
+        "query": {
+          "source": "",
+          "sqlServer": "IF EXISTS (SELECT 1 FROM sys.server_event_sessions WHERE name = 'system_health')\nBEGIN\n  SELECT TOP 50\n    xdr.value('(@timestamp)[1]','datetime2') AS [Time],\n    xdr.value('(data[@name=\"notifier\"]/value)[1]','varchar(100)')      AS [Notifier],\n    xdr.value('(data[@name=\"notification\"]/value)[1]','varchar(100)')  AS [Notification],\n    xdr.value('(data[@name=\"memory_target_kb\"]/value)[1]','bigint')    AS [Target KB],\n    xdr.value('(data[@name=\"available_memory_kb\"]/value)[1]','bigint') AS [Available KB]\n  FROM (\n    SELECT CAST(target_data AS XML) AS target_data\n    FROM sys.dm_xe_session_targets t\n    JOIN sys.dm_xe_sessions s ON t.event_session_address = s.address\n    WHERE s.name = 'system_health' AND t.target_name = 'ring_buffer'\n  ) d\n  CROSS APPLY target_data.nodes('//RingBufferTarget/event[@name=''memory_broker_ring_buffer_recorded'']') AS x(xdr)\n  ORDER BY [Time] DESC\nEND\nELSE SELECT 'system_health XEvent session not running' AS [Info]",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "",
+        "valueFormat": "N0",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "pevents",
+      "panelId": "pevents.memory_oom",
+      "panel": {
+        "id": "pevents.memory_oom",
+        "title": "Out-of-Memory Events (system_health)",
+        "description": "Memory allocation failures captured by system_health. Repeated OOM events indicate the server is consistently over-committed.",
+        "source": "",
+        "panelType": "DataGrid",
+        "chartType": "Line",
+        "height": 220,
+        "refreshIntervalSeconds": 300,
+        "layout": {
+          "column": 0,
+          "order": 7,
+          "spanColumns": true
+        },
+        "query": {
+          "source": "",
+          "sqlServer": "IF EXISTS (SELECT 1 FROM sys.server_event_sessions WHERE name = 'system_health')\nBEGIN\n  SELECT TOP 50\n    xdr.value('(@timestamp)[1]','datetime2') AS [Time],\n    xdr.value('(data[@name=\"pool_id\"]/value)[1]','int') AS [Pool ID],\n    xdr.value('(data[@name=\"requested_memory_kb\"]/value)[1]','bigint') AS [Requested KB],\n    xdr.value('(data[@name=\"granted_memory_kb\"]/value)[1]','bigint')   AS [Granted KB]\n  FROM (\n    SELECT CAST(target_data AS XML) AS target_data\n    FROM sys.dm_xe_session_targets t\n    JOIN sys.dm_xe_sessions s ON t.event_session_address = s.address\n    WHERE s.name = 'system_health' AND t.target_name = 'ring_buffer'\n  ) d\n  CROSS APPLY target_data.nodes('//RingBufferTarget/event[@name=''out_of_memory'']') AS x(xdr)\n  ORDER BY [Time] DESC\nEND\nELSE SELECT 'system_health XEvent session not running' AS [Info]",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "requiresDatabase": "",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "",
+        "valueFormat": "N0",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "pevents",
+      "panelId": "pevents.memory_oom",
+      "panel": {
+        "id": "pevents.memory_oom",
+        "title": "Out-of-Memory Events (system_health)",
+        "description": "Memory allocation failures captured by system_health. Repeated OOM events indicate the server is consistently over-committed.",
+        "source": "",
+        "panelType": "DataGrid",
+        "chartType": "Line",
+        "height": 220,
+        "refreshIntervalSeconds": 300,
+        "layout": {
+          "column": 0,
+          "order": 7,
+          "spanColumns": true
+        },
+        "query": {
+          "source": "",
+          "sqlServer": "IF EXISTS (SELECT 1 FROM sys.server_event_sessions WHERE name = 'system_health')\nBEGIN\n  SELECT TOP 50\n    xdr.value('(@timestamp)[1]','datetime2') AS [Time],\n    xdr.value('(data[@name=\"pool_id\"]/value)[1]','int') AS [Pool ID],\n    xdr.value('(data[@name=\"requested_memory_kb\"]/value)[1]','bigint') AS [Requested KB],\n    xdr.value('(data[@name=\"granted_memory_kb\"]/value)[1]','bigint')   AS [Granted KB]\n  FROM (\n    SELECT CAST(target_data AS XML) AS target_data\n    FROM sys.dm_xe_session_targets t\n    JOIN sys.dm_xe_sessions s ON t.event_session_address = s.address\n    WHERE s.name = 'system_health' AND t.target_name = 'ring_buffer'\n  ) d\n  CROSS APPLY target_data.nodes('//RingBufferTarget/event[@name=''out_of_memory'']') AS x(xdr)\n  ORDER BY [Time] DESC\nEND\nELSE SELECT 'system_health XEvent session not running' AS [Info]",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "",
+        "valueFormat": "N0",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "pevents",
+      "panelId": "pevents.nonyyielding",
+      "panel": {
+        "id": "pevents.nonyyielding",
+        "title": "Non-Yielding Scheduler Events",
+        "description": "Non-yielding scheduler events from system_health — a scheduler stuck for >250ms. Often precedes a SQL Server process dump or crash.",
+        "source": "",
+        "panelType": "DataGrid",
+        "chartType": "Line",
+        "height": 220,
+        "refreshIntervalSeconds": 300,
+        "layout": {
+          "column": 0,
+          "order": 6,
+          "spanColumns": true
+        },
+        "query": {
+          "source": "",
+          "sqlServer": "IF EXISTS (SELECT 1 FROM sys.server_event_sessions WHERE name = 'system_health')\nBEGIN\n  SELECT TOP 50\n    xdr.value('(@timestamp)[1]','datetime2')  AS [Time],\n    xdr.value('(data[@name=\"scheduler_id\"]/value)[1]','int') AS [Scheduler ID],\n    xdr.value('(data[@name=\"yields\"]/value)[1]','bigint')    AS [Yields],\n    xdr.value('(data[@name=\"worker_address\"]/value)[1]','varchar(50)') AS [Worker]\n  FROM (\n    SELECT CAST(target_data AS XML) AS target_data\n    FROM sys.dm_xe_session_targets t\n    JOIN sys.dm_xe_sessions s ON t.event_session_address = s.address\n    WHERE s.name = 'system_health' AND t.target_name = 'ring_buffer'\n  ) d\n  CROSS APPLY target_data.nodes('//RingBufferTarget/event[@name=''scheduler_monitor_non_yielding_ring_buffer_recorded'']') AS x(xdr)\n  ORDER BY [Time] DESC\nEND\nELSE SELECT 'system_health XEvent session not running' AS [Info]",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "requiresDatabase": "",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "",
+        "valueFormat": "N0",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "pevents",
+      "panelId": "pevents.nonyyielding",
+      "panel": {
+        "id": "pevents.nonyyielding",
+        "title": "Non-Yielding Scheduler Events",
+        "description": "Non-yielding scheduler events from system_health — a scheduler stuck for >250ms. Often precedes a SQL Server process dump or crash.",
+        "source": "",
+        "panelType": "DataGrid",
+        "chartType": "Line",
+        "height": 220,
+        "refreshIntervalSeconds": 300,
+        "layout": {
+          "column": 0,
+          "order": 6,
+          "spanColumns": true
+        },
+        "query": {
+          "source": "",
+          "sqlServer": "IF EXISTS (SELECT 1 FROM sys.server_event_sessions WHERE name = 'system_health')\nBEGIN\n  SELECT TOP 50\n    xdr.value('(@timestamp)[1]','datetime2')  AS [Time],\n    xdr.value('(data[@name=\"scheduler_id\"]/value)[1]','int') AS [Scheduler ID],\n    xdr.value('(data[@name=\"yields\"]/value)[1]','bigint')    AS [Yields],\n    xdr.value('(data[@name=\"worker_address\"]/value)[1]','varchar(50)') AS [Worker]\n  FROM (\n    SELECT CAST(target_data AS XML) AS target_data\n    FROM sys.dm_xe_session_targets t\n    JOIN sys.dm_xe_sessions s ON t.event_session_address = s.address\n    WHERE s.name = 'system_health' AND t.target_name = 'ring_buffer'\n  ) d\n  CROSS APPLY target_data.nodes('//RingBufferTarget/event[@name=''scheduler_monitor_non_yielding_ring_buffer_recorded'']') AS x(xdr)\n  ORDER BY [Time] DESC\nEND\nELSE SELECT 'system_health XEvent session not running' AS [Info]",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "",
+        "valueFormat": "N0",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "security",
+      "panelId": "security.audit_config",
+      "panel": {
+        "id": "security.audit_config",
+        "title": "Audit Configuration",
+        "description": "Active audits + retention + state. TODO: SQL.",
+        "source": "",
+        "panelType": "DataGrid",
+        "chartType": "Line",
+        "height": 250,
+        "refreshIntervalSeconds": 600,
+        "layout": {
+          "column": 0,
+          "order": 1,
+          "spanColumns": true
+        },
+        "query": {
+          "source": "",
+          "sqlServer": "SELECT a.name AS [Label], CASE WHEN a.is_state_enabled=1 THEN 'Running' ELSE 'Stopped' END AS [Status], f.log_file_path AS [Path] FROM sys.server_audits a LEFT JOIN sys.server_file_audits f ON a.audit_id = f.audit_id ORDER BY a.name",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "%",
+        "valueFormat": "",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null,
+        "dataFreshness": "recent",
+        "complexity": "low"
+      }
+    },
+    {
+      "dashboardId": "security",
+      "panelId": "security.audit_stopped_count",
+      "panel": {
+        "id": "security.audit_stopped_count",
+        "title": "Audits Stopped",
+        "description": "Count of SQL Audits configured but not running. TODO: SQL.",
+        "source": "",
+        "panelType": "StatCard",
+        "chartType": "Line",
+        "height": 150,
+        "refreshIntervalSeconds": 300,
+        "layout": {
+          "column": 0,
+          "order": 1,
+          "spanColumns": false
+        },
+        "query": {
+          "source": "",
+          "sqlServer": "SELECT CAST(COUNT(*) AS FLOAT) AS [Value] FROM sys.server_audits WHERE is_state_enabled=0",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "%",
+        "valueFormat": "",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null,
+        "dataFreshness": "recent",
+        "complexity": "low"
+      }
+    },
+    {
+      "dashboardId": "security",
+      "panelId": "security.clr_enabled_modules",
+      "panel": {
+        "id": "security.clr_enabled_modules",
+        "title": "CLR Assemblies",
+        "description": "Assemblies with EXTERNAL_ACCESS or UNSAFE. TODO: SQL.",
+        "source": "",
+        "panelType": "DataGrid",
+        "chartType": "Line",
+        "height": 250,
+        "refreshIntervalSeconds": 600,
+        "layout": {
+          "column": 0,
+          "order": 4,
+          "spanColumns": true
+        },
+        "query": {
+          "source": "",
+          "sqlServer": "SELECT DB_NAME() AS [Database], name AS [Assembly], permission_set_desc AS [PermissionSet], create_date AS [Created] FROM sys.assemblies WHERE is_user_defined=1 ORDER BY DB_NAME(), name",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "%",
+        "valueFormat": "",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null,
+        "dataFreshness": "recent",
+        "complexity": "low"
+      }
+    },
+    {
+      "dashboardId": "security",
+      "panelId": "security.failed_login_history",
+      "panel": {
+        "id": "security.failed_login_history",
+        "title": "Failed Login History",
+        "description": "Recent failed login attempts. TODO: SQL.",
+        "source": "",
+        "panelType": "DataGrid",
+        "chartType": "Line",
+        "height": 250,
+        "refreshIntervalSeconds": 60,
+        "layout": {
+          "column": 0,
+          "order": 3,
+          "spanColumns": true
+        },
+        "query": {
+          "source": "",
+          "sqlServer": "SELECT TOP 20 CAST(CONVERT(DATE,event_time) AS VARCHAR) AS [Label], COUNT(*) AS [Value] FROM sys.fn_get_audit_file('*.sqlaudit',DEFAULT,DEFAULT) WHERE action_id='LGIF' AND succeeded=0 AND event_time > DATEADD(DAY,-7,GETDATE()) GROUP BY CONVERT(DATE,event_time) ORDER BY CONVERT(DATE,event_time) DESC",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "%",
+        "valueFormat": "",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null,
+        "dataFreshness": "recent",
+        "complexity": "low"
+      }
+    },
+    {
+      "dashboardId": "security",
+      "panelId": "security.failed_logins_1h",
+      "panel": {
+        "id": "security.failed_logins_1h",
+        "title": "Failed Logins (1h)",
+        "description": "Failed login attempts in last hour. TODO: SQL.",
+        "source": "",
+        "panelType": "StatCard",
+        "chartType": "Line",
+        "height": 150,
+        "refreshIntervalSeconds": 60,
+        "layout": {
+          "column": 0,
+          "order": 3,
+          "spanColumns": false
+        },
+        "query": {
+          "source": "",
+          "sqlServer": "SELECT CAST(COUNT(*) AS FLOAT) AS [Value] FROM sys.dm_exec_sessions WHERE login_time > DATEADD(HOUR,-1,GETDATE()) AND login_name IS NOT NULL AND original_login_name IS NOT NULL AND login_name <> original_login_name",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "%",
+        "valueFormat": "",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null,
+        "dataFreshness": "recent",
+        "complexity": "low"
+      }
+    },
+    {
+      "dashboardId": "security",
+      "panelId": "security.orphaned_users",
+      "panel": {
+        "id": "security.orphaned_users",
+        "title": "Orphaned Users by Database",
+        "description": "Per-DB count of users without a corresponding server login. These users cannot authenticate and represent stale security principals.",
+        "source": "",
+        "panelType": "HorizontalBar",
+        "chartType": "Line",
+        "height": 250,
+        "refreshIntervalSeconds": 600,
+        "layout": {
+          "column": 1,
+          "order": 5,
+          "spanColumns": true
+        },
+        "query": {
+          "source": "",
+          "sqlServer": "SELECT DB_NAME() AS [Label], COUNT(*) AS [Value] FROM sys.database_principals dp WHERE dp.type IN ('S','U') AND dp.sid IS NOT NULL AND dp.sid <> 0x0 AND LEN(dp.sid) > 16 AND NOT EXISTS (SELECT 1 FROM sys.server_principals sp WHERE sp.sid = dp.sid)",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "%",
+        "valueFormat": "",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null,
+        "dataFreshness": "recent",
+        "complexity": "low"
+      }
+    },
+    {
+      "dashboardId": "security",
+      "panelId": "security.public_role_permissions",
+      "panel": {
+        "id": "security.public_role_permissions",
+        "title": "Public Role Permissions",
+        "description": "Permissions granted to public. TODO: SQL.",
+        "source": "",
+        "panelType": "DataGrid",
+        "chartType": "Line",
+        "height": 250,
+        "refreshIntervalSeconds": 600,
+        "layout": {
+          "column": 0,
+          "order": 5,
+          "spanColumns": true
+        },
+        "query": {
+          "source": "",
+          "sqlServer": "SELECT DB_NAME() AS [Database], o.name AS [Object], p.permission_name AS [Permission] FROM sys.database_permissions p JOIN sys.objects o ON p.major_id=o.object_id WHERE p.grantee_principal_id=DATABASE_PRINCIPAL_ID('public') AND p.state_desc='GRANT' AND o.type NOT IN('S','IT') ORDER BY DB_NAME(), o.name",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "%",
+        "valueFormat": "",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null,
+        "dataFreshness": "recent",
+        "complexity": "low"
+      }
+    },
+    {
+      "dashboardId": "security",
+      "panelId": "security.sysadmin_count",
+      "panel": {
+        "id": "security.sysadmin_count",
+        "title": "Sysadmin Members",
+        "description": "Count of logins in sysadmin role. TODO: SQL.",
+        "source": "",
+        "panelType": "StatCard",
+        "chartType": "Line",
+        "height": 150,
+        "refreshIntervalSeconds": 600,
+        "layout": {
+          "column": 0,
+          "order": 2,
+          "spanColumns": false
+        },
+        "query": {
+          "source": "",
+          "sqlServer": "SELECT CAST(COUNT(*) AS FLOAT) AS [Value] FROM sys.server_role_members rm JOIN sys.server_principals r ON rm.role_principal_id = r.principal_id WHERE r.name = N'sysadmin'",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "%",
+        "valueFormat": "",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null,
+        "dataFreshness": "recent",
+        "complexity": "low"
+      }
+    },
+    {
+      "dashboardId": "security",
+      "panelId": "security.sysadmin_members",
+      "panel": {
+        "id": "security.sysadmin_members",
+        "title": "Sysadmin Role Members",
+        "description": "Principals with sysadmin. TODO: SQL.",
+        "source": "",
+        "panelType": "DataGrid",
+        "chartType": "Line",
+        "height": 250,
+        "refreshIntervalSeconds": 600,
+        "layout": {
+          "column": 0,
+          "order": 2,
+          "spanColumns": true
+        },
+        "query": {
+          "source": "",
+          "sqlServer": "SELECT p.name AS [Label], p.type_desc AS [Type], p.create_date AS [Created], LOGINPROPERTY(p.name,'DaysUntilExpiration') AS [DaysUntilExpiration] FROM sys.server_principals p JOIN sys.server_role_members rm ON p.principal_id = rm.member_principal_id JOIN sys.server_principals r ON rm.role_principal_id = r.principal_id WHERE r.name = N'sysadmin' AND p.type IN('S','U') AND p.name NOT LIKE 'NT %' ORDER BY p.name",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "%",
+        "valueFormat": "",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null,
+        "dataFreshness": "recent",
+        "complexity": "low"
+      }
+    },
+    {
+      "dashboardId": "security",
+      "panelId": "security.tde_disabled_count",
+      "panel": {
+        "id": "security.tde_disabled_count",
+        "title": "Databases without TDE",
+        "description": "Count of user DBs without TDE. TODO: SQL.",
+        "source": "",
+        "panelType": "StatCard",
+        "chartType": "Line",
+        "height": 150,
+        "refreshIntervalSeconds": 300,
+        "layout": {
+          "column": 0,
+          "order": 0,
+          "spanColumns": false
+        },
+        "query": {
+          "source": "",
+          "sqlServer": "SELECT CAST(COUNT(*) AS FLOAT) AS [Value] FROM sys.databases WHERE is_encrypted=0 AND database_id>4 AND state=0 AND name NOT IN ('master','model','msdb','tempdb')",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "%",
+        "valueFormat": "",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null,
+        "dataFreshness": "recent",
+        "complexity": "low"
+      }
+    },
+    {
+      "dashboardId": "security",
+      "panelId": "security.tde_status_per_db",
+      "panel": {
+        "id": "security.tde_status_per_db",
+        "title": "TDE Status per Database",
+        "description": "Encryption state per user DB. TODO: SQL.",
+        "source": "",
+        "panelType": "DataGrid",
+        "chartType": "Line",
+        "height": 250,
+        "refreshIntervalSeconds": 600,
+        "layout": {
+          "column": 0,
+          "order": 0,
+          "spanColumns": true
+        },
+        "query": {
+          "source": "",
+          "sqlServer": "SELECT name AS [Label], CASE WHEN is_encrypted=1 THEN 'Encrypted' ELSE 'Not Encrypted' END AS [Value] FROM sys.databases WHERE database_id>4 AND state=0 ORDER BY name",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "%",
+        "valueFormat": "",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null,
+        "dataFreshness": "recent",
+        "complexity": "low"
+      }
+    },
+    {
+      "dashboardId": "alwayson",
+      "panelId": "ag.redo_queue",
+      "panel": {
+        "id": "ag.redo_queue",
+        "title": "Redo Queue (current)",
+        "description": "Current redo queue size for each secondary AG database, sampled from sys.dm_hadr_database_replica_states at each refresh. This is the live value per cycle, not a retained historical trend. A persistently high value means the secondary is falling behind on redo.",
+        "source": "",
+        "panelType": "TimeSeries",
+        "chartType": "Area",
+        "height": 250,
+        "refreshIntervalSeconds": 10,
+        "layout": {
+          "column": 2,
+          "order": 3,
+          "spanColumns": false
+        },
+        "query": {
+          "source": "sqlwatch",
+          "sqlServer": "SELECT GETDATE() AS [Time], ar.replica_server_name + ' / ' + DB_NAME(drs.database_id) AS [Series], CAST(drs.redo_queue_size AS BIGINT) AS [Value] FROM sys.dm_hadr_database_replica_states drs WITH (NOLOCK) INNER JOIN sys.availability_replicas ar WITH (NOLOCK) ON drs.replica_id = ar.replica_id WHERE drs.is_local = 0 ORDER BY [Value] DESC",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "KB",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "KB",
+        "valueFormat": "N0",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "alwayson",
+      "panelId": "ag.send_queue",
+      "panel": {
+        "id": "ag.send_queue",
+        "title": "Log Send Queue (current)",
+        "description": "Current log send queue size for each secondary AG database, sampled from sys.dm_hadr_database_replica_states at each refresh. This is the live value per cycle, not a retained historical trend. A persistently high value means the secondary is not receiving log fast enough.",
+        "source": "",
+        "panelType": "TimeSeries",
+        "chartType": "Area",
+        "height": 250,
+        "refreshIntervalSeconds": 10,
+        "layout": {
+          "column": 1,
+          "order": 3,
+          "spanColumns": false
+        },
+        "query": {
+          "source": "sqlwatch",
+          "sqlServer": "SELECT GETDATE() AS [Time], ar.replica_server_name + ' / ' + DB_NAME(drs.database_id) AS [Series], CAST(drs.log_send_queue_size AS BIGINT) AS [Value] FROM sys.dm_hadr_database_replica_states drs WITH (NOLOCK) INNER JOIN sys.availability_replicas ar WITH (NOLOCK) ON drs.replica_id = ar.replica_id WHERE drs.is_local = 0 ORDER BY [Value] DESC",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "KB",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "KB",
+        "valueFormat": "N0",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "memory",
+      "panelId": "pmemory.buffer_pool",
+      "panel": {
+        "id": "pmemory.buffer_pool",
+        "title": "Buffer Pool",
+        "description": "Current buffer pool memory allocation (CACHESTORE_BUFPOOL pages from sys.dm_os_memory_clerks), in MB. This tile shows the current value only; it does not show page life expectancy or a trend.",
+        "source": "",
+        "panelType": "StatCard",
+        "chartType": "Line",
+        "height": 250,
+        "refreshIntervalSeconds": null,
+        "layout": {
+          "column": 0,
+          "order": 0,
+          "spanColumns": false
+        },
+        "query": {
+          "source": "sqlwatch",
+          "sqlServer": "SELECT CAST(SUM(pages_kb) / 1024.0 AS DECIMAL(18,2)) AS [Value] FROM sys.dm_os_memory_clerks WHERE type = 'CACHESTORE_BUFPOOL'",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "requiresDatabase": "",
+        "statUnit": "MB",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "%",
+        "valueFormat": "N0",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "livetempdb",
+      "panelId": "livetempdb.used_mb",
+      "panel": {
+        "id": "livetempdb.used_mb",
+        "title": "TempDB Used (MB)",
+        "description": "Total TempDB space used by user objects, internal objects and version store.",
+        "source": "",
+        "panelType": "StatCard",
+        "chartType": "Line",
+        "height": 0,
+        "refreshIntervalSeconds": null,
+        "layout": {
+          "column": 0,
+          "order": 0,
+          "spanColumns": false
+        },
+        "query": {
+          "source": "",
+          "sqlServer": "SELECT CAST(SUM(user_object_reserved_page_count+internal_object_reserved_page_count+version_store_reserved_page_count)*8/1024.0 AS DECIMAL(10,1)) AS [Value] FROM sys.dm_db_file_space_usage",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "MB",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "MB",
+        "valueFormat": "N1",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "livetempdb",
+      "panelId": "livetempdb.version_store_mb",
+      "panel": {
+        "id": "livetempdb.version_store_mb",
+        "title": "Version Store (MB)",
+        "description": "TempDB space consumed by the version store. High values may indicate long-running transactions with RCSI/SI.",
+        "source": "",
+        "panelType": "StatCard",
+        "chartType": "Line",
+        "height": 0,
+        "refreshIntervalSeconds": null,
+        "layout": {
+          "column": 0,
+          "order": 1,
+          "spanColumns": false
+        },
+        "query": {
+          "source": "",
+          "sqlServer": "SELECT CAST(SUM(version_store_reserved_page_count)*8/1024.0 AS DECIMAL(10,1)) AS [Value] FROM sys.dm_db_file_space_usage",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "MB",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "MB",
+        "valueFormat": "N1",
+        "colorThresholds": [
+          {
+            "operator": ">=",
+            "value": 512,
+            "color": "#ff9800",
+            "label": "Warning"
+          },
+          {
+            "operator": ">=",
+            "value": 2048,
+            "color": "#f44336",
+            "label": "Critical"
+          }
+        ],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "correlation",
+      "panelId": "queryperf.top_queries",
+      "panel": {
+        "id": "queryperf.top_queries",
+        "title": "Top N Queries by Duration (Live)",
+        "description": "Real-time top 10 queries by average execution time — identify slow-running queries that need optimization.",
+        "source": "",
+        "panelType": "DataGrid",
+        "chartType": "Line",
+        "height": 350,
+        "refreshIntervalSeconds": 10,
+        "layout": {
+          "column": 0,
+          "order": 6,
+          "spanColumns": true
+        },
+        "query": {
+          "source": "",
+          "sqlServer": "SELECT TOP 10\n    qs.query_hash AS [Query Hash],\n    qs.execution_count AS [Exec Count],\n    CAST(qs.total_elapsed_time / 1000.0 / NULLIF(qs.execution_count,0) AS DECIMAL(14,1)) AS [Avg Duration (ms)],\n    CAST(qs.min_elapsed_time / 1000.0 AS DECIMAL(14,1)) AS [Min (ms)],\n    CAST(qs.max_elapsed_time / 1000.0 AS DECIMAL(14,1)) AS [Max (ms)],\n    qs.last_execution_time AS [Last Exec],\n    LEFT(st.[text], 100) AS [SQL Preview]\nFROM sys.dm_exec_query_stats qs\nCROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st\nORDER BY qs.total_elapsed_time / NULLIF(qs.execution_count,0) DESC",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "",
+        "valueFormat": "N0",
+        "colorThresholds": [],
+        "dataGridIsClickable": true,
+        "dataGridMaxRows": 10,
+        "dataGridTopRows": 10,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "correlation",
+      "panelId": "queryperf.query_summary",
+      "panel": {
+        "id": "queryperf.query_summary",
+        "title": "Query Performance Summary",
+        "description": "Aggregated query performance metrics — total queries, average/max duration, I/O stats, and blocking. BROKEN — StatCard mapper expects a Value column; query returns different shape. Disable until SQL or panel binding fixed.",
+        "source": "",
+        "panelType": "StatCard",
+        "chartType": "Line",
+        "height": 180,
+        "refreshIntervalSeconds": 15,
+        "layout": {
+          "column": 1,
+          "order": 10,
+          "spanColumns": true
+        },
+        "query": {
+          "source": "",
+          "sqlServer": "SELECT\n    COUNT(*) AS [Cached Query Plans],\n    CAST(AVG(total_elapsed_time) / 1000.0 AS DECIMAL(14,1)) AS [Avg Duration (ms)],\n    CAST(MAX(total_elapsed_time) / 1000.0 AS DECIMAL(14,1)) AS [Max Duration (ms)],\n    CAST(SUM(total_logical_reads) * 8.0 / 1024 / 1024 AS DECIMAL(10,2)) AS [Logical Reads (GB)],\n    CAST(SUM(total_physical_reads) * 8.0 / 1024 / 1024 AS DECIMAL(10,2)) AS [Physical Reads (GB)],\n    CAST(SUM(total_logical_writes) * 8.0 / 1024 / 1024 AS DECIMAL(10,2)) AS [Logical Writes (GB)],\n    CAST(AVG(total_worker_time) / 1000.0 AS DECIMAL(14,1)) AS [Avg CPU (ms)],\n    CAST(MAX(total_worker_time) / 1000.0 AS DECIMAL(14,1)) AS [Max CPU (ms)],\n    SUM(execution_count) AS [Total Executions]\nFROM sys.dm_exec_query_stats",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "",
+        "valueFormat": "N2",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "longqueries",
+      "panelId": "longqueries.querytext",
+      "panel": {
+        "id": "longqueries.querytext",
+        "title": "Query Text",
+        "description": "Full query text and execution plan XML for selected long-running queries. Enables deep-dive analysis of problematic queries.",
+        "source": "",
+        "panelType": "DataGrid",
+        "chartType": "Line",
+        "height": 250,
+        "refreshIntervalSeconds": null,
+        "layout": {
+          "column": 1,
+          "order": 7,
+          "spanColumns": false
+        },
+        "query": {
+          "source": "SQLWATCH",
+          "sqlServer": "SELECT time=getdate(),sql_text [statement]\nFROM [dbo].[vw_sqlwatch_report_fact_xes_long_queries]\nWHERE report_time BETWEEN @TimeFrom AND @TimeTo\n    AND sql_instance IN (SELECT value FROM STRING_SPLIT(@SqlInstance, ','))",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "%",
+        "valueFormat": "",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "livewaits",
+      "panelId": "waits.details",
+      "panel": {
+        "id": "waits.details",
+        "title": "Wait Event Details",
+        "description": "Detailed wait statistics by wait type showing wait time, wait count, and percentage of total waits from SQLWATCH snapshots.",
+        "source": "",
+        "panelType": "DataGrid",
+        "chartType": "Line",
+        "height": 300,
+        "refreshIntervalSeconds": null,
+        "layout": {
+          "column": 1,
+          "order": 2,
+          "spanColumns": true
+        },
+        "query": {
+          "source": "sqlwatch",
+          "sqlServer": "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; \nSELECT TOP 250\n    h.report_time AS [Time],\n    ISNULL(ws.wait_category, 'Other') AS [Category],\n    mw.wait_type AS [Wait Type],\n    SUM(d.wait_time_ms_delta) AS [Wait Time (ms)],\n    SUM(d.waiting_tasks_count_delta) AS [Waiting Tasks],\n    d.sql_instance\nFROM dbo.sqlwatch_logger_perf_os_wait_stats d WITH (NOLOCK)\nINNER JOIN dbo.sqlwatch_logger_snapshot_header h WITH (NOLOCK)\n    ON h.snapshot_time = d.snapshot_time\n    AND h.snapshot_type_id = d.snapshot_type_id\n    AND h.sql_instance = d.sql_instance\nLEFT JOIN dbo.vw_sqlwatch_meta_wait_stats_category ws WITH (NOLOCK)\n    ON ws.sql_instance = d.sql_instance\n    AND ws.wait_type_id = d.wait_type_id\nLEFT JOIN dbo.sqlwatch_meta_wait_stats mw WITH (NOLOCK)\n    ON mw.sql_instance = d.sql_instance\n    AND mw.wait_type_id = d.wait_type_id\nWHERE h.report_time BETWEEN @TimeFrom AND @TimeTo\n    AND d.sql_instance IN (SELECT value FROM STRING_SPLIT(@SqlInstance, ','))\n    AND d.wait_time_ms_delta > 0\nGROUP BY h.report_time, ISNULL(ws.wait_category, 'Other'), mw.wait_type, d.sql_instance\nORDER BY h.report_time DESC, [Wait Time (ms)] DESC",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "SQLWATCH",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "%",
+        "valueFormat": "",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "live",
+      "panelId": "live.sessions",
+      "panel": {
+        "id": "live.sessions",
+        "title": "Active Sessions",
+        "description": "Count of active user sessions from sys.dm_exec_sessions where is_user_process = 1.",
+        "source": "",
+        "panelType": "DataGrid",
+        "chartType": "Line",
+        "height": 400,
+        "refreshIntervalSeconds": 5,
+        "layout": {
+          "column": 1,
+          "order": 9,
+          "spanColumns": false
+        },
+        "query": {
+          "source": "sqlwatch",
+          "sqlServer": "SELECT TOP (@TopRows) s.spid AS Spid, DB_NAME(s.dbid) AS [Database], status AS Status, CAST(cpu AS BIGINT) AS Cpu, CAST(physical_io AS BIGINT) AS PhysicalIo, program_name AS ProgramName FROM sys.sysprocesses s WHERE s.spid > 50 AND program_name NOT LIKE '%SQLMonitorUI%' AND hostname <> '' AND program_name <> '' ORDER BY (ISNULL(cpu,0) + ISNULL(physical_io,0)) DESC",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "",
+        "valueFormat": "",
+        "colorThresholds": [],
+        "dataGridIsClickable": false,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    },
+    {
+      "dashboardId": "sessions",
+      "panelId": "sessions.top",
+      "panel": {
+        "id": "sessions.top",
+        "title": "Top Usage Queries",
+        "description": "Top active sessions by CPU, reads, or duration. Shows session_id, login, database, and current query text.",
+        "source": "",
+        "panelType": "DataGrid",
+        "chartType": "Line",
+        "height": 500,
+        "refreshIntervalSeconds": null,
+        "layout": {
+          "column": 1,
+          "order": 10,
+          "spanColumns": true
+        },
+        "query": {
+          "source": "sqlwatch",
+          "sqlServer": "SELECT\n    TMP.Category,\n    [Source],\n    DB_NAME(st.dbid) [DB],\n    TMP.[Total Elapsed Time in S],\n    TMP.[Total Execution Count],\n    TMP.[Total CPU Time in S],\n    TMP.[Total Logical Reads],\n    TMP.[Total Logical Writes],\n    TMP.[Total CLR Time],\n    TMP.[Number of Statements],\n    TMP.[Last Execution Time],\n    TMP.[Plan Handle],\n    st.text AS [Query],\n    qp.query_plan AS [Plan]\nFROM (\n    SELECT * FROM (\n        SELECT TOP 15 'worst I/O' [Category],\n            'Query' [Source],\n            CAST(SUM(s.total_elapsed_time) / 1000000.0 AS DECIMAL(20, 2)) AS [Total Elapsed Time in S],\n            SUM(s.execution_count) AS [Total Execution Count],\n            CAST(SUM(s.total_worker_time) / 1000000.0 AS DECIMAL(20, 2)) AS [Total CPU Time in S],\n            SUM(s.total_logical_reads) AS [Total Logical Reads],\n            SUM(s.total_logical_writes) AS [Total Logical Writes],\n            SUM(s.total_clr_time) AS [Total CLR Time],\n            COUNT(1) AS [Number of Statements],\n            MAX(s.last_execution_time) AS [Last Execution Time],\n            s.plan_handle AS [Plan Handle]\n        FROM sys.dm_exec_query_stats s WITH (NOLOCK)\n        GROUP BY s.plan_handle ORDER BY SUM(s.total_logical_reads + s.total_logical_writes) DESC\n    ) QS\n    UNION ALL\n        SELECT * FROM (\n        SELECT TOP 15 'worst I/O' [Category],\n            'Procedure' [Source],\n            CAST(SUM(s.total_elapsed_time) / 1000000.0 AS DECIMAL(20, 2)) AS [Total Elapsed Time in S],\n            SUM(s.execution_count) AS [Total Execution Count],\n            CAST(SUM(s.total_worker_time) / 1000000.0 AS DECIMAL(20, 2)) AS [Total CPU Time in S],\n            SUM(s.total_logical_reads) AS [Total Logical Reads],\n            SUM(s.total_logical_writes) AS [Total Logical Writes],\n            SUM(0e) AS [Total CLR Time],\n            COUNT(1) AS [Number of Statements],\n            MAX(s.last_execution_time) AS [Last Execution Time],\n            s.plan_handle AS [Plan Handle]\n        FROM sys.dm_exec_procedure_stats s WITH (NOLOCK)\n        GROUP BY s.plan_handle ORDER BY SUM(s.total_logical_reads + s.total_logical_writes) DESC\n    ) PS\n) TMP\nOUTER APPLY sys.dm_exec_sql_text(TMP.[Plan Handle]) AS st\nOUTER APPLY sys.dm_exec_query_plan(TMP.[Plan Handle]) AS qp\nORDER BY Category, [Total Logical Reads] DESC\nOPTION (MAXDOP 1)\n\n",
+          "sqlServerLegacy": null
+        },
+        "defaultDatabase": "master",
+        "statUnit": "",
+        "statThresholdKey": null,
+        "barGaugeThresholdKey": null,
+        "barGaugeUnitSuffix": "%",
+        "valueFormat": "",
+        "colorThresholds": [],
+        "dataGridIsClickable": true,
+        "dataGridMaxRows": 500,
+        "dataGridTopRows": 0,
+        "actionColumn": null,
+        "actionColumnMode": null,
+        "dataGridColumns": null,
+        "dataGridColumnColors": null
+      }
+    }
+  ]
+}

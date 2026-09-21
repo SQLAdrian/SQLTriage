@@ -1,0 +1,82 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using System.Linq
+@using SQLTriage.Data.Services
+@inject AlertEvaluationService Engine
+@inject AlertDefinitionService Definitions
+@implements IDisposable
+
+@*
+    eval-failure-visible (ruling 2026-09-06): a page-level panel, not a toast — the service host has
+    no browser, so the honest place to surface "we cannot measure these conditions" is the page an
+    operator opens. It lists every alert whose query could not be evaluated this cycle (alert, server,
+    reason, failing-since) and disappears the moment each one measures cleanly again. It NEVER pages:
+    the whole point of the ruling is that a monitoring gap is made visible and audited, never dispatched.
+
+    Presentation lives in wwwroot/css/EvalFailurePanel.css (2026-09-08). It carried 17 inline style
+    attributes until the merge-push run for dbfa9a34 failed UiDebtRatchetTests; the ratchet's preferred
+    remedy is a class, and the declarations moved unchanged. Do not reintroduce inline styles here.
+    (Written without the literal attribute spelling on purpose: the ratchet regex is style=[quote] over
+    the whole file text, so even a comment mentioning it verbatim counts against the file.)
+*@
+
+@{
+    var failures = Engine.EvaluationFailures;
+}
+@if (failures.Count > 0)
+{
+    <div role="alert" aria-live="polite" class="efp-banner">
+        <div class="efp-head">
+            <i class="fa-solid fa-triangle-exclamation efp-icon"></i>
+            <strong class="efp-title">@failures.Count
+                alert@(failures.Count == 1 ? "" : "s") cannot be evaluated</strong>
+            <span class="efp-sub">Some conditions were not
+                measured this cycle, so this is not a clean, all-clear result.</span>
+        </div>
+        <table class="efp-table">
+            <thead>
+                <tr class="efp-head-row">
+                    <th class="efp-th">Alert</th>
+                    <th class="efp-th">Server</th>
+                    <th class="efp-th">Reason</th>
+                    <th class="efp-th">Failing since</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var f in failures.OrderBy(f => f.FirstFailureUtc))
+                {
+                    <tr class="efp-row">
+                        <td class="efp-td efp-td-alert">@AlertName(f.AlertId)</td>
+                        <td class="efp-td efp-td-server">@f.ServerName</td>
+                        <td class="efp-td efp-td-muted">@f.ErrorSummary</td>
+                        <td class="efp-td efp-td-muted efp-td-since">
+                            @Since(f.FirstFailureUtc)
+                            <span class="efp-count">(@f.FailureCount check@(f.FailureCount == 1 ? "" : "s"))</span>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    protected override void OnInitialized()
+    {
+        // The engine raises OnAlertsChanged at the end of each evaluation cycle, which is exactly when
+        // a failure opens or clears, so the panel refreshes in step with the state it shows.
+        Engine.OnAlertsChanged += OnEngineChanged;
+    }
+
+    private void OnEngineChanged() => InvokeAsync(StateHasChanged);
+
+    private string AlertName(string alertId)
+        => Definitions.GetAlert(alertId)?.Name ?? alertId;
+
+    private static string Since(DateTime firstFailureUtc)
+    {
+        if (firstFailureUtc == default) return "unknown";
+        return firstFailureUtc.ToLocalTime().ToString("MMM d, HH:mm");
+    }
+
+    public void Dispose() => Engine.OnAlertsChanged -= OnEngineChanged;
+}

@@ -1,0 +1,90 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+
+@* BoundaryCanary — two REAL, DELIBERATELY UNGATED shell controls, kept in the product.
+   ═══════════════════════════════════════════════════════════════════════════════════════════
+
+   READ THIS BEFORE "FIXING" THIS FILE. The controls below are not an oversight, and they must not
+   be wrapped in a boundary. Wrapping them destroys the only permanent evidence that authorization
+   is no longer a property of component source.
+
+   WHAT THEY ARE. These are the exact two shapes that defeated round 7's markup-position census —
+   the cold gate's two, not the verifier's, which is what makes them worth keeping: they are not
+   adversarial. They are what an ordinary developer writes next week.
+
+     SHAPE 1   an input using the bind:get / bind:set pair.
+               There is no "@bind=" attribute for a scanner to match at all. The census's rule (b)
+               looks for @bind or @bind-Xxx followed by '='; the next character here is ':', so it
+               matches nothing.
+
+     SHAPE 2   an EditForm carrying OnValidSubmit, with a submit button.
+               There is no lowercase form tag in the source for rule (c) to find, and rule (d)
+               resolves a child's EventCallback parameters from .razor files under Components/ and
+               Pages/ — EditForm is a FRAMEWORK component, so it has no entry there and
+               contributes no callbacks.
+
+   Both render from MainLayout, on EVERY route including AccessDenied, outside every @if and
+   outside every boundary. RbacShellBoundaryCensusTests is GREEN on them, and that is the point:
+   the census is blind here, exactly as it was on 2026-08-02 — and it no longer matters.
+
+   WHY THAT IS SAFE NOW. InteractiveAppAdmission refuses the interactive application itself to an
+   unauthenticated caller from a non-loopback origin: no document, no static asset, no /_blazor
+   circuit. An ungated control cannot be driven by a caller who never receives a circuit, whatever
+   its markup looks like. InteractiveAppAdmissionTests drives every route in the app over real
+   HTTP from a real non-loopback address and asserts DomMarker never appears there, while
+   asserting this file's source still contains both shapes and the census still passes them.
+   Source blind + HTTP refused = the boundary moved.
+
+   WHY THEY ARE INERT ANYWAY. Defence in depth cuts both ways, and shipping a live ungated control
+   to make a point would be its own defect. Neither handler injects a service, touches disk,
+   reaches another circuit, or leaves this component: one stores a string in a private field, the
+   other increments a private int. A console user or an authenticated LAN user can drive them and
+   nothing observable happens. They are aria-hidden and display:none, so they are not part of the
+   product's visible surface either.
+*@
+
+<div style="display:none" aria-hidden="true" data-sqltriage-canary="@DomMarker">
+
+    @* SHAPE 1 — idiomatic Blazor two-way binding; invisible to the markup census. *@
+    <input type="text"
+           data-canary="bind-get-set"
+           @bind:get="_text"
+           @bind:set="AcceptText" />
+
+    @* SHAPE 2 — idiomatic Blazor form submission; invisible to the markup census. *@
+    <EditForm Model="_model" OnValidSubmit="AcceptSubmit" FormName="sqltriage-boundary-canary">
+        <button type="submit" data-canary="editform-submit">Canary</button>
+    </EditForm>
+
+</div>
+
+@code {
+    /// <summary>
+    /// The token this component stamps into the DOM. A response containing it is a response that
+    /// handed the caller an ungated shell control; a response that does not contain it did not.
+    /// Held as a public const so the runtime HTTP test binds to the SHIPPED value rather than to a
+    /// copy of it — a marker the test and the component can disagree about proves nothing.
+    /// </summary>
+    public const string DomMarker = "sqltriage-boundary-canary-r8";
+
+    private sealed class CanaryModel
+    {
+        public string? Unused { get; set; }
+    }
+
+    private readonly CanaryModel _model = new();
+
+    private string _text = "";
+    private int _submits;
+
+    /// <summary>
+    /// The setter half of shape 1. Stores a string in this component's own field and does nothing
+    /// else — no injected service, no disk, no other circuit.
+    /// </summary>
+    private void AcceptText(string? value) => _text = value ?? "";
+
+    /// <summary>
+    /// The OnValidSubmit half of shape 2. Increments a private counter and does nothing else, for
+    /// the same reason.
+    /// </summary>
+    private void AcceptSubmit() => _submits++;
+}

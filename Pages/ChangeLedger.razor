@@ -1,0 +1,358 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/change-ledger"
+@using SQLTriage.Data.Models
+@inject SQLTriage.Data.Services.ChangeItemService ChangeItems
+@inject SQLTriage.Data.CheckExecutionService CheckExecutor
+@inject SQLTriage.Data.ToastService Toast
+@inject SQLTriage.Data.Services.AppUserState UserState
+@inject IJSRuntime JS
+<PageTitle>SQLTriage - Change Ledger</PageTitle>
+
+<div class="change-ledger-page">
+    <div class="cl-header">
+        <div>
+            <h2><i class="fa-solid fa-list-check"></i> Change Ledger</h2>
+            <p class="page-description">
+                Findings you chose to <strong>change</strong> rather than accept — logged with a rationale,
+                handed to the vendor with a due date, and followed up when the next scan lands. Every status
+                change is written to the tamper-evident audit log.
+            </p>
+        </div>
+        <div class="cl-summary">
+            <span class="cl-stat" title="Logged, not yet handed"><span class="cl-stat-n">@_counts.Logged</span> Logged</span>
+            <span class="cl-stat" title="Handed to the vendor"><span class="cl-stat-n">@_counts.Handed</span> Handed</span>
+            <span class="cl-stat cl-stat--fixed" title="Confirmed fixed"><span class="cl-stat-n">@_counts.Fixed</span> Fixed</span>
+            <span class="cl-stat cl-stat--failing" title="Still failing"><span class="cl-stat-n">@_counts.Failing</span> Still failing</span>
+        </div>
+    </div>
+
+    @if (_all.Count == 0)
+    {
+        <div class="cl-empty">
+            <i class="fa-solid fa-clipboard-check cl-empty-icon"></i>
+            <h3>No change items logged yet</h3>
+            <p>
+                When you run an audit assessment and hit a failed finding you intend to fix, choose
+                <strong>&ldquo;Log as change item&rdquo;</strong> (beside <em>Accept this finding</em>) to
+                track the decision here. Nothing is invented until you log it.
+            </p>
+        </div>
+    }
+    else
+    {
+        <div class="cl-filters">
+            <label>Status</label>
+            <select @bind="_statusFilter" class="cl-filter-input">
+                <option value="">All (@_all.Count)</option>
+                <option value="Logged">Logged (@_counts.Logged)</option>
+                <option value="HandedToVendor">Handed to vendor (@_counts.Handed)</option>
+                <option value="ConfirmedFixed">Confirmed fixed (@_counts.Fixed)</option>
+                <option value="StillFailing">Still failing (@_counts.Failing)</option>
+            </select>
+        </div>
+
+        <div class="cl-list">
+            @foreach (var item in Filtered())
+            {
+                <div class="cl-card @(item.IsOverdue ? "cl-card--overdue" : "")">
+                    <div class="cl-card-head">
+                        <span class="ci-badge @StatusClass(item.Status)">@StatusLabel(item.Status)</span>
+                        @if (item.IsOverdue)
+                        {
+                            <span class="ci-badge ci-badge--overdue" title="Past the due date and still open">Overdue</span>
+                        }
+                        <span class="cl-card-title">@(string.IsNullOrWhiteSpace(item.CheckName) ? item.CheckId : item.CheckName)</span>
+                        <span class="cl-card-id">#@item.Id</span>
+                    </div>
+
+                    <div class="cl-card-meta">
+                        <span title="Target instance"><i class="fa-solid fa-server"></i> @item.ServerName</span>
+                        <span title="Check id"><i class="fa-solid fa-hashtag"></i> @item.CheckId</span>
+                        <span title="Logged"><i class="fa-solid fa-calendar-day"></i> @item.DecidedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm") @(string.IsNullOrEmpty(item.DecidedBy) ? "" : $"· {item.DecidedBy}")</span>
+                        @if (item.HandedAt.HasValue)
+                        {
+                            <span title="Handed to vendor"><i class="fa-solid fa-handshake"></i> @item.HandedAt.Value.ToLocalTime().ToString("yyyy-MM-dd") @(string.IsNullOrEmpty(item.HandedTo) ? "" : $"→ {item.HandedTo}")</span>
+                        }
+                        @if (item.DueAt.HasValue)
+                        {
+                            <span class="@(item.IsOverdue ? "cl-due-overdue" : "")" title="Due date"><i class="fa-solid fa-hourglass-half"></i> due @item.DueAt.Value.ToLocalTime().ToString("yyyy-MM-dd")</span>
+                        }
+                    </div>
+
+                    <div class="cl-card-rationale">
+                        <span class="cl-label">Rationale</span>
+                        <span>@item.Rationale</span>
+                    </div>
+
+                    @if (item.Status is ChangeItemStatus.ConfirmedFixed or ChangeItemStatus.StillFailing && (item.ResolvedAt.HasValue || !string.IsNullOrWhiteSpace(item.ResolutionNote)))
+                    {
+                        <div class="cl-card-rationale">
+                            <span class="cl-label">Outcome</span>
+                            <span>
+                                @StatusLabel(item.Status)
+                                @if (item.ResolvedAt.HasValue) { <text> · @item.ResolvedAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</text> }
+                                @if (!string.IsNullOrEmpty(item.ResolvedBy)) { <text> · @item.ResolvedBy</text> }
+                                @if (!string.IsNullOrWhiteSpace(item.ResolutionNote)) { <text> — @item.ResolutionNote</text> }
+                            </span>
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrWhiteSpace(item.RemediationScript))
+                    {
+                        <div class="cl-script">
+                            <div class="cl-script-head">
+                                <span class="cl-label"><i class="fa-solid fa-file-code"></i> Remediation captured at log time</span>
+                                <span class="cl-script-actions">
+                                    <button class="btn btn-sm btn-secondary" @onclick="() => CopyScript(item)">
+                                        <i class="fa-solid @(_copiedId == item.Id ? "fa-check" : "fa-copy")"></i> @(_copiedId == item.Id ? "Copied!" : "Copy")
+                                    </button>
+                                    <button class="btn btn-sm btn-secondary" @onclick="() => SaveScript(item)">
+                                        <i class="fa-solid fa-download"></i> Save
+                                    </button>
+                                </span>
+                            </div>
+                            <pre class="cl-script-body">@item.RemediationScript</pre>
+                        </div>
+                    }
+
+                    <div class="cl-card-actions">
+                        @if (item.Status == ChangeItemStatus.Logged || item.Status == ChangeItemStatus.StillFailing)
+                        {
+                            <button class="btn btn-sm btn-primary" @onclick="() => OpenHandForm(item)">
+                                <i class="fa-solid fa-handshake"></i> @(item.Status == ChangeItemStatus.StillFailing ? "Re-hand to vendor…" : "Hand to vendor…")
+                            </button>
+                        }
+                        @if (item.Status == ChangeItemStatus.HandedToVendor || item.Status == ChangeItemStatus.StillFailing)
+                        {
+                            <button class="btn btn-sm btn-outline cl-confirm" @onclick="() => ConfirmFixed(item)" disabled="@_busy">
+                                <i class="fa-solid fa-circle-check"></i> Confirm fixed
+                            </button>
+                        }
+                        @if (item.Status == ChangeItemStatus.HandedToVendor)
+                        {
+                            <button class="btn btn-sm btn-outline cl-fail" @onclick="() => MarkStillFailing(item)" disabled="@_busy">
+                                <i class="fa-solid fa-triangle-exclamation"></i> Mark still failing
+                            </button>
+                        }
+                    </div>
+
+                    @if (_handTargetId == item.Id)
+                    {
+                        <div class="cl-hand-form">
+                            <label class="cl-field">
+                                <span>Vendor / DBA team (optional)</span>
+                                <input type="text" @bind="_handVendor" placeholder="e.g. Contoso Managed DBA" />
+                            </label>
+                            <label class="cl-field">
+                                <span>Due date (optional) — drives the still-failing follow-up flag</span>
+                                <input type="date" @bind="_handDue" />
+                            </label>
+                            @if (!string.IsNullOrEmpty(_handError))
+                            {
+                                <div class="cl-error">@_handError</div>
+                            }
+                            <div class="cl-hand-actions">
+                                <button class="btn btn-sm btn-secondary" @onclick="CloseHandForm">Cancel</button>
+                                <button class="btn btn-sm btn-primary" @onclick="() => ConfirmHand(item)" disabled="@_busy">Hand to vendor</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<ChangeItem> _all = Array.Empty<ChangeItem>();
+    private string _statusFilter = "";
+    private bool _busy;
+
+    // Copy/save feedback
+    private long? _copiedId;
+
+    // Inline hand-to-vendor form state
+    private long? _handTargetId;
+    private string _handVendor = "";
+    private DateTime? _handDue;
+    private string? _handError;
+
+    private (int Logged, int Handed, int Fixed, int Failing) _counts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Re-run the follow-up flag against the latest available results before rendering, so an
+        // overdue handed-off item whose check still fails is flagged even when the last scan was a
+        // manual audit run (the scheduled-run seam already evaluates on its own completion). Only
+        // servers with handed-off items are touched, and the sweep only ever flags genuine
+        // past-due still-failing items — it never invents a status.
+        try
+        {
+            var servers = ChangeItems.GetAll()
+                .Where(c => c.Status == ChangeItemStatus.HandedToVendor)
+                .Select(c => c.ServerName)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            foreach (var srv in servers)
+            {
+                var results = CheckExecutor.GetResults(srv, int.MaxValue);
+                if (results.Count > 0)
+                    await ChangeItems.EvaluateFollowUpsAsync(srv, results);
+            }
+        }
+        catch { /* follow-up is best-effort; never block the ledger from rendering */ }
+
+        Reload();
+    }
+
+    private void Reload()
+    {
+        _all = ChangeItems.GetAll();
+        _counts = (
+            _all.Count(c => c.Status == ChangeItemStatus.Logged),
+            _all.Count(c => c.Status == ChangeItemStatus.HandedToVendor),
+            _all.Count(c => c.Status == ChangeItemStatus.ConfirmedFixed),
+            _all.Count(c => c.Status == ChangeItemStatus.StillFailing));
+    }
+
+    private IEnumerable<ChangeItem> Filtered()
+    {
+        if (string.IsNullOrEmpty(_statusFilter)) return _all;
+        return Enum.TryParse<ChangeItemStatus>(_statusFilter, out var s)
+            ? _all.Where(c => c.Status == s)
+            : _all;
+    }
+
+    private static string StatusLabel(ChangeItemStatus s) => s switch
+    {
+        ChangeItemStatus.Logged         => "Logged",
+        ChangeItemStatus.HandedToVendor => "Handed to vendor",
+        ChangeItemStatus.ConfirmedFixed => "Confirmed fixed",
+        ChangeItemStatus.StillFailing   => "Still failing",
+        _                               => s.ToString(),
+    };
+
+    private static string StatusClass(ChangeItemStatus s) => s switch
+    {
+        ChangeItemStatus.Logged         => "ci-badge--logged",
+        ChangeItemStatus.HandedToVendor => "ci-badge--handed",
+        ChangeItemStatus.ConfirmedFixed => "ci-badge--fixed",
+        ChangeItemStatus.StillFailing   => "ci-badge--failing",
+        _                               => "ci-badge--logged",
+    };
+
+    // ── Hand to vendor ────────────────────────────────────────────────────
+    private void OpenHandForm(ChangeItem item)
+    {
+        _handTargetId = item.Id;
+        _handVendor = item.HandedTo ?? "";
+        _handDue = item.DueAt?.ToLocalTime().Date;
+        _handError = null;
+    }
+
+    private void CloseHandForm()
+    {
+        _handTargetId = null;
+        _handError = null;
+    }
+
+    private async Task ConfirmHand(ChangeItem item)
+    {
+        _busy = true;
+        try
+        {
+            // A due date is inclusive end-of-day so a vendor has the whole day it's due.
+            DateTime? dueUtc = _handDue.HasValue
+                ? _handDue.Value.Date.AddDays(1).AddSeconds(-1).ToUniversalTime()
+                : null;
+            var vendor = string.IsNullOrWhiteSpace(_handVendor) ? null : _handVendor.Trim();
+
+            await ChangeItems.HandToVendor(item.Id, vendor, dueUtc, by: Who());
+            Toast.ShowSuccess($"Change #{item.Id} handed to vendor.");
+            CloseHandForm();
+            Reload();
+        }
+        catch (Exception ex)
+        {
+            _handError = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ConfirmFixed(ChangeItem item)
+    {
+        _busy = true;
+        try
+        {
+            await ChangeItems.ConfirmFixed(item.Id, by: Who());
+            Toast.ShowSuccess($"Change #{item.Id} confirmed fixed.");
+            Reload();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("Could not confirm change", ex.Message);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task MarkStillFailing(ChangeItem item)
+    {
+        _busy = true;
+        try
+        {
+            await ChangeItems.MarkStillFailing(item.Id, by: Who());
+            Toast.ShowInfo($"Change #{item.Id} marked still failing.");
+            Reload();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("Could not update change", ex.Message);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    // ── Script export ─────────────────────────────────────────────────────
+    private async Task CopyScript(ChangeItem item)
+    {
+        if (string.IsNullOrEmpty(item.RemediationScript)) return;
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", item.RemediationScript);
+            _copiedId = item.Id;
+            StateHasChanged();
+            await Task.Delay(2000);
+            _copiedId = null;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("Could not copy to clipboard", ex.Message);
+        }
+    }
+
+    private async Task SaveScript(ChangeItem item)
+    {
+        if (string.IsNullOrEmpty(item.RemediationScript)) return;
+        try
+        {
+            var safeCheck = new string((item.CheckId ?? "change").Select(ch => char.IsLetterOrDigit(ch) ? ch : '_').ToArray());
+            var fileName = $"change-{item.Id}_{safeCheck}_{DateTime.UtcNow:yyyyMMdd_HHmm}.sql";
+            await JS.InvokeVoidAsync("downloadFile", fileName, item.RemediationScript, "text/plain;charset=utf-8");
+        }
+        catch (Exception ex)
+        {
+            Toast.ShowError("Could not save the script", ex.Message);
+        }
+    }
+
+    private string Who() => $"{Environment.UserName} ({UserState.Role})";
+}

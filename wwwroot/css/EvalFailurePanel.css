@@ -1,0 +1,88 @@
+/* EvalFailurePanel.css - styles for Components/Shared/EvalFailurePanel.razor.
+ *
+ * Extracted from 17 inline style="" attributes 2026-09-08, after the merge-push run for
+ * dbfa9a34 failed UiDebtRatchetTests.No_source_razor_file_grew_its_inline_style_count
+ * (total 3804 vs frozen 3787; this file was the only one that grew). The ratchet's preferred
+ * remedy is a CSS class rather than raising the baseline, and CLAUDE.md's 2026-08-30/31
+ * extraction convention is one sheet per page/component, @imported by app.css.
+ *
+ * EVERY selector is prefixed .efp- ON PURPOSE. app.css hoists this file globally, so a bare
+ * selector here restyles every page in the app - which is exactly how a hoisted .empty-state
+ * rule silently relaid out three unrelated pages (AdvancedReporting.css, 2026-08-31 d9f5ea1).
+ * Censused before writing: no .efp- or eval-failure selector existed anywhere in the tree.
+ *
+ * Declarations are byte-for-byte the ones that were inline; this is a move, not a restyle.
+ */
+
+.efp-banner {
+    margin-bottom: 16px;
+    padding: 12px 16px;
+    border-radius: 8px;
+    background: rgba(255, 159, 10, 0.08);
+    border: 1px solid var(--orange, #ff9f0a);
+}
+
+.efp-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.efp-icon {
+    color: var(--orange, #ff9f0a);
+    flex-shrink: 0;
+}
+
+.efp-title {
+    color: var(--text);
+}
+
+.efp-sub {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.efp-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+.efp-head-row {
+    text-align: left;
+    color: var(--text-muted);
+}
+
+.efp-th {
+    padding: 4px 8px;
+    font-weight: 600;
+}
+
+.efp-row {
+    border-top: 1px solid var(--border);
+}
+
+.efp-td {
+    padding: 4px 8px;
+}
+
+.efp-td-alert {
+    color: var(--text);
+}
+
+.efp-td-server {
+    font-family: monospace;
+}
+
+.efp-td-muted {
+    color: var(--text-muted);
+}
+
+.efp-td-since {
+    white-space: nowrap;
+}
+
+.efp-count {
+    opacity: 0.7;
+}

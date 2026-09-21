@@ -1,0 +1,56 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using SQLTriage.Data.Services
+
+@* Read-only decision-support power band shown beside a remediable finding.
+   The % is the illustrative per-fix-class band (PowerEstimateService.ReductionBand)
+   — NOT a per-server promise. Watts appear only when a physical-host estimate is
+   supplied (suppressed on VM/managed). Always a modelled estimate, never a
+   measurement; realisable only if the freed capacity is reclaimed.
+   All label/tooltip text is built null-safely in code (no .Value in markup). *@
+
+<span style="display:inline-flex;align-items:center;gap:4px;margin-left:6px;padding:1px 7px;border-radius:10px;font-size:11px;line-height:1.5;white-space:nowrap;background:rgba(74,222,128,0.10);border:1px solid rgba(74,222,128,0.30);color:#4ade80;"
+      title="@_tooltip" aria-label="@_tooltip">
+    <i class="fa-solid fa-leaf" aria-hidden="true"></i>
+    <span>@_label</span>
+</span>
+
+@code {
+    /// <summary>The coarse fix class this finding's remediation falls into.</summary>
+    [Parameter, EditorRequired] public RemediationType Type { get; set; }
+
+    /// <summary>Optional server-specific estimate; supplies watts on a physical host.</summary>
+    [Parameter] public FixPowerSaving? Saving { get; set; }
+
+    private string _label = "";
+    private string _tooltip = "";
+
+    protected override void OnParametersSet()
+    {
+        var (low, high) = PowerEstimateService.ReductionBand(Type);
+
+        // Pattern-binding null-safely: enters ONLY when Saving is non-null AND both
+        // watt bounds are non-null (a physical host). Never touches a null .Value.
+        // Inline "est." so a screenshot/copy never shows a bare watt figure without a
+        // measured-vs-modelled marker (the full framing is in the tooltip/aria-label).
+        var wattsLabel = Saving is { WattsLow: int wl, WattsHigh: int wh }
+            ? $" · ≈{wl}–{wh} W (est.)"
+            : "";
+        _label = $"could cut ~{low}–{high}% CPU work{wattsLabel}";
+
+        var wattsTip = Saving is { WattsLow: int twl, WattsHigh: int twh }
+            ? $"Roughly {twl}-{twh} W of SQL CPU draw on this physical host. "
+            : "";
+        _tooltip = $"Illustrative saving for this class of fix ({TypeLabel(Type)}) - not a per-server promise. "
+                 + wattsTip
+                 + "Modelled estimate, not a measurement; realisable only if the freed capacity is reclaimed.";
+    }
+
+    private static string TypeLabel(RemediationType t) => t switch
+    {
+        RemediationType.IndexAddRebuild => "indexing",
+        RemediationType.MaxdopParamSniff => "parallelism / parameter sniffing",
+        RemediationType.IoReduction => "I/O reduction",
+        RemediationType.PlanQuality => "plan quality (statistics / cardinality)",
+        _ => "configuration",
+    };
+}

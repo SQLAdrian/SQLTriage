@@ -1,0 +1,2914 @@
+[
+  {
+    "Number": 1,
+    "Name": "Level 1",
+    "Description": "Live probe",
+    "PassedCount": 24,
+    "TotalCount": 27,
+    "PassRate": 88.88888888888889,
+    "Target": 80,
+    "Categories": [
+      {
+        "ItemCount": 9,
+        "Name": "Reliability",
+        "PassedCount": 8,
+        "TotalCount": 9,
+        "Failed": [
+          {
+            "Name": "DBCC CHECKDB Not Performed Recently",
+            "Tag": "Reliability",
+            "Impact": "Database integrity needs to be checked daily. The data integrity on these servers cannot be validated if these checks aren\u0027t run",
+            "Action": null,
+            "Effort": "2 hr",
+            "Related": null
+          }
+        ],
+        "Info": [],
+        "PassedItems": [
+          {
+            "Name": "SQL Server Version Out of Support",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Database Files on Network File Shares",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Database Files Stored in Azure",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "No Failover Cluster Nodes Available",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "TempDB File Error",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "DBCC WRITEPAGE Used Recently",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Evaluation Edition",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "SQL Server Update May Fail",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 5,
+        "Name": "Configuration impacting Performance",
+        "PassedCount": 5,
+        "TotalCount": 5,
+        "Failed": [],
+        "Info": [],
+        "PassedItems": [
+          {
+            "Name": "Database Auto-Close enabled",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Database Auto-Shrink enabled",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "File growth set to percent",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Memory Nodes Offline",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "File growth set to 1MB",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 4,
+        "Name": "Data Protection \u0026 Backup",
+        "PassedCount": 2,
+        "TotalCount": 4,
+        "Failed": [
+          {
+            "Name": "Databases Not Being Backed Up",
+            "Tag": "Reliability",
+            "Impact": "Regular backups of databases and transactions are critical for achieving RPO and RTP targets.",
+            "Action": null,
+            "Effort": "30 min",
+            "Related": null
+          },
+          {
+            "Name": "Full Recovery Model Without Log Backups",
+            "Tag": "Reliability",
+            "Impact": "Without Log backups databases can consume disk space and database restores are compromised.",
+            "Action": null,
+            "Effort": "30 min",
+            "Related": null
+          }
+        ],
+        "Info": [],
+        "PassedItems": [
+          {
+            "Name": "Corruption checks not optimal",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Database Corruption Detected",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 4,
+        "Name": "Configuration",
+        "PassedCount": 4,
+        "TotalCount": 4,
+        "Failed": [],
+        "Info": [],
+        "PassedItems": [
+          {
+            "Name": "Database Corruption Detected",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Missing Index",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "32-bit SQL Server Installed",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Agent is Currently Offline",
+            "Tag": "Monitoring/Alerting",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 2,
+        "Name": "Monitoring",
+        "PassedCount": 2,
+        "TotalCount": 2,
+        "Failed": [],
+        "Info": [],
+        "PassedItems": [
+          {
+            "Name": "No Alerts for Sev 19-25",
+            "Tag": "Monitoring/Alerting",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "No Alerts for Corruption",
+            "Tag": "Monitoring/Alerting",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 2,
+        "Name": "Backup",
+        "PassedCount": 2,
+        "TotalCount": 2,
+        "Failed": [],
+        "Info": [],
+        "PassedItems": [
+          {
+            "Name": "TDE Certificate Not Backed Up Recently",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Log Backups to NUL",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 1,
+        "Name": "Performance",
+        "PassedCount": 1,
+        "TotalCount": 1,
+        "Failed": [],
+        "Info": [],
+        "PassedItems": [
+          {
+            "Name": "CPU w/Odd Number of Cores",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Number": 2,
+    "Name": "Level 2",
+    "Description": "Live probe",
+    "PassedCount": 40,
+    "TotalCount": 46,
+    "PassRate": 86.95652173913044,
+    "Target": 80,
+    "Categories": [
+      {
+        "ItemCount": 32,
+        "Name": "Configuration",
+        "PassedCount": 27,
+        "TotalCount": 32,
+        "Failed": [
+          {
+            "Name": "TempDB on C Drive",
+            "Tag": "Configuration",
+            "Impact": "TempDB frequently grows unpredictably, putting your server at risk of running out of C drive space and crashing.",
+            "Action": null,
+            "Effort": "2 hr",
+            "Related": null
+          },
+          {
+            "Name": "User Database on C Drive",
+            "Tag": "Configuration",
+            "Impact": "Putting databases on the C drive runs the risk of crashing the server when it runs out of space.",
+            "Action": null,
+            "Effort": "30 min",
+            "Related": null
+          },
+          {
+            "Name": "Cursor",
+            "Tag": "Performance",
+            "Impact": "Some resource-intensive queries use cursors. This may impact performance.",
+            "Action": null,
+            "Effort": "2 hr",
+            "Related": null
+          },
+          {
+            "Name": "RID or Key Lookups",
+            "Tag": "Performance",
+            "Impact": "A top resource-intensive queries contains RID or Key Lookups. Requires covering indexes.",
+            "Action": null,
+            "Effort": "2 hr",
+            "Related": null
+          },
+          {
+            "Name": "Query Store Unusually Configured",
+            "Tag": "Performance",
+            "Impact": "Query store has different capture modes. Some can hurt performance for certain workloads, especially ad-hoc queries",
+            "Action": null,
+            "Effort": "5 min",
+            "Related": null
+          }
+        ],
+        "Info": [
+          {
+            "Name": "System Database on C Drive",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Instance Stacking",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default Database Config",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ],
+        "PassedItems": [
+          {
+            "Name": "MSDB Backup History Not Purged",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Server Audits Running",
+            "Tag": "Security",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "No Operators Configured/Enabled",
+            "Tag": "Monitoring/Alerting",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Triggers on Tables",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Enterprise Edition Features In Use",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Implicit Conversion",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Scalar UDFs",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "@@Servername Not Set or Not Correct",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "No Failsafe Operator Configured",
+            "Tag": "Monitoring/Alerting",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Availability Groups has automatically repaired corruption",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Agent Jobs Without Failure Emails",
+            "Tag": "Monitoring/Alerting",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Remote DAC Disabled",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Agent Jobs Starting Simultaneously",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "In-Memory OLTP (Hekaton) Transaction Errors",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Buffer Pool Extensions Enabled",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "TempDB Has \u003E16 Data Files",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Snapshot Backups Occurring",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Cumulative Update Available",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Objects created with dangerous SET Options",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Dangerous Service Account - ADMIN",
+            "Tag": "Security",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Dangerous Agent Service Account  - ADMIN",
+            "Tag": "Security",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Constitution.md Present",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Agents.md Present",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "transform noise words Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 4,
+        "Name": "Configuration impacting Performance",
+        "PassedCount": 4,
+        "TotalCount": 4,
+        "Failed": [],
+        "Info": [],
+        "PassedItems": [
+          {
+            "Name": "Multiple TempDB Data Files Required",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Max Memory Set Too Low",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Shrink Database Job",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Poison Wait Detected: Serializable Locking",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 3,
+        "Name": "Security",
+        "PassedCount": 3,
+        "TotalCount": 3,
+        "Failed": [],
+        "Info": [],
+        "PassedItems": [
+          {
+            "Name": "Dangerous Service Account - SYSTEM",
+            "Tag": "Security",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Dangerous Agent Service Account - SYSTEM",
+            "Tag": "Security",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "SQL Mail XPs Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 2,
+        "Name": "Monitoring",
+        "PassedCount": 2,
+        "TotalCount": 2,
+        "Failed": [],
+        "Info": [],
+        "PassedItems": [
+          {
+            "Name": "Not All Alerts Configured",
+            "Tag": "Monitoring/Alerting",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Alerts Disabled",
+            "Tag": "Monitoring/Alerting",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 2,
+        "Name": "Data Protection \u0026 Backup",
+        "PassedCount": 1,
+        "TotalCount": 2,
+        "Failed": [
+          {
+            "Name": "Backup Compression Disabled",
+            "Tag": "Reliability",
+            "Impact": "Compressing backups makes backups and restores perform much better.",
+            "Action": null,
+            "Effort": "30 min",
+            "Related": null
+          }
+        ],
+        "Info": [],
+        "PassedItems": [
+          {
+            "Name": "Delayed Durability Enabled, Accepted Data Loss Risk",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 1,
+        "Name": "Reliability",
+        "PassedCount": 1,
+        "TotalCount": 1,
+        "Failed": [],
+        "Info": [],
+        "PassedItems": [
+          {
+            "Name": "Server restarted in last 24 hours",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 1,
+        "Name": "Performance",
+        "PassedCount": 1,
+        "TotalCount": 1,
+        "Failed": [],
+        "Info": [],
+        "PassedItems": [
+          {
+            "Name": "Memory Dangerous Low Recently",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 1,
+        "Name": "Security \u0026 Compliance",
+        "PassedCount": 1,
+        "TotalCount": 1,
+        "Failed": [],
+        "Info": [],
+        "PassedItems": [
+          {
+            "Name": "Non-Default Config: Cross DB Ownership Chaining",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Number": 3,
+    "Name": "Level 3",
+    "Description": "Live probe",
+    "PassedCount": 68,
+    "TotalCount": 75,
+    "PassRate": 90.66666666666667,
+    "Target": 80,
+    "Categories": [
+      {
+        "ItemCount": 38,
+        "Name": "Configuration",
+        "PassedCount": 34,
+        "TotalCount": 38,
+        "Failed": [
+          {
+            "Name": "Implicit Conversion Affecting Cardinality",
+            "Tag": "Performance",
+            "Impact": "Implicit conversion affects cardinality estimation, which is crucial in query execution.",
+            "Action": null,
+            "Effort": "5 min",
+            "Related": null
+          },
+          {
+            "Name": "SQL Server Agent is running under an NT Service account",
+            "Tag": "Security",
+            "Impact": "SQL Server Agent services can run under NT Service accounts. It is ideal to run as Active Directory accounts.",
+            "Action": null,
+            "Effort": "30 min",
+            "Related": null
+          },
+          {
+            "Name": "Non-Production License",
+            "Tag": "Configuration",
+            "Impact": "Running production workloads will incur Licensing fees",
+            "Action": null,
+            "Effort": "1 day",
+            "Related": null
+          },
+          {
+            "Name": "Instant File Initialization Not Enabled",
+            "Tag": "Performance",
+            "Impact": "IFI enables faster database file growth. Consider enabling this",
+            "Action": null,
+            "Effort": "5 min",
+            "Related": null
+          }
+        ],
+        "Info": [
+          {
+            "Name": "Transaction Log Larger than Data File",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "DBCC Events",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "show advanced options Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ],
+        "PassedItems": [
+          {
+            "Name": "Jobs owned by users",
+            "Tag": "Security",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Stored Procedures running at startup",
+            "Tag": "Security",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Server triggers enabled",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Slow Storage Reads on Drive",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Multiple Log Files on One Drive",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Database Snapshot Online",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Max File Size Set",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Backing Up to Same Drive Where Databases Reside",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Unusual SQL Server Edition",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Unusual Database State",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Possibly Broken Log Shipping",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Full Text Indexes Not Updating",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Plan Guides Failing",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Locked Pages In Memory Enabled",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Full-text Filter Daemon Launcher is Currently Offline",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "MSDB Backup History Purged Too Frequently",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Endpoints Owned by Users",
+            "Tag": "Security",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Instant File Initialization Enabled",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Resumable Index Operation Paused",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Snapshotting Too Many Databases",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Query Store Wait Stats Disabled",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Query Store Effectively Disabled",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Undesired Query Store State",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "in-doubt xact resolution Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "locks Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "max full-text crawl range Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "media retention Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "server trigger recursion Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "SMO and DMO XPs Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "two digit year cutoff Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "filestream access level Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 16,
+        "Name": "Performance",
+        "PassedCount": 16,
+        "TotalCount": 16,
+        "Failed": [],
+        "Info": [
+          {
+            "Name": "Query Store Disabled",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "max degree of parallelism Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ],
+        "PassedItems": [
+          {
+            "Name": "Check Constraint Not Trusted",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Old Compatibility Level",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Memory Pressure Affecting Queries",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Deadlocks Happening Daily",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "High Memory Use for In-Memory OLTP (Hekaton)",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Shrink Database Step In Maintenance Plan",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Dynamic Memory",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "DBCC SHRINK% Ran Recently",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Implicit Transactions",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Memory Leak in USERSTORE_TOKENPERM Cache",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "max server memory (MB) Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "max worker threads Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "min memory per query (KB) Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "priority boost Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 5,
+        "Name": "Configuration impacting Performance",
+        "PassedCount": 2,
+        "TotalCount": 5,
+        "Failed": [
+          {
+            "Name": "Max Memory Set Too High",
+            "Tag": "Performance",
+            "Impact": "SQL Server may drain the system dry of memory, and under certain conditions, this can cause Windows to swap to disk",
+            "Action": null,
+            "Effort": "half day",
+            "Related": null
+          },
+          {
+            "Name": "Cost threshold for parallelism",
+            "Tag": "Performance",
+            "Impact": "Parallelism threshold is set by default to 5. Changing this may reduce CXPACKET waits.",
+            "Action": null,
+            "Effort": "half day",
+            "Related": null
+          },
+          {
+            "Name": "optimize for ad hoc workloads Changed",
+            "Tag": "Performance",
+            "Impact": "Query plan memory utilization can be optimized for SQL server. The default setting keeps this disabled.",
+            "Action": null,
+            "Effort": "5 min",
+            "Related": null
+          }
+        ],
+        "Info": [],
+        "PassedItems": [
+          {
+            "Name": "Auto-Update Stats Disabled",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Slow Storage Writes on Drive",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 5,
+        "Name": "Security \u0026 Compliance",
+        "PassedCount": 5,
+        "TotalCount": 5,
+        "Failed": [],
+        "Info": [],
+        "PassedItems": [
+          {
+            "Name": "Trustworthy Database Setting Enabled",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default Config: Ad Hoc Distributed Queries Enabled",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default Config: C2 Audit Mode Enabled",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default Config: CLR Enabled",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default Config: EKM Provider Enabled",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 2,
+        "Name": "Security",
+        "PassedCount": 2,
+        "TotalCount": 2,
+        "Failed": [],
+        "Info": [
+          {
+            "Name": "SQL Agent Job Runs at Startup",
+            "Tag": "Security",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "xp_cmdshell Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ],
+        "PassedItems": []
+      },
+      {
+        "ItemCount": 2,
+        "Name": "Performance \u0026 Capacity",
+        "PassedCount": 2,
+        "TotalCount": 2,
+        "Failed": [],
+        "Info": [],
+        "PassedItems": [
+          {
+            "Name": "Parameter Sniffing Disabled at Database Level",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default Config: Cost Threshold for Parallelism Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 2,
+        "Name": "Server Configuration",
+        "PassedCount": 2,
+        "TotalCount": 2,
+        "Failed": [],
+        "Info": [],
+        "PassedItems": [
+          {
+            "Name": "Non-Default Config: Affinity64 Mask Set",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default Config: Affinity64 I/O Mask Set",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 2,
+        "Name": "Monitoring \u0026 Observability",
+        "PassedCount": 2,
+        "TotalCount": 2,
+        "Failed": [],
+        "Info": [
+          {
+            "Name": "Non-Default Config: Agent XPs Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default Config: Database Mail XPs Enabled",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ],
+        "PassedItems": []
+      },
+      {
+        "ItemCount": 1,
+        "Name": "Backup",
+        "PassedCount": 1,
+        "TotalCount": 1,
+        "Failed": [],
+        "Info": [],
+        "PassedItems": [
+          {
+            "Name": "Encryption Certificate Not Backed Up Recently",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 1,
+        "Name": "Availability",
+        "PassedCount": 1,
+        "TotalCount": 1,
+        "Failed": [],
+        "Info": [],
+        "PassedItems": [
+          {
+            "Name": "AG Replica Falling Behind",
+            "Tag": "Availability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 1,
+        "Name": "Data Protection \u0026 Backup",
+        "PassedCount": 1,
+        "TotalCount": 1,
+        "Failed": [],
+        "Info": [
+          {
+            "Name": "Non-Default Config: Backup Checksum Default Enabled",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ],
+        "PassedItems": []
+      }
+    ]
+  },
+  {
+    "Number": 4,
+    "Name": "Level 4",
+    "Description": "Live probe",
+    "PassedCount": 98,
+    "TotalCount": 104,
+    "PassRate": 94.23076923076923,
+    "Target": 80,
+    "Categories": [
+      {
+        "ItemCount": 50,
+        "Name": "Configuration",
+        "PassedCount": 45,
+        "TotalCount": 50,
+        "Failed": [
+          {
+            "Name": "Database Encrypted",
+            "Tag": "Security",
+            "Impact": "Transparent Data Encryption protects databases by encrypting the data and log files.",
+            "Action": null,
+            "Effort": "30 min",
+            "Related": null
+          },
+          {
+            "Name": "Errors Logged Recently in the Default Trace",
+            "Tag": "Reliability",
+            "Impact": "The Errors Logged by in the SQL server Logs needs to be monitored.",
+            "Action": null,
+            "Effort": "30 min",
+            "Related": null
+          },
+          {
+            "Name": "SQL Server is running under an NT Service account",
+            "Tag": "Security",
+            "Impact": "SQL Server services can run as NT Service accounts. It is ideal to run as Active Directory accounts.",
+            "Action": null,
+            "Effort": "30 min",
+            "Related": null
+          },
+          {
+            "Name": "Memory Dumps Have Occurred",
+            "Tag": "Reliability",
+            "Impact": "Memory dumps point to an errors impacting the SQL Engine and need to be investigated.",
+            "Action": null,
+            "Effort": "30 min",
+            "Related": null
+          },
+          {
+            "Name": "Missing Features",
+            "Tag": "Configuration",
+            "Impact": "When SQL 2017 is being used but not Cumulative Update 3. The CU offers increased SQL internal analytics",
+            "Action": null,
+            "Effort": "5 min",
+            "Related": null
+          }
+        ],
+        "Info": [
+          {
+            "Name": "Sysadmins on SQL server",
+            "Tag": "Security",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "max text repl size (B) Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "recovery interval (min) Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "remote admin connections Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ],
+        "PassedItems": [
+          {
+            "Name": "Security Admins on SQL server",
+            "Tag": "Security",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Replication in use",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Queries Forcing Order Hints",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Queries Forcing Join Hints",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Indexes Disabled",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "High VLF Count",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "dynamic (cr.name)",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Plan Guides Enabled",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Infinite merge replication metadata retention period",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "CPU Schedulers Offline",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Login Can Control Server",
+            "Tag": "Security",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Change Tracking Enabled",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Parallelism Rocket Surgery",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Target Recovery Time Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Top Wait Stats (ranked)",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Many Plans for One Query",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Missing Features",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "DBCC FREEPROCCACHE Ran Recently",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Statistics Without Histograms",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "SSAS/SSIS/SSRS Installed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Recovery Interval Not Optimal",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "TempDB Governor Config Problem",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "ft crawl bandwidth (max) Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "ft crawl bandwidth (min) Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "ft notify bandwidth (max) Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "ft notify bandwidth (min) Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "nested triggers Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "network packet size (B) Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "open objects Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "PH timeout (s) Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "precompute rank Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "query governor cost limit Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "query wait (s) Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "remote access Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Replication XPs Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "RPC parameter data validation Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "scan for startup procs Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "set working set size Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "user connections Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "user options Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Invalid login defined with Windows Authentication",
+            "Tag": "Security",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 12,
+        "Name": "Performance",
+        "PassedCount": 11,
+        "TotalCount": 12,
+        "Failed": [
+          {
+            "Name": "Trace Flag On",
+            "Tag": "Configuration",
+            "Impact": "These custom switches enable or disable specific behaviour. In most cases these have positive impacts.",
+            "Action": null,
+            "Effort": "30 min",
+            "Related": null
+          }
+        ],
+        "Info": [],
+        "PassedItems": [
+          {
+            "Name": "Single-Use Plans in Procedure Cache",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Leftover Fake Indexes From Wizards",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Foreign Keys Not Trusted",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "The partitioned database may have non-aligned indexes",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Poison Wait Detected",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "User-Created Statistics In Place",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Repetitive Steps In Maintenance Plans",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Wait Stats Cleared Recently",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Inconsistent Query Store metadata",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Optimized Locking Not Fully Set Up",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "lightweight pooling Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 10,
+        "Name": "Performance \u0026 Capacity",
+        "PassedCount": 10,
+        "TotalCount": 10,
+        "Failed": [],
+        "Info": [],
+        "PassedItems": [
+          {
+            "Name": "Query Optimizer Hotfixes Enabled",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Identity Cache Disabled",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Interleaved Execution for MSTVFs Disabled",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Batch Mode Memory Grant Feedback Disabled",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Batch Mode Adaptive Joins Disabled",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Scalar UDF Inlining Disabled",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Row Mode Memory Grant Feedback Disabled",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Batch Mode on Rowstore Disabled",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Table Variable Deferred Compilation Disabled",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default Config: Min Server Memory Set",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 7,
+        "Name": "Monitoring \u0026 Observability",
+        "PassedCount": 7,
+        "TotalCount": 7,
+        "Failed": [],
+        "Info": [
+          {
+            "Name": "Rundate",
+            "Tag": "Rundate",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default Config: Blocked Process Threshold Set",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ],
+        "PassedItems": [
+          {
+            "Name": "Non-Default DB Option: Query Store Enabled",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Wait Statistics Cleared",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default DB Option: Lightweight Query Profiling",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default DB Option: Last Query Plan Statistics",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default Config: Default Trace Disabled",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 6,
+        "Name": "Configuration impacting Performance",
+        "PassedCount": 6,
+        "TotalCount": 6,
+        "Failed": [],
+        "Info": [],
+        "PassedItems": [
+          {
+            "Name": "Resource Governor Enabled",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Auto-Create Statistics Disabled",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Stats Updated Asynchronously",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "File Growths Slow",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Memory Dangerously Low in NUMA Nodes",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "TempDB Unevenly Sized Data Files",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 5,
+        "Name": "Server Configuration",
+        "PassedCount": 5,
+        "TotalCount": 5,
+        "Failed": [],
+        "Info": [],
+        "PassedItems": [
+          {
+            "Name": "Non-Default DB Option: Snapshot Isolation Enabled",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default DB Option: RCSI Enabled",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default DB Option: Recursive Triggers",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default DB Option: CDC Enabled",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default DB Option: In-Memory OLTP Enabled",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 4,
+        "Name": "Security",
+        "PassedCount": 4,
+        "TotalCount": 4,
+        "Failed": [],
+        "Info": [
+          {
+            "Name": "Interesting Database Owner",
+            "Tag": "Security",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ],
+        "PassedItems": [
+          {
+            "Name": "Database Owner is Unknown",
+            "Tag": "Security",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Ole Automation Procedures Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Web Assistant Procedures Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 4,
+        "Name": "Security \u0026 Compliance",
+        "PassedCount": 4,
+        "TotalCount": 4,
+        "Failed": [],
+        "Info": [
+          {
+            "Name": "Non-Default Config: Contained Database Authentication",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ],
+        "PassedItems": [
+          {
+            "Name": "Contained Database Authentication Enabled",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Row-Level Security Enabled",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default Config: Common Criteria Compliance Enabled",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 3,
+        "Name": "Monitoring",
+        "PassedCount": 3,
+        "TotalCount": 3,
+        "Failed": [],
+        "Info": [],
+        "PassedItems": [
+          {
+            "Name": "Alerts Configured without Follow Up",
+            "Tag": "Monitoring/Alerting",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Disabled Internal Monitoring Features",
+            "Tag": "Monitoring/Alerting",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Alerts Without Event Descriptions",
+            "Tag": "Monitoring/Alerting",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 3,
+        "Name": "Reliability",
+        "PassedCount": 3,
+        "TotalCount": 3,
+        "Failed": [],
+        "Info": [],
+        "PassedItems": [
+          {
+            "Name": "Dangerous Third Party Modules",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Query Store Cleanup Disabled",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "There Is An Error With The Default Trace",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "Number": 5,
+    "Name": "Level 5",
+    "Description": "Live probe",
+    "PassedCount": 47,
+    "TotalCount": 49,
+    "PassRate": 95.91836734693878,
+    "Target": 80,
+    "Categories": [
+      {
+        "ItemCount": 20,
+        "Name": "Server Configuration",
+        "PassedCount": 20,
+        "TotalCount": 20,
+        "Failed": [],
+        "Info": [
+          {
+            "Name": "Non-Default DB Option: Service Broker Enabled",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ],
+        "PassedItems": [
+          {
+            "Name": "Non-Default DB Option: Supplemental Logging",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default DB Option: Auto Create Stats Incremental",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default DB Option: ANSI NULL Default",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default DB Option: Forced Parameterization",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default DB Option: Service Broker Priority",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default DB Option: Elevate Online Operations",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default DB Option: Elevate Resumable Operations",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default DB Option: Global Temp Table Auto-Drop",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default DB Option: Verbose Truncation Warnings",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default Config: Access Check Cache Bucket Count",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default Config: Access Check Cache Quota",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default Config: CPU Affinity I/O Mask Set",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default Config: CPU Affinity Mask Set",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default Config: Allow Updates (Deprecated)",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default Config: AWE Enabled (32-bit Legacy)",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default Config: Default Full-Text Language",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default Config: Default Language Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default Config: Disallow Results From Triggers",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default Config: Remote Login Timeout",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 12,
+        "Name": "Configuration",
+        "PassedCount": 12,
+        "TotalCount": 12,
+        "Failed": [],
+        "Info": [
+          {
+            "Name": "Tables in the Master Database",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ],
+        "PassedItems": [
+          {
+            "Name": "Uneven File Growth Settings in One Filegroup",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Elevated Permissions on a Database",
+            "Tag": "Security",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Outdated sp_Blitz",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "High Number of Cached Plans",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Poison Wait Detected: CMEMTHREAD and NUMA",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Too Much Free Memory",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Extended Events Hyperextension",
+            "Tag": "Monitoring/Alerting",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "First Responder Kit",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "fill factor (%) Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "remote proc trans Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "remote query timeout (s) Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 7,
+        "Name": "Performance",
+        "PassedCount": 5,
+        "TotalCount": 7,
+        "Failed": [
+          {
+            "Name": "Plan Cache Erased Recently",
+            "Tag": "Performance",
+            "Impact": "When someone runs DBCC FREEPROCCACHE, restarts the SQL Server, or the server is under horrific memory pressure the plan cache gets cleared",
+            "Action": null,
+            "Effort": "30 min",
+            "Related": null
+          },
+          {
+            "Name": "DBCC DROPCLEANBUFFERS Ran Recently",
+            "Tag": "Performance",
+            "Impact": "This command drops information from memory, and is not expected on production SQL servers",
+            "Action": null,
+            "Effort": "2 hr",
+            "Related": null
+          }
+        ],
+        "Info": [],
+        "PassedItems": [
+          {
+            "Name": "Fill Factor Changed",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Stored Procedure WITH RECOMPILE",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "In-Memory OLTP (Hekaton) In Use",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Auto-Shrink Ran Recently",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "index create memory (KB) Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 6,
+        "Name": "Performance \u0026 Capacity",
+        "PassedCount": 6,
+        "TotalCount": 6,
+        "Failed": [],
+        "Info": [
+          {
+            "Name": "No Significant Waits Detected",
+            "Tag": "Performance",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ],
+        "PassedItems": [
+          {
+            "Name": "Database-Level MAXDOP Override",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Legacy Cardinality Estimator Forced",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Optimized Plan Forcing",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default DB Option: Optimized Plan Forcing",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default Config: Cursor Threshold Changed",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 2,
+        "Name": "Monitoring \u0026 Observability",
+        "PassedCount": 2,
+        "TotalCount": 2,
+        "Failed": [],
+        "Info": [],
+        "PassedItems": [
+          {
+            "Name": "Non-Default DB Option: XTP Module Statistics Collection",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          },
+          {
+            "Name": "Non-Default DB Option: XTP Statement Statistics Collection",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 1,
+        "Name": "Reliability",
+        "PassedCount": 1,
+        "TotalCount": 1,
+        "Failed": [],
+        "Info": [],
+        "PassedItems": [
+          {
+            "Name": "Extended Stored Procedures in Master",
+            "Tag": "Configuration",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      },
+      {
+        "ItemCount": 1,
+        "Name": "Configuration impacting Performance",
+        "PassedCount": 1,
+        "TotalCount": 1,
+        "Failed": [],
+        "Info": [],
+        "PassedItems": [
+          {
+            "Name": "Priority Boost Enabled",
+            "Tag": "Reliability",
+            "Impact": null,
+            "Action": null,
+            "Effort": null,
+            "Related": null
+          }
+        ]
+      }
+    ]
+  }
+]

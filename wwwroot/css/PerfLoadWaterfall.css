@@ -1,0 +1,18 @@
+.perf-inspector-page { padding: 0; color: var(--text-primary); }
+.perf-header { padding: 20px 0 16px; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+.perf-header h3 { font-size: 16px; margin: 0 0 4px; color: var(--text-primary); }
+.perf-header h3 i { color: var(--accent); margin-right: 8px; }
+.perf-subtitle { font-size: 13px; color: var(--text-secondary); margin: 0; }
+.perf-hero-dashboard { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+.perf-hero-stat { background: rgba(18,24,27,0.8); border: 1px solid var(--border); border-radius: 8px; padding: 16px; flex: 1; min-width: 180px; text-align: center; box-shadow: 0 4px 10px rgba(0,0,0,0.2); }
+.hero-label { display: block; font-size: 11px; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.05em; margin-bottom: 8px; }
+.hero-value { display: block; font-size: 28px; font-weight: 700; color: var(--text-primary); line-height: 1.1; }
+.hero-subtext { display: block; font-size: 11px; color: var(--text-muted); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.perf-card { background: rgba(18,24,27,0.8); border: 1px solid var(--border); border-radius: 8px; padding: 20px; }
+.perf-card h3 { font-size: 14px; margin: 0 0 16px; color: var(--accent); font-weight: 600; }
+.perf-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.perf-card-header h3 { margin: 0; }
+.perf-dominant { font-size: 12px; color: var(--text-secondary); background: rgba(255,255,255,0.05); padding: 4px 10px; border-radius: 4px; }
+.waterfall { margin-bottom: 20px; }
+.perf-table-scroll { overflow-x: auto; margin-top: 24px; border: 1px solid var(--border); border-radius: 6px; background: rgba(18,24,27,0.8); }
+

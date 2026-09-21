@@ -1,0 +1,76 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/login"
+<PageTitle>SQLTriage - Sign In</PageTitle>
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services
+@using SQLTriage.Data
+@inject NavigationManager Nav
+@inject HostEnvironmentInfo Host
+@inject RbacService RbacService
+@inject AuditLogService AuditLog
+
+@*
+    ⚠ This page asks HostEnvironmentInfo.IsBrowserHosted, NOT ServerModeService.IsRunning.
+
+    IsRunning is `_webApp != null` on THIS container's ServerModeService, and the headless hosts
+    (--server and the installed Windows service) never call StartAsync — they build their own host in
+    WindowsServiceHost, whose own comment at :262 says "NOTHING HERE EVER STARTS IT". So IsRunning was
+    FALSE on exactly the host that needs this page most, and every arm below failed on the same flag:
+    no redirect to /auth/login AND no sign-in control, leaving the "desktop (WPF) mode" dead end.
+
+    ⚠ What this did and did NOT cause, because the first telling of it was wrong. PROVED 2026-09-08 on
+    the live installed service: GET /login returned 200 carrying the desktop dead end while
+    config/rbac-config.json had "enabled": true — so both halves of the defect are real. It did NOT lock
+    an operator out of Settings, and saying so was an invented consequence: off-loopback /login never
+    renders at all (admission answers 401 X-SQLTriage-Admission: sign-in-required before this page runs),
+    and on loopback /settings renders 200 via its own recovery banner. The true and larger finding is
+    that RouteConstants.Login has ZERO consumers — nothing in the app links here — so the shell offers
+    no sign-in affordance anywhere, and this page is the only route named for one.
+
+    HostEnvironmentInfo exists precisely to replace that read — see its own summary, which names this
+    false negative and the matching false positive (server mode ON in the WPF process flipped IsRunning
+    true for the DESKTOP container too, so a desktop user would have been redirected to a browser
+    sign-in they do not need). It is registered per container: Desktop in ServiceCollectionExtensions,
+    BrowserHosted in ServerModeService and WindowsServiceHost. The question this page needs answered is
+    "is a browser being served?", not "did this container start a Kestrel listener?".
+*@
+
+@code {
+    protected override void OnInitialized()
+    {
+        AuditLog.LogSessionEvent("login");
+        if (Host.IsBrowserHosted && RbacService.Config.Enabled)
+        {
+            // Hand off to the raw auth endpoint which shows OAuth provider buttons
+            Nav.NavigateTo("/auth/login", forceLoad: true);
+        }
+    }
+}
+
+<div style="display:flex;align-items:center;justify-content:center;min-height:60vh;">
+    <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:10px;padding:40px 48px;max-width:420px;width:100%;text-align:center;">
+        <i class="fa-solid fa-lock" style="font-size:36px;color:var(--accent);margin-bottom:16px;"></i>
+        <h2 style="margin:0 0 8px;font-size:18px;">Sign In Required</h2>
+
+        @if (Host.IsBrowserHosted && RbacService.Config.Enabled)
+        {
+            <p style="color:var(--text-muted);font-size:13px;margin-bottom:24px;">Redirecting to authentication&hellip;</p>
+        }
+        else if (Host.IsBrowserHosted && !RbacService.Config.Enabled)
+        {
+            <p style="color:var(--text-muted);font-size:13px;margin-bottom:24px;">
+                RBAC is not enabled. Enable it in
+                <a href="@RouteConstants.Settings" style="color:var(--accent);">Settings → Access Control</a>.
+            </p>
+        }
+        else
+        {
+            <p style="color:var(--text-muted);font-size:13px;margin-bottom:24px;">
+                This application is running in desktop (WPF) mode. Authentication is managed by Windows.
+            </p>
+            <a href="/" style="display:inline-block;padding:8px 20px;background:var(--accent);color:var(--text-primary);border-radius:6px;text-decoration:none;font-size:13px;">
+                Go to Dashboard
+            </a>
+        }
+    </div>
+</div>
