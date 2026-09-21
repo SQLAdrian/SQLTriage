@@ -1,0 +1,215 @@
+@*
+   In the name of God, the Merciful, the Compassionate
+   Aggregate executive health badge — single 0-100 score across all servers.
+   Uses ExecutiveHealthService; refreshes every 30s on its own timer so the
+   badge stays current without coupling to the page that hosts it.
+*@
+@using SQLTriage.Data.Services
+@inject ExecutiveHealthService Health
+@inject ServerConnectionManager ConnectionManager
+@inject UserSettingsService UserSettings
+@implements IDisposable
+
+@if (_hasEstate)
+{
+    <div class="health-badge sev-@(_severity.ToString().ToLower())"
+         title="@_tooltip">
+        @* The number is the mean over MEASURED servers only, and it is withheld entirely when
+           nothing was measured. Before 2026-08-05 the badge averaged every score in the
+           dictionary, including the fabricated 0 an unreachable server carried. *@
+        <span class="health-badge-score">@(_score?.ToString() ?? "n/a")</span>
+        @* An icon is an assertion. The equals glyph said "steady" for an estate in which not one
+           server had a second measurement to compare against, so it rendered on the nav bar of every
+           page from the day of install (SR-11, 2026-08-08). No comparison anywhere ⇒ no glyph; the
+           tooltip already names what the badge does and does not cover. *@
+        @if (_trend is not null)
+        {
+            <span class="health-badge-trend">
+                @switch (_trend.Value)
+                {
+                    case HealthTrend.Improving:
+                        <i class="fa-solid fa-arrow-trend-up" style="color:var(--green);"></i>
+                        break;
+                    case HealthTrend.Degrading:
+                        <i class="fa-solid fa-arrow-trend-down" style="color:var(--red);"></i>
+                        break;
+                    default:
+                        <i class="fa-solid fa-equals" style="color:var(--text-muted);"></i>
+                        break;
+                }
+            </span>
+        }
+        <span class="health-badge-label">Health</span>
+    </div>
+}
+
+@code {
+    private int? _score;
+    private bool _hasEstate;
+    private HealthSeverity _severity = HealthSeverity.Unknown;
+    // Nullable, and null is the initial value: "no direction has been established" is a different
+    // fact from "steady", and the field used to hold Stable before a single refresh had run.
+    private HealthTrend? _trend;
+    private string _tooltip = "";
+    private System.Threading.Timer? _timer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (UserSettings.GetFastAppLoad()) await Task.Yield();
+        await RefreshAsync();
+        // 30s polling matches ConnectionHealthService's cadence so the two
+        // sources stay aligned. Run on a Timer rather than PeriodicTimer
+        // because this is a UI component, not a background service.
+        _timer = new System.Threading.Timer(async _ =>
+        {
+            await InvokeAsync(async () =>
+            {
+                await RefreshAsync();
+                StateHasChanged();
+            });
+        }, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
+    }
+
+    private async Task RefreshAsync()
+    {
+        try
+        {
+            var all = await Health.GetAllHealthScoresAsync();
+            if (all.Count == 0)
+            {
+                _hasEstate = false;
+                _score = null;
+                _severity = HealthSeverity.Unknown;
+                _trend = null;              // no estate, no comparison
+                _tooltip = "No connected servers";
+                return;
+            }
+
+            // 2026-08-05, gate fix C1. This badge had TWO defects of the same class, and the
+            // second one was introduced by the wave that fixed the first.
+            //
+            //   the number  - it averaged v.Score over every entry in the dictionary, so a server
+            //                 that did not answer contributed the placeholder 0 that
+            //                 ExecutiveHealthScore.Score carries in every unmeasured state. The
+            //                 mean now comes from EstateHealthPolicy, which averages the ASSESSED
+            //                 servers only and returns null when there are none.
+            //
+            //   the colour  - the wave added HealthSeverity.Unknown, whose enum value is 0. The
+            //                 badge took a plain Max over every server's Severity, an ordering
+            //                 the enum's declaration decides, so Unknown LOST to Healthy (=1):
+            //                 an estate of one healthy server plus one silent one
+            //                 rendered a green badge where the pre-wave build rendered red (the
+            //                 silent server's fabricated 0 had banded Critical). Right verdict,
+            //                 wrong reason, then wrong verdict for a better reason.
+            //
+            // "Measured" is read as MeasuredScore.HasValue rather than through the policy's
+            // MayPublish, which is named for the PORTAL publisher's decision and would be
+            // semantic overloading here (RbacComponentGateCensusTests also reads the verb
+            // "Publish" in a component as a state-changing call, and this badge only renders).
+            //
+            // The badge now ranks Critical > Warning > Unknown > Healthy. Unknown outranks
+            // Healthy because an estate containing a server nobody measured is not an estate
+            // anyone may call healthy; it ranks BELOW a measured Warning or Critical because a
+            // real negative observation is a stronger claim than an absence, and dragging the
+            // badge to red for a real critical is this component's whole job. Nothing is erased
+            // either way: the tooltip names every server the number does not cover.
+            _hasEstate = true;
+            var rollup = EstateHealthPolicy.Summarise(all.Values);
+            _score = rollup.MeanScore;
+
+            // One ranked list: the severity of every MEASURED server, plus Unknown once if any
+            // server was not measured. The worst by BadgeRank wins, so a silent server can never
+            // be outranked into invisibility by a healthy one.
+            var candidates = all.Values
+                .Where(v => v.MeasuredScore.HasValue)
+                .Select(v => v.Severity)
+                .ToList();
+            if (rollup.AssessedCount < rollup.ServerCount) candidates.Add(HealthSeverity.Unknown);
+            _severity = candidates.Count == 0
+                ? HealthSeverity.Unknown
+                : candidates.OrderByDescending(BadgeRank).First();
+
+            // Trend is read from the servers that HAVE one: MeasuredTrend is null unless a measured
+            // score today was compared against a real earlier snapshot. Reading v.Trend collapsed
+            // "no history" and "history unreadable" into Stable, so the fallback below fired for an
+            // estate where nothing had ever been compared and the badge asserted steadiness on the
+            // nav bar of every page (SR-11). With no comparison anywhere the trend stays null and the
+            // glyph is not rendered at all.
+            var compared = all.Values.Where(v => v.MeasuredTrend.HasValue).ToList();
+            _trend = compared.Count == 0
+                   ? null
+                   : compared.Any(v => v.MeasuredTrend == HealthTrend.Degrading) ? HealthTrend.Degrading
+                   : compared.Any(v => v.MeasuredTrend == HealthTrend.Improving) ? HealthTrend.Improving
+                   : HealthTrend.Stable;
+
+            _tooltip = BuildTooltip(all, rollup);
+        }
+        catch
+        {
+            // A fault is not an estate. The badge renders, greyed, rather than vanishing:
+            // disappearing is indistinguishable from a healthy estate with nothing to say.
+            _hasEstate = true;
+            _score = null;
+            _severity = HealthSeverity.Unknown;
+            // Cleared with the score: a glyph left over from the last good refresh would keep
+            // asserting a direction the badge can no longer read.
+            _trend = null;
+            _tooltip = "Health data unavailable";
+        }
+    }
+
+    /// <summary>
+    /// Badge-only severity ordering: Critical > Warning > Unknown > Healthy. Deliberately NOT
+    /// the enum's declaration order, which places Unknown at 0 and therefore below Healthy.
+    /// </summary>
+    private static int BadgeRank(HealthSeverity s) => s switch
+    {
+        HealthSeverity.Critical => 3,
+        HealthSeverity.Warning  => 2,
+        HealthSeverity.Unknown  => 1,
+        _                       => 0,   // Healthy
+    };
+
+    /// <summary>
+    /// The tooltip NAMES every server, in the category that was actually observed for it. The
+    /// pre-wave tooltip named silent servers under "Critical" (they banded Critical off the
+    /// fabricated 0); the wave removed that band and named them nowhere at all, which is how a
+    /// silent server left the screen entirely. Each list is emitted only when it has members,
+    /// so no line describes a population that was not observed.
+    /// </summary>
+    private static string BuildTooltip(
+        IReadOnlyDictionary<string, ExecutiveHealthScore> all, EstateHealthRollup rollup)
+    {
+        var lines = new List<string>
+        {
+            rollup.MeanScore.HasValue
+                ? $"Avg score: {rollup.MeanScore}/100 across {rollup.AssessedCount} of "
+                  + $"{rollup.ServerCount} server(s)"
+                : $"No score: none of {rollup.ServerCount} server(s) has been measured",
+        };
+
+        void Name(string label, Func<KeyValuePair<string, ExecutiveHealthScore>, bool> pick)
+        {
+            var names = all.Where(pick).Select(kvp => kvp.Key).OrderBy(k => k, StringComparer.OrdinalIgnoreCase).ToList();
+            if (names.Count > 0) lines.Add($"{label}: {string.Join(", ", names)}");
+        }
+
+        Name("Critical", kvp => kvp.Value.MeasuredScore.HasValue
+                                && kvp.Value.Severity == HealthSeverity.Critical);
+        Name("Warning", kvp => kvp.Value.MeasuredScore.HasValue
+                               && kvp.Value.Severity == HealthSeverity.Warning);
+        Name("Did not answer", kvp => EstateHealthPolicy.Classify(kvp.Value)
+                                      == HealthAssessmentState.Unreachable);
+        Name("Health collection failed", kvp => EstateHealthPolicy.Classify(kvp.Value)
+                                                == HealthAssessmentState.Unknown);
+        Name("Not assessed yet", kvp => EstateHealthPolicy.Classify(kvp.Value)
+                                        == HealthAssessmentState.NotAssessed);
+
+        return string.Join("\n", lines);
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+    }
+}

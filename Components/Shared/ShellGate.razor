@@ -1,0 +1,103 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using SQLTriage.Data.Services
+@inject AppUserState UserState
+
+@* ShellGate — a SECOND-LAYER authorization check on the always-rendered app shell.
+   ═══════════════════════════════════════════════════════════════════════════════════════════
+
+   ⚠ IT IS NO LONGER THE BOUNDARY. It was, for round 7, and it lasted one round: a cold gate beat
+   it with two shapes that are not adversarial at all — <input @bind:get @bind:set /> (there is no
+   @bind= attribute to match) and <EditForm OnValidSubmit> with a submit button (there is no <form>
+   tag and no repo-declared EventCallback). Both were green on the census and both FIRED LIVE from
+   http://192.10.10.32/scheduled-tasks as an unauthenticated viewer.
+
+   The boundary now lives in the HTTP pipeline: Data/Services/InteractiveAppAdmission.cs refuses
+   the interactive application itself — document, static assets and the /_blazor circuit — to an
+   unauthenticated caller from a non-loopback origin. Nothing that never receives a circuit can
+   drive a control, whatever the markup looks like.
+
+   Keep this component. It is still the thing that decides what a SIGNED-IN caller who lacks a
+   permission may see, and it is still the reason a viewer on the LAN gets the shell's text and not
+   its switches. It is defence in depth now, and read it that way: a hole HERE is a privilege
+   escalation between authenticated roles, not an anonymous compromise, and a control that slips
+   past the census is no longer an exploit on its own.
+
+   The rest of this comment is round 7's reasoning, kept because it is still why the component has
+   the shape it has.
+
+   One component. It evaluates the permission and renders its ChildContent only when the
+   circuit is authorized. A denied caller gets the shell's TEXT and never its SWITCHES.
+
+   WHY A BOUNDARY AND NOT A PER-CONTROL @if.
+   Rounds 4, 5 and 6 each shipped a census that decided whether a shell control was safe by
+   looking at WHAT THE HANDLER CALLS, and each was defeated by a shape the scanner could not
+   see: a verb outside the lexicon (SetAnonymiseServerNames), a call outside the prefix anchor
+   (ShortcutSvc.TriggerRun), and finally a receiver alias —
+
+       P1   UserSettings.NudgeReportOperator("...")                 → census RED
+       P2   var s = UserSettings; s.NudgeReportOperator("...")       → census GREEN, exploited
+                                                                       live from the LAN denial
+                                                                       page at 192.10.10.32:5300
+
+   One extra line of C# defeated the instrument. Chasing that leads to lambdas, method groups,
+   interface indirection, reflection and DynamicInvoke, and a source scanner asking "what does
+   this handler call?" loses that race by construction.
+
+   So the question changed. This component exists so the census can ask a MARKUP question the
+   call cannot influence: is this interactive element inside an authorization boundary? P1 and
+   P2 are byte-identical in markup, so they now fail — or pass — identically.
+
+   The decider is RbacShellBoundaryCensusTests. Wrapping markup in this component is the ONLY
+   way a shell control gets to render to a caller who might not be an admin; the alternative is
+   an entry on ShellSurfaceRegistry.InertControls, which is a written claim in test code that
+   the control touches nothing but this circuit's own view.
+
+   PLAIN IsAuthorized, by round 3's ruling: break-glass is scoped to Settings and Onboarding.
+   The one shell control that legitimately carries it — the top-bar Settings shortcut, the
+   console route into the page that can undo a bad RBAC configuration — sets BreakGlass and
+   must be listed on ShellSurfaceRegistry.BreakGlassBoundaries with its reason.
+
+   Renders NOTHING when denied. It deliberately does not fall back to the AccessDenied panel the
+   way RbacGuard does: this wraps chrome that sits on every route, and a shell that sprayed denial
+   panels across the status bar and nav would be unusable. RbacGuard stays the right component
+   for a PAGE region where the denial should be visible.
+
+   (The component name above is written in prose rather than as a tag on purpose. The shell set is
+   DERIVED by walking component tags out of MainLayout, and that walk reads the raw file — so a tag
+   written inside a comment pulls a component that nothing renders into the shell closure.) *@
+
+@if (Permitted)
+{
+    @ChildContent
+}
+
+@code {
+    /// <summary>
+    /// RBAC permission key. Evaluated through <see cref="AppUserState.IsAuthorized(string)"/>,
+    /// which is the same decision as <c>RbacService</c> plus the one thing the static matrix
+    /// cannot know: whether this caller is entitled to the unconfigured-install bootstrap hatch
+    /// at all. On a network-reachable listener "unconfigured" must not mean "admin for anyone
+    /// who can route to the port".
+    /// </summary>
+    [Parameter, EditorRequired] public string Permission { get; set; } = "";
+
+    /// <summary>The markup rendered only to an authorized circuit.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>
+    /// Opt in to round 1's break-glass hatch. Scoped by ruling to Settings and Onboarding, and
+    /// every use in a shell file must be named on
+    /// <c>ShellSurfaceRegistry.BreakGlassBoundaries</c> with the reason it is one of those two.
+    /// </summary>
+    [Parameter] public bool BreakGlass { get; set; } = false;
+
+    /// <summary>
+    /// Evaluated in the render body rather than cached in OnParametersSet, so a re-render of the
+    /// host always re-asks. A cached decision is a decision that can go stale against
+    /// <see cref="AppUserState"/>'s TTL refresh.
+    /// </summary>
+    private bool Permitted =>
+        UserState != null
+        && (BreakGlass ? UserState.IsAuthorizedWithBreakGlass(Permission)
+                       : UserState.IsAuthorized(Permission));
+}

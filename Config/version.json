@@ -1,0 +1,19 @@
+{
+  "version": "0.99.1",
+  "buildNumber": 4038,
+  "buildDate": "2026-09-21",
+  "releaseType": "Production",
+  "updateCheckUrl": "https://api.github.com/repos/SQLAdrian/SQLTriage/releases/latest",
+  "whatsnew": [
+    "**Alerts tell the truth when they cannot measure something.** An alert that could never produce a value now either fires on the basis it was ruled to fire on, or says it has nothing to report. The integrity check says it could not be evaluated instead of implying the database is clean. A database that has never been checked says so, in place of a number in the millions of hours.",
+    "**A skipped check no longer looks like a pass.** Skipped checks render as skipped in the client-facing output. The audit summary counts them separately.",
+    "**One unreadable database no longer blocks a whole preview.** An Availability Group secondary that cannot be read is recorded as skipped, and the rest of the batch continues.",
+    "**Scheduled SQL tasks are checked before they run.** A scheduled query that would drop, truncate, restore, kill or otherwise change the server is refused when you save the task, and again before it runs. The refusal names the exact statement class in the task's run history, on screen, and in the audit log. Interactive queries you run yourself are unchanged, and index rebuilds, statistics updates, DBCC checks, sp_Blitz runs and backups to a local path all still run.",
+    "**Your edits to the Best Practice scripts survive an update.** A stock script you have not touched keeps receiving improvements. A script you have edited is kept as it is, and the current stock revision sits beside it.",
+    "**The check counts on screen and in the docs are measured, not rounded up.** The corpus ships 523 checks. The product, the README and the site now state a floor they can defend, and the category tiles show measured figures.",
+    "**Every check names where its rule comes from.** 401 of the 523 checks link to the published source.",
+    "**Alert escalation works for every alert that supports it.** The seven query-mode alerts can escalate. A measured clear ends an episode even when the alert's state was already reclaimed.",
+    "**Release binaries no longer carry source text.** Embedded source in the community build went from 128 units to 6, and a guard now keeps it there.",
+    "**The governance score is free.** The community build shows it on the Free tier. The CIO executive PDF comes with the paid build."
+  ]
+}

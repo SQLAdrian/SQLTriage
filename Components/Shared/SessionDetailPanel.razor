@@ -1,0 +1,166 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using SQLTriage.Data.Models
+
+@if (Session != null)
+{
+    <div class="session-detail-panel">
+         <div class="session-detail-header">
+             <h3>Session @Session.SPID</h3>
+             <div style="display:flex;gap:6px;align-items:center;">
+                 @if (Session.IsActive && OnViewPlanRequested.HasDelegate)
+                 {
+                     <button class="toolbar-btn" style="font-size:11px;padding:3px 8px;"
+                             @onclick="() => OnViewPlanRequested.InvokeAsync(Session.SPID)"
+                             title="Fetch and display the current query execution plan">
+                         <i class="fa-solid fa-magnifying-glass"></i> View Plan
+                     </button>
+                 }
+                  @if (Session.IsActive || Session.IsBlocked)
+                  {
+                      <button class="toolbar-btn" style="font-size:11px;padding:3px 8px;background:var(--red);color:white;"
+                              @onclick="async e => await OnKillSession.InvokeAsync(Session.SPID)"
+                              title="Terminate this session (requires sysadmin privileges)">
+                          <i class="fa-solid fa-skull"></i> Kill
+                      </button>
+                  }
+                 <button class="close-btn" @onclick="OnClose" title="Close"><i class="fa-solid fa-xmark"></i></button>
+             </div>
+         </div>
+
+        <div class="session-detail-body">
+            <div class="session-detail-grid">
+                <div class="detail-row">
+                    <span class="detail-label">SPID</span>
+                    <span class="detail-value"><strong>@Session.SPID</strong></span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Status</span>
+                    <span class="detail-value" style="color: @GetStatusColor()">
+                        @Session.SessionStatus
+                        @if (!string.IsNullOrEmpty(Session.RequestStatus))
+                        {
+                            <span style="color: var(--text-secondary);"> (@Session.RequestStatus)</span>
+                        }
+                    </span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Login</span>
+                    <span class="detail-value">@Session.LoginName</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Host</span>
+                    <span class="detail-value">@Session.HostName</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Database</span>
+                    <span class="detail-value">@Session.DatabaseName</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Program</span>
+                    <span class="detail-value">@Session.ProgramName</span>
+                </div>
+
+                @if (!string.IsNullOrEmpty(Session.Command))
+                {
+                    <div class="detail-row">
+                        <span class="detail-label">Command</span>
+                        <span class="detail-value">@Session.Command</span>
+                    </div>
+                }
+
+                @if (!string.IsNullOrEmpty(Session.WaitType))
+                {
+                    <div class="detail-row">
+                        <span class="detail-label">Wait Type</span>
+                        <span class="detail-value" style="color: var(--yellow);">@Session.WaitType</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Wait Time</span>
+                        <span class="detail-value">@FormatMs(Session.WaitTime)</span>
+                    </div>
+                }
+
+                @if (Session.BlockingSessionId > 0)
+                {
+                    <div class="detail-row">
+                        <span class="detail-label">Blocked By</span>
+                        <span class="detail-value" style="color: var(--red); font-weight: 600;">
+                            SPID @Session.BlockingSessionId
+                        </span>
+                    </div>
+                }
+
+                <div class="detail-row">
+                    <span class="detail-label">CPU Time</span>
+                    <span class="detail-value">@FormatMs(Session.CpuTime)</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Logical Reads</span>
+                    <span class="detail-value">@Session.LogicalReads.ToString("N0")</span>
+                </div>
+                 <div class="detail-row">
+                     <span class="detail-label">Writes</span>
+                     <span class="detail-value">@Session.Writes.ToString("N0")</span>
+                 </div>
+                 <div class="detail-row">
+                     <span class="detail-label">Memory Usage</span>
+                     <span class="detail-value">@(Session.MemoryUsageKB.ToString("N0")) KB</span>
+                 </div>
+                 <div class="detail-row">
+                     <span class="detail-label">Row Count</span>
+                     <span class="detail-value">@(Session.RowCount?.ToString("N0") ?? "N/A")</span>
+                 </div>
+                 <div class="detail-row">
+                     <span class="detail-label">Open Transactions</span>
+                     <span class="detail-value" style="color: @(Session.OpenTransactionCount > 0 ? "var(--yellow)" : "inherit")">
+                         @Session.OpenTransactionCount
+                         @if (Session.IsIdleInTransaction)
+                         {
+                             <span style="color: var(--red); font-weight: 600;"> (IDLE IN TXN!)</span>
+                         }
+                     </span>
+                 </div>
+
+                @if (Session.TotalElapsedTime > 0)
+                {
+                    <div class="detail-row">
+                        <span class="detail-label">Duration</span>
+                        <span class="detail-value">@FormatMs(Session.TotalElapsedTime)</span>
+                    </div>
+                }
+            </div>
+
+            @if (!string.IsNullOrEmpty(Session.QueryText))
+            {
+                <div class="session-query-section">
+                    <h4>Query Text</h4>
+                    <pre class="session-query-text">@Session.QueryText.Trim()</pre>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public SessionInfo? Session { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback<int> OnViewPlanRequested { get; set; }
+    [Parameter] public EventCallback<int> OnKillSession { get; set; } // ENHANCEMENT: add kill callback
+
+    private string GetStatusColor()
+    {
+        if (Session == null) return "inherit";
+        if (Session.IsBlocked) return "var(--red)";
+        if (Session.IsIdleInTransaction) return "var(--red)";
+        if (Session.IsActive) return "var(--green)";
+        return "var(--text-secondary)";
+    }
+
+    private string FormatMs(long ms)
+    {
+        if (ms < 1000) return $"{ms} ms";
+        if (ms < 60000) return $"{ms / 1000.0:N1} sec";
+        if (ms < 3600000) return $"{ms / 60000.0:N1} min";
+        return $"{ms / 3600000.0:N1} hr";
+    }
+}

@@ -1,0 +1,450 @@
+/* Quick Check page — defensive table layout fixes
+ *
+ * Symptom: status badges (Pass/Fail pills) escaping their <td> cells and
+ * floating along the right edge of the viewport. Lock down table semantics
+ * so nothing in the cascade can promote cells to block-level or float them.
+ */
+
+.results-grid {
+    overflow-x: auto;          /* allow horizontal scroll, not overflow */
+    overflow-y: visible;
+    max-width: 100%;
+}
+
+.results-table {
+    display: table !important;
+    width: 100%;
+    table-layout: auto;
+    border-collapse: collapse;
+}
+
+.results-table thead {
+    display: table-header-group !important;
+}
+
+.results-table tbody {
+    display: table-row-group !important;
+}
+
+.results-table tr {
+    display: table-row !important;
+    float: none !important;
+    position: static !important;
+}
+
+.results-table td,
+.results-table th {
+    display: table-cell !important;
+    float: none !important;
+    position: static !important;
+    vertical-align: middle;
+}
+
+/* Status column — narrow, centered pill */
+.results-table td.status-cell,
+.results-table th:first-child {
+    width: 90px;
+    min-width: 90px;
+    white-space: nowrap;
+    text-align: left;
+}
+
+/* ── Column rebalance + Description clamp (Wave 2, 2026-07-12) ──────────────
+ * Description used to render the full remediation text unclamped, so it
+ * dominated the table's width. Category/Severity are short badges — cap them
+ * narrow, cap Server/Check to a sane width, and clamp Description to ~3 lines
+ * with a "more" affordance; the full text now lives only in the expanded
+ * detail row (:467-473), never duplicated in the collapsed grid. */
+.quickcheck-page .results-table td.server-cell,
+.quickcheck-page .results-table th:nth-child(2) {
+    max-width: 140px;
+}
+
+.quickcheck-page .results-table td.check-name,
+.quickcheck-page .results-table th:nth-child(3) {
+    max-width: 220px;
+}
+
+.quickcheck-page .results-table td:nth-child(4),
+.quickcheck-page .results-table th:nth-child(4) {
+    width: 110px;
+    max-width: 110px;
+}
+
+.quickcheck-page .results-table td:nth-child(5),
+.quickcheck-page .results-table th:nth-child(5) {
+    width: 90px;
+    max-width: 90px;
+}
+
+.quickcheck-page .results-table td.description-cell {
+    width: 320px;
+    max-width: 320px;
+}
+
+.quickcheck-page .description-clamp {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.quickcheck-page .description-clamp p {
+    margin: 0;
+}
+
+.quickcheck-page .description-more {
+    display: inline-block;
+    margin-top: 2px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--accent);
+}
+
+.results-table td.status-cell .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 9px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+    position: relative !important;
+}
+
+/* #84 imported-run provenance chip — marks a row/server whose results were IMPORTED into this
+   build (Pages/ImportResults.razor / --import) rather than executed live here. Deliberately a
+   NEUTRAL metadata tag, not a status colour: it qualifies WHERE a result came from, orthogonal to
+   its Pass/Fail/Skip/Info verdict (which keeps its own .status-badge). Uses neutral
+   --text-muted/--border tokens so it never reads as a severity and stays colour-blind safe.
+   Tooltip carries the import date + source file. */
+.imported-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 7px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+    vertical-align: middle;
+    background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    cursor: help;
+}
+
+.results-table td.server-cell .imported-tag { margin-top: 3px; }
+.server-summary-name .imported-tag { margin-left: 6px; }
+
+/* Make sure clickable rows don't try to float anything */
+.results-table tbody tr {
+    cursor: pointer;
+    transition: background var(--t-base), transform var(--t-quick); /* box-shadow excluded — rendering-gate fix, see Glass.css */
+}
+
+.results-table tbody tr:hover {
+    background: rgba(52, 209, 122, 0.05);
+    box-shadow: inset 2px 0 0 var(--accent);
+    transform: translateX(2px);
+}
+
+/* Sticky header — the static !important above (a float-reset guard) would
+ * otherwise kill the app.css sticky rule on this high-row-count page. Re-assert
+ * it with higher specificity for the header cells only. */
+.results-table thead th {
+    position: sticky !important;
+    top: 0;
+    z-index: 2;
+}
+
+/* ── No-server empty state (replaces inline style="" blocks) ────────────────── */
+.qc-no-servers {
+    padding: 32px;
+    text-align: center;
+}
+
+.qc-no-servers-icon {
+    font-size: 32px;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+    display: block;
+}
+
+.qc-no-servers-msg {
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin-bottom: 16px;
+}
+
+.qc-add-server-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 20px;
+    background: var(--primary);
+    color: var(--text-primary);
+    border-radius: 6px;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+/* "Force fresh (reload catalog)" toggle in the run action row */
+.qc-force-fresh {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    user-select: none;
+}
+
+.qc-force-fresh input {
+    cursor: pointer;
+}
+
+/* Loud banner when the check catalog fails to load (no silent stale-serve) */
+.qc-loaderror-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 0 0 16px;
+    padding: 12px 16px;
+    border: 1px solid var(--red);
+    border-left: 4px solid var(--red);
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.qc-loaderror-banner i {
+    color: var(--red);
+    margin-top: 2px;
+}
+
+/* Corpus DEMO allocation banner — community/demo bundles only.
+ * Uses the canonical --purple token (info/demo accent) so colorblind-mode
+ * remaps it via Accessibility.css. Never hard-code status hex. */
+.demo-allocation-banner {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 8px 0 4px;
+    padding: 8px 12px;
+    border: 1px solid var(--purple);
+    border-left: 3px solid var(--purple);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--purple) 8%, var(--bg-secondary));
+    color: var(--text-primary);
+    font-size: 12.5px;
+    line-height: 1.4;
+}
+
+.demo-allocation-banner i {
+    color: var(--purple);
+}
+
+.demo-allocation-note {
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+/* Live "next slot in Xh Ym Zs" countdown pill — client-side ticker (see QuickCheck.razor
+   DemoCountdownTickerJs). Shown only when the demo allowance is spent. */
+.demo-allocation-countdown {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    color: var(--purple);
+    background: color-mix(in srgb, var(--purple) 14%, var(--bg-secondary));
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-variant-numeric: tabular-nums;
+}
+
+.demo-allocation-countdown .demo-countdown-value {
+    color: var(--text-primary);
+    min-width: 5.5ch;
+}
+
+/* ── F6: Accepted Findings ─────────────────────────────────────────────────
+   Accept/revoke row action + the accept modal. Uses canonical --accent (cyan,
+   colour-blind-safe) to stay consistent with the .status-badge.accepted pill. */
+.detail-section--accept {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--border);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.detail-section--accept .accept-reason {
+    font-style: italic;
+    color: var(--text-primary);
+}
+
+.detail-section--accept .accept-meta {
+    color: var(--text-secondary);
+    font-size: 0.85em;
+}
+
+.detail-section--accept .accept-revoke {
+    color: var(--red);
+}
+
+/* ── #88: Log-as-change-item row action ────────────────────────────────────
+   The LOG branch beside Accept. Same row shape as .detail-section--accept. */
+.detail-section--change {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--border);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.detail-section--change .change-status {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* ── S4: failed-check -> resolution deep-link ──────────────────────────────
+   "Resolve..." (one-click template) / "Generate remediation script..." (review-
+   only maintenance generator). Same row shape as .detail-section--accept. */
+.detail-section--resolve {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--border);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.detail-section--resolve .resolve-hint {
+    color: var(--text-secondary);
+    font-size: 0.85em;
+}
+
+.accept-modal {
+    min-width: 440px;
+    max-width: 90vw;
+}
+
+.accept-modal .accept-modal-check {
+    margin-bottom: 8px;
+}
+
+.accept-modal .accept-modal-note {
+    color: var(--text-secondary);
+    font-size: 0.88em;
+    margin-bottom: 16px;
+}
+
+.accept-modal .accept-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 14px;
+}
+
+.accept-modal .accept-field > span {
+    font-weight: 600;
+    font-size: 0.9em;
+}
+
+.accept-modal .accept-field .required {
+    color: var(--red);
+}
+
+.accept-modal textarea,
+.accept-modal input[type="date"] {
+    width: 100%;
+    padding: 8px;
+    background: var(--bg-input, var(--bg-panel));
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-family: inherit;
+}
+
+.accept-modal .accept-error {
+    color: var(--red);
+    font-size: 0.88em;
+    margin-top: 4px;
+}
+
+/* Seat-licence exclusion banner. Mirrors .compliance-seat-notice: canonical --yellow token
+   (never a literal hex) so body.colorblind-mode remaps it via Accessibility.css. */
+.qc-seat-notice {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 16px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--yellow);
+    background: color-mix(in srgb, var(--yellow) 12%, transparent);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+}
+.qc-seat-notice i { color: var(--yellow); flex-shrink: 0; }
+
+/* Per-run category filter. The chips themselves reuse .ss-buttons/.ss-btn from
+   ServerSelector.css (both are @imported by app.css) so the row is the same visual idiom as
+   Target Servers above it; only the surrounding label, the per-chip count and the pre-run
+   preview are new. Same --yellow token as .qc-seat-notice for the preview, so
+   body.colorblind-mode remaps it via Accessibility.css. */
+.qc-category-filter {
+    margin: 12px 0 4px;
+}
+
+.qc-category-filter-head {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 6px;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.qc-category-filter-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+/* The category row is short enough not to need the server grid's scroll cap. */
+.qc-category-chips {
+    max-height: none;
+}
+
+.qc-category-count {
+    font-size: 11px;
+    opacity: 0.75;
+}
+
+.qc-category-planned {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.qc-category-planned i { color: var(--yellow); flex-shrink: 0; }

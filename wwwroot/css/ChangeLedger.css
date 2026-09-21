@@ -1,0 +1,281 @@
+/* In the name of God, the Merciful, the Compassionate */
+/* #88 Change Ledger — the LOG branch of accept-or-log.
+   Status colours use the canonical CSS vars (--green/--red/--orange/--yellow) so
+   body.colorblind-mode remaps them to the Wong palette automatically (Accessibility.css). */
+
+.change-ledger-page {
+    padding: 24px 28px;
+    max-width: 1100px;
+}
+
+.cl-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 24px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+}
+.change-ledger-page h2 {
+    margin: 0 0 6px;
+    color: var(--text-primary);
+}
+.change-ledger-page h2 i {
+    color: var(--accent);
+    margin-right: 6px;
+}
+.change-ledger-page .page-description {
+    color: var(--text-secondary);
+    max-width: 640px;
+    line-height: 1.5;
+    margin: 0;
+}
+
+/* ── Summary chips ─────────────────────────────────────────────────────── */
+.cl-summary {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.cl-stat {
+    font-size: 12px;
+    color: var(--text-secondary);
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 4px 12px;
+    white-space: nowrap;
+}
+.cl-stat-n {
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-right: 3px;
+}
+.cl-stat--fixed .cl-stat-n { color: var(--green); }
+.cl-stat--failing .cl-stat-n { color: var(--red); }
+
+/* ── Empty state ───────────────────────────────────────────────────────── */
+.cl-empty {
+    text-align: center;
+    padding: 64px 24px;
+    color: var(--text-secondary);
+    border: 1px dashed var(--border);
+    border-radius: 12px;
+    background: var(--bg-panel);
+}
+.cl-empty-icon {
+    font-size: 40px;
+    color: var(--text-muted);
+    opacity: 0.6;
+    margin-bottom: 12px;
+}
+.cl-empty h3 {
+    margin: 0 0 8px;
+    color: var(--text-primary);
+}
+.cl-empty p {
+    max-width: 520px;
+    margin: 0 auto;
+    line-height: 1.55;
+}
+
+/* ── Filters ───────────────────────────────────────────────────────────── */
+.cl-filters {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 14px;
+}
+.cl-filters label {
+    font-size: 12px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.cl-filter-input {
+    background: var(--bg-panel);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 13px;
+}
+
+/* ── Cards ─────────────────────────────────────────────────────────────── */
+.cl-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.cl-card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+}
+.cl-card--overdue {
+    border-left-color: var(--orange);
+}
+.cl-card-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+}
+.cl-card-title {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+.cl-card-id {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+.cl-card-meta {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+.cl-card-meta i {
+    color: var(--text-muted);
+    margin-right: 4px;
+}
+.cl-due-overdue {
+    color: var(--orange);
+    font-weight: 600;
+}
+.cl-card-rationale {
+    font-size: 13px;
+    color: var(--text-primary);
+    line-height: 1.5;
+    margin-bottom: 6px;
+}
+.cl-label {
+    display: inline-block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    margin-right: 8px;
+}
+
+/* ── Captured script ───────────────────────────────────────────────────── */
+.cl-script {
+    margin: 8px 0;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+}
+.cl-script-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 10px;
+    background: var(--bg-panel-darker, rgba(0,0,0,0.15));
+    border-bottom: 1px solid var(--border);
+}
+.cl-script-actions {
+    display: flex;
+    gap: 6px;
+}
+.cl-script-body {
+    margin: 0;
+    padding: 10px 12px;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--text-secondary);
+    max-height: 260px;
+    overflow: auto;
+}
+
+/* ── Actions + inline hand-off form ────────────────────────────────────── */
+.cl-card-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+}
+.cl-card-actions .cl-confirm { color: var(--green); border-color: var(--green); }
+.cl-card-actions .cl-fail { color: var(--red); border-color: var(--red); }
+
+.cl-hand-form {
+    margin-top: 12px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-panel-darker, rgba(0,0,0,0.12));
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: 480px;
+}
+.cl-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+.cl-field input {
+    background: var(--bg-panel);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 13px;
+}
+.cl-hand-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+.cl-error {
+    color: var(--red);
+    font-size: 12px;
+}
+
+/* ── Status badges ─────────────────────────────────────────────────────── */
+.ci-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding: 3px 9px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+}
+.ci-badge--logged {
+    color: var(--text-secondary);
+    background: color-mix(in srgb, var(--text-muted) 15%, transparent);
+    border-color: color-mix(in srgb, var(--text-muted) 40%, transparent);
+}
+.ci-badge--handed {
+    color: var(--yellow);
+    background: color-mix(in srgb, var(--yellow) 14%, transparent);
+    border-color: color-mix(in srgb, var(--yellow) 45%, transparent);
+}
+.ci-badge--fixed {
+    color: var(--green);
+    background: color-mix(in srgb, var(--green) 14%, transparent);
+    border-color: color-mix(in srgb, var(--green) 45%, transparent);
+}
+.ci-badge--failing {
+    color: var(--red);
+    background: color-mix(in srgb, var(--red) 14%, transparent);
+    border-color: color-mix(in srgb, var(--red) 45%, transparent);
+}
+.ci-badge--overdue {
+    color: var(--orange);
+    background: color-mix(in srgb, var(--orange) 14%, transparent);
+    border-color: color-mix(in srgb, var(--orange) 45%, transparent);
+}

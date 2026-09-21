@@ -1,0 +1,2006 @@
+{
+  "capturedUtc": "2026-08-14T10:33:07.6840074Z",
+  "target": ".\\new2022",
+  "database": "_sqlt_smalls_cap",
+  "serverVersion": "16.00.4262",
+  "missing": [
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SQLWATCH"
+      },
+      {
+        "name": "Schema",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "dbo"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "sqlwatch_logger_agent_job_history"
+      },
+      {
+        "name": "EqualityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "[sql_instance]"
+      },
+      {
+        "name": "InequalityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "[sysjobhistory_step_id], [run_status], [run_date_utc]"
+      },
+      {
+        "name": "IncludedColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "UserHits",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "2754"
+      },
+      {
+        "name": "AvgImpact",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "55.47"
+      },
+      {
+        "name": "ImpactScore",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "1199149"
+      },
+      {
+        "name": "SuggestedScript",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "CREATE NONCLUSTERED INDEX IX_sqlwatch_logger_agent_job_history_sql_instance ON [dbo].[sqlwatch_logger_agent_job_history] ([sql_instance], [sysjobhistory_step_id], [run_status], [run_date_utc])"
+      }
+    ],
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SQLWATCH"
+      },
+      {
+        "name": "Schema",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "dbo"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "sqlwatch_logger_agent_job_history"
+      },
+      {
+        "name": "EqualityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "[sql_instance], [sysjobhistory_instance_id]"
+      },
+      {
+        "name": "InequalityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "IncludedColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "UserHits",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "345"
+      },
+      {
+        "name": "AvgImpact",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "71.68"
+      },
+      {
+        "name": "ImpactScore",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "381282"
+      },
+      {
+        "name": "SuggestedScript",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "CREATE NONCLUSTERED INDEX IX_sqlwatch_logger_agent_job_history_sql_instance, sysjobhistory_instance_id ON [dbo].[sqlwatch_logger_agent_job_history] ([sql_instance], [sysjobhistory_instance_id])"
+      }
+    ],
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SQLWATCH"
+      },
+      {
+        "name": "Schema",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "dbo"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "sqlwatch_logger_perf_file_stats"
+      },
+      {
+        "name": "EqualityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "[sqlwatch_database_id], [sqlwatch_master_file_id], [sql_instance]"
+      },
+      {
+        "name": "InequalityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "IncludedColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "UserHits",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "114"
+      },
+      {
+        "name": "AvgImpact",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "52.82"
+      },
+      {
+        "name": "ImpactScore",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "203853"
+      },
+      {
+        "name": "SuggestedScript",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "CREATE NONCLUSTERED INDEX IX_sqlwatch_logger_perf_file_stats_sqlwatch_database_id, sqlwatch_master_file_id, sql_instance ON [dbo].[sqlwatch_logger_perf_file_stats] ([sqlwatch_database_id], [sqlwatch_master_file_id], [sql_instance])"
+      }
+    ],
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SQLWATCH"
+      },
+      {
+        "name": "Schema",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "dbo"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "sqlwatch_logger_agent_job_history"
+      },
+      {
+        "name": "EqualityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "[sql_instance], [sqlwatch_job_id], [sqlwatch_job_step_id]"
+      },
+      {
+        "name": "InequalityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "IncludedColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "UserHits",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "108"
+      },
+      {
+        "name": "AvgImpact",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "76.97"
+      },
+      {
+        "name": "ImpactScore",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "118278"
+      },
+      {
+        "name": "SuggestedScript",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "CREATE NONCLUSTERED INDEX IX_sqlwatch_logger_agent_job_history_sql_instance, sqlwatch_job_id, sqlwatch_job_step_id ON [dbo].[sqlwatch_logger_agent_job_history] ([sql_instance], [sqlwatch_job_id], [sqlwatch_job_step_id])"
+      }
+    ],
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SQLWATCH"
+      },
+      {
+        "name": "Schema",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "dbo"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "sqlwatch_logger_perf_procedure_stats"
+      },
+      {
+        "name": "EqualityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "[sql_instance], [snapshot_time], [snapshot_type_id]"
+      },
+      {
+        "name": "InequalityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "IncludedColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "UserHits",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "179"
+      },
+      {
+        "name": "AvgImpact",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "21.26"
+      },
+      {
+        "name": "ImpactScore",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "23364"
+      },
+      {
+        "name": "SuggestedScript",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "CREATE NONCLUSTERED INDEX IX_sqlwatch_logger_perf_procedure_stats_sql_instance, snapshot_time, snapshot_type_id ON [dbo].[sqlwatch_logger_perf_procedure_stats] ([sql_instance], [snapshot_time], [snapshot_type_id])"
+      }
+    ],
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SQLWATCH"
+      },
+      {
+        "name": "Schema",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "dbo"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "sqlwatch_logger_disk_utilisation_table"
+      },
+      {
+        "name": "EqualityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "[sqlwatch_database_id], [sqlwatch_table_id], [sql_instance]"
+      },
+      {
+        "name": "InequalityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "IncludedColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "UserHits",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "57"
+      },
+      {
+        "name": "AvgImpact",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "84.03"
+      },
+      {
+        "name": "ImpactScore",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "8198"
+      },
+      {
+        "name": "SuggestedScript",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "CREATE NONCLUSTERED INDEX IX_sqlwatch_logger_disk_utilisation_table_sqlwatch_database_id, sqlwatch_table_id, sql_instance ON [dbo].[sqlwatch_logger_disk_utilisation_table] ([sqlwatch_database_id], [sqlwatch_table_id], [sql_instance])"
+      }
+    ],
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SQLWATCH"
+      },
+      {
+        "name": "Schema",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "dbo"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "sqlwatch_trend_perf_os_performance_counters"
+      },
+      {
+        "name": "EqualityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "[sql_instance], [interval_minutes]"
+      },
+      {
+        "name": "InequalityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "IncludedColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "UserHits",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "10"
+      },
+      {
+        "name": "AvgImpact",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "19.10"
+      },
+      {
+        "name": "ImpactScore",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "3807"
+      },
+      {
+        "name": "SuggestedScript",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "CREATE NONCLUSTERED INDEX IX_sqlwatch_trend_perf_os_performance_counters_sql_instance, interval_minutes ON [dbo].[sqlwatch_trend_perf_os_performance_counters] ([sql_instance], [interval_minutes])"
+      }
+    ],
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SQLWATCH"
+      },
+      {
+        "name": "Schema",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "dbo"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "sqlwatch_config_check"
+      },
+      {
+        "name": "EqualityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "[check_name], [target_sql_instance]"
+      },
+      {
+        "name": "InequalityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "IncludedColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "UserHits",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "57"
+      },
+      {
+        "name": "AvgImpact",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "32.67"
+      },
+      {
+        "name": "ImpactScore",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "311"
+      },
+      {
+        "name": "SuggestedScript",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "CREATE NONCLUSTERED INDEX IX_sqlwatch_config_check_check_name, target_sql_instance ON [dbo].[sqlwatch_config_check] ([check_name], [target_sql_instance])"
+      }
+    ],
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SQLWATCH"
+      },
+      {
+        "name": "Schema",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "dbo"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "sqlwatch_config_check"
+      },
+      {
+        "name": "EqualityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "InequalityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "[base_object_date_last_seen]"
+      },
+      {
+        "name": "IncludedColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "UserHits",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "57"
+      },
+      {
+        "name": "AvgImpact",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "38.91"
+      },
+      {
+        "name": "ImpactScore",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "201"
+      },
+      {
+        "name": "SuggestedScript",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "CREATE NONCLUSTERED INDEX IX_sqlwatch_config_check_ ON [dbo].[sqlwatch_config_check] (, [base_object_date_last_seen])"
+      }
+    ],
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SQLWATCH"
+      },
+      {
+        "name": "Schema",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "dbo"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "sqlwatch_logger_disk_utilisation_table"
+      },
+      {
+        "name": "EqualityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "[sqlwatch_database_id], [sqlwatch_table_id], [snapshot_time], [sql_instance]"
+      },
+      {
+        "name": "InequalityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "IncludedColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "[row_count], [total_pages], [used_pages]"
+      },
+      {
+        "name": "UserHits",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "18"
+      },
+      {
+        "name": "AvgImpact",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "21.85"
+      },
+      {
+        "name": "ImpactScore",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "60"
+      },
+      {
+        "name": "SuggestedScript",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "CREATE NONCLUSTERED INDEX IX_sqlwatch_logger_disk_utilisation_table_sqlwatch_database_id, sqlwatch_table_id, snapshot_time, sql_instance ON [dbo].[sqlwatch_logger_disk_utilisation_table] ([sqlwatch_database_id], [sqlwatch_table_id], [snapshot_time], [sql_instance]) INCLUDE ([row_count], [total_pages], [used_pages])"
+      }
+    ],
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_smalls_cap"
+      },
+      {
+        "name": "Schema",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "rep"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "wide"
+      },
+      {
+        "name": "EqualityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "InequalityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "[seekme]"
+      },
+      {
+        "name": "IncludedColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "UserHits",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "1"
+      },
+      {
+        "name": "AvgImpact",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "56.77"
+      },
+      {
+        "name": "ImpactScore",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "22"
+      },
+      {
+        "name": "SuggestedScript",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "CREATE NONCLUSTERED INDEX IX_wide_ ON [rep].[wide] (, [seekme])"
+      }
+    ]
+  ],
+  "missingNullImpact": [
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_smalls_cap"
+      },
+      {
+        "name": "Schema",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "rep"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "wide"
+      },
+      {
+        "name": "EqualityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "InequalityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "[seekme]"
+      },
+      {
+        "name": "IncludedColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "UserHits",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "1"
+      },
+      {
+        "name": "AvgImpact",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "true",
+        "value": null
+      },
+      {
+        "name": "ImpactScore",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "true",
+        "value": null
+      },
+      {
+        "name": "SuggestedScript",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "CREATE NONCLUSTERED INDEX IX_wide_ ON [rep].[wide] (, [seekme])"
+      }
+    ],
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SQLWATCH"
+      },
+      {
+        "name": "Schema",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "dbo"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "sqlwatch_logger_disk_utilisation_table"
+      },
+      {
+        "name": "EqualityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "[sqlwatch_database_id], [sqlwatch_table_id], [snapshot_time], [sql_instance]"
+      },
+      {
+        "name": "InequalityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "IncludedColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "[row_count], [total_pages], [used_pages]"
+      },
+      {
+        "name": "UserHits",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "18"
+      },
+      {
+        "name": "AvgImpact",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "true",
+        "value": null
+      },
+      {
+        "name": "ImpactScore",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "true",
+        "value": null
+      },
+      {
+        "name": "SuggestedScript",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "CREATE NONCLUSTERED INDEX IX_sqlwatch_logger_disk_utilisation_table_sqlwatch_database_id, sqlwatch_table_id, snapshot_time, sql_instance ON [dbo].[sqlwatch_logger_disk_utilisation_table] ([sqlwatch_database_id], [sqlwatch_table_id], [snapshot_time], [sql_instance]) INCLUDE ([row_count], [total_pages], [used_pages])"
+      }
+    ],
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SQLWATCH"
+      },
+      {
+        "name": "Schema",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "dbo"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "sqlwatch_config_check"
+      },
+      {
+        "name": "EqualityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "[check_name], [target_sql_instance]"
+      },
+      {
+        "name": "InequalityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "IncludedColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "UserHits",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "57"
+      },
+      {
+        "name": "AvgImpact",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "true",
+        "value": null
+      },
+      {
+        "name": "ImpactScore",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "true",
+        "value": null
+      },
+      {
+        "name": "SuggestedScript",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "CREATE NONCLUSTERED INDEX IX_sqlwatch_config_check_check_name, target_sql_instance ON [dbo].[sqlwatch_config_check] ([check_name], [target_sql_instance])"
+      }
+    ],
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SQLWATCH"
+      },
+      {
+        "name": "Schema",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "dbo"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "sqlwatch_logger_disk_utilisation_table"
+      },
+      {
+        "name": "EqualityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "[sqlwatch_database_id], [sqlwatch_table_id], [sql_instance]"
+      },
+      {
+        "name": "InequalityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "IncludedColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "UserHits",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "57"
+      },
+      {
+        "name": "AvgImpact",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "true",
+        "value": null
+      },
+      {
+        "name": "ImpactScore",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "true",
+        "value": null
+      },
+      {
+        "name": "SuggestedScript",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "CREATE NONCLUSTERED INDEX IX_sqlwatch_logger_disk_utilisation_table_sqlwatch_database_id, sqlwatch_table_id, sql_instance ON [dbo].[sqlwatch_logger_disk_utilisation_table] ([sqlwatch_database_id], [sqlwatch_table_id], [sql_instance])"
+      }
+    ],
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SQLWATCH"
+      },
+      {
+        "name": "Schema",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "dbo"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "sqlwatch_logger_perf_file_stats"
+      },
+      {
+        "name": "EqualityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "[sqlwatch_database_id], [sqlwatch_master_file_id], [sql_instance]"
+      },
+      {
+        "name": "InequalityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "IncludedColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "UserHits",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "114"
+      },
+      {
+        "name": "AvgImpact",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "true",
+        "value": null
+      },
+      {
+        "name": "ImpactScore",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "true",
+        "value": null
+      },
+      {
+        "name": "SuggestedScript",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "CREATE NONCLUSTERED INDEX IX_sqlwatch_logger_perf_file_stats_sqlwatch_database_id, sqlwatch_master_file_id, sql_instance ON [dbo].[sqlwatch_logger_perf_file_stats] ([sqlwatch_database_id], [sqlwatch_master_file_id], [sql_instance])"
+      }
+    ],
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SQLWATCH"
+      },
+      {
+        "name": "Schema",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "dbo"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "sqlwatch_logger_agent_job_history"
+      },
+      {
+        "name": "EqualityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "[sql_instance], [sqlwatch_job_id], [sqlwatch_job_step_id]"
+      },
+      {
+        "name": "InequalityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "IncludedColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "UserHits",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "108"
+      },
+      {
+        "name": "AvgImpact",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "true",
+        "value": null
+      },
+      {
+        "name": "ImpactScore",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "true",
+        "value": null
+      },
+      {
+        "name": "SuggestedScript",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "CREATE NONCLUSTERED INDEX IX_sqlwatch_logger_agent_job_history_sql_instance, sqlwatch_job_id, sqlwatch_job_step_id ON [dbo].[sqlwatch_logger_agent_job_history] ([sql_instance], [sqlwatch_job_id], [sqlwatch_job_step_id])"
+      }
+    ],
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SQLWATCH"
+      },
+      {
+        "name": "Schema",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "dbo"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "sqlwatch_config_check"
+      },
+      {
+        "name": "EqualityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "InequalityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "[base_object_date_last_seen]"
+      },
+      {
+        "name": "IncludedColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "UserHits",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "57"
+      },
+      {
+        "name": "AvgImpact",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "true",
+        "value": null
+      },
+      {
+        "name": "ImpactScore",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "true",
+        "value": null
+      },
+      {
+        "name": "SuggestedScript",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "CREATE NONCLUSTERED INDEX IX_sqlwatch_config_check_ ON [dbo].[sqlwatch_config_check] (, [base_object_date_last_seen])"
+      }
+    ],
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SQLWATCH"
+      },
+      {
+        "name": "Schema",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "dbo"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "sqlwatch_logger_perf_procedure_stats"
+      },
+      {
+        "name": "EqualityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "[sql_instance], [snapshot_time], [snapshot_type_id]"
+      },
+      {
+        "name": "InequalityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "IncludedColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "UserHits",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "179"
+      },
+      {
+        "name": "AvgImpact",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "true",
+        "value": null
+      },
+      {
+        "name": "ImpactScore",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "true",
+        "value": null
+      },
+      {
+        "name": "SuggestedScript",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "CREATE NONCLUSTERED INDEX IX_sqlwatch_logger_perf_procedure_stats_sql_instance, snapshot_time, snapshot_type_id ON [dbo].[sqlwatch_logger_perf_procedure_stats] ([sql_instance], [snapshot_time], [snapshot_type_id])"
+      }
+    ],
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SQLWATCH"
+      },
+      {
+        "name": "Schema",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "dbo"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "sqlwatch_logger_agent_job_history"
+      },
+      {
+        "name": "EqualityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "[sql_instance], [sysjobhistory_instance_id]"
+      },
+      {
+        "name": "InequalityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "IncludedColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "UserHits",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "345"
+      },
+      {
+        "name": "AvgImpact",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "true",
+        "value": null
+      },
+      {
+        "name": "ImpactScore",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "true",
+        "value": null
+      },
+      {
+        "name": "SuggestedScript",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "CREATE NONCLUSTERED INDEX IX_sqlwatch_logger_agent_job_history_sql_instance, sysjobhistory_instance_id ON [dbo].[sqlwatch_logger_agent_job_history] ([sql_instance], [sysjobhistory_instance_id])"
+      }
+    ],
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SQLWATCH"
+      },
+      {
+        "name": "Schema",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "dbo"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "sqlwatch_logger_agent_job_history"
+      },
+      {
+        "name": "EqualityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "[sql_instance]"
+      },
+      {
+        "name": "InequalityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "[sysjobhistory_step_id], [run_status], [run_date_utc]"
+      },
+      {
+        "name": "IncludedColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "UserHits",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "2754"
+      },
+      {
+        "name": "AvgImpact",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "true",
+        "value": null
+      },
+      {
+        "name": "ImpactScore",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "true",
+        "value": null
+      },
+      {
+        "name": "SuggestedScript",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "CREATE NONCLUSTERED INDEX IX_sqlwatch_logger_agent_job_history_sql_instance ON [dbo].[sqlwatch_logger_agent_job_history] ([sql_instance], [sysjobhistory_step_id], [run_status], [run_date_utc])"
+      }
+    ],
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "SQLWATCH"
+      },
+      {
+        "name": "Schema",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "dbo"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "sqlwatch_trend_perf_os_performance_counters"
+      },
+      {
+        "name": "EqualityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "[sql_instance], [interval_minutes]"
+      },
+      {
+        "name": "InequalityColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "IncludedColumns",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": ""
+      },
+      {
+        "name": "UserHits",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "10"
+      },
+      {
+        "name": "AvgImpact",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "true",
+        "value": null
+      },
+      {
+        "name": "ImpactScore",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "true",
+        "value": null
+      },
+      {
+        "name": "SuggestedScript",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "CREATE NONCLUSTERED INDEX IX_sqlwatch_trend_perf_os_performance_counters_sql_instance, interval_minutes ON [dbo].[sqlwatch_trend_perf_os_performance_counters] ([sql_instance], [interval_minutes])"
+      }
+    ]
+  ],
+  "unused": [
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_smalls_cap"
+      },
+      {
+        "name": "Schema",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "rep"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "written"
+      },
+      {
+        "name": "IndexName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "IX_written_b"
+      },
+      {
+        "name": "IndexType",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "NONCLUSTERED"
+      },
+      {
+        "name": "UserReads",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "0"
+      },
+      {
+        "name": "UserWrites",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "2000"
+      },
+      {
+        "name": "SizeMB",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "0.05"
+      }
+    ],
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_smalls_cap"
+      },
+      {
+        "name": "Schema",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "rep"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "written"
+      },
+      {
+        "name": "IndexName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "IX_written_a"
+      },
+      {
+        "name": "IndexType",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "NONCLUSTERED"
+      },
+      {
+        "name": "UserReads",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "0"
+      },
+      {
+        "name": "UserWrites",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "2000"
+      },
+      {
+        "name": "SizeMB",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "0.05"
+      }
+    ],
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_smalls_cap"
+      },
+      {
+        "name": "Schema",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "dbo"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "written_dbo"
+      },
+      {
+        "name": "IndexName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "IX_written_dbo_c"
+      },
+      {
+        "name": "IndexType",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "NONCLUSTERED"
+      },
+      {
+        "name": "UserReads",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "0"
+      },
+      {
+        "name": "UserWrites",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "1500"
+      },
+      {
+        "name": "SizeMB",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "0.04"
+      }
+    ]
+  ],
+  "unusedNullSize": [
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_smalls_cap"
+      },
+      {
+        "name": "Schema",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "rep"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "written"
+      },
+      {
+        "name": "IndexName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "IX_written_b"
+      },
+      {
+        "name": "IndexType",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "NONCLUSTERED"
+      },
+      {
+        "name": "UserReads",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "0"
+      },
+      {
+        "name": "UserWrites",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "2000"
+      },
+      {
+        "name": "SizeMB",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "true",
+        "value": null
+      }
+    ],
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_smalls_cap"
+      },
+      {
+        "name": "Schema",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "rep"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "written"
+      },
+      {
+        "name": "IndexName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "IX_written_a"
+      },
+      {
+        "name": "IndexType",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "NONCLUSTERED"
+      },
+      {
+        "name": "UserReads",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "0"
+      },
+      {
+        "name": "UserWrites",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "2000"
+      },
+      {
+        "name": "SizeMB",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "true",
+        "value": null
+      }
+    ],
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_smalls_cap"
+      },
+      {
+        "name": "Schema",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "dbo"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "written_dbo"
+      },
+      {
+        "name": "IndexName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "IX_written_dbo_c"
+      },
+      {
+        "name": "IndexType",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "NONCLUSTERED"
+      },
+      {
+        "name": "UserReads",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "0"
+      },
+      {
+        "name": "UserWrites",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "1500"
+      },
+      {
+        "name": "SizeMB",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "true",
+        "value": null
+      }
+    ]
+  ],
+  "fragmented": [
+    [
+      {
+        "name": "Database",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "_sqlt_smalls_cap"
+      },
+      {
+        "name": "Schema",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "we]ird"
+      },
+      {
+        "name": "Table",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "frag"
+      },
+      {
+        "name": "IndexName",
+        "sqlType": "nvarchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "PK__frag__3BD019906826EF02"
+      },
+      {
+        "name": "FragPercent",
+        "sqlType": "float",
+        "clrType": "System.Double",
+        "isNull": "false",
+        "value": "97.3897389738974"
+      },
+      {
+        "name": "PageCount",
+        "sqlType": "bigint",
+        "clrType": "System.Int64",
+        "isNull": "false",
+        "value": "3333"
+      },
+      {
+        "name": "SizeMB",
+        "sqlType": "decimal",
+        "clrType": "System.Decimal",
+        "isNull": "false",
+        "value": "26.04"
+      },
+      {
+        "name": "RecommendedAction",
+        "sqlType": "varchar",
+        "clrType": "System.String",
+        "isNull": "false",
+        "value": "REBUILD"
+      }
+    ]
+  ]
+}

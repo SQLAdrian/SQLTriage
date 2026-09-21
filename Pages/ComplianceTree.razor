@@ -1,0 +1,536 @@
+@* /* In the name of God, the Merciful, the Compassionate */ *@
+@page "/compliance-tree"
+<PageTitle>SQLTriage — Control Hierarchy</PageTitle>
+@implements IDisposable
+
+@using System.Globalization
+@using System.Linq
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services.FrameworkTree
+@inject FrameworkTreeService Tree
+@inject QuickCheckStateService QcState
+@inject SQLTriage.Data.Services.AssessmentRehydrationService Rehydration
+
+@*
+    Control Hierarchy — every compliance framework found in the corpus mappings, rendered
+    as its own control hierarchy and joined LIVE to assessment verdicts by CheckId.
+
+    Structure (frameworks, control ids, names) is built once by FrameworkTreeService from
+    CheckRepositoryService.FrameworkMappings + catalogue metadata, cached. Verdicts join per
+    render from QuickCheckStateService.Results — raw five states, worst-of-descendants rollup
+    FAIL > WARN > PASS > SKIP > INFO. Only strings present in the mapping data are rendered.
+*@
+
+<div class="ch-page">
+    <div class="ch-head">
+        <div>
+            <h2 class="ch-title">Control Hierarchy</h2>
+            <div class="ch-sub">Every framework's control tree, joined live to assessment verdicts.</div>
+        </div>
+        <div class="ch-sub ch-status">
+            @if (_assessed)
+            {
+                <span><i class="fa-solid fa-circle" style="color:var(--green,#1FA85E);font-size:8px;margin-right:5px;"></i>Live · @_verdictById.Count check@(_verdictById.Count == 1 ? "" : "s") assessed</span>
+            }
+            else
+            {
+                <span>@_forest.Frameworks.Count frameworks · @_forest.MappedCheckCount mapped · @_forest.TotalEntries mappings</span>
+            }
+        </div>
+    </div>
+
+    @* R4 page note — how this surface differs from the Compliance Board. *@
+    <div class="ch-note card-glass">
+        <i class="fa-solid fa-circle-info" style="color:var(--blue,#3b82f6);"></i>
+        <span>
+            Verdicts are the <strong>raw five states</strong> (Fail · Warn · Pass · Skip · Info), rolled up
+            worst-of-descendants <strong>Fail &gt; Warn &gt; Pass &gt; Skip &gt; Info</strong>. This is deliberately
+            different from the <a href="/compliance-board">Compliance Board</a>, which collapses
+            results to Passed / Failed / Unassessed and draws from its own separate, hardcoded framework list —
+            the two lists differ, and neither is a subset of the other.
+            Every framework here is discovered dynamically from the corpus mappings.
+        </span>
+    </div>
+
+    @if (_forest.Frameworks.Count == 0)
+    {
+        <div class="ch-empty card-glass">
+            <i class="fa-solid fa-sitemap"></i>
+            <p>No framework mappings are available in the current catalogue. Load a bundle or configure the source parser.</p>
+        </div>
+    }
+    else
+    {
+        @* ── Framework selector (sorted largest-first) ── *@
+        <div class="ch-fw-picker">
+            @foreach (var (fw, idx) in _forest.Frameworks.Select((f, i) => (f, i)))
+            {
+                var i = idx;
+                <button class="ch-fw-chip @(i == _fwIndex ? "ch-fw-active" : "")" @onclick="() => SelectFramework(i)" title="@fw.Name">
+                    <span class="ch-fw-name">@fw.Name</span>
+                    <span class="ch-fw-meta">@fw.EntryCount mappings · @fw.ControlCount controls · L@(fw.MaxDepth)</span>
+                </button>
+            }
+        </div>
+
+        @if (_fw is not null)
+        {
+            @* ── Toolbar: expand-to-depth + search ── *@
+            <div class="ch-toolbar card-glass">
+                <div class="ch-toolbar-group">
+                    <span class="ch-toolbar-label">Expand</span>
+                    <button class="ch-btn" @onclick="CollapseAll" title="Collapse to top level">Collapse</button>
+                    @for (var d = 2; d <= _fw.MaxDepth; d++)
+                    {
+                        var depth = d;
+                        <button class="ch-btn" @onclick="() => ExpandToDepth(depth)" title="Expand every branch down to level @depth">L@(depth)</button>
+                    }
+                    <button class="ch-btn" @onclick="() => ExpandToDepth(_fw!.MaxDepth + 1)" title="Expand every branch fully">All</button>
+                </div>
+                <div class="ch-toolbar-group ch-search">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <input type="text" placeholder="Search control id, name, check id or title…"
+                           value="@_search" @oninput="OnSearchInput" />
+                    @if (!string.IsNullOrEmpty(_search))
+                    {
+                        <button class="ch-btn ch-btn-clear" @onclick="ClearSearch" title="Clear search"><i class="fa-solid fa-xmark"></i></button>
+                    }
+                </div>
+            </div>
+
+            @* ── Per-framework readouts ── *@
+            <div class="ch-readouts card-glass">
+                @if (_fwAssessed)
+                {
+                    @if (_deepestFailId is not null)
+                    {
+                        <div class="ch-readout">
+                            <span class="ch-readout-label">Deepest failing control</span>
+                            <span class="ch-readout-value"><code>@_deepestFailId</code> (L@_deepestFailDepth)</span>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="ch-readout">
+                            <span class="ch-readout-value"><i class="fa-solid fa-circle-check" style="color:var(--green,#1FA85E);"></i> No failing controls in this framework.</span>
+                        </div>
+                    }
+                    @if (_failByDepth.Count > 0)
+                    {
+                        <div class="ch-readout">
+                            <span class="ch-readout-label">Failures by depth</span>
+                            <span class="ch-readout-value">
+                                @string.Join(" · ", _failByDepth.OrderBy(kv => kv.Key).Select(kv => $"L{kv.Key}: {kv.Value}"))
+                            </span>
+                        </div>
+                    }
+                    @if (_unknownResultIds > 0)
+                    {
+                        <div class="ch-readout ch-readout-muted">
+                            <span>@_unknownResultIds assessed check@(_unknownResultIds == 1 ? "" : "s") map to no framework control — ignored here, listed under Unmapped checks.</span>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="ch-readout">
+                        <span class="ch-readout-value">@_fw.EntryCount mappings · @_fw.ControlCount controls · max depth L@(_fw.MaxDepth)</span>
+                    </div>
+                    <div class="ch-readout ch-readout-muted">
+                        <i class="fa-solid fa-circle-info"></i>
+                        <span>No checks run yet — run an Audit Assessment to populate live verdicts.</span>
+                    </div>
+                }
+            </div>
+
+            @* ── The tree ── *@
+            <div class="ch-tree card-glass">
+                @if (_searching && _searchVisible.Count == 0)
+                {
+                    <div class="ch-noresult">No control or check matches "<strong>@_search</strong>".</div>
+                }
+                else
+                {
+                    @foreach (var root in RootsToRender(_fw))
+                    {
+                        @RenderNode(root)
+                    }
+                }
+            </div>
+        }
+
+        @* ── Unmapped checks (honest denominator) ── *@
+        <div class="ch-unmapped card-glass">
+            <div class="ch-unmapped-head" @onclick="() => _showUnmapped = !_showUnmapped">
+                <i class="fa-solid @(_showUnmapped ? "fa-chevron-down" : "fa-chevron-right")"></i>
+                <span>Unmapped checks</span>
+                <span class="ch-count">@_forest.UnmappedChecks.Count</span>
+                <span class="ch-unmapped-sub">carry zero framework mappings — the honest denominator</span>
+            </div>
+            @if (_showUnmapped)
+            {
+                @if (_forest.UnmappedChecks.Count == 0)
+                {
+                    <div class="ch-unmapped-empty">Every catalogue check carries at least one framework mapping.</div>
+                }
+                else
+                {
+                    <div class="ch-unmapped-list">
+                        @foreach (var u in _forest.UnmappedChecks)
+                        {
+                            <div class="ch-unmapped-row">
+                                <code class="ch-mono">@u.CheckId</code>
+                                <span class="ch-check-title">@u.Title</span>
+                                @if (!string.IsNullOrEmpty(u.Severity))
+                                {
+                                    @SeverityChip(u.Severity)
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private FrameworkForest _forest = new();
+    private int _fwIndex;
+    private FrameworkTree? _fw;
+
+    // Expansion (structure) — keyed by FullId within the selected framework.
+    private readonly HashSet<string> _expanded = new(StringComparer.Ordinal);
+
+    // Search
+    private string _search = string.Empty;
+    private bool _searching => !string.IsNullOrWhiteSpace(_search);
+    private readonly HashSet<string> _searchVisible = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _searchExpand = new(StringComparer.Ordinal);
+
+    // Severity rollup (structure only) for the selected framework.
+    private readonly Dictionary<string, string> _nodeSeverity = new(StringComparer.Ordinal);
+
+    // Verdict join (per render, recomputed on results change).
+    private Dictionary<string, FrameworkVerdict> _verdictById = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, FrameworkVerdict> _nodeVerdict = new(StringComparer.Ordinal);
+    private bool _assessed;
+    private bool _fwAssessed;
+    private string? _deepestFailId;
+    private int _deepestFailDepth;
+    private readonly Dictionary<int, int> _failByDepth = new();
+    private int _unknownResultIds;
+
+    private bool _showUnmapped;
+
+    protected override void OnInitialized()
+    {
+        _forest = Tree.GetForest();
+        QcState.StateChanged += OnStateChanged;
+        // Cold-start restore (2026-07-30): live verdicts read QcState.Results directly, so a
+        // fresh app start showed "No checks run yet" here until /audit was visited. Idempotent.
+        Rehydration.EnsureLastRunLoaded();
+        if (_forest.Frameworks.Count > 0) SelectFramework(0);
+        RefreshVerdicts();
+    }
+
+    public void Dispose() => QcState.StateChanged -= OnStateChanged;
+
+    private void OnStateChanged() => InvokeAsync(() => { RefreshVerdicts(); StateHasChanged(); });
+
+    private void SelectFramework(int i)
+    {
+        _fwIndex = i;
+        _fw = (i >= 0 && i < _forest.Frameworks.Count) ? _forest.Frameworks[i] : null;
+        _expanded.Clear();
+        _search = string.Empty;
+        _searchVisible.Clear();
+        _searchExpand.Clear();
+        BuildSeverity();
+        RefreshVerdicts();
+    }
+
+    // ── Severity rollup (worst severity among descendant checks) ──
+    private static readonly Dictionary<string, int> SevRank = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Critical"] = 5, ["High"] = 4, ["Medium"] = 3, ["Warning"] = 2, ["Low"] = 1, ["Info"] = 0,
+    };
+
+    private void BuildSeverity()
+    {
+        _nodeSeverity.Clear();
+        var t = _fw;
+        if (t is null) return;
+        foreach (var root in t.Roots) WalkSeverity(root);
+    }
+
+    private (int rank, string label) WalkSeverity(FrameworkTreeNode node)
+    {
+        var bestRank = int.MinValue;
+        string bestLabel = string.Empty;
+        void Consider(string sev)
+        {
+            var r = SevRank.TryGetValue(sev ?? string.Empty, out var rr) ? rr : -1;
+            if (r > bestRank) { bestRank = r; bestLabel = sev ?? string.Empty; }
+        }
+        foreach (var c in node.Checks) Consider(c.Severity);
+        foreach (var ch in node.Children)
+        {
+            var (cr, cl) = WalkSeverity(ch);
+            if (cr > bestRank) { bestRank = cr; bestLabel = cl; }
+        }
+        if (bestRank > int.MinValue) _nodeSeverity[node.FullId] = bestLabel;
+        return (bestRank, bestLabel);
+    }
+
+    // ── Verdict join (per render) ──
+    private void RefreshVerdicts()
+    {
+        _verdictById = FrameworkTreeService.IndexResults(QcState.Results);
+        _assessed = _verdictById.Count > 0;
+        _unknownResultIds = FrameworkTreeService.CountUnknownResultIds(_forest, QcState.Results);
+
+        _nodeVerdict.Clear();
+        _failByDepth.Clear();
+        _deepestFailId = null;
+        _deepestFailDepth = 0;
+        _fwAssessed = false;
+        var t = _fw;
+        if (t is null) return;
+        foreach (var root in t.Roots) WalkVerdict(root);
+        // Per-framework assessed flag: any node in THIS framework carries a live verdict
+        // (any assessed check rolls up to at least Info, so a non-None rollup means this
+        // framework had checks run). Distinct from the global _assessed, which is true as
+        // soon as ANY framework's checks are assessed.
+        _fwAssessed = t.Roots.Any(r => _nodeVerdict.TryGetValue(r.FullId, out var v) && v != FrameworkVerdict.None);
+    }
+
+    private FrameworkVerdict WalkVerdict(FrameworkTreeNode node)
+    {
+        var worst = FrameworkVerdict.None;
+        foreach (var mc in node.Checks)
+            if (_verdictById.TryGetValue(mc.CheckId, out var v))
+                worst = FrameworkTreeService.Worse(worst, v);
+        foreach (var ch in node.Children)
+            worst = FrameworkTreeService.Worse(worst, WalkVerdict(ch));
+        _nodeVerdict[node.FullId] = worst;
+        if (worst == FrameworkVerdict.Fail)
+        {
+            _failByDepth[node.Depth] = _failByDepth.TryGetValue(node.Depth, out var n) ? n + 1 : 1;
+            if (node.Depth > _deepestFailDepth) { _deepestFailDepth = node.Depth; _deepestFailId = node.FullId; }
+        }
+        return worst;
+    }
+
+    // ── Expansion controls ──
+    private void CollapseAll() => _expanded.Clear();
+
+    private void ExpandToDepth(int depth)
+    {
+        _expanded.Clear();
+        var t = _fw;
+        if (t is null) return;
+        // Expand every node shallower than `depth` so nodes at `depth` become visible.
+        void Walk(FrameworkTreeNode n)
+        {
+            if (n.Depth < depth && (n.Children.Count > 0 || n.Checks.Count > 0)) _expanded.Add(n.FullId);
+            foreach (var c in n.Children) Walk(c);
+        }
+        foreach (var root in t.Roots) Walk(root);
+    }
+
+    private bool HasExpandableContent(FrameworkTreeNode n) => n.Children.Count > 0 || n.Checks.Count > 0;
+
+    private bool IsExpanded(FrameworkTreeNode n)
+        => _searching ? _searchExpand.Contains(n.FullId) : _expanded.Contains(n.FullId);
+
+    private void ToggleNode(FrameworkTreeNode n)
+    {
+        if (_searching) return; // search drives its own expansion
+        if (!_expanded.Add(n.FullId)) _expanded.Remove(n.FullId);
+    }
+
+    // ── Search ──
+    private void OnSearchInput(ChangeEventArgs e)
+    {
+        _search = e.Value?.ToString() ?? string.Empty;
+        RebuildSearch();
+    }
+
+    private void ClearSearch()
+    {
+        _search = string.Empty;
+        _searchVisible.Clear();
+        _searchExpand.Clear();
+    }
+
+    private void RebuildSearch()
+    {
+        _searchVisible.Clear();
+        _searchExpand.Clear();
+        var t = _fw;
+        if (t is null || !_searching) return;
+        var term = _search.Trim();
+        foreach (var root in t.Roots) BuildSearch(root, term, ancestorMatched: false);
+    }
+
+    private bool BuildSearch(FrameworkTreeNode node, string term, bool ancestorMatched)
+    {
+        var selfMatch = NodeMatches(node, term);
+        var underMatch = ancestorMatched || selfMatch;
+        var anyChild = false;
+        foreach (var ch in node.Children)
+            anyChild |= BuildSearch(ch, term, underMatch);
+        var subtreeHas = selfMatch || anyChild;
+        if (subtreeHas || ancestorMatched) _searchVisible.Add(node.FullId);
+        if ((subtreeHas || underMatch) && HasExpandableContent(node)) _searchExpand.Add(node.FullId);
+        return subtreeHas;
+    }
+
+    private static bool NodeMatches(FrameworkTreeNode node, string term)
+    {
+        if (node.FullId.Contains(term, StringComparison.OrdinalIgnoreCase)) return true;
+        if (node.Name is not null && node.Name.Contains(term, StringComparison.OrdinalIgnoreCase)) return true;
+        foreach (var c in node.Checks)
+            if (c.CheckId.Contains(term, StringComparison.OrdinalIgnoreCase)
+                || (c.Title?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false))
+                return true;
+        return false;
+    }
+
+    private IEnumerable<FrameworkTreeNode> RootsToRender(FrameworkTree t)
+        => _searching ? t.Roots.Where(r => _searchVisible.Contains(r.FullId)) : t.Roots;
+
+    private IEnumerable<FrameworkTreeNode> ChildrenToRender(FrameworkTreeNode node)
+        => _searching ? node.Children.Where(c => _searchVisible.Contains(c.FullId)) : node.Children;
+
+    // ── Recursive node render (lazy: children/checks only when expanded) ──
+    private RenderFragment RenderNode(FrameworkTreeNode node) =>
+    @<div class="ch-node">
+        <div class="ch-row" @onclick="() => ToggleNode(node)" style="@(HasExpandableContent(node) ? "cursor:pointer;" : "cursor:default;")">
+            <span class="ch-caret">
+                @if (HasExpandableContent(node))
+                {
+                    <i class="fa-solid @(IsExpanded(node) ? "fa-chevron-down" : "fa-chevron-right")"></i>
+                }
+            </span>
+            <span class="ch-depth">L@(node.Depth)</span>
+            <code class="ch-mono ch-node-id">@node.FullId</code>
+            @if (node.Name is not null)
+            {
+                <span class="ch-node-name">@node.Name</span>
+            }
+            else if (node.Children.Count > 0)
+            {
+                @* Synthesized grouping node for a framework whose family titles we don't carry.
+                   Say what it groups rather than leaving the row looking truncated. *@
+                <span class="ch-node-name ch-node-name-derived"
+                      title="Grouping level derived from the control numbering; this framework's family titles are not in the mapping data.">
+                    @node.Children.Count sub-control@(node.Children.Count == 1 ? "" : "s")
+                </span>
+            }
+            @if (node.CheckCount > 0)
+            {
+                <span class="ch-check-count" title="@node.CheckCount mapped check@(node.CheckCount == 1 ? "" : "s") under this control">
+                    <i class="fa-solid fa-clipboard-check"></i> @node.CheckCount
+                </span>
+            }
+            @if (_nodeSeverity.TryGetValue(node.FullId, out var sev) && !string.IsNullOrEmpty(sev))
+            {
+                @SeverityChip(sev)
+            }
+            @if (_assessed && _nodeVerdict.TryGetValue(node.FullId, out var v))
+            {
+                @VerdictBadge(v)
+            }
+        </div>
+        @if (IsExpanded(node))
+        {
+            <div class="ch-children">
+                @foreach (var child in ChildrenToRender(node))
+                {
+                    @RenderNode(child)
+                }
+                @if (node.Checks.Count > 0)
+                {
+                    <div class="ch-leaf-checks">
+                        @foreach (var chk in node.Checks.OrderBy(c => c.CheckId, StringComparer.Ordinal))
+                        {
+                            <div class="ch-leaf-row">
+                                <code class="ch-mono">@chk.CheckId</code>
+                                <span class="ch-check-title">@chk.Title</span>
+                                @if (!string.IsNullOrEmpty(chk.Severity))
+                                {
+                                    @SeverityChip(chk.Severity)
+                                }
+                                @if (!string.IsNullOrEmpty(chk.MappingType))
+                                {
+                                    <span class="ch-maptype">@chk.MappingType</span>
+                                }
+                                @if (_assessed && _verdictById.TryGetValue(chk.CheckId, out var cv))
+                                {
+                                    @VerdictBadge(cv)
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </div>;
+
+    // ── Glyph + label chips (never colour alone — colour-blind rule) ──
+    private RenderFragment SeverityChip(string severity) =>
+    @<span class="ch-sev" style="color:@SeverityColor(severity);border-color:@SeverityColor(severity);" title="Severity: @severity">@severity</span>;
+
+    private static string SeverityColor(string sev) => sev?.ToLowerInvariant() switch
+    {
+        "critical" => "var(--red,#ef4444)",
+        "high" => "var(--orange,#f59e0b)",
+        "medium" => "var(--yellow,#eab308)",
+        "warning" => "var(--orange,#f59e0b)",
+        "low" => "var(--blue,#3b82f6)",
+        "info" => "var(--text-muted,#94a3b8)",
+        _ => "var(--text-muted,#94a3b8)",
+    };
+
+    private RenderFragment VerdictBadge(FrameworkVerdict v) =>
+    @<span class="ch-verdict" style="color:@VerdictColor(v);border-color:@VerdictColor(v);" title="@VerdictLabel(v)">
+        <i class="fa-solid @VerdictIcon(v)"></i> @VerdictLabel(v)
+    </span>;
+
+    private static string VerdictLabel(FrameworkVerdict v) => v switch
+    {
+        FrameworkVerdict.Fail => "Fail",
+        FrameworkVerdict.Warn => "Warn",
+        FrameworkVerdict.Pass => "Pass",
+        FrameworkVerdict.Skip => "Skip",
+        FrameworkVerdict.Info => "Info",
+        _ => "Unassessed",
+    };
+
+    private static string VerdictIcon(FrameworkVerdict v) => v switch
+    {
+        FrameworkVerdict.Fail => "fa-circle-xmark",
+        FrameworkVerdict.Warn => "fa-triangle-exclamation",
+        FrameworkVerdict.Pass => "fa-circle-check",
+        FrameworkVerdict.Skip => "fa-circle-minus",
+        FrameworkVerdict.Info => "fa-circle-info",
+        _ => "fa-circle",
+    };
+
+    private static string VerdictColor(FrameworkVerdict v) => v switch
+    {
+        FrameworkVerdict.Fail => "var(--red,#ef4444)",
+        FrameworkVerdict.Warn => "var(--orange,#f59e0b)",
+        FrameworkVerdict.Pass => "var(--green,#1FA85E)",
+        FrameworkVerdict.Skip => "var(--text-muted,#94a3b8)",
+        FrameworkVerdict.Info => "var(--blue,#3b82f6)",
+        _ => "var(--text-muted,#94a3b8)",
+    };
+}
+
+
+
+<!-- Styles extracted to wwwroot/css/ComplianceTree.css 2026-08-30 (CLAUDE.md convention). -->

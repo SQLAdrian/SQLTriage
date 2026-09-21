@@ -1,0 +1,685 @@
+/* In the name of God, the Merciful, the Compassionate */
+
+using System.Text.Json.Serialization;
+
+namespace SQLTriage.Data.Models
+{
+    public class AlertThreshold
+    {
+        [JsonPropertyName("id")]
+        public string Id { get; set; } = Guid.NewGuid().ToString();
+
+        [JsonPropertyName("name")]
+        public string Name { get; set; } = string.Empty;
+
+        [JsonPropertyName("metric")]
+        public string Metric { get; set; } = string.Empty; // e.g., "cpu", "memory", "connections", "deadlocks"
+
+        [JsonPropertyName("condition")]
+        public string Condition { get; set; } = "greater_than"; // greater_than, less_than, equals
+
+        [JsonPropertyName("thresholdValue")]
+        public double ThresholdValue { get; set; }
+
+        [JsonPropertyName("enabled")]
+        public bool Enabled { get; set; } = true;
+
+        [JsonPropertyName("severity")]
+        public string Severity { get; set; } = "warning"; // info, warning, critical
+
+        [JsonPropertyName("description")]
+        public string Description { get; set; } = string.Empty;
+    }
+
+    public class AlertNotification
+    {
+        public string Id { get; set; } = Guid.NewGuid().ToString();
+        public string AlertName { get; set; } = string.Empty;
+        public string Metric { get; set; } = string.Empty;
+
+        /// <summary>
+        /// The metric reading that fired this alert, or NULL when nothing was measured.
+        ///
+        /// <para>N-2, 2026-08-22. This was a plain double, so every channel's connectivity
+        /// test-send -- which measures nothing at all -- shipped "Current Value: 0.00" to whoever
+        /// clicked Test. Two of the seven test paths even assigned <c>CurrentValue = 0</c>
+        /// explicitly, one line above the C3 comment explaining why ThresholdValue must stay null
+        /// in exactly that situation. Same class, same fix: nullable, and a phrase where the
+        /// number would go.</para>
+        ///
+        /// <para>Render <see cref="CurrentValueText"/>, never this, on any human-facing surface.
+        /// JSON payloads serialize the raw property and therefore emit <c>null</c>, which is the
+        /// honest wire value for a reading that was never taken.</para>
+        /// </summary>
+        public double? CurrentValue { get; set; }
+
+        /// <summary>
+        /// What a channel prints where a metric reading would go. One place makes the decision,
+        /// so eleven render sites across seven channels cannot disagree about the same send.
+        ///
+        /// <para>The phrase names NO cause. It said "not measured (connectivity test)" for half a
+        /// day, and that sentence is false on a sender that is not a connectivity test:
+        /// <c>ScheduledTaskEngine</c> builds an AlertNotification for a completed scheduled task
+        /// and never sets a reading, so a Teams card or a ServiceNow incident for a finished task
+        /// would have explained itself as a connectivity test. "not measured" is the word this
+        /// product already uses for an absent reading everywhere else
+        /// (<c>IndexAnalysisRendering.Unmeasured</c>), and it is true for every sender.</para>
+        /// </summary>
+        public string CurrentValueText => CurrentValue.HasValue
+            ? CurrentValue.Value.ToString("N2")
+            : "not measured";
+
+        /// <summary>
+        /// The threshold that was actually crossed, or NULL when the condition that fired did not
+        /// involve one (gate fix C3, 2026-08-05). Four conditions can fire an alert and only two
+        /// carry a threshold; the evaluation service used to coerce the other two to 0, so a trend
+        /// fire reached every notification channel rendering "threshold: 0.00", a number that
+        /// exists in no alert definition, in the message a DBA is paged with.
+        /// Render <see cref="ThresholdText"/>, never this, on any human-facing surface.
+        /// </summary>
+        public double? ThresholdValue { get; set; }
+
+        /// <summary>
+        /// Which condition fired, as the name of an <c>AlertBasisKind</c> member (a string here to
+        /// keep this model free of a dependency on the service layer). Empty when unrecorded.
+        /// </summary>
+        public string BasisKind { get; set; } = string.Empty;
+
+        /// <summary>
+        /// What a channel prints where a threshold would go. THE one place that decision is made,
+        /// so six default templates and a dozen hard-coded channel payloads cannot disagree about
+        /// the same fire. Never returns a number the basis did not measure.
+        /// </summary>
+        public string ThresholdText => ThresholdValue.HasValue
+            ? ThresholdValue.Value.ToString("N2")
+            : BasisKind switch
+            {
+                "TrendAnomaly" =>
+                    "not applicable (fired on a trend over the last 72 h of samples, not a threshold)",
+                "BaselineDeviation" =>
+                    "not applicable (fired on deviation from this alert's baseline average, not a threshold)",
+                _ => "not recorded",
+            };
+
+        /// <summary>
+        /// How many consecutive evaluations this alert has been firing for, or NULL when the
+        /// sender never counted (a connectivity test-send, or the legacy AlertingService path).
+        ///
+        /// <para>N-1, 2026-08-22. This field did not exist, and AlertTemplateService rendered the
+        /// {{hit_count}} token as the literal string "1" for every notification it rendered. The
+        /// real count lives on <see cref="AlertState.HitCount"/>, is incremented on every re-fire,
+        /// and was simply never carried to the notification -- so a client reading the ALERT EMAIL
+        /// for an alert that had been re-firing for six hours was told it had fired once. Same
+        /// shape as the C3 threshold fix below: plumb the measured value, and print a phrase
+        /// rather than a number when nobody measured.</para>
+        ///
+        /// <para>SCOPE, measured on the wire and not asserted (2026-08-23,
+        /// ChannelPayloadReachCensusTests): the EMAIL is the only surface a hit count ever reached.
+        /// AlertTemplateService.Render is called on the Email template alone; the Teams, Slack,
+        /// webhook, PagerDuty, ServiceNow and WhatsApp payloads are hard-coded objects with no
+        /// hit-count field, so they never printed the fabricated one and they still print no
+        /// count. The Slack, webhook and ServiceNow ChannelTemplates DO carry the token and the
+        /// Alerts page advertises it, but nothing renders those templates.</para>
+        /// </summary>
+        public int? HitCount { get; set; }
+
+        /// <summary>
+        /// What a channel prints where a hit count would go. Mirrors <see cref="ThresholdText"/>:
+        /// one place makes the decision, and it never returns a number nobody counted.
+        /// </summary>
+        public string HitCountText => HitCount.HasValue
+            ? HitCount.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : "not recorded";
+
+        public string Severity { get; set; } = string.Empty;
+        public string Message { get; set; } = string.Empty;
+
+        /// <summary>
+        /// UTC. Every writer that sets this explicitly already uses <see cref="DateTime.UtcNow"/>
+        /// (AlertEvaluationService's two dispatch paths), and every reader labels or names it as
+        /// UTC without converting -- six default channel templates say "Time (UTC)" or emit a
+        /// literal "triggered_at_utc"/"triggeredAtUtc" JSON key, and the Slack/Teams footer builds
+        /// its epoch timestamp via <c>new DateTimeOffset(TriggeredAt, TimeSpan.Zero)</c>, which is
+        /// only correct if the value already IS UTC. The old default of <c>DateTime.Now</c> was the
+        /// one path that broke that contract: a caller that left this field unset (the legacy
+        /// AlertingService.cs threshold path) shipped local time labelled UTC everywhere it landed.
+        /// </summary>
+        public DateTime TriggeredAt { get; set; } = DateTime.UtcNow;
+        public bool IsAcknowledged { get; set; }
+
+        /// <summary>
+        /// The instance this notification was triggered for (empty = global).
+        /// </summary>
+        public string InstanceName { get; set; } = string.Empty;
+
+        /// <summary>
+        /// When false, email is suppressed for this notification (per alert definition).
+        ///
+        /// <para><b>Corrected 2026-09-11 (special-alerts-escalation-parity).</b> This used to say
+        /// "Escalation notifications always send email regardless." The opposite is true and was
+        /// proved live: an ESCALATION never sends email at all.
+        /// <c>AlertEvaluationService.BuildEscalationNotification</c> does not set this property, so
+        /// it stays false, and <c>NotificationChannelService.DispatchAsync</c> gates the SMTP
+        /// channel on it. A measured escalation selects exactly SIX channels - PagerDuty,
+        /// ServiceNow, Slack, Teams, Webhook, WhatsApp - and never SMTP. Pinned by
+        /// <c>SpecialAlertEscalationTests.EscalationNotification_isCriticalAndNeverEmail_soAlertConfigurationLine157IsWrong</c>,
+        /// whose name records the line this sentence used to occupy.</para>
+        /// </summary>
+        public bool SendEmail { get; set; } = false;
+    }
+
+    public class AlertEvaluationResult
+    {
+        public bool IsTriggered { get; set; }
+        public string AlertId { get; set; } = string.Empty;
+        public string AlertName { get; set; } = string.Empty;
+        public double CurrentValue { get; set; }
+        public double ThresholdValue { get; set; }
+        public string Severity { get; set; } = string.Empty;
+        public string Message { get; set; } = string.Empty;
+
+        /// <summary>
+        /// The instance this result relates to (empty = global).
+        /// </summary>
+        public string InstanceName { get; set; } = string.Empty;
+    }
+
+    // ── Alert Definitions File (JSON root) ──────────────────────────────
+
+    public class AlertDefinitionsFile
+    {
+        [JsonPropertyName("version")]
+        public string Version { get; set; } = "1.0";
+
+        [JsonPropertyName("globalDefaults")]
+        public AlertGlobalDefaults GlobalDefaults { get; set; } = new();
+
+        [JsonPropertyName("categories")]
+        public List<AlertCategory> Categories { get; set; } = new();
+
+        [JsonPropertyName("alerts")]
+        public List<AlertDefinition> Alerts { get; set; } = new();
+    }
+
+    public class AlertGlobalDefaults
+    {
+        [JsonPropertyName("cooldownMinutes")]
+        public int CooldownMinutes { get; set; } = 5;
+
+        [JsonPropertyName("autoAcknowledgeHours")]
+        public int AutoAcknowledgeHours { get; set; } = 24;
+
+        [JsonPropertyName("retentionDays")]
+        public int RetentionDays { get; set; } = 365;
+
+        [JsonPropertyName("enabled")]
+        public bool Enabled { get; set; } = true;
+    }
+
+    public class AlertCategory
+    {
+        [JsonPropertyName("id")]
+        public string Id { get; set; } = string.Empty;
+
+        [JsonPropertyName("name")]
+        public string Name { get; set; } = string.Empty;
+
+        [JsonPropertyName("icon")]
+        public string Icon { get; set; } = string.Empty;
+    }
+
+    public class AlertDefinition
+    {
+        [JsonPropertyName("id")]
+        public string Id { get; set; } = string.Empty;
+
+        [JsonPropertyName("name")]
+        public string Name { get; set; } = string.Empty;
+
+        [JsonPropertyName("description")]
+        public string Description { get; set; } = string.Empty;
+
+        [JsonPropertyName("category")]
+        public string Category { get; set; } = string.Empty;
+
+        [JsonPropertyName("enabled")]
+        public bool Enabled { get; set; } = true;
+
+        [JsonPropertyName("severity")]
+        public string Severity { get; set; } = "Medium";
+
+        [JsonPropertyName("thresholds")]
+        public AlertThresholds Thresholds { get; set; } = new();
+
+        [JsonPropertyName("unit")]
+        public string Unit { get; set; } = string.Empty;
+
+        [JsonPropertyName("operator")]
+        public string Operator { get; set; } = "greater_than";
+
+        /// <summary>
+        /// ⚠ NOT READ BY ANYTHING. Kept only so an existing <c>alert-definitions.json</c> round-trips
+        /// its <c>durationSeconds</c> value instead of losing it on the next save.
+        ///
+        /// <para><b>2026-08-28, strings lane fix round.</b> The alert editor carried a "Sustain
+        /// duration (sec)" spinner bound to this property under the caption "Must stay over threshold
+        /// for this long before firing. 0 = immediate." Nothing consulted it: a whole-tree census of
+        /// <c>DurationSeconds</c> across every .cs and .razor found this declaration, that one editor
+        /// binding, two test fixtures and a set of unrelated types. An operator who set it to 60 to
+        /// damp a flapping alert got a persisted number and an alert that still fired on the next
+        /// breach. The control is gone; this property is not, because deleting it would silently drop
+        /// the value out of every installed config file the first time an operator pressed Save.</para>
+        ///
+        /// <para>IF SOMEONE IMPLEMENTS IT, read this first. Two shipped alerts carry
+        /// <c>durationSeconds: 30</c> - <c>instance_unreachable</c> and <c>machine_unreachable</c>,
+        /// both Critical - so honouring this value would DELAY the two alerts that say a server is
+        /// down by thirty seconds, on every install, as a side effect of making a control real.
+        /// Decide that deliberately and say so in the descriptions, or ship the feature with those
+        /// two at 0. The operator's damping need is already served by Cooldown / Next Alert Delay,
+        /// which is read.</para>
+        ///
+        /// <para><b>2026-09-18, lane Q14 fix round 2.</b> A hold that IS read now exists, and it is
+        /// <see cref="HoldSeconds"/>, not this property. It was given its own name on purpose: eleven
+        /// shipped alerts carry a non-zero value here (the two unreachable alerts at 30 among them), so
+        /// making this one real would have changed when all eleven fire on every install. The new
+        /// property is absent, which means 0, on every alert except the one Adrian ruled on.</para>
+        /// </summary>
+        [JsonPropertyName("durationSeconds")]
+        public int DurationSeconds { get; set; } = 300;
+
+        /// <summary>
+        /// Seconds a breach must last before the alert fires. 0, the default and the value of every
+        /// alert that does not carry the property, fires on the first breaching measurement, which is
+        /// how every alert behaved before this property existed.
+        ///
+        /// <para><b>INVARIANT: AN ALERT WITH A HOLD FIRES ONLY WHEN EVERY MEASUREMENT OF AN UNBROKEN RUN
+        /// HAS BREACHED, AND THE RUN HAS LASTED AT LEAST THIS MANY SECONDS.</b> The run starts at the
+        /// first breaching measurement. The alert fires on the first breaching measurement taken at
+        /// least <c>HoldSeconds</c> after that. A measured value that does not breach ENDS the run. A
+        /// cycle that attempted the alert and got no value (a failed query, a NULL, a handler that
+        /// could not measure) BREAKS it, so the next breach starts a new run: nothing known to be high
+        /// was seen across the gap. So does a gap with no attempt at all that is longer than two due
+        /// intervals plus one tick. The hold decides only whether a NEW episode opens; an alert that is
+        /// already active updates on every breaching cycle as before. Enforced for the standard and
+        /// the built-in-handler paths alike by
+        /// <c>AlertEvaluationService.ObserveBreachForHold</c>, and proved by AlertBreachHoldTests.</para>
+        ///
+        /// <para><b>Why it exists (owner's ruling R2, DECISIONS 2026-09-18 04:21).</b>
+        /// <c>sql_response_time</c> is timed inside SQLTriage, so a stalled SQLTriage process reads slow
+        /// too: the Q14 gate starved the app's thread pool on a healthy .\NEW2022 and one cycle read
+        /// 1,418.6 ms (Warning) and, on a second build, 2,117.99 ms (Critical). That alert ships a hold
+        /// of 120 seconds, so one stalled cycle cannot page. Not settable in the alert editor.</para>
+        /// </summary>
+        [JsonPropertyName("holdSeconds")]
+        public int HoldSeconds { get; set; }
+
+        [JsonPropertyName("frequencySeconds")]
+        public int FrequencySeconds { get; set; } = 60;
+
+        [JsonPropertyName("cooldownMinutes")]
+        public int? CooldownMinutes { get; set; }
+
+        [JsonPropertyName("query")]
+        public string Query { get; set; } = string.Empty;
+
+        [JsonPropertyName("queryMode")]
+        public string? QueryMode { get; set; }
+
+        [JsonPropertyName("remediation")]
+        public string? Remediation { get; set; }
+
+        /// <summary>
+        /// When true, this alert fires even outside the operational window (e.g. connectivity checks, disk full).
+        /// Still suppressed during an active maintenance window.
+        /// </summary>
+        [JsonPropertyName("alwaysAlert")]
+        public bool AlwaysAlert { get; set; }
+
+        // ── Routing ────────────────────────────────────────────────────
+
+        /// <summary>Channel ID to use for this alert (overrides global default). Empty = use global.</summary>
+        [JsonPropertyName("primaryChannel")]
+        public string? PrimaryChannel { get; set; }
+
+        /// <summary>When true, send an email notification via the configured SMTP channel.</summary>
+        [JsonPropertyName("sendEmail")]
+        public bool SendEmail { get; set; }
+
+        /// <summary>
+        /// Override the global cooldown for repeat notifications on this alert.
+        /// How many minutes to wait before sending another notification for the same active alert.
+        /// </summary>
+        [JsonPropertyName("nextAlertDelayMinutes")]
+        public int? NextAlertDelayMinutes { get; set; }
+
+        // ── Escalation ─────────────────────────────────────────────────
+
+        /// <summary>When true, escalate to critical severity + escalation channel if unacknowledged.</summary>
+        [JsonPropertyName("escalate")]
+        public bool Escalate { get; set; }
+
+        /// <summary>
+        /// Trigger escalation after this many events within <see cref="EscalationWindowMinutes"/>.
+        /// 0 = escalate on any single event.
+        /// </summary>
+        [JsonPropertyName("escalationThresholdEvents")]
+        public int EscalationThresholdEvents { get; set; } = 0;
+
+        /// <summary>Rolling window (minutes) for counting escalation events. 0 = any single event.</summary>
+        [JsonPropertyName("escalationWindowMinutes")]
+        public int EscalationWindowMinutes { get; set; } = 0;
+
+        /// <summary>Channel ID to notify on escalation. Empty = same as primary.
+        ///
+        /// <para><b>THE INVARIANT, and the reason this property is dangerous:</b> <i>empty means
+        /// EVERY admitted channel, never none.</i> All 80 shipped alerts carry <c>null</c> here, so
+        /// the blank case is the path every existing definition takes; reading blank as "no channel
+        /// selected" would route every escalation to nowhere and log nothing. The value is the
+        /// picker's lowercase key ("pagerduty", "servicenow"), matched case-insensitively against
+        /// <c>NotificationChannelService.ChannelNames</c>.</para>
+        ///
+        /// <para><b>Wired 2026-09-11 (special-alerts-escalation-parity).</b> Before that lane this
+        /// property had two references in the whole tree - this declaration and the &lt;select&gt;
+        /// at <c>Pages/Alerts.razor:877</c> - and the dispatcher had no channel routing at all. It
+        /// is now read at exactly one place, <c>AlertEvaluationService.DispatchEscalation</c>.
+        /// The tests that hold it, by their real names, in
+        /// <c>Tests/SQLTriage.Tests/EscalationChannelRoutingTests.cs</c>:
+        /// <c>NullEmptyAndWhitespace_stillFanOutToEveryChannel_theFailClosedTrap</c>,
+        /// <c>ANonEmptyChannel_routesToThatChannelOnly</c> and
+        /// <c>TheEngineHandsTheAlertsEscalationChannelToTheDispatcher</c>.</para>
+        ///
+        /// <para>⚠ <b><see cref="PrimaryChannel"/> is the untouched twin.</b> It is offered by the
+        /// same page and is still read by nothing. Deliberately out of scope: escalation could be
+        /// rerouted freely because nothing escalates today, whereas firing notifications go out
+        /// continuously and rerouting them changes live customer behaviour. That decision is
+        /// MEASURED, not remembered, by
+        /// <c>EscalationChannelRoutingTests.EveryChannelRoutingPropertyIsEitherWiredOrKnowinglyNot</c>.</para>
+        /// </summary>
+        [JsonPropertyName("escalationChannel")]
+        public string? EscalationChannel { get; set; }
+
+        /// <summary>
+        /// Minutes an alert must be unacknowledged before escalating.
+        /// Only used when EscalationThresholdEvents == 0 (time-based escalation).
+        /// </summary>
+        [JsonPropertyName("escalationAfterMinutes")]
+        public int EscalationAfterMinutes { get; set; } = 30;
+
+        // ── IQR Baseline ───────────────────────────────────────────────
+
+        /// <summary>
+        /// When true, this alert participates in IQR-based dynamic baseline learning.
+        /// Set false for binary/SLA alerts (missed backups, failed jobs, blocking).
+        /// Set true for continuous metrics (CPU %, memory, PLE, wait stats).
+        /// </summary>
+        [JsonPropertyName("canBaseline")]
+        public bool CanBaseline { get; set; } = false;
+
+        /// <summary>
+        /// How the number this alert's query returns relates to the quantity its thresholds
+        /// describe. Absent (the default, and the case for every alert that does not say
+        /// otherwise) means the query already returns that quantity, and the number is compared
+        /// as-is.
+        ///
+        /// <para><see cref="CumulativeCounterKind"/> means the query returns a RUNNING TOTAL that
+        /// only climbs while the SQL Server service stays up: a PERF_COUNTER_BULK_COUNT row from
+        /// sys.dm_os_performance_counters (every "/sec" counter is one of these - cntr_type
+        /// 272696576, read live off .\NEW2022 on 2026-08-23), or a SUM over sys.dm_os_wait_stats.
+        /// Such a number is NOT a rate. It has to be differenced against the previous sample and
+        /// divided by the elapsed time before it can be compared to a rate threshold, and until a
+        /// previous sample exists there is no rate to compare.</para>
+        /// </summary>
+        [JsonPropertyName("valueKind")]
+        public string? ValueKind { get; set; }
+
+        /// <summary>The one <see cref="ValueKind"/> value the evaluator acts on.</summary>
+        public const string CumulativeCounterKind = "cumulative_counter";
+
+        /// <summary>
+        /// True when this alert's query returns a running total rather than the quantity the
+        /// thresholds describe, so the evaluator must difference it across two samples.
+        /// </summary>
+        [JsonIgnore]
+        public bool IsCumulativeCounter =>
+            string.Equals(ValueKind, CumulativeCounterKind, StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// When true, this alert uses DMVs or features that require on-premises SQL Server
+        /// (or SQL Server on IaaS). It will be silently skipped on Azure SQL DB (EngineEdition 5)
+        /// and Azure SQL Managed Instance (EngineEdition 8).
+        /// Default false — safe to run everywhere. Mark true for alerts using sys.dm_os_*,
+        /// sys.dm_server_*, sp_configure, xp_cmdshell, etc.
+        /// </summary>
+        [JsonPropertyName("requiresOnPrem")]
+        public bool RequiresOnPrem { get; set; } = false;
+
+        // ── Baseline deviation ─────────────────────────────────────────
+
+        /// <summary>
+        /// When > 0, also fire this alert when the current value is this many percent above the 7-day average
+        /// from the cache. Requires a matching queryId in the time-series cache. 0 = disabled.
+        /// </summary>
+        [JsonPropertyName("baselineDeviationPercent")]
+        public double BaselineDeviationPercent { get; set; } = 0;
+
+        /// <summary>
+        /// The dashboard queryId to pull 7-day baseline data from (e.g. "live.cpu").
+        /// Required when BaselineDeviationPercent > 0.
+        /// </summary>
+        [JsonPropertyName("baselineQueryId")]
+        public string? BaselineQueryId { get; set; }
+
+        /// <summary>The series name within that query to average (e.g. "CPU %"). Empty = average all series.</summary>
+        [JsonPropertyName("baselineSeries")]
+        public string? BaselineSeries { get; set; }
+
+        // ── Reporting ─────────────────────────────────────────────────
+
+        /// <summary>
+        /// When true, events for this alert are included in the scheduled daily summary email.
+        /// The summary is sent once per day to the configured SMTP recipients.
+        /// </summary>
+        [JsonPropertyName("includeInDailySummary")]
+        public bool IncludeInDailySummary { get; set; }
+    }
+
+    // ── Operational / Maintenance Windows ──────────────────────────────
+
+    /// <summary>Days of the week on which a window is active (flags enum for multi-select).</summary>
+    [Flags]
+    public enum WindowDays
+    {
+        None = 0,
+        Monday = 1,
+        Tuesday = 2,
+        Wednesday = 4,
+        Thursday = 8,
+        Friday = 16,
+        Saturday = 32,
+        Sunday = 64,
+        Weekdays = Monday | Tuesday | Wednesday | Thursday | Friday,
+        Weekend = Saturday | Sunday,
+        All = Weekdays | Weekend
+    }
+
+    /// <summary>
+    /// A time-range window with a day-of-week mask.
+    /// Times are stored as HH:mm (local server time).
+    /// </summary>
+    public class AlertTimeWindow
+    {
+        [JsonPropertyName("enabled")]
+        public bool Enabled { get; set; } = false;
+
+        /// <summary>HH:mm — start of the window (inclusive).</summary>
+        [JsonPropertyName("startTime")]
+        public string StartTime { get; set; } = "08:00";
+
+        /// <summary>HH:mm — end of the window (inclusive). If less than StartTime, wraps midnight.</summary>
+        [JsonPropertyName("endTime")]
+        public string EndTime { get; set; } = "18:00";
+
+        /// <summary>Bitmask of active days.</summary>
+        [JsonPropertyName("days")]
+        public WindowDays Days { get; set; } = WindowDays.Weekdays;
+
+        /// <summary>Returns true if right now falls within this window.</summary>
+        public bool IsActive()
+        {
+            if (!Enabled) return false;
+            var now = DateTime.Now;
+            var dayFlag = now.DayOfWeek switch
+            {
+                DayOfWeek.Monday => WindowDays.Monday,
+                DayOfWeek.Tuesday => WindowDays.Tuesday,
+                DayOfWeek.Wednesday => WindowDays.Wednesday,
+                DayOfWeek.Thursday => WindowDays.Thursday,
+                DayOfWeek.Friday => WindowDays.Friday,
+                DayOfWeek.Saturday => WindowDays.Saturday,
+                DayOfWeek.Sunday => WindowDays.Sunday,
+                _ => WindowDays.None
+            };
+            if ((Days & dayFlag) == WindowDays.None) return false;
+
+            if (!TimeSpan.TryParse(StartTime, out var start)) return false;
+            if (!TimeSpan.TryParse(EndTime, out var end)) return false;
+            var nowTs = now.TimeOfDay;
+            return start <= end
+                ? nowTs >= start && nowTs <= end
+                : nowTs >= start || nowTs <= end; // overnight wrap
+        }
+    }
+
+    /// <summary>
+    /// Root config for operational and maintenance windows.
+    /// Persisted inside notification-channels.json under "alertWindows".
+    /// </summary>
+    public class AlertWindowConfig
+    {
+        /// <summary>
+        /// Operational window — all alerts fire during this window.
+        /// Outside this window only AlwaysAlert alerts fire.
+        /// Disabled = no restriction (all alerts fire at all times).
+        /// </summary>
+        [JsonPropertyName("operationalWindow")]
+        public AlertTimeWindow OperationalWindow { get; set; } = new();
+
+        /// <summary>
+        /// Maintenance window — ALL alerts are suppressed, including AlwaysAlert ones.
+        /// Can also be activated on demand via <see cref="MaintenanceActiveUntil"/>.
+        /// </summary>
+        [JsonPropertyName("maintenanceWindow")]
+        public AlertTimeWindow MaintenanceWindow { get; set; } = new();
+
+        /// <summary>
+        /// If set and in the future, maintenance mode is active regardless of the scheduled window.
+        /// Set by "Start maintenance now for X minutes".
+        /// </summary>
+        [JsonPropertyName("maintenanceActiveUntil")]
+        public DateTime? MaintenanceActiveUntil { get; set; }
+
+        /// <summary>True if a manual maintenance period is currently running.</summary>
+        [JsonIgnore]
+        public bool IsManualMaintenanceActive =>
+            MaintenanceActiveUntil.HasValue && MaintenanceActiveUntil.Value > DateTime.Now;
+
+        /// <summary>True if any form of maintenance is currently active.</summary>
+        [JsonIgnore]
+        public bool IsMaintenanceActive => IsManualMaintenanceActive || MaintenanceWindow.IsActive();
+
+        /// <summary>True if an alert should fire, given window config and the alert's AlwaysAlert flag.</summary>
+        public bool ShouldFire(bool alwaysAlert)
+        {
+            if (IsMaintenanceActive) return false;
+            if (!OperationalWindow.Enabled) return true;   // no restriction configured
+            if (OperationalWindow.IsActive()) return true; // inside operational hours
+            return alwaysAlert;                            // outside hours — only if alwaysAlert
+        }
+    }
+
+    public class AlertThresholds
+    {
+        [JsonPropertyName("warning")]
+        public double? Warning { get; set; }
+
+        [JsonPropertyName("critical")]
+        public double? Critical { get; set; }
+    }
+
+    // ── Runtime Alert State ─────────────────────────────────────────────
+
+    public enum AlertStatus
+    {
+        Active,
+        Acknowledged,
+        Resolved
+    }
+
+    public class AlertState
+    {
+        public string AlertId { get; set; } = string.Empty;
+        public string AlertName { get; set; } = string.Empty;
+        public string ServerName { get; set; } = string.Empty;
+        public string Severity { get; set; } = string.Empty;
+        public AlertStatus Status { get; set; } = AlertStatus.Active;
+        public double LastValue { get; set; }
+
+        /// <summary>
+        /// The threshold actually crossed, or NULL when the firing condition carried none
+        /// (gate fix C3, 2026-08-05). See <see cref="AlertNotification.ThresholdValue"/>.
+        /// </summary>
+        public double? ThresholdValue { get; set; }
+
+        /// <summary>Name of the <c>AlertBasisKind</c> member that fired. Empty when unrecorded.</summary>
+        public string BasisKind { get; set; } = string.Empty;
+
+        public int HitCount { get; set; } = 1;
+        public DateTime FirstTriggered { get; set; } = DateTime.UtcNow;
+        public DateTime LastTriggered { get; set; } = DateTime.UtcNow;
+        public string Message { get; set; } = string.Empty;
+        public DateTime? AcknowledgedAt { get; set; }
+        public DateTime? ResolvedAt { get; set; }
+
+        /// <summary>Set when this alert has been escalated to the escalation channel.</summary>
+        public DateTime? EscalatedAt { get; set; }
+        public bool IsEscalated => EscalatedAt.HasValue;
+    }
+
+    public class AlertHistoryRecord
+    {
+        public long Id { get; set; }
+        public string AlertId { get; set; } = string.Empty;
+        public string AlertName { get; set; } = string.Empty;
+        public string ServerName { get; set; } = string.Empty;
+        public string Severity { get; set; } = string.Empty;
+        public double Value { get; set; }
+
+        /// <summary>
+        /// The threshold actually crossed, or NULL when the firing condition carried none
+        /// (gate fix C3, 2026-08-05). Two bases carry one — FixedThreshold and LearnedBaseline;
+        /// a trend, a baseline deviation and an unrecorded condition do not. The alert_history
+        /// column is REAL NOT NULL and predates this, so a null is stored as 0 and reconstructed
+        /// as null from <see cref="BasisKind"/>; the stored 0 is a column filler and no reader
+        /// interprets it as a measurement.
+        /// </summary>
+        public double? ThresholdValue { get; set; }
+
+        /// <summary>Name of the <c>AlertBasisKind</c> member that fired. Empty for rows written
+        /// before the column existed, which is why it is never treated as "no threshold".</summary>
+        public string BasisKind { get; set; } = string.Empty;
+
+        public string Status { get; set; } = "Active";
+        public int HitCount { get; set; } = 1;
+        public DateTime FirstTriggered { get; set; }
+        public DateTime LastTriggered { get; set; }
+        public DateTime? AcknowledgedAt { get; set; }
+        public DateTime? ResolvedAt { get; set; }
+        public string Message { get; set; } = string.Empty;
+        // IR-5: incident lifecycle
+        /// <summary>open | acknowledged | root_caused | closed</summary>
+        public string IncidentState { get; set; } = "open";
+        public DateTime? IncidentStateUpdatedAt { get; set; }
+        public string? IncidentStateUpdatedBy { get; set; }
+        public string? IncidentNotes { get; set; }
+    }
+}

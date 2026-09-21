@@ -1,0 +1,1065 @@
+/* In the name of God, the Merciful, the Compassionate */
+/* CIO Dashboard — extracted inline styles */
+
+/* ── Container ── */
+.cio-container {
+    padding: 24px;
+    max-width: 1200px;
+    margin: 0 auto;
+    font-family: var(--font-sans);
+    color: var(--text-primary);
+}
+
+/* ── Empty State ── */
+.cio-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 400px;
+    gap: 16px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 48px;
+}
+
+.cio-empty-icon {
+    font-size: 48px;
+    color: var(--text-secondary);
+}
+
+.cio-empty-title {
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.cio-empty-text {
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+.cio-empty-link {
+    margin-top: 8px;
+    padding: 10px 24px;
+    background: var(--accent);
+    color: white;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.cio-empty-link i {
+    margin-right: 6px;
+}
+
+/* ── Header ── */
+.cio-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.cio-header-icon {
+    width: 40px;
+    height: 40px;
+    background: linear-gradient(135deg, var(--accent), #00b4d8);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.cio-header-icon i {
+    font-size: 20px;
+    color: white;
+}
+
+.cio-header-title {
+    margin: 0;
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.cio-header-subtitle {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+/* ── Score Hero ── */
+.cio-score-card {
+    background: var(--bg-panel);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--r-lg);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4), inset 0 1px 1px rgba(255,255,255,0.08);
+    padding: 32px;
+    margin-top: 24px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.cio-score-card::before {
+    content: '';
+    position: absolute;
+    top: -50%; left: -50%; width: 200%; height: 200%;
+    background: radial-gradient(circle at center, var(--accent-soft) 0%, transparent 40%);
+    opacity: 0.15;
+    pointer-events: none;
+}
+
+.cio-score-label {
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-secondary);
+    margin-bottom: 16px;
+    font-weight: 600;
+}
+
+.cio-assessment-badge {
+    display: inline-block;
+    padding: 6px 16px;
+    border-radius: 16px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.cio-narration {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 16px 20px;
+    border-radius: 12px;
+    border-left: 3px solid var(--accent);
+    margin-bottom: 24px;
+}
+
+.cio-narration-icon {
+    color: var(--accent);
+    font-size: 18px;
+    margin-top: 2px;
+    flex-shrink: 0;
+}
+
+.cio-narration-text {
+    margin: 0;
+    font-size: 0.98rem;
+    line-height: 1.55;
+    color: var(--text-secondary, #d8d8e0);
+}
+
+/* ── Section Header (shared) ── */
+.cio-section-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.cio-section-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* ── Server Risk Heatmap ── */
+.cio-heatmap-section {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 24px;
+    margin-top: 24px;
+}
+
+.cio-heatmap-scroll {
+    overflow-x: auto;
+}
+
+.cio-heatmap-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.cio-heatmap-th {
+    text-align: left;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.cio-heatmap-th-center {
+    text-align: center;
+}
+
+.cio-heatmap-row {
+    cursor: pointer;
+}
+
+.cio-heatmap-td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.cio-heatmap-td-server {
+    font-weight: 500;
+}
+
+.cio-heatmap-td-server i {
+    margin-right: 6px;
+    color: var(--text-secondary);
+    font-size: 11px;
+}
+
+.cio-heatmap-td-center {
+    text-align: center;
+}
+
+.cio-heatmap-cell {
+    display: inline-block;
+    min-width: 24px;
+    padding: 0 7px;
+    height: 24px;
+    border-radius: 4px;
+    line-height: 24px;
+    text-align: center;
+    font-size: 10px;
+    color: white;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.cio-legend {
+    display: flex;
+    gap: 16px;
+    margin-top: 12px;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.cio-legend-swatch {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    vertical-align: middle;
+    margin-right: 4px;
+}
+
+/* ── Top Risks ── */
+.cio-risks-section {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 24px;
+    margin-top: 24px;
+}
+
+.cio-risks-icon {
+    color: var(--yellow);
+}
+
+.cio-risks-list {
+    /* Full-width relocation (2026-07-16): moved out of the 440px sidebar to
+       sit full-width under the heatmap. At ~1150px a single-column list read
+       sparse (each row's ops strip filled <40% of the width); flow the Top-10
+       into an auto-fill 2-up grid so wide screens pack two findings per row and
+       the panel's height roughly halves. The min(500px,100%) floor keeps it a
+       single column when the panel itself is narrow (small window / responsive)
+       and never overflows its track. */
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(500px, 100%), 1fr));
+    gap: 8px;
+    align-items: start;
+}
+
+.cio-risk-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--bg-primary);
+    border-radius: 6px;
+    border-left: 3px solid;
+}
+
+.cio-risk-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    white-space: nowrap;
+    margin-top: 2px;
+}
+
+.cio-risk-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.cio-risk-name {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
+.cio-risk-server {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-top: 2px;
+}
+
+.cio-risk-server i {
+    margin-right: 4px;
+    font-size: 10px;
+}
+
+.cio-risk-action {
+    font-size: 12px;
+    color: var(--accent);
+    margin-top: 4px;
+}
+
+.cio-risk-action i {
+    margin-right: 4px;
+    font-size: 10px;
+}
+
+.cio-risks-empty {
+    text-align: center;
+    padding: 24px;
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.cio-risks-empty-icon {
+    font-size: 24px;
+    margin-bottom: 8px;
+    display: block;
+}
+
+/* ── Quick Actions ── */
+.cio-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 24px;
+    flex-wrap: wrap;
+}
+
+.cio-action-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 20px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.cio-action-btn-secondary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 20px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+/* ── Trend Chart ── */
+.cio-trend-toggle {
+    display: flex;
+    gap: 4px;
+    margin-left: auto;
+}
+
+.cio-trend-btn,
+.cio-trend-btn-active {
+    padding: 4px 12px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    background: var(--bg-primary);
+    color: var(--text-muted);
+}
+
+.cio-trend-btn-active {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
+
+.cio-trend-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 120px;
+    padding: 12px 0;
+}
+
+.cio-trend-bar-wrapper {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: 100%;
+    min-width: 0;
+}
+
+/* Bucketing fix (2026-07-13): the fixed-height area a bucket's min-to-max range floats
+   inside of — bottom/height below are percentages of THIS track, not the whole chart. */
+.cio-trend-track {
+    position: relative;
+    width: 100%;
+    max-width: 32px;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.cio-trend-range {
+    position: absolute;
+    left: 0;
+    right: 0;
+    border-radius: 3px;
+    min-height: 3px;
+    transition: height 0.3s ease, bottom 0.3s ease;
+}
+
+.cio-trend-label {
+    font-size: 9px;
+    color: var(--text-muted);
+    margin-top: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    text-align: center;
+}
+
+.cio-trend-delta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    padding-top: 8px;
+}
+
+.cio-action-btn-export {
+    padding: 10px 20px;
+    border: 1px solid var(--accent);
+    background: rgba(0, 122, 204, 0.09);
+    color: var(--accent);
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: background 0.15s;
+}
+
+.cio-action-btn-export:hover {
+    background: rgba(0, 122, 204, 0.18);
+}
+
+.cio-action-btn-export:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.cio-risk-ops {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--border);
+    font-size: 11px;
+}
+
+.cio-risk-op {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 90px;
+}
+
+.cio-risk-op-label {
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-size: 10px;
+}
+
+.cio-risk-op-value {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+/* ── Governance strip 'Full breakdown' link (the only surviving rule from the old
+   Health Score & Risk Rating section, Strategic #7 — the rest of that section's markup
+   was replaced by the compact governance strip above) ── */
+.cio-health-view-full {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--accent);
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    opacity: 0.85;
+    transition: opacity 120ms;
+}
+.cio-health-view-full:hover { opacity: 1; text-decoration: underline; }
+
+/* ── Heatmap section-header icon (fa-table-cells) ── */
+.cio-heatmap-icon {
+    color: var(--accent);
+}
+
+/* ── S-Tier Layout Overrides ── */
+.cio-header-row {
+    margin-bottom: 24px;
+}
+/* FI-2 (2026-07-13): header-actions holds the relocated Export PDF button plus the
+   notification bell — needs its own flex row (was an unstyled div, fine with a single
+   icon-only child, not with two differently-sized buttons side by side). */
+.cio-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.cio-top-layout {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 24px;
+    margin-bottom: 24px;
+    align-items: start;
+}
+.cio-hero-column {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    /* Space addendum (Wave 2, 2026-07-12): a grid item's automatic minimum width defaults
+       to its content's intrinsic min-content size — the score card's decorative ::before
+       glow (200% width, clipped by the card's own overflow:hidden) still counts toward
+       that intrinsic size, which was inflating this 1fr track well past its fair share
+       (measured 1073px instead of the intended ~688px on a 1200px-capped container).
+       min-width:0 lets the track take its fr-computed share; nothing here needs to grow
+       to fit unwrapped content. */
+    min-width: 0;
+}
+/* Space addendum (Wave 2, 2026-07-12): Server Risk Heatmap + Governance Trend relocated
+   into the hero column (were full-width sections below the grid) — the parent flex column
+   already applies a 24px gap between children, so these sections' own top margins would
+   double it. Zero them out only when nested here; untouched when Power Savings (still
+   full-width below the grid) reuses .cio-section elsewhere on the page. */
+.cio-hero-column .cio-heatmap-section,
+.cio-hero-column .cio-section,
+.cio-hero-column .cio-risks-section {
+    margin-top: 0;
+}
+
+/* FI-2 (2026-07-13): the score card carries its own margin-top:24px (.cio-score-card,
+   above) for contexts where it stands alone; nested as the first child of the hero
+   column flex stack that top margin is pure extra space above the fold (the flex gap
+   only spaces siblings, so this isn't redundant with the gap — it's just unneeded here). */
+.cio-hero-column .cio-score-card {
+    margin-top: 0;
+}
+
+/* ── Card role statement (Wave 2, 2026-07-12) — one short line under a card's title
+   naming what the number means (current condition vs configuration posture). ── */
+.cio-card-role {
+    font-size: 12px;
+    color: var(--text-secondary);
+    opacity: 0.85;
+}
+
+/* ── Governance strip (Wave 2, 2026-07-12) — governance renders ONCE on /cio: this
+   compact strip replaces both the old donut-ring detail card and the per-server
+   "Governance Risk Rating" bars section. Full per-server breakdown lives at /governance. ── */
+.cio-gov-strip {
+    padding: 20px 24px;
+}
+
+.cio-gov-strip-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.cio-gov-strip-body {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-top: 16px;
+}
+
+.cio-gov-strip-score {
+    /* Wave 3 dual-band ruling (2026-07-12): Executive Health is the SOLE headline.
+       Governance is a subordinate component — demoted from 2.5rem/800 (which read as a
+       second competing hero score next to the 3rem EH headline) to a clearly-secondary
+       metric size. The band + counts stay; only the visual weight drops. */
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+/* No check returned a pass or a fail, so no score and no band are printed (2026-08-06) —
+   the same treatment .cio-mini-ring--unassessed gives a dimension: muted, smaller, and a
+   word instead of a number. A "0" here read as a maturity verdict off a placeholder. */
+.cio-gov-strip-score--unscored {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.cio-gov-strip-band {
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.cio-gov-strip-counts {
+    font-size: 0.82em;
+    opacity: 0.75;
+    color: var(--text-secondary);
+}
+
+.cio-gov-strip-note {
+    margin-top: 12px;
+    font-size: 0.82em;
+    opacity: 0.8;
+    max-width: 480px;
+}
+
+/* ── Estate Executive Health hero (FI-4, 2026-07-14) — Option A "command the number".
+   The number is now the largest element on /cio; the band pill, header chip and the
+   honesty captions (feed composition + driver attribution) are all re-tiered down in
+   scale, never deleted — a bare score must never hide that a dimension wasn't assessed. ── */
+.cio-eh-card {
+    text-align: left;
+    margin-bottom: 24px;
+}
+
+.cio-eh-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    /* FI-4b (2026-07-15): full-width now, so the "N Critical" chip has room to sit on the
+       label's line instead of wrapping under it; narrow-viewport wrap re-enabled below. */
+    flex-wrap: nowrap;
+    margin-bottom: 4px;
+}
+
+.cio-eh-head .cio-score-label {
+    margin-bottom: 0;
+}
+
+/* FI-4b (2026-07-15): body now lays the metric (number + pill) and the caption side by
+   side across the full-width band, instead of stacking the caption underneath. */
+.cio-eh-body {
+    display: flex;
+    align-items: center;
+    gap: 16px 40px;
+    flex-wrap: wrap;
+    margin-top: 16px;
+}
+
+.cio-eh-metric {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-shrink: 0;
+}
+
+.cio-eh-score {
+    font-size: clamp(64px, 7vw, 92px);
+    font-weight: 800;
+    line-height: 0.9;
+    letter-spacing: -2px;
+    text-shadow: none;
+}
+
+.cio-eh-band-pill {
+    display: inline-block;
+    padding: 5px 16px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.cio-eh-crit {
+    background: rgba(224,86,74,0.14);
+    color: var(--red);
+    border: 1px solid rgba(224,86,74,0.35);
+}
+
+.cio-eh-caption {
+    margin-top: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-width: 560px;
+    font-size: 0.8em;
+    opacity: 0.75;
+    color: var(--text-secondary);
+}
+
+/* FI-4b (2026-07-15): when the caption sits beside the metric inside .cio-eh-body (the
+   assessed/indicative branches), the flex row's own gap supplies the spacing — the
+   standalone 14px top margin above is only needed for the not-yet-assessed branch, where
+   the caption still stacks under a bare value with no metric row. */
+.cio-eh-body .cio-eh-caption {
+    margin-top: 0;
+}
+
+.cio-eh-caption-driver {
+    font-style: italic;
+    opacity: 0.9;
+}
+
+.cio-eh-empty-value {
+    margin-top: 16px;
+    font-size: 28px;
+    font-weight: 700;
+    opacity: 0.85;
+}
+
+/* FI-4b responsive (2026-07-15) — MUST stay after the .cio-eh-* base rules above.
+   These overrides originally lived in the Wave-2 @media block further up the file, where
+   they were dead: .cio-eh-head{flex-wrap:nowrap} and .cio-eh-body{align-items:center} are
+   declared later at equal specificity, so source order beat the media query and the narrow
+   layout never actually stacked — the header stayed pinned nowrap and would crush the label
+   against the chip. Same cascade, declared last, so it wins. */
+@media (max-width: 980px) {
+    /* let the "N Critical" chip drop under the label instead of squeezing it */
+    .cio-eh-head {
+        flex-wrap: wrap;
+    }
+    /* metric (number + pill) and caption fall back to a single left-aligned column */
+    .cio-eh-body {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   UI REFRESH PHASE 1a (2026-07-15) — hero gauge, mini-rings, segmented
+   completeness bar, score sparklines, insight-card elevation.
+   Fable-reviewed brief: fable-review-and-phase1a-brief.md.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── Hero gauge — thick semicircular SVG arc around the Executive Health score.
+   Three states share this markup family (see CioDashboard.razor):
+     (a) EH-assessed          → severity colour, set inline (SeverityColor)
+     (b) governance-indicative → medal colour, set inline (ScoreColor/BandColor) —
+         the ONLY /cio gauge state that wears a medal
+     (c) not-yet-assessed (.cio-gauge--empty) → dashed track, no fill
+   Colours are set as inline styles by the component (must-fix #2: they resolve
+   through CSS vars — --green/--yellow/--red or --medal-*), never hard-coded here,
+   so the Accessibility.css colour-blind remap reaches the severity state but never
+   the medal identity colours. ── */
+.cio-gauge {
+    position: relative;
+    width: 200px;
+    max-width: 100%;
+    flex-shrink: 0;
+}
+
+.cio-gauge-svg {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+.cio-gauge-track {
+    fill: none;
+    stroke: var(--border-strong);
+    stroke-width: 16;
+    stroke-linecap: round;
+}
+
+.cio-gauge-track--dashed {
+    stroke-dasharray: 6 8;
+    opacity: 0.6;
+}
+
+.cio-gauge-fill {
+    fill: none;
+    stroke-width: 16;
+    stroke-linecap: round;
+    /* Math.PI * 86 — keep in sync with GaugeArcLength in CioDashboard.razor */
+    stroke-dasharray: 270.2;
+}
+
+.cio-gauge-readout {
+    position: absolute;
+    left: 50%;
+    bottom: 10px;
+    transform: translateX(-50%);
+    text-align: center;
+    width: 100%;
+}
+
+.cio-gauge-empty-glyph {
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--text-muted);
+    line-height: 1;
+}
+
+/* The score number sizes itself down inside the gauge — the FI-4b clamp
+   (64–92px) is too large for the ~200px-wide arc opening. */
+.cio-gauge-readout .cio-eh-score {
+    font-size: clamp(40px, 5vw, 56px);
+}
+
+/* Reduced motion (must-fix #6): gate the stroke-dashoffset animation — snap to
+   final state when the user has asked for no motion. */
+@media (prefers-reduced-motion: no-preference) {
+    .cio-gauge-fill {
+        transition: stroke-dashoffset var(--t-base);
+    }
+}
+
+/* ── Mini-rings — per-dimension CategoryScore (Security/Performance/Reliability/
+   Compliance/Cost). An unassessed dimension (.cio-mini-ring--unassessed) renders a
+   hollow/dashed ring + the word "Unassessed", never a 0% ring — a 0% ring for a
+   dimension that never ran a scorable check would read as total failure. ── */
+.cio-mini-rings {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border-soft);
+}
+
+.cio-mini-ring {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    width: 64px;
+    cursor: help;
+}
+
+.cio-mini-ring-svg {
+    width: 44px;
+    height: 44px;
+}
+
+.cio-mini-ring-track {
+    fill: none;
+    stroke: var(--border-strong);
+    stroke-width: 5;
+}
+
+.cio-mini-ring-fill {
+    fill: none;
+    stroke-width: 5;
+    stroke-linecap: round;
+    /* 2 * PI * 18 — keep in sync with MiniRingCircumference in CioDashboard.razor */
+    stroke-dasharray: 113.1;
+    transform-box: fill-box;
+    transform-origin: 50% 50%;
+    transform: rotate(-90deg); /* start the fill at 12 o'clock, not 3 o'clock */
+}
+
+.cio-mini-ring--unassessed .cio-mini-ring-track {
+    stroke-dasharray: 3 3;
+    opacity: 0.55;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .cio-mini-ring-fill {
+        transition: stroke-dashoffset var(--t-base);
+    }
+}
+
+.cio-mini-ring-value {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.cio-mini-ring--unassessed .cio-mini-ring-value {
+    color: var(--text-muted);
+    font-weight: 600;
+    font-size: 10px;
+}
+
+.cio-mini-ring-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    text-align: center;
+}
+
+/* ── Segmented completeness bar — counts sum EXACTLY to TotalFindings (Passed +
+   Failed + informational/skipped + errored). Errored segments are a distinct
+   --orange and get their own legend entry — an errored segment must never read
+   as scored.
+   FIX ROUND 1, BLOCKER 1 (2026-07-15): segments are PROPORTIONAL (percentage
+   width, set inline per segment in CioDashboard.razor), not one span per check —
+   at real scale (TotalFindings=1725) one-span-per-check plus flex:1 1 0 + 1px
+   gaps needed ~1724px of gap alone inside a 639px bar, so every tick computed to
+   0px and the sole errored tick landed outside the overflow:hidden bar. ── */
+.cio-completeness {
+    margin-top: 20px;
+}
+
+.cio-completeness-label {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+.cio-completeness-total {
+    text-transform: none;
+    letter-spacing: normal;
+    font-weight: 400;
+    opacity: 0.7;
+}
+
+.cio-completeness-bar {
+    display: flex;
+    align-items: stretch;
+    height: 26px;
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--bg-chip);
+}
+
+.cio-completeness-seg {
+    /* FIX ROUND 2 (2026-07-16): flex-shrink is now 1 (was 0). The four segment widths are
+       percentages that already sum to exactly 100% of the bar, so giving the errored tick a
+       min-width below (its floor) pushes total content past the container's width — with
+       flex-shrink:0 that overflow used to render past the bar's right edge and get silently
+       eaten by `overflow:hidden` on .cio-completeness-bar (the exact FIX ROUND 1, BLOCKER 1
+       failure mode, just relocated to the min-width). Allowing the other segments to shrink
+       (by a sub-pixel amount, invisible at this scale) makes room instead of clipping. */
+    flex: 0 1 auto;
+    height: 100%;
+}
+
+.cio-completeness-tick--pass     { background: var(--green); }
+.cio-completeness-tick--fail     { background: var(--red); }
+.cio-completeness-tick--excluded { background: var(--text-muted); opacity: 0.55; }
+/* The errored tick's percentage width rounds to a sub-pixel sliver at real scale (e.g.
+   1/1725 ≈ 0.06% ≈ 0.4px) and disappears entirely — give it a visibility floor so a single
+   errored check is never rendered invisible. The count itself is untouched (legend + aria-
+   label stay exact); only this tick's rendered width gets a floor via min-width. flex-shrink:0
+   protects that floor from being shrunk away itself — the OTHER segments give up the room
+   (see .cio-completeness-seg above), never this one. */
+.cio-completeness-tick--errored  { background: var(--orange); min-width: 3px; flex-shrink: 0; }
+/* 2026-07-21: Partial (Verdict=WARN) — carved out of the excluded block, not added beside the
+   total. Amber-but-hollow so it reads as "excluded from scoring" like its neighbour rather than
+   as a failure, while still being distinguishable from plain informational/skipped. Same
+   min-width floor as the errored tick, for the same reason. */
+.cio-completeness-tick--partial  { background: var(--orange); opacity: 0.5; min-width: 3px; flex-shrink: 0; }
+
+.cio-completeness-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+/* ── Score sparklines (per-server, Server Risk Heatmap "Trend" column) — real
+   GovernanceHistoryService.GetTrend history. <2 points renders "insufficient
+   history" text instead (see CioDashboard.razor), never a stretched dot. ── */
+.cio-spark-svg {
+    width: 64px;
+    height: 24px;
+    display: block;
+    margin: 0 auto;
+}
+
+.cio-spark-line {
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.cio-spark-empty {
+    font-size: 10px;
+    color: var(--text-muted);
+    font-style: italic;
+    white-space: nowrap;
+}
+
+/* ── Insight card — the existing Narration output, elevated: bigger padding, a
+   soft ambient glow, --r-cio rounding. Text/data untouched, decoration only.
+   Glassmorphism stays confined to /cio (perf review). ── */
+.cio-insight-card {
+    padding: 20px 24px;
+    border-radius: var(--r-cio);
+    position: relative;
+    overflow: hidden;
+}
+
+.cio-insight-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 0% 0%, var(--accent-soft) 0%, transparent 55%);
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.cio-insight-card .cio-narration-icon {
+    font-size: 20px;
+}
+
+/* Reduced motion (must-fix #6): the app's shared .card-glass:hover already applies
+   a translateY lift + box-shadow bloom (Glass.css) unconditionally — gate that
+   motion here for /cio's glass surfaces specifically, since this refresh is what
+   introduces the gauge/mini-ring animated counterparts this rule sits beside. */
+@media (prefers-reduced-motion: reduce) {
+    .cio-container .card-glass:hover,
+    .cio-container .card-glass:active {
+        transform: none;
+    }
+}

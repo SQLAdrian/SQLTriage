@@ -1,0 +1,689 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using System.Data
+@using System.Threading
+
+@using System.Linq
+@inject IJSRuntime JS
+
+<div class="datagrid-panel" role="region" aria-label="@(string.IsNullOrEmpty(Title) ? "Data table" : Title)">
+    @if (!string.IsNullOrEmpty(Title))
+    {
+        <div class="datagrid-title" id="@($"grid-title-{Title.GetHashCode()}")">
+            <span>@Title</span>
+            @if (TopRowsConfig.HasValue)
+            {
+                <span class="datagrid-toprows-control">
+                    Top <input type="number"
+                               class="datagrid-toprows-input"
+                               value="@_topRowsInput"
+                               min="1"
+                               max="1000"
+                               title="Number of rows to fetch"
+                               @onchange="HandleTopRowsChange"
+                               @onclick:stopPropagation />
+                </span>
+            }
+        </div>
+    }
+
+    @if (Data != null && Data.Rows.Count > 0)
+    {
+        <div class="datagrid-scroll" tabindex="0"
+             style="@(MaxHeight > 0 ? $"max-height:{MaxHeight}px;" : "")">
+            <table class="datagrid-table" role="table" aria-labelledby="@($"grid-title-{Title.GetHashCode()}")">
+                <thead style="position:sticky;top:0;z-index:1;">
+                    <tr role="row">
+                        @if (!string.IsNullOrEmpty(RunJobColumn) && OnRunJob != null && Data.Columns.Contains(RunJobColumn))
+                        {
+                            <th role="columnheader" class="w-10 px-2 py-2 text-center text-xs font-semibold text-app-text-secondary bg-app-bg-secondary border-b border-app-border" title="Run Job"></th>
+                        }
+                        @if (!string.IsNullOrEmpty(ActionColumn) && OnActionExecute != null)
+                        {
+                            <th role="columnheader" class="px-3 py-2 text-left text-xs font-semibold text-app-text-secondary bg-app-bg-secondary border-b border-app-border">Action</th>
+                        }
+                        @if (!string.IsNullOrEmpty(PlanIndicatorColumn) && Data.Columns.Contains(PlanIndicatorColumn))
+                        {
+                            <th role="columnheader" class="w-12 px-3 py-2 text-left text-xs font-semibold text-app-text-secondary bg-app-bg-secondary border-b border-app-border">Plan</th>
+                        }
+                        @foreach (var col in GetVisibleColumns())
+                        {
+                            <th @onclick="() => SortBy(col.ColumnName)"
+                                role="columnheader"
+                                tabindex="0"
+                                @onkeydown="@(e => HandleHeaderKeyDown(e, col.ColumnName))"
+                                aria-sort="@GetAriaSortValue(col.ColumnName)"
+                                class="@(SortColumn == col.ColumnName ? "sorted" : "")">
+                                @col.ColumnName
+                                @if (SortColumn == col.ColumnName)
+                                {
+                                    <span aria-hidden="true">@(SortAscending ? " ▲" : " ▼")</span>
+                                }
+                            </th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @{ var rowIndex = 0; }
+                    @foreach (var row in GetSortedRows())
+                    {
+                        var ri = rowIndex++;
+                        <tr @onclick="() => HandleRowClick(row)"
+                            role="row"
+                            tabindex="@(IsClickable ? "0" : "-1")"
+                            @onkeydown="@(e => HandleRowKeyDown(e, row))"
+                            class="@(IsClickable ? "clickable" : "")">
+                            @if (!string.IsNullOrEmpty(RunJobColumn) && OnRunJob != null && Data.Columns.Contains(RunJobColumn))
+                            {
+                                var jobName = row[RunJobColumn]?.ToString() ?? "";
+                                var rjState = _runJobStates.TryGetValue(ri, out var rjs) ? rjs : RunJobState.Idle;
+                                var rjMsg = _runJobMessages.TryGetValue(ri, out var rjm) ? rjm : "";
+                                <td role="cell" class="w-10 px-2 py-2 border-b border-app-border text-center" @onclick:stopPropagation>
+                                    @if (rjState == RunJobState.Idle)
+                                    {
+                                        <button class="action-btn action-btn-execute" style="padding:2px 6px;font-size:12px;" title="Run job: @jobName" @onclick="() => ExecuteRunJob(ri, jobName)">
+                                            <i class="fa-solid fa-play"></i>
+                                        </button>
+                                    }
+                                    else if (rjState == RunJobState.Running)
+                                    {
+                                        <span class="action-status action-status-executing" style="font-size:11px;">
+                                            <i class="fa-solid fa-spinner fa-spin"></i>
+                                        </span>
+                                    }
+                                    else if (rjState == RunJobState.Success)
+                                    {
+                                        <span class="action-status action-status-success" style="font-size:11px;" title="@rjMsg">
+                                            <i class="fa-solid fa-check"></i>
+                                        </span>
+                                    }
+                                    else if (rjState == RunJobState.Failed)
+                                    {
+                                        <span class="action-status action-status-failed" style="font-size:11px;" title="@rjMsg">
+                                            <i class="fa-solid fa-xmark"></i>
+                                        </span>
+                                    }
+                                </td>
+                            }
+                            @if (!string.IsNullOrEmpty(ActionColumn) && Data.Columns.Contains(ActionColumn) && OnActionExecute != null)
+                            {
+                                var sql = row[ActionColumn]?.ToString() ?? "";
+                                var state = _actionStates.TryGetValue(ri, out var s) ? s : ActionRowState.Idle;
+                                var msg = _actionMessages.TryGetValue(ri, out var m) ? m : "";
+                                <td role="cell" class="px-3 py-2 border-b border-app-border whitespace-nowrap" @onclick:stopPropagation>
+                                    @switch (state)
+                                    {
+                                        case ActionRowState.Idle:
+                                            <button class="action-btn action-btn-execute" title="Execute this script on the server" @onclick="() => ExecuteAction(ri, sql)">
+                                                &#9654; Execute
+                                            </button>
+                                            break;
+                                        case ActionRowState.Executing:
+                                            <span class="action-status action-status-executing">
+                                                &#9203; Running...
+                                            </span>
+                                            <button class="action-btn action-btn-cancel" title="Cancel execution" @onclick="() => CancelAction(ri)">
+                                                &#9632; Stop
+                                            </button>
+                                            break;
+                                        case ActionRowState.Success:
+                                            <span class="action-status action-status-success" title="@msg">
+                                                &#10004; Done
+                                            </span>
+                                            break;
+                                        case ActionRowState.Failed:
+                                            <span class="action-status action-status-failed" title="@msg">
+                                                &#10008; Failed
+                                            </span>
+                                            <button class="action-btn action-btn-execute" title="Retry" @onclick="() => ExecuteAction(ri, sql)">
+                                                &#8635; Retry
+                                            </button>
+                                            break;
+                                        case ActionRowState.Cancelled:
+                                            <span class="action-status action-status-cancelled" title="Cancelled">
+                                                &#9940; Cancelled
+                                            </span>
+                                            <button class="action-btn action-btn-execute" title="Retry" @onclick="() => ExecuteAction(ri, sql)">
+                                                &#8635; Retry
+                                            </button>
+                                            break;
+                                    }
+                                </td>
+                            }
+                            @if (!string.IsNullOrEmpty(PlanIndicatorColumn) && Data.Columns.Contains(PlanIndicatorColumn))
+                            {
+                                var hasPlan = row[PlanIndicatorColumn] != DBNull.Value && !string.IsNullOrWhiteSpace(row[PlanIndicatorColumn]?.ToString());
+                                <td role="cell" class="w-12 px-3 py-2 border-b border-app-border">
+                                    @if (hasPlan)
+                                    {
+                                        <span class="px-2 py-0.5 rounded text-xs"
+                                              style="background:rgba(251,191,36,0.18); color:var(--orange);"
+                                              title="Click row to view plan"><i class="fa-solid fa-clipboard-list"></i></span>
+                                    }
+                                </td>
+                            }
+                            @foreach (var col in GetVisibleColumns())
+                            {
+                                <td role="cell"
+                                    style="@(GetCellStyle(col.ColumnName, row[col]))"
+                                    title="@row[col]?.ToString()">
+                                    @try
+                                    {
+                                        @FormatCell(row[col], col.ColumnName)
+                                    }
+                                    catch (Exception)
+                                    {
+                                        <span>-</span>
+                                    }
+                                    @if (col.ColumnName == JobOutcomeColumn && OnJobDetails.HasDelegate
+                                        && !string.IsNullOrEmpty(JobNameColumn) && Data.Columns.Contains(JobNameColumn)
+                                        && (row[col]?.ToString() == "Failed" || row[col]?.ToString() == "Retry" || row[col]?.ToString() == "Cancelled"))
+                                    {
+                                        var detailJobName = row[JobNameColumn]?.ToString() ?? "";
+                                        <button class="job-details-btn" title="View failure details for @detailJobName"
+                                                @onclick="() => OnJobDetails.InvokeAsync(detailJobName)" @onclick:stopPropagation>
+                                            <i class="fa-solid fa-circle-info"></i>
+                                        </button>
+                                    }
+                                </td>
+                            }
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <div class="datagrid-footer" role="status" aria-live="polite">
+            @Data.Rows.Count row(s)
+        </div>
+    }
+    else if (!string.IsNullOrEmpty(ErrorMessage))
+    {
+        <div class="datagrid-error" role="alert">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            This panel's query did not complete: @ErrorMessage
+        </div>
+    }
+    else
+    {
+        <div class="datagrid-empty" role="status">No data available</div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public DataTable? Data
+    {
+        get => _data;
+        set
+        {
+            if (_data != value)
+            {
+                _data = value;
+                // Invalidate cache when data changes
+                _cachedSortedRows = null;
+                // Clear action/job states so buttons reset when server or data changes
+                _actionStates.Clear();
+                _actionMessages.Clear();
+                _runJobStates.Clear();
+                _runJobMessages.Clear();
+            }
+        }
+    }
+    /// <summary>
+    /// Set when this panel's data load FAILED (exception or timeout) rather than legitimately
+    /// returning zero rows. When set, the empty-state branch below renders a distinct error body
+    /// naming the failure instead of "No data available" — the two states were previously
+    /// byte-identical, so a query that TIMED OUT rendered exactly like a query that ran fine and
+    /// found nothing (the page-level "Data Load Warnings" banner already discloses the failure;
+    /// this closes the gap at the panel itself, which is what an operator actually looks at).
+    /// </summary>
+    [Parameter] public string? ErrorMessage { get; set; }
+
+    [Parameter] public EventCallback<DataRow> OnRowClick { get; set; }
+    [Parameter] public bool IsClickable { get; set; } = false;
+    [Parameter] public int MaxRows { get; set; } = 500;
+    [Parameter] public int MaxHeight { get; set; } = 0;
+    [Parameter] public HashSet<string>? HiddenColumns { get; set; }
+
+    /// <summary>Ordered list of columns to display. When set, only these columns are shown in this order.</summary>
+    [Parameter] public List<string>? ColumnOrder { get; set; }
+    [Parameter] public string? PlanIndicatorColumn { get; set; }
+    [Parameter] public int? TopRowsConfig { get; set; }
+    [Parameter] public EventCallback<int> OnTopRowsConfigChanged { get; set; }
+
+    /// <summary>Column name whose cell value is executable SQL. Renders an Execute button per row.</summary>
+    [Parameter] public string? ActionColumn { get; set; }
+
+    /// <summary>Callback: receives the SQL string and a CancellationToken, returns (success, message).</summary>
+    [Parameter] public Func<string, CancellationToken, Task<(bool success, string message)>>? OnActionExecute { get; set; }
+
+    /// <summary>
+    /// Mirrors <c>DashboardPanel.ActionColumnMode</c>. When "query", the action cell holds a SELECT
+    /// whose RESULT is executed — a double hop — and the confirmation says so, because the operator
+    /// is approving a statement the app has not seen and did not author.
+    /// </summary>
+    [Parameter] public string? ActionColumnMode { get; set; }
+
+    /// <summary>Column-level color gradient rules. Applies color to cell text based on numeric value within the column's data range.</summary>
+    [Parameter] public List<SQLTriage.Data.Models.DataGridColumnColorRule>? ColumnColorRules { get; set; }
+
+    /// <summary>Column name containing job names. When set with OnRunJob, renders a play button per row.</summary>
+    [Parameter] public string? RunJobColumn { get; set; }
+
+    /// <summary>Callback to start a SQL Agent job by name. Returns (success, message).</summary>
+    [Parameter] public Func<string, CancellationToken, Task<(bool success, string message)>>? OnRunJob { get; set; }
+
+    /// <summary>Column name containing last outcome (e.g. "Failed"/"Succeeded"). When set with OnJobDetails, renders a details button next to failed outcomes.</summary>
+    [Parameter] public string? JobOutcomeColumn { get; set; }
+
+    /// <summary>Column name containing the job name for detail lookups.</summary>
+    [Parameter] public string? JobNameColumn { get; set; }
+
+    /// <summary>Callback to show job history details. Receives the job name.</summary>
+    [Parameter] public EventCallback<string> OnJobDetails { get; set; }
+
+    private enum RunJobState { Idle, Running, Success, Failed }
+    private readonly Dictionary<int, RunJobState> _runJobStates = new();
+    private readonly Dictionary<int, string> _runJobMessages = new();
+
+    private enum ActionRowState { Idle, Executing, Success, Failed, Cancelled }
+    private readonly Dictionary<int, ActionRowState> _actionStates = new();
+    private readonly Dictionary<int, string> _actionMessages = new();
+    private readonly Dictionary<int, CancellationTokenSource> _actionCts = new();
+
+    private DataTable? _data;
+    private int _topRowsInput = 20;
+
+    protected override void OnParametersSet()
+    {
+        if (TopRowsConfig.HasValue && TopRowsConfig.Value != _topRowsInput)
+            _topRowsInput = TopRowsConfig.Value;
+    }
+
+    private async Task HandleTopRowsChange(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var val) && val > 0)
+        {
+            _topRowsInput = val;
+            if (OnTopRowsConfigChanged.HasDelegate)
+                await OnTopRowsConfigChanged.InvokeAsync(val);
+        }
+    }
+
+    private string? SortColumn;
+    private bool SortAscending = true;
+    
+    // Cached sorted rows for performance
+    private DataRow[]? _cachedSortedRows;
+    private string? _lastSortColumn;
+    private bool _lastSortAscending;
+
+    private void SortBy(string column)
+    {
+        if (SortColumn == column)
+        {
+            SortAscending = !SortAscending;
+        }
+        else
+        {
+            SortColumn = column;
+            SortAscending = true;
+        }
+        // Invalidate cache
+        _cachedSortedRows = null;
+    }
+
+    /// <summary>Returns visible columns in the configured order, respecting ColumnOrder and HiddenColumns.</summary>
+    private List<DataColumn> GetVisibleColumns()
+    {
+        if (Data == null) return new();
+
+        IEnumerable<DataColumn> cols;
+
+        if (ColumnOrder != null && ColumnOrder.Count > 0)
+        {
+            // Use configured order — only include columns that exist in the data
+            cols = ColumnOrder
+                .Where(name => Data.Columns.Contains(name))
+                .Select(name => Data.Columns[name]!);
+        }
+        else
+        {
+            cols = Data.Columns.Cast<DataColumn>();
+        }
+
+        return cols
+            .Where(c => (HiddenColumns == null || !HiddenColumns.Contains(c.ColumnName))
+                      && !(c.ColumnName == ActionColumn && OnActionExecute != null))
+            .ToList();
+    }
+
+    private DataRow[] GetSortedRows()
+    {
+        if (Data == null || Data.Columns.Count == 0) return Array.Empty<DataRow>();
+        
+        // Return cached results if sort hasn't changed
+        if (_cachedSortedRows != null && SortColumn == _lastSortColumn && SortAscending == _lastSortAscending)
+        {
+            // Verify cached rows are still valid for current DataTable
+            if (_cachedSortedRows.Length > 0 && _cachedSortedRows[0].Table == Data)
+            {
+                return _cachedSortedRows;
+            }
+        }
+
+        var rows = Data.AsEnumerable();
+        if (!string.IsNullOrEmpty(SortColumn))
+        {
+            // Check if column exists before sorting
+            if (Data.Columns.Contains(SortColumn))
+            {
+                rows = SortAscending
+                    ? rows.OrderBy(r => ToSortKey(r[SortColumn]))
+                    : rows.OrderByDescending(r => ToSortKey(r[SortColumn]));
+            }
+        }
+        
+        _cachedSortedRows = rows.Take(MaxRows).ToArray();
+        _lastSortColumn = SortColumn;
+        _lastSortAscending = SortAscending;
+        
+        return _cachedSortedRows;
+    }
+
+    // Composite key so a single column can mix numerics, text and blanks without the sort
+    // throwing. The old shape returned decimal OR string per CELL, so a column of numbers
+    // with one DBNull produced mixed key types and OrderBy died with "Object must be of type
+    // Decimal" — taking the whole page's render down with it (first hit live: the compliance
+    // grid's typed Compliance % column, whose un-scored rows are DBNull by design).
+    // Order: numerics by value, then text ordinally, then blanks/DBNull last.
+    internal static (int Rank, decimal Number, string Text) ToSortKey(object? val)
+    {
+        if (val is null || val is DBNull) return (2, 0m, "");
+        var s = val.ToString() ?? "";
+        if (s.Length == 0) return (2, 0m, "");
+        return decimal.TryParse(s, System.Globalization.NumberStyles.Any,
+            System.Globalization.CultureInfo.InvariantCulture, out var d)
+            ? (0, d, "")
+            : (1, 0m, s);
+    }
+
+    private async Task HandleRowClick(DataRow row)
+    {
+        if (OnRowClick.HasDelegate)
+            await OnRowClick.InvokeAsync(row);
+    }
+
+    private async Task HandleRowKeyDown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e, DataRow row)
+    {
+        if (e.Key == "Enter" || e.Key == " ")
+        {
+            await HandleRowClick(row);
+        }
+    }
+
+    private void HandleHeaderKeyDown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e, string columnName)
+    {
+        if (e.Key == "Enter" || e.Key == " ")
+        {
+            SortBy(columnName);
+        }
+    }
+
+    private string GetAriaSortValue(string columnName)
+    {
+        if (SortColumn != columnName) return "none";
+        return SortAscending ? "ascending" : "descending";
+    }
+
+    // ── Per-action confirmation (ruling R2(a), 2026-09-01) ──────────────────────
+    //
+    // The Execute button used to call straight through: one click on a grid row wrote to a
+    // monitored server with no confirmation step anywhere in the path. Every OTHER destructive
+    // surface in the app asks first — Sessions.razor's KILL, the server-connection delete — and
+    // this one did not, which is what made "each requires an operator to open the page and
+    // confirm" false in the README.
+    //
+    // Adrian ruled KEEP-AND-GATE over delete (R2), so the gate lives here rather than in
+    // DynamicDashboard: this component is the only place the button exists, so a future consumer
+    // of ActionColumn inherits the confirmation instead of having to remember it.
+    //
+    // window.confirm, matching Sessions.razor's KILL gate — the app's existing pattern for a
+    // per-action "are you sure" on a server-side effect. It is a UI gate, not authentication; the
+    // permission check (MayExecuteActions) already ran in the callback's owner.
+
+    /// <summary>
+    /// The dialog text. The SQL is capped for the DIALOG only — a browser confirm box cannot show
+    /// a long statement, and an unreadable wall of text is not consent. The full statement is
+    /// journaled either way, which is where the record belongs.
+    /// </summary>
+    internal static string BuildActionConfirmPrompt(string sql, string? mode)
+    {
+        const int DialogCap = 1000;
+        var shown = sql.Length > DialogCap
+            ? sql[..DialogCap] + "\n\n(shortened for this dialog; the full statement is journaled)"
+            : sql;
+
+        if (string.Equals(mode, "query", StringComparison.OrdinalIgnoreCase))
+        {
+            return "This runs the query below on the selected server, then executes whatever SQL "
+                + "that query returns.\n\n"
+                + shown
+                + "\n\nThe statement that runs is written by the monitored server, not by SQLTriage, "
+                + "and is not visible until it comes back. It is checked and journaled before it runs. "
+                + "Run it?";
+        }
+
+        return "This runs the statement below on the selected server.\n\n"
+            + shown
+            + "\n\nIt writes to the server and this screen cannot undo it. Run it?";
+    }
+
+    // The type argument is load-bearing and must stay <bool>. A real JSRuntime (Server, WebAssembly
+    // and WebView alike) deserialises the browser's answer with JsonSerializer.Deserialize<TValue>,
+    // and for TValue = object System.Text.Json hands back a JsonElement, never a boxed bool. Asking
+    // for <object> and then testing `is bool` therefore returns false for EVERY answer, which turns
+    // the gate into a permanent refusal: the operator clicks OK and nothing runs. Caught by the
+    // adversarial verifier on 2026-09-01, after a fake runtime that matched on `is TValue` let the
+    // positive control pass. That fake now round-trips through JSON like the real one.
+    private async Task<bool> ConfirmAction(string sql)
+    {
+        try
+        {
+            return await JS.InvokeAsync<bool>("confirm", BuildActionConfirmPrompt(sql, ActionColumnMode));
+        }
+        catch
+        {
+            // No JS interop means no confirmation could be obtained. Refuse: an unaskable question
+            // is not a yes. (Same reasoning as the fail-safe-inversion lesson — the safe default
+            // for a write gate is to decline.)
+            return false;
+        }
+    }
+
+    private async Task ExecuteAction(int rowIndex, string sql)
+    {
+        if (OnActionExecute == null) return;
+
+        if (!await ConfirmAction(sql)) return;
+
+        _actionStates[rowIndex] = ActionRowState.Executing;
+        _actionMessages.Remove(rowIndex);
+        var cts = new CancellationTokenSource();
+        _actionCts[rowIndex] = cts;
+        StateHasChanged();
+
+        try
+        {
+            var (success, message) = await OnActionExecute(sql, cts.Token);
+            _actionStates[rowIndex] = success ? ActionRowState.Success : ActionRowState.Failed;
+            _actionMessages[rowIndex] = message;
+        }
+        catch (OperationCanceledException)
+        {
+            _actionStates[rowIndex] = ActionRowState.Cancelled;
+            _actionMessages[rowIndex] = "Cancelled";
+        }
+        catch (Exception ex)
+        {
+            _actionStates[rowIndex] = ActionRowState.Failed;
+            _actionMessages[rowIndex] = ex.Message;
+        }
+        finally
+        {
+            _actionCts.Remove(rowIndex);
+            cts.Dispose();
+            StateHasChanged();
+        }
+    }
+
+    private void CancelAction(int rowIndex)
+    {
+        if (_actionCts.TryGetValue(rowIndex, out var cts))
+            cts.Cancel();
+    }
+
+    private async Task ExecuteRunJob(int rowIndex, string jobName)
+    {
+        if (OnRunJob == null || string.IsNullOrWhiteSpace(jobName)) return;
+
+        _runJobStates[rowIndex] = RunJobState.Running;
+        StateHasChanged();
+
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var (success, message) = await OnRunJob(jobName, cts.Token);
+            _runJobStates[rowIndex] = success ? RunJobState.Success : RunJobState.Failed;
+            _runJobMessages[rowIndex] = message;
+        }
+        catch (Exception ex)
+        {
+            _runJobStates[rowIndex] = RunJobState.Failed;
+            _runJobMessages[rowIndex] = ex.Message;
+        }
+        StateHasChanged();
+    }
+
+    // ── Column color gradient ──────────────────────────────────────────
+
+    // Cache of min/max per column (rebuilt when data changes)
+    private Dictionary<string, (double min, double max)>? _columnRanges;
+    private DataTable? _rangesBuiltFor;
+
+    private void EnsureColumnRanges()
+    {
+        if (_columnRanges != null && _rangesBuiltFor == Data) return;
+        _columnRanges = new(StringComparer.OrdinalIgnoreCase);
+        _rangesBuiltFor = Data;
+        if (Data == null || ColumnColorRules == null) return;
+
+        foreach (var rule in ColumnColorRules)
+        {
+            if (!Data.Columns.Contains(rule.Column)) continue;
+            double min = double.MaxValue, max = double.MinValue;
+            foreach (DataRow row in Data.Rows)
+            {
+                if (double.TryParse(row[rule.Column]?.ToString(), out var v))
+                {
+                    if (v < min) min = v;
+                    if (v > max) max = v;
+                }
+            }
+            if (min < max) _columnRanges[rule.Column] = (min, max);
+        }
+    }
+
+    private string GetCellStyle(string columnName, object? value)
+    {
+        var color = GetCellColor(columnName, value);
+        return color != null ? $"color: {color}; font-weight: 500;" : "";
+    }
+
+    private string? GetCellColor(string columnName, object? value)
+    {
+        if (ColumnColorRules == null || value == null || value == DBNull.Value) return null;
+
+        // ONE COLUMN, MANY text-match RULES. A text-match rule pairs one VALUE with one colour,
+        // so a column that classifies its cells (Verdict: High/Medium/Low; severity; status) needs
+        // one rule per value. This used to be FirstOrDefault over the whole column, which took the
+        // first rule authored for the column and ignored every later one: the first value got its
+        // colour and the rest silently rendered unstyled. Measured at a4c3a1c on
+        // Config/dashboard-config.default.json - 11 columns carry multiple text-match rules, one of
+        // them 14, and only the first of each could ever fire. Config/dashboard-config.json carried
+        // no dataGridColumnColors at all, which is why nothing had visibly broken yet. That default
+        // file was never shipped (Content-Removed from every build) and is now DELETED (DECISIONS
+        // 2026-08-26 18:23, ruling 3), so the counts above are reachable only at a4c3a1c.
+        var rules = ColumnColorRules
+            .Where(r => r.Column.Equals(columnName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (rules.Count == 0) return null;
+
+        // text-match mode: return matchColor if cell value equals matchValue (case-insensitive).
+        // Every text-match rule on this column gets a look; first one whose value matches wins.
+        foreach (var textRule in rules.Where(r => r.Mode == "text-match"))
+        {
+            if (!string.IsNullOrEmpty(textRule.MatchValue) && !string.IsNullOrEmpty(textRule.MatchColor)
+                && string.Equals(value.ToString(), textRule.MatchValue, StringComparison.OrdinalIgnoreCase))
+                return textRule.MatchColor;
+        }
+
+        // No text-match rule claimed this cell. Fall through to a gradient rule only if the column
+        // actually has one; a column carrying text-match rules alone leaves unmatched cells plain,
+        // exactly as before.
+        var rule = rules.FirstOrDefault(r => r.Mode != "text-match");
+        if (rule == null) return null;
+
+        if (!double.TryParse(value.ToString(), out var v)) return null;
+
+        EnsureColumnRanges();
+        if (_columnRanges == null || !_columnRanges.TryGetValue(columnName, out var range)) return null;
+
+        // Normalize 0..1
+        var t = (v - range.min) / (range.max - range.min);
+        t = Math.Clamp(t, 0, 1);
+
+        // Determine color endpoints based on mode
+        // higher-is-better: low=muted gray, high=green
+        // higher-is-worse:  low=muted gray, high=red
+        var (lowR, lowG, lowB) = !string.IsNullOrEmpty(rule.MinColor) ? ParseHex(rule.MinColor) : (120, 120, 120);
+        var (hiR, hiG, hiB) = !string.IsNullOrEmpty(rule.MaxColor)
+            ? ParseHex(rule.MaxColor)
+            : rule.Mode == "higher-is-worse" ? (244, 67, 54) : (76, 175, 80);
+
+        var r = (int)(lowR + (hiR - lowR) * t);
+        var g = (int)(lowG + (hiG - lowG) * t);
+        var b = (int)(lowB + (hiB - lowB) * t);
+        return $"rgb({r},{g},{b})";
+    }
+
+    private static (int r, int g, int b) ParseHex(string hex)
+    {
+        hex = hex.TrimStart('#');
+        if (hex.Length != 6) return (120, 120, 120);
+        return (
+            Convert.ToInt32(hex[..2], 16),
+            Convert.ToInt32(hex[2..4], 16),
+            Convert.ToInt32(hex[4..6], 16)
+        );
+    }
+
+    private string FormatCell(object? value, string columnName)
+    {
+        if (value == null || value == DBNull.Value) return "";
+
+        // Format duration columns
+        if (columnName.Contains("duration", StringComparison.OrdinalIgnoreCase)
+            || columnName.Contains("_ms", StringComparison.OrdinalIgnoreCase))
+        {
+            if (double.TryParse(value.ToString(), out var ms))
+            {
+                if (ms >= 60000) return $"{ms / 60000:F1}m";
+                if (ms >= 1000) return $"{ms / 1000:F1}s";
+                return $"{ms:F0}ms";
+            }
+        }
+
+        var str = value.ToString() ?? "";
+        return str.Length > 100 ? str[..100] + "..." : str;
+    }
+}

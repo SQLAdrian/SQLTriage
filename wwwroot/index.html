@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SQLTriage — Compliance Platform</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico" />
+    <base href="/" />
+    <link href="css/app.css" rel="stylesheet" />
+    <link href="SQLTriage.styles.css" rel="stylesheet" />
+    <link href="css/Forms.css" rel="stylesheet" />
+    <link href="css/Modal.css" rel="stylesheet" />
+    <link href="css/qp.css" rel="stylesheet" />
+    <link href="css/qp_icons_v2.css" rel="stylesheet" />
+    <link href="fontawesome/css/all.min.css" rel="stylesheet" />
+    <!-- Fonts are self-hosted via @font-face in css/app.css (no runtime CDN fetch). -->
+    <!-- Radzen theme CSS — swapped dynamically by radzenTheme.setTheme() -->
+    <link id="radzen-theme-css" href="_content/Radzen.Blazor/css/dark-base.css" rel="stylesheet" />
+</head>
+<body>
+    <div id="app">
+        <!-- Hydration-gap indicator: shows calm activity while the .NET runtime
+             boots and the first page renders. Blazor replaces #app contents once
+             ready. Self-contained styles so it paints before app.css matters. -->
+        <div class="terminal-boot">
+            <!-- Keep major.minor in step with Config/version.json. This paints before the
+                 .NET runtime exists, and version.json lives next to the exe (not under
+                 wwwroot), so it cannot be fetched here - it is deliberately hard-coded. -->
+            <div class="term-line" style="animation-delay: 0.1s;">SQLTriage Kernel v0.97 initializing...</div>
+            <div class="term-line" style="animation-delay: 0.4s;">> Allocating Memory Pool... <span class="term-ok">[OK]</span></div>
+            <div class="term-line" style="animation-delay: 0.7s;">> Verifying Check Catalogs... <span class="term-ok">[OK]</span></div>
+            <div class="term-line" style="animation-delay: 0.9s;">> Securing connection... <span class="term-ok">[OK]</span></div>
+            <div class="term-line" style="animation-delay: 1.2s;">> Warming up buffers... <span class="term-ok">[OK]</span></div>
+            <div class="term-line" style="animation-delay: 1.5s;">> System Ready.<span class="term-cursor"></span></div>
+        </div>
+    </div>
+    <style>
+        .terminal-boot {
+            position: fixed; inset: 0; 
+            background: #0A0E0D;
+            color: #34D17A;
+            font-family: 'VT323', monospace;
+            font-size: 24px;
+            padding: 40px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            text-shadow: 0 0 5px rgba(52, 209, 122,0.5);
+            background-image: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%);
+            background-size: 100% 4px;
+            z-index: 9999;
+        }
+        .term-line {
+            opacity: 0;
+            animation: termReveal 0.1s forwards;
+        }
+        .term-ok {
+            color: #5BE58C;
+        }
+        .term-cursor {
+            display: inline-block;
+            width: 12px;
+            height: 20px;
+            background-color: #34D17A;
+            animation: termBlink 1s step-end infinite;
+            vertical-align: text-bottom;
+            margin-left: 4px;
+            box-shadow: 0 0 5px rgba(52, 209, 122,0.5);
+        }
+        @keyframes termReveal {
+            to { opacity: 1; }
+        }
+        @keyframes termBlink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .terminal-boot { text-shadow: none; background-image: none; }
+            .term-line { animation: none; opacity: 1; }
+            .term-cursor { animation: none; }
+        }
+    </style>
+
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="" class="reload">Reload</a>
+        <a class="dismiss">Dismiss</a>
+    </div>
+
+    <script>
+        // Stamp print header date just before each print/PDF export
+        window.addEventListener('beforeprint', function() {
+            var d = new Date();
+            var stamp = d.toLocaleDateString(undefined, { year:'numeric', month:'short', day:'2-digit' })
+                      + '\u2002'
+                      + d.toLocaleTimeString(undefined, { hour:'2-digit', minute:'2-digit' });
+            var dateEl = document.getElementById('print-header-date');
+            if (dateEl) dateEl.textContent = stamp;
+        });
+
+        // Per-page registry for the command palette's .NET object reference.
+        // This replaced a STATIC [JSInvokable] (DotNet.invokeMethodAsync('SQLTriage', ...)),
+        // which reached a process-wide slot rather than this page's own circuit.
+        window.sqltriageCommandPalette = {
+            ref: null,
+            register: function (r) { this.ref = r; },
+            unregister: function () { this.ref = null; }
+        };
+
+        // Global Ctrl+K handler for Command Palette
+        window.addEventListener('keydown', function(e) {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+                e.preventDefault();
+                try {
+                    var p = window.sqltriageCommandPalette;
+                    if (p && p.ref) { p.ref.invokeMethodAsync('OpenCommandPalette'); }
+                } catch (err) { }
+            }
+        });
+    </script>
+    <script src="_framework/blazor.webview.js"></script>
+    <script src="_content/Radzen.Blazor/Radzen.Blazor.js"></script>
+    <script src="scripts/error-handler.js"></script>
+    <script src="scripts/download.js"></script>
+    <script src="scripts/qp.js"></script>
+    <script src="scripts/queryPlan.js"></script>
+    <script src="scripts/queryPlanV2.js"></script>
+    <script src="scripts/environmentView.js"></script>
+    <script src="scripts/welcomeTour.js"></script>
+    <script src="scripts/codeHotspots.js"></script>
+    <script src="scripts/bubbleDrag.js"></script>
+    <script src="scripts/ambientBg.js"></script>
+    <script src="scripts/parallaxBg.js"></script>
+    <script src="scripts/waveBg.js"></script>
+    <script src="scripts/particleBg.js"></script>
+    <script src="scripts/bgConfig.js"></script>
+    <script src="themes.js"></script>
+    <script>
+        window.radzenTheme = {
+            setTheme: function(theme) {
+                var link = document.getElementById('radzen-theme-css');
+                if (link) {
+                    link.href = '_content/Radzen.Blazor/css/' + theme + '-base.css';
+                }
+            }
+        };
+    </script>
+    
+    <script>
+        // Apply the saved theme immediately (before Blazor hydrates). The full-screen
+        // boot intro was removed; the calm .app-boot indicator inside #app now covers
+        // the hydration gap and Blazor swaps #app contents once the first page renders.
+        (function() {
+            if (typeof loadSavedTheme === 'function') {
+                loadSavedTheme();
+            }
+        })();
+    </script>
+</body>
+</html>

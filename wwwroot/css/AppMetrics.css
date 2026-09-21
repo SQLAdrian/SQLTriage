@@ -1,0 +1,9 @@
+.perf-card { background: rgba(18,24,27,0.8); border: 1px solid var(--border); border-radius: 8px; padding: 20px; }
+.perf-card h3 { font-size: 14px; margin: 0 0 16px; color: var(--accent); font-weight: 600; }
+.perf-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.perf-card-header h3 { margin: 0; }
+.memdiag-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+.memdiag-stat { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; }
+.memdiag-stat span { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+.memdiag-stat strong { font-size: 17px; color: var(--text-primary); font-weight: 700; }
+

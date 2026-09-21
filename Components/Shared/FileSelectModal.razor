@@ -1,0 +1,133 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+
+@if (IsVisible)
+{
+    <div class="file-select-overlay" @onclick="Close">
+        <div class="file-select-modal" @onclick:stopPropagation="true">
+            <div class="file-select-header">
+                <h3><i class="fa-solid fa-folder-open"></i> @Title</h3>
+                <button class="btn-close-modal" @onclick="Close"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <div class="file-select-body">
+                @if (!string.IsNullOrEmpty(Description))
+                {
+                    <p class="file-select-desc">@Description</p>
+                }
+
+                <!-- Filter -->
+                <div class="file-select-filter">
+                    <input type="text" @bind="FilterText" @bind:after="ApplyFilter"
+                           placeholder="Filter files..." class="file-filter-input" />
+                    <span class="file-count">@FilteredFiles.Count file(s)</span>
+                </div>
+
+                <!-- File List -->
+                <div class="file-select-list">
+                    @if (!FilteredFiles.Any())
+                    {
+                        <div class="file-empty">No matching files found in the output directory.</div>
+                    }
+                    else
+                    {
+                        @foreach (var file in FilteredFiles)
+                        {
+                            var fileName = System.IO.Path.GetFileName(file);
+                            var fileInfo = new System.IO.FileInfo(file);
+                            var isSelected = file == SelectedFile;
+
+                            <div class="file-item @(isSelected ? "selected" : "")" @onclick="() => SelectFile(file)">
+                                <div class="file-item-icon">
+                                    <i class="fa-solid fa-file-csv"></i>
+                                </div>
+                                <div class="file-item-info">
+                                    <span class="file-item-name">@fileName</span>
+                                    <span class="file-item-meta">
+                                        @FormatFileSize(fileInfo.Length) &middot; @fileInfo.LastWriteTime.ToString("dd MMM yyyy HH:mm")
+                                    </span>
+                                </div>
+                                @if (isSelected)
+                                {
+                                    <div class="file-item-check"><i class="fa-solid fa-check"></i></div>
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+
+            <div class="file-select-footer">
+                <button class="btn btn-secondary" @onclick="Close">Cancel</button>
+                <button class="btn btn-primary" @onclick="Confirm" disabled="@string.IsNullOrEmpty(SelectedFile)">
+                    <i class="fa-solid fa-check"></i> Select File
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public string Title { get; set; } = "Select File";
+    [Parameter] public string Description { get; set; } = "";
+    [Parameter] public EventCallback<string> OnFileSelected { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    public bool IsVisible { get; private set; }
+    private List<string> AllFiles { get; set; } = new();
+    private List<string> FilteredFiles { get; set; } = new();
+    private string? SelectedFile { get; set; }
+    private string FilterText { get; set; } = "";
+
+    public void Show(List<string> files)
+    {
+        AllFiles = files;
+        FilteredFiles = files;
+        SelectedFile = files.FirstOrDefault();
+        FilterText = "";
+        IsVisible = true;
+        StateHasChanged();
+    }
+
+    private void ApplyFilter()
+    {
+        if (string.IsNullOrWhiteSpace(FilterText))
+        {
+            FilteredFiles = AllFiles;
+        }
+        else
+        {
+            FilteredFiles = AllFiles
+                .Where(f => System.IO.Path.GetFileName(f)
+                    .Contains(FilterText, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+    }
+
+    private void SelectFile(string file)
+    {
+        SelectedFile = file;
+    }
+
+    private async Task Confirm()
+    {
+        if (!string.IsNullOrEmpty(SelectedFile))
+        {
+            IsVisible = false;
+            await OnFileSelected.InvokeAsync(SelectedFile);
+        }
+    }
+
+    private async Task Close()
+    {
+        IsVisible = false;
+        await OnClose.InvokeAsync();
+        StateHasChanged();
+    }
+
+    private static string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes / (1024.0 * 1024.0):F1} MB";
+    }
+}

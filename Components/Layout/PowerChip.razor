@@ -1,0 +1,93 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using System.Linq
+@using SQLTriage.Data
+@using SQLTriage.Data.Services
+@implements IDisposable
+@inject IServerContextService ServerCtx
+@inject ServerConnectionManager Conns
+@inject PowerEstimateService Power
+
+@* Selected-server power / green chip (Phase 1). Reacts to the PRIMARY server
+   selector (IServerContextService — the "Connected to:" dropdown). Relative-first +
+   honest: a modelled estimate, never a measurement. Hidden until a reachable server
+   is selected (with the default-to-first-server behaviour, that's on boot). *@
+@if (_est is not null)
+{
+    <span class="status-bar-sep" aria-hidden="true">&middot;</span>
+    <span class="status-bar-power" title="@Tooltip()">
+        <i class="fa-solid fa-leaf" aria-hidden="true"></i>
+        <span class="status-bar-power-text">@ChipLabel()</span>
+    </span>
+}
+
+@code {
+    private ServerPowerEstimate? _est;
+
+    protected override void OnInitialized()
+    {
+        ServerCtx.OnServerChanged += OnServerChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Catch a server already selected before this component subscribed
+        // (the default-to-first-server fire happens during init).
+        if (firstRender) await Load();
+    }
+
+    private void OnServerChanged() => _ = InvokeAsync(Load);
+
+    private async Task Load()
+    {
+        var name = ResolveServerName();
+        ServerPowerEstimate? est = null;
+        if (name is not null)
+        {
+            try { est = await Power.GetEstimateAsync(name); } catch { est = null; }
+        }
+        _est = est;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    // CurrentServerId is a connection GUID; resolve it to a server name for the estimate.
+    private string? ResolveServerName()
+    {
+        var id = ServerCtx.CurrentServerId;
+        if (string.IsNullOrEmpty(id)) return null;
+        var conn = Conns.GetConnections().FirstOrDefault(c => c.Id == id);
+        return conn?.GetServerList().FirstOrDefault();
+    }
+
+    // Physical host -> show the (hedged) watt band; VM/managed -> lead with the relative
+    // tuning headroom, since an absolute per-VM watt number is not observable.
+    private string ChipLabel()
+    {
+        if (_est is null) return "";
+        // "(this server)" disambiguates from the CIO estate rollup (Wave 3, 2026-07-12): the
+        // chip is the CONNECTED server's headroom (e.g. ~4–14%), the /cio card is the estate
+        // mean (e.g. 4–15%). Both are evidence-fired from _est; the label stops them reading as
+        // arithmetic that doesn't foot.
+        //
+        // 2026-08-08: the relative branch interpolated the band directly, so a server with no check
+        // results yet — the state of every server until an assessment has run — carried "tuning
+        // headroom ~0–0% (this server)" in the status bar of EVERY page. The band really is 0/0 there,
+        // but 0–0% reads as a measured finding of no headroom, and nothing had been measured. The
+        // label now comes from RelativeChipLabel, which is conditioned on HeadroomState, so the words
+        // and the tooltip's RelativeHeadline are driven by the same state and cannot disagree.
+        return _est.AbsoluteApplicable && _est.ServerWattsLow.HasValue
+            ? $"~{_est.ServerWattsLow}–{_est.ServerWattsHigh} W (this server)"
+            : _est.RelativeChipLabel;
+    }
+
+    private string Tooltip()
+    {
+        if (_est is null) return "";
+        var draw = _est.AbsoluteApplicable
+            ? $"  ·  est. draw {_est.AbsoluteBand}"
+            : _est.IsManaged ? "  ·  managed service: no host to measure"
+                             : "  ·  virtual host: absolute watts not observable";
+        return $"{_est.RelativeHeadline}{draw}  ·  SQL ~{_est.SqlCpuPct:0}% of host CPU  ·  modelled estimate, not a measurement ({_est.HardwareClass})";
+    }
+
+    public void Dispose() => ServerCtx.OnServerChanged -= OnServerChanged;
+}

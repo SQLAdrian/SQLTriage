@@ -1,0 +1,222 @@
+/* Server Comparison page — extracted from ServerComparison.razor 2026-05-11 */
+
+.comp-page {
+    padding: 24px;
+    max-width: 1100px;
+    margin: 0 auto;
+}
+
+.comp-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 20px;
+}
+
+.comp-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text);
+    margin: 0;
+}
+
+.comp-subtitle {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin: 2px 0 0;
+}
+
+.comp-selector {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 24px;
+}
+
+.comp-server-btn {
+    padding: 8px 16px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 13px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: background 0.15s;
+}
+
+.comp-server-btn:hover { background: var(--bg-hover); }
+.comp-server-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.comp-server-btn-selected {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
+
+.comp-server-btn-clear {
+    color: var(--red);
+    border-color: var(--red);
+}
+
+.comp-loading {
+    text-align: center;
+    padding: 60px 0;
+    color: var(--text-muted);
+}
+
+.comp-empty {
+    text-align: center;
+    padding: 60px 0;
+    color: var(--text-muted);
+}
+
+.comp-empty-icon {
+    font-size: 48px;
+    margin-bottom: 12px;
+    opacity: 0.3;
+}
+
+.comp-section {
+    margin-bottom: 32px;
+}
+
+.comp-section-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    margin: 0 0 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.comp-score-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 14px;
+}
+
+.comp-score-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+}
+
+.comp-score-server {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+}
+
+.comp-score-value {
+    font-size: 42px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.comp-score-band {
+    font-size: 14px;
+    color: var(--accent);
+    font-weight: 600;
+    margin: 4px 0 12px;
+}
+
+.comp-score-detail { display: flex; flex-direction: column; gap: 6px; }
+
+.comp-score-bar-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.comp-score-bar-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    width: 28px;
+    font-weight: 600;
+}
+
+.comp-score-bar-track {
+    flex: 1;
+    height: 6px;
+    background: var(--bg-primary);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.comp-score-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.3s;
+}
+
+.comp-table-wrap {
+    overflow-x: auto;
+}
+
+.comp-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.comp-table th {
+    text-align: left;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-muted);
+    font-weight: 500;
+    font-size: 11px;
+    text-transform: uppercase;
+}
+
+.comp-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+}
+
+.comp-finding-group {
+    margin-bottom: 12px;
+}
+
+.comp-finding-server {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+.comp-finding-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 13px;
+}
+
+.comp-finding-severity {
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.severity-critical {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--red);
+}
+
+.comp-finding-name {
+    color: var(--text);
+}
+
+.comp-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 24px;
+}

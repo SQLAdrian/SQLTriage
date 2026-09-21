@@ -1,0 +1,554 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using System.Threading.Tasks
+@using SQLTriage.Data.Models
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+
+<div class="bubble-view-container" id="bubble-view-@_instanceId">
+    @if (_blockingPairs.Count > 0)
+    {
+        <div class="blocking-chain-banner">
+            <i class="fa-solid fa-link-slash"></i>
+            @_blockingPairs.Count blocking relationship@(_blockingPairs.Count == 1 ? "" : "s") detected —
+            @foreach (var pair in _blockingPairs)
+            {
+                <span class="blocking-chain-pair">SPID&nbsp;@pair.blockerSpid&nbsp;→&nbsp;@pair.blockedSpid</span>
+            }
+        </div>
+    }
+    @if (Sessions == null || Sessions.Count == 0)
+    {
+        <div class="chart-empty" style="padding: 60px;">No sessions to display</div>
+    }
+    else
+    {
+        <svg width="100%" height="100%" viewBox="0 0 @SvgWidth @SvgHeight"
+             xmlns="http://www.w3.org/2000/svg" class="bubble-svg"
+             preserveAspectRatio="xMidYMid meet">
+
+            <defs>
+                <radialGradient id="bubbleGradNormal" cx="35%" cy="25%" r="70%">
+                    <stop offset="0%" stop-color="#64b5f6" />
+                    <stop offset="50%" stop-color="#1976d2" />
+                    <stop offset="100%" stop-color="#0d47a1" />
+                </radialGradient>
+                <radialGradient id="bubbleGradBlocked" cx="35%" cy="25%" r="70%">
+                    <stop offset="0%" stop-color="#ef5350" />
+                    <stop offset="50%" stop-color="#c62828" />
+                    <stop offset="100%" stop-color="#b71c1c" />
+                </radialGradient>
+                <radialGradient id="bubbleGradIdle" cx="35%" cy="25%" r="70%">
+                    <stop offset="0%" stop-color="#81c784" />
+                    <stop offset="50%" stop-color="#388e3c" />
+                    <stop offset="100%" stop-color="#1b5e20" />
+                </radialGradient>
+                <filter id="glowSelected" x="-50%" y="-50%" width="200%" height="200%">
+                    <feGaussianBlur stdDeviation="6" result="coloredBlur" />
+                    <feMerge>
+                        <feMergeNode in="coloredBlur" />
+                        <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                </filter>
+                <radialGradient id="innerGlow" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stop-color="#fff" stop-opacity="0.3" />
+                    <stop offset="100%" stop-color="#fff" stop-opacity="0" />
+                </radialGradient>
+                <marker id="blockingArrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                    <path d="M0,0 L0,6 L8,3 z" fill="#f44336" opacity="0.85" />
+                </marker>
+            </defs>
+
+            @* Grid lines *@
+            @for (int i = 1; i <= 5; i++)
+            {
+                var x = MarginLeft + ChartWidth * i / 5;
+                var y = MarginTop + ChartHeight * i / 5;
+                <line x1="@x" y1="@MarginTop" x2="@x" y2="@(SvgHeight - MarginBottom)" stroke="#444" stroke-width="0.5" stroke-dasharray="3,3" stroke-opacity="0.3" />
+                <line x1="@MarginLeft" y1="@y" x2="@(SvgWidth - MarginRight)" y2="@y" stroke="#444" stroke-width="0.5" stroke-dasharray="3,3" stroke-opacity="0.3" />
+            }
+
+            @* X-axis label *@
+            <text x="@(SvgWidth / 2)" y="@(SvgHeight - 8)" text-anchor="middle" font-size="12" fill="#aaa" font-family="Segoe UI, sans-serif">Log(Logical Reads + Writes)</text>
+
+            @* Y-axis label (rotated) *@
+            <text x="14" y="@(SvgHeight / 2)" text-anchor="middle" font-size="12" fill="#aaa" font-family="Segoe UI, sans-serif" transform="rotate(-90, 14, @(SvgHeight / 2))">Log(CPU Time ms)</text>
+
+            @* X-axis and Y-axis tick labels (MarkupString bypasses Blazor SVG text parser issue) *@
+            @((MarkupString)BuildTickLabels())
+
+            @* Blocking chain lines — pre-computed in OnParametersSet *@
+            @((MarkupString)BuildBlockingLines())
+
+            @* Bubbles (include both filtered sessions and blockers needed for blocking lines) *@
+            @foreach (var session in Sessions)
+            {
+                var pos = GetPosition(session.SPID);
+                var radius = GetRadius(session);
+                var fill = GetFill(session);
+                var strokeColor = GetStrokeColor(session);
+                var strokeWidth = GetStrokeWidth(session);
+                var isSelected = SelectedSpid == session.SPID;
+                var isThreshold = ThresholdExceededSpids?.Contains(session.SPID) == true;
+
+                <g class="session-bubble @(isSelected ? "selected" : "") @(session.IsActive ? "active" : "") @(isThreshold ? "threshold-exceeded" : "")"
+                   data-spid="@session.SPID"
+                   @onclick="() => OnBubbleClicked(session)"
+                   style="cursor: pointer;">
+
+                    <circle cx="@pos.x" cy="@pos.y" r="@radius"
+                            fill="@fill"
+                            stroke="@strokeColor" stroke-width="@strokeWidth"
+                            filter="@(isSelected ? "url(#glowSelected)" : "")"
+                            class="bubble-circle" />
+
+                    <circle cx="@(pos.x - radius * 0.25)" cy="@(pos.y - radius * 0.25)"
+                            r="@(radius * 0.4)"
+                            fill="url(#innerGlow)"
+                            class="bubble-highlight" />
+
+                    @* Threshold ring — pulsing orange dashed outline; visible via CSS when threshold-exceeded class is set *@
+                    <circle cx="@pos.x" cy="@pos.y" r="@(radius + 5)"
+                            class="bubble-threshold-ring" />
+
+                    <text x="@pos.x" y="@(pos.y + 1)"
+                          text-anchor="middle" dominant-baseline="central"
+                          fill="white" font-size="@GetFontSize(radius)"
+                          font-weight="600" font-family="Segoe UI, sans-serif"
+                          pointer-events="none"
+                          class="bubble-label">
+                        @session.SPID
+                    </text>
+
+                </g>
+            }
+
+            @* Also render bubbles for blockers that were filtered out but needed for blocking lines *@
+            @foreach (var blocker in _blockersForLines.Values)
+            {
+                var pos = GetPosition(blocker.SPID);
+                var radius = GetRadius(blocker);
+                var fill = GetFill(blocker);
+                var strokeColor = GetStrokeColor(blocker);
+                var strokeWidth = GetStrokeWidth(blocker);
+
+                <g class="session-bubble blocker-only"
+                   data-spid="@blocker.SPID"
+                   style="cursor: default; opacity: 0.7;">
+
+                    <circle cx="@pos.x" cy="@pos.y" r="@radius"
+                            fill="@fill"
+                            stroke="@strokeColor" stroke-width="@strokeWidth"
+                            class="bubble-circle" />
+
+                    <circle cx="@(pos.x - radius * 0.25)" cy="@(pos.y - radius * 0.25)"
+                            r="@(radius * 0.4)"
+                            fill="url(#innerGlow)"
+                            class="bubble-highlight" />
+
+                    <text x="@pos.x" y="@(pos.y + 1)"
+                          text-anchor="middle" dominant-baseline="central"
+                          fill="white" font-size="@GetFontSize(radius)"
+                          font-weight="600" font-family="Segoe UI, sans-serif"
+                          pointer-events="none"
+                          class="bubble-label">
+                        @blocker.SPID
+                    </text>
+
+                </g>
+            }
+        </svg>
+    }
+</div>
+
+@code {
+    [Parameter] public List<SessionInfo>? Sessions { get; set; }
+    [Parameter] public EventCallback<SessionInfo> OnSessionClicked { get; set; }
+    [Parameter] public int? SelectedSpid { get; set; }
+    /// <summary>
+    /// Set of SPIDs that exceed at least one configured threshold.
+    /// When non-empty, matching bubbles receive a pulsing orange ring.
+    /// </summary>
+    [Parameter] public HashSet<int>? ThresholdExceededSpids { get; set; }
+
+    private int SvgWidth = 1200;
+    private int SvgHeight = 700;
+    private const double MarginLeft = 60;
+    private const double MarginRight = 30;
+    private const double MarginTop = 30;
+    private const double MarginBottom = 50;
+    private static int _instanceCounter = 0;
+    private int _instanceId = ++_instanceCounter;
+    private const int RevertDelayMs = 10000; // 10 seconds
+
+    private double ChartWidth => SvgWidth - MarginLeft - MarginRight;
+    private double ChartHeight => SvgHeight - MarginTop - MarginBottom;
+
+    private Dictionary<int, (double x, double y)> _positionCache = new();
+    private Dictionary<int, (double x, double y)> _blockerPositions = new();
+    private Dictionary<int, SessionInfo> _blockersForLines = new();
+    private List<(int blockerSpid, int blockedSpid)> _blockingPairs = new();
+    private string[] XAxisLabels = new[] { "0", "10", "100", "1K", "10K", "100K" };
+    private string[] YAxisLabels = new[] { "0", "10", "100", "1K", "10K", "100K" };
+
+    protected override void OnParametersSet()
+    {
+        _positionCache.Clear();
+        _blockingPairs.Clear();
+        if (Sessions == null || Sessions.Count == 0) return;
+
+        // First pass: identify all sessions that are blocked (have a blocker)
+        var blockedSessions = Sessions.Where(s => s.BlockingSessionId > 0).ToList();
+
+        // Record blocking pairs for banner display
+        foreach (var s in blockedSessions)
+            _blockingPairs.Add((s.BlockingSessionId, s.SPID));
+        
+        // Collect all blocker SPIDs that we need to include for blocking lines
+        var requiredBlockerSpids = new HashSet<int>(
+            blockedSessions.Select(s => s.BlockingSessionId));
+
+        // Build position cache using log scale for X (Logical Reads + Writes) and Y (CPU Time)
+        // Include both the sessions AND their blockers (for drawing blocking lines)
+        _blockerPositions.Clear();
+        
+        // Add all sessions
+        foreach (var session in Sessions)
+        {
+            var x = GetLogX(session.LogicalReads + session.Writes);
+            var y = GetLogY(session.CpuTime);
+            _positionCache[session.SPID] = (x, y);
+
+            if (requiredBlockerSpids.Contains(session.SPID))
+            {
+                _blockerPositions[session.SPID] = (x, y);
+            }
+        }
+
+        // Add missing blockers with default positions based on the blocked sessions
+        // We'll create placeholder SessionInfo objects for these blockers
+        _blockersForLines.Clear();
+        foreach (var blocked in blockedSessions)
+        {
+            var blockerSpid = blocked.BlockingSessionId;
+            if (!_positionCache.ContainsKey(blockerSpid))
+            {
+                // Use the blocked session's position as a reasonable default for the blocker
+                // (blockers tend to be near their blocked sessions in the chart)
+                var blockedPos = GetLogX(blocked.LogicalReads + blocked.Writes);
+                var blockedY = GetLogY(blocked.CpuTime);
+                // Offset slightly to avoid overlap
+                _positionCache[blockerSpid] = (blockedPos + 30, blockedY + 30);
+                
+                // Create a placeholder session for the blocker (for rendering)
+                _blockersForLines[blockerSpid] = new SessionInfo 
+                { 
+                    SPID = blockerSpid, 
+                    BlockingSessionId = 0,
+                    LogicalReads = blocked.LogicalReads,
+                    Writes = blocked.Writes,
+                    CpuTime = blocked.CpuTime
+                };
+            }
+        }
+
+        // Apply deterministic radial jitter so coincident bubbles cluster rather than stack.
+        // Use golden-angle distribution (137.5° steps) keyed on SPID for stable, non-random spreading.
+        foreach (var session in Sessions)
+        {
+            var r = GetRadius(session);
+            var angle = (session.SPID * 137.508) % 360.0;
+            var jitter = r * 0.5;
+            if (_positionCache.TryGetValue(session.SPID, out var pos))
+            {
+                _positionCache[session.SPID] = (
+                    pos.x + Math.Cos(angle * Math.PI / 180.0) * jitter,
+                    pos.y + Math.Sin(angle * Math.PI / 180.0) * jitter
+                );
+            }
+        }
+
+        // Resolve remaining collisions to prevent bubble overlap
+        ResolveCollisions();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Sessions != null && Sessions.Count > 0)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("bubbleDragInterop.initDrag",
+                    $"bubble-view-{_instanceId}",
+                    RevertDelayMs);
+
+                if (!firstRender)
+                {
+                    // Re-sync blocking line endpoints to actual bubble positions after every re-render.
+                    // Blazor may update bubble cx/cy (from _positionCache) independently of what JS
+                    // has modified on the lines — this call reconciles them.
+                    await JS.InvokeVoidAsync("bubbleDragInterop.redrawBlockingLines",
+                        $"bubble-view-{_instanceId}");
+                }
+            }
+            catch
+            {
+                // JavaScript interop not available, ignore
+            }
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("bubbleDragInterop.dispose", $"bubble-view-{_instanceId}");
+        }
+        catch
+        {
+            // Ignore disposal errors
+        }
+    }
+
+    /// <summary>
+    /// Iteratively resolves collisions between bubbles to ensure they don't overlap.
+    /// Uses a simple force-directed approach with relaxation.
+    /// Adds a 2% offset to prevent bubbles from touching.
+    /// </summary>
+    private void ResolveCollisions()
+    {
+        var sessions = Sessions?.ToList();
+        if (sessions == null || sessions.Count == 0) return;
+
+        // Calculate bubble sizes
+        var radii = sessions.ToDictionary(s => s.SPID, s => GetRadius(s));
+
+        // Calculate 2% offset based on chart dimensions
+        var offsetX = ChartWidth * 0.02;
+        var offsetY = ChartHeight * 0.02;
+
+        // Multiple iterations for better collision resolution
+        for (int iteration = 0; iteration < 50; iteration++)
+        {
+            bool hasCollision = false;
+
+            for (int i = 0; i < sessions.Count; i++)
+            {
+                for (int j = i + 1; j < sessions.Count; j++)
+                {
+                    var s1 = sessions[i];
+                    var s2 = sessions[j];
+
+                    if (!_positionCache.TryGetValue(s1.SPID, out var pos1) ||
+                        !_positionCache.TryGetValue(s2.SPID, out var pos2))
+                        continue;
+
+                    var r1 = radii[s1.SPID];
+                    var r2 = radii[s2.SPID];
+                    // Add 2% offset to minimum distance
+                    var minDist = r1 + r2 + 3 + (r1 + r2) * 0.02; // Base buffer + 2% of combined radii
+
+                    var dx = pos2.x - pos1.x;
+                    var dy = pos2.y - pos1.y;
+                    var dist = Math.Sqrt(dx * dx + dy * dy);
+
+                    if (dist < minDist && dist > 0)
+                    {
+                        hasCollision = true;
+                        // Push bubbles apart
+                        var overlap = minDist - dist;
+                        var nx = dx / dist;
+                        var ny = dy / dist;
+
+                        // Move each bubble half the overlap distance
+                        var moveX = nx * overlap * 0.5;
+                        var moveY = ny * overlap * 0.5;
+
+                        var newPos1X = pos1.x - moveX;
+                        var newPos1Y = pos1.y - moveY;
+                        var newPos2X = pos2.x + moveX;
+                        var newPos2Y = pos2.y + moveY;
+
+                        // Clamp each bubble to its own radius so none are clipped at the chart edge
+                        var pad1 = radii[s1.SPID] + 4;
+                        var pad2 = radii[s2.SPID] + 4;
+                        newPos1X = Math.Clamp(newPos1X, MarginLeft + pad1, SvgWidth - MarginRight - pad1);
+                        newPos1Y = Math.Clamp(newPos1Y, MarginTop + pad1, SvgHeight - MarginBottom - pad1);
+                        newPos2X = Math.Clamp(newPos2X, MarginLeft + pad2, SvgWidth - MarginRight - pad2);
+                        newPos2Y = Math.Clamp(newPos2Y, MarginTop + pad2, SvgHeight - MarginBottom - pad2);
+
+                        _positionCache[s1.SPID] = (newPos1X, newPos1Y);
+                        _positionCache[s2.SPID] = (newPos2X, newPos2Y);
+
+                        // Update blocker positions if needed
+                        if (_blockerPositions.ContainsKey(s1.SPID))
+                            _blockerPositions[s1.SPID] = (newPos1X, newPos1Y);
+                        if (_blockerPositions.ContainsKey(s2.SPID))
+                            _blockerPositions[s2.SPID] = (newPos2X, newPos2Y);
+                    }
+                }
+            }
+
+            if (!hasCollision) break;
+        }
+    }
+
+    /// <summary>
+    /// Builds SVG markup for all blocking-chain connector lines.
+    /// Uses pre-computed _positionCache so we never need out-var in Razor templates.
+    /// Called via MarkupString to bypass Blazor SVG namespace escaping.
+    /// </summary>
+    private string BuildBlockingLines()
+    {
+        if (Sessions == null || Sessions.Count == 0) return "";
+
+        var sb = new System.Text.StringBuilder();
+
+        foreach (var session in Sessions)
+        {
+            if (session.BlockingSessionId <= 0) continue;
+
+            var blockerSpid = session.BlockingSessionId;
+
+            if (!_positionCache.TryGetValue(blockerSpid, out var blockerPos)) continue;
+            if (!_positionCache.TryGetValue(session.SPID, out var blockedPos)) continue;
+
+            // Shorten line so it doesn't overdraw into the bubble circles
+            var blockerRadius = _positionCache.ContainsKey(blockerSpid) ? GetRadiusForSpid(blockerSpid) : 14.0;
+            var blockedRadius = GetRadiusForSpid(session.SPID);
+            var (x1, y1, x2, y2) = ShortenLine(blockerPos.x, blockerPos.y, blockedPos.x, blockedPos.y, blockerRadius + 2, blockedRadius + 4);
+
+            sb.Append($"<line x1=\"{x1.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)}\"");
+            sb.Append($" y1=\"{y1.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)}\"");
+            sb.Append($" x2=\"{x2.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)}\"");
+            sb.Append($" y2=\"{y2.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)}\"");
+            sb.Append($" class=\"blocking-line\"");
+            sb.Append($" marker-end=\"url(#blockingArrow)\"");
+            sb.Append($" data-blocker-spid=\"{blockerSpid}\"");
+            sb.Append($" data-blocked-spid=\"{session.SPID}\"");
+            sb.Append(" />");
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>Returns radius for a SPID, looking up in Sessions list.</summary>
+    private double GetRadiusForSpid(int spid)
+    {
+        var s = Sessions?.FirstOrDefault(x => x.SPID == spid);
+        return s != null ? GetRadius(s) : 14.0;
+    }
+
+    /// <summary>
+    /// Shortens a line segment so it starts and ends outside the bubble circles,
+    /// keeping the arrowhead visible at the target bubble edge.
+    /// </summary>
+    private static (double x1, double y1, double x2, double y2) ShortenLine(
+        double fromX, double fromY, double toX, double toY,
+        double startOffset, double endOffset)
+    {
+        var dx = toX - fromX;
+        var dy = toY - fromY;
+        var len = Math.Sqrt(dx * dx + dy * dy);
+        if (len < 1) return (fromX, fromY, toX, toY);
+
+        var nx = dx / len;
+        var ny = dy / len;
+
+        return (
+            fromX + nx * Math.Min(startOffset, len * 0.4),
+            fromY + ny * Math.Min(startOffset, len * 0.4),
+            toX - nx * Math.Min(endOffset, len * 0.4),
+            toY - ny * Math.Min(endOffset, len * 0.4)
+        );
+    }
+
+    private string BuildTickLabels()
+    {
+        var sb = new System.Text.StringBuilder();
+        double yTick = SvgHeight - MarginBottom + 18;
+        double xTick = MarginLeft - 6;
+
+        for (int i = 0; i <= 5; i++)
+        {
+            double x = MarginLeft + ChartWidth * i / 5;
+            double y = MarginTop + ChartHeight * i / 5;
+            string xl = XAxisLabels[i];
+            string yl = YAxisLabels[5 - i];
+
+            sb.Append($"<text x=\"{x:F1}\" y=\"{yTick:F1}\" text-anchor=\"middle\" font-size=\"11\" fill=\"#aaa\" font-family=\"Segoe UI, sans-serif\">{xl}</text>");
+            sb.Append($"<text x=\"{xTick:F1}\" y=\"{y:F1}\" text-anchor=\"end\" dominant-baseline=\"central\" font-size=\"11\" fill=\"#aaa\" font-family=\"Segoe UI, sans-serif\">{yl}</text>");
+        }
+        return sb.ToString();
+    }
+
+    private double GetLogX(long value)
+    {
+        // Log scale: 10^-2 (0.01) to 10^4 — zero-IO sessions land at the left edge (0.01)
+        var logValue = Math.Log10(Math.Max(0.01, value));
+        var normalized = Math.Clamp((logValue + 2) / 6.0, 0, 1); // 10^-2..10^4 span = 6 decades
+        return MarginLeft + normalized * ChartWidth;
+    }
+
+    private double GetLogY(long value)
+    {
+        // Log scale: 10^-2 (0.01) to 10^4 — zero-CPU sessions land at the bottom edge
+        var logValue = Math.Log10(Math.Max(0.01, value));
+        var normalized = Math.Clamp((logValue + 2) / 6.0, 0, 1);
+        return MarginTop + (1 - normalized) * ChartHeight; // Y is inverted
+    }
+
+    private string FormatNumber(double value)
+    {
+        if (value >= 1000000) return $"{value / 1000000:F1}M";
+        if (value >= 1000) return $"{value / 1000:F1}K";
+        return value.ToString("F0");
+    }
+
+    private (double x, double y) GetPosition(int spid)
+    {
+        return _positionCache.TryGetValue(spid, out var pos) ? pos : (MarginLeft + ChartWidth / 2, MarginTop + ChartHeight / 2);
+    }
+
+    private double GetRadius(SessionInfo session)
+    {
+        // Scale bubble size based on ActivityScore
+        var score = session.ActivityScore;
+        var logScore = Math.Log10(Math.Max(1, score));
+        var normalized = (logScore - 1) / 4; // Range from 10^1 to 10^5
+        return 12 + normalized * 20; // Min 12, max 32
+    }
+
+    private string GetFill(SessionInfo session)
+    {
+        if (session.IsBlocked || session.BlockingSessionId > 0) return "url(#bubbleGradBlocked)";
+        if (session.IsIdleInTransaction) return "url(#bubbleGradIdle)";
+        if (session.IsActive) return "url(#bubbleGradNormal)";
+        return "url(#bubbleGradIdle)";
+    }
+
+    private string GetStrokeColor(SessionInfo session)
+    {
+        if (session.IsBlocked) return "#ef5350";
+        if (session.BlockingSessionId > 0) return "#ff9800";
+        if (session.IsIdleInTransaction) return "#ffb74d";
+        return "#64b5f6";
+    }
+
+    private double GetStrokeWidth(SessionInfo session)
+    {
+        return session.IsBlocked ? 2.5 : 1.5;
+    }
+
+    private double GetFontSize(double radius)
+    {
+        return Math.Max(8, radius * 0.5);
+    }
+
+    private void OnBubbleClicked(SessionInfo session)
+    {
+        if (OnSessionClicked.HasDelegate)
+        {
+            _ = OnSessionClicked.InvokeAsync(session);
+        }
+    }
+}

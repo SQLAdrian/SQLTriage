@@ -1,0 +1,50 @@
+/* In the name of God, the Merciful, the Compassionate */
+/* Compliance Board — extracted from the page's <style> block (CLAUDE.md forbids inline
+   <style> in .razor). Rules are verbatim apart from dedent and the Razor `@@media` escape,
+   which unescapes to a real `@media` here — `@@` is only meaningful inside .razor. */
+
+.pcb-page { padding: 18px 26px 30px; max-width: none; }
+.pcb-head { display:flex; justify-content:space-between; align-items:flex-end; gap:16px; flex-wrap:wrap; }
+.pcb-title { font-size:21px; font-weight:600; color:var(--text-primary); margin:0; }
+.pcb-sub { color:var(--text-muted); font-size:12.5px; }
+.pcb-status { display:flex; align-items:center; gap:10px; }
+.pcb-focus-chip { color:var(--text-primary); font-weight:600; font-family:ui-monospace,Consolas,monospace;
+                  border:1px solid rgba(52, 209, 122,.5); border-radius:6px; padding:2px 8px; }
+.pcb-clear { background:none; border:1px solid var(--border); color:var(--text-secondary); border-radius:6px;
+             padding:2px 8px; cursor:pointer; font-size:11px; }
+.pcb-clear:hover { border-color:var(--accent,#34D17A); color:var(--text-primary); }
+.pcb-legend { display:flex; gap:18px; flex-wrap:wrap; margin:10px 0 14px; font-size:11.5px; color:var(--text-secondary); align-items:center; }
+/* Seat-licence exclusion banner. Canonical --yellow token (never a literal hex) so
+   body.colorblind-mode remaps it via Accessibility.css. */
+.pcb-seat-notice { display:flex; align-items:center; gap:8px; margin:8px 0 12px; padding:8px 12px;
+                   border:1px solid var(--yellow); border-radius:8px; font-size:11.5px;
+                   color:var(--text-primary); background:color-mix(in srgb, var(--yellow) 12%, transparent); }
+.pcb-seat-notice i { color:var(--yellow); flex-shrink:0; }
+.pcb-hint { color:var(--text-muted); font-style:italic; }
+.pcb-key { display:inline-block; width:14px; height:10px; vertical-align:middle; margin-right:5px; border-radius:2px; }
+.pcb-key-pad  { width:10px; height:10px; border-radius:50%; background:#0b0f12; border:2px solid #34D17A; box-shadow:0 0 5px #34D17A; }
+.pcb-key-chip { background:rgba(20,31,38,.9); border:1px solid #34D17A; box-shadow:0 0 5px rgba(52, 209, 122,.4); }
+.pcb-key-trace{ background:linear-gradient(90deg,#3186ff,#34D17A); }
+.pcb-key-ok { background:#5BE58C; } .pcb-key-warn { background:#f59e0b; }
+.pcb-key-bad { background:#ef4444; } .pcb-key-nodata { background:#64748b; }
+
+.pcb-led { background:#34D17A; box-shadow:0 0 4px #34D17A; }
+.pcb-led.s-ok   { background:#5BE58C; box-shadow:0 0 4px #5BE58C; }
+.pcb-led.s-warn { background:#f59e0b; box-shadow:0 0 4px #f59e0b; }
+.pcb-led.s-bad  { background:#ef4444; box-shadow:0 0 4px #ef4444; }
+.pcb-led.s-nodata { background:#64748b; box-shadow:none; }
+
+.matrix-row:hover { background:rgba(255,255,255,0.03); }
+.matrix-row:hover .matrix-td { background:var(--bg-glass-hover, rgba(30,40,50,0.9)); }
+
+.pcb-foot { color:var(--text-muted); font-size:11px; margin-top:16px; }
+.pcb-foot code, .pcb-sub code { font-family:ui-monospace,Consolas,monospace; color:var(--text-secondary); }
+.pcb-empty { text-align:center; color:var(--text-muted); padding:60px 20px; }
+.pcb-empty i { font-size:34px; opacity:.5; display:block; margin-bottom:10px; }
+
+@media print {
+    .pcb-page { padding:0; }
+    .pcb-matrix-container { overflow:visible !important; border:none; box-shadow:none; }
+    .matrix-th, .matrix-td { border:1px solid #ddd; background:#fff !important; color:#000 !important; }
+    .matrix-dot { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

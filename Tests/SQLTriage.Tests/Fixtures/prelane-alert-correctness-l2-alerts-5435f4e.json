@@ -1,0 +1,72 @@
+{
+  "_comment": "The two alerts of lane alert-correctness 2, exactly as they shipped from build 4082 (f1c821e7094a1410defbb21613fbc566d1b5b8a9) through build 4088 (5435f4ea3f2afc73c52f9c65010625f7946d3789): Config/alert-definitions.json and Data/AlertDefinitionMigrator.cs are byte-unchanged between the two. Captured from git show 5435f4ea3f2afc73c52f9c65010625f7946d3789:Config/alert-definitions.json by script (the project's private evidence archive, evidence/alert-correctness-l2-2026-09-19, make_fixture.py) and compared back to that blob for equality, not hand-typed. sql_response_time carries canBaseline true on a handler-routed alert (A2); integrity_check_overdue answers no reading, never Unknown, when no online user database's last clean DBCC CHECKDB date can be read (C1).",
+  "alerts": [
+    {
+      "id": "sql_response_time",
+      "name": "SQL Server Response Time",
+      "description": "Times a trivial query on a connection SQLTriage already holds, in milliseconds, leaving out login time. A slow answer points at the network or a busy server, and a stalled SQLTriage process reads slow too. It fires only after the time stays over a threshold for 2 minutes, and a failed probe shows Unknown.",
+      "category": "performance",
+      "enabled": true,
+      "severity": "Warning",
+      "thresholds": {
+        "warning": 1000,
+        "critical": 2000
+      },
+      "unit": "milliseconds",
+      "operator": "greater_than",
+      "durationSeconds": 0,
+      "holdSeconds": 120,
+      "frequencySeconds": 60,
+      "query": "",
+      "queryMode": "response_time_probe",
+      "alwaysAlert": false,
+      "primaryChannel": null,
+      "sendEmail": false,
+      "includeInDailySummary": false,
+      "escalate": false,
+      "escalationThresholdEvents": 0,
+      "escalationWindowMinutes": 0,
+      "escalationAfterMinutes": 0,
+      "escalationChannel": null,
+      "nextAlertDelayMinutes": 0,
+      "baselineDeviationPercent": 0,
+      "baselineQueryId": null,
+      "baselineSeries": null,
+      "canBaseline": true,
+      "requiresOnPrem": false
+    },
+    {
+      "id": "integrity_check_overdue",
+      "name": "Integrity Check Overdue",
+      "description": "Hours since the last clean DBCC CHECKDB on the most overdue online user database, and a database never checked counts as overdue. On a build that does not report that date it runs DBCC DBINFO, which can refuse a login without sysadmin. A database whose date cannot be read is left out, and with none readable the alert gives no reading.",
+      "category": "backup",
+      "enabled": true,
+      "severity": "Warning",
+      "thresholds": {
+        "warning": 336,
+        "critical": 672
+      },
+      "unit": "hours",
+      "operator": "greater_than",
+      "durationSeconds": 0,
+      "frequencySeconds": 3600,
+      "cooldownMinutes": 60,
+      "query": "SET NOCOUNT ON; DECLARE @dbs TABLE (name sysname NOT NULL PRIMARY KEY, last_good datetime NULL, tried bit NOT NULL); DECLARE @dbinfo TABLE (ParentObject nvarchar(255) NULL, [Object] nvarchar(255) NULL, Field nvarchar(255) NULL, [VALUE] nvarchar(4000) NULL); DECLARE @name sysname; INSERT INTO @dbs (name, last_good, tried) SELECT d.name, CONVERT(datetime, DATABASEPROPERTYEX(d.name, 'LastGoodCheckDbTime')), 0 FROM sys.databases AS d WHERE d.database_id > 4 AND d.state = 0; WHILE 1 = 1 BEGIN SET @name = NULL; SELECT TOP (1) @name = name FROM @dbs WHERE last_good IS NULL AND tried = 0 ORDER BY name; IF @name IS NULL BREAK; UPDATE @dbs SET tried = 1 WHERE name = @name; DELETE FROM @dbinfo; BEGIN TRY INSERT INTO @dbinfo EXEC sys.sp_executesql N'DBCC DBINFO(@db) WITH TABLERESULTS, NO_INFOMSGS', N'@db sysname', @db = @name; UPDATE @dbs SET last_good = (SELECT TOP (1) TRY_CONVERT(datetime, [VALUE], 121) FROM @dbinfo WHERE Field = N'dbi_dbccLastKnownGood') WHERE name = @name; END TRY BEGIN CATCH SET @name = NULL; END CATCH END; SELECT CASE WHEN EXISTS (SELECT 1 FROM @dbs) THEN (SELECT MAX(DATEDIFF(HOUR, last_good, GETDATE())) FROM @dbs) ELSE 0 END AS value;",
+      "alwaysAlert": false,
+      "primaryChannel": null,
+      "sendEmail": false,
+      "includeInDailySummary": false,
+      "escalate": false,
+      "escalationThresholdEvents": 0,
+      "escalationWindowMinutes": 0,
+      "escalationAfterMinutes": 0,
+      "escalationChannel": null,
+      "nextAlertDelayMinutes": 0,
+      "baselineDeviationPercent": 0,
+      "baselineQueryId": null,
+      "baselineSeries": null,
+      "canBaseline": false,
+      "requiresOnPrem": false
+    }
+  ]
+}

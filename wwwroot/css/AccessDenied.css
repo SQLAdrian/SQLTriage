@@ -1,0 +1,30 @@
+/* Styles extracted to wwwroot/css/AccessDenied.css 2026-05-11 (CLAUDE.md convention). */
+.rbac-denied {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 60px 32px;
+    margin: 40px auto;
+    max-width: 400px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    color: var(--text-primary);
+    text-align: center;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+.rbac-denied-icon {
+    font-size: 36px;
+    color: var(--accent);
+    filter: drop-shadow(0 0 12px var(--accent-alpha));
+}
+.rbac-denied-text {
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+.rbac-denied-text strong {
+    color: var(--text-primary);
+}

@@ -1,0 +1,84 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using SQLTriage.Data
+@inject DatabaseAvailabilityService DbAvailability
+@* NavigationManager injection dropped 2026-07-21 with the "Deploy →" button — this
+   component no longer navigates anywhere. *@
+@inject UserSettingsService UserSettings
+@implements IDisposable
+
+@*
+   Inline banner shown when a page depends on a SQL database that isn't present on
+   the active server. Surfaces the otherwise-silent "Cannot open database X requested
+   by the login" failure that turns Loading spinners into indefinite waits.
+
+   Bind <DatabaseName> and an optional <ServerName> if you want to probe a specific
+   server rather than all enabled connections.
+
+   This banner is INFORMATIONAL ONLY. It used to render a "Deploy →" button whose
+   <DeployRoute> defaulted to /deploysqlwatch; both the parameter and the button were
+   removed 2026-07-21 when the collector deploy path was unbundled for client safety
+   (see RouteConstants.cs "Deployment"). That default was the worst of the entry points:
+   its single call site (DynamicDashboard) never overrode it, so all 44 dashboard panels
+   — including the 17 backed by PerformanceMonitor — offered one click to install onto
+   whatever production server was selected, at the exact moment the operator was looking
+   at a broken dashboard and wanted it fixed. Do not re-add a deploy action here.
+*@
+
+@if (_checked && !_exists)
+{
+    <div class="db-missing-banner" role="status" aria-live="polite">
+        <span class="db-missing-banner-icon">
+            <i class="fa-solid fa-database"></i>
+        </span>
+        <span class="db-missing-banner-text">
+            <strong>@DatabaseName not deployed</strong> on the active server. This page reads
+            from @DatabaseName; panels will stay empty (or fail with login errors) until the
+            schema is installed. Every other page is unaffected.
+        </span>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public string DatabaseName { get; set; } = string.Empty;
+    // DeployRoute parameter removed 2026-07-21 — see the comment block above.
+    [Parameter] public string? ServerName { get; set; }
+
+    private bool _checked;
+    private bool _exists;
+    private CancellationTokenSource? _cts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (UserSettings.GetFastAppLoad()) await Task.Yield();
+        if (string.IsNullOrWhiteSpace(DatabaseName)) return;
+        // Common system DBs always exist — short-circuit so callers can use this
+        // banner blindly without filtering ahead of time.
+        if (IsSystemDatabase(DatabaseName)) { _checked = true; _exists = true; return; }
+
+        _cts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+        try
+        {
+            _exists = !string.IsNullOrEmpty(ServerName)
+                ? await DbAvailability.DatabaseExistsOnServerAsync(ServerName!, DatabaseName, _cts.Token)
+                : await DbAvailability.DatabaseExistsAsync(DatabaseName, _cts.Token);
+        }
+        catch
+        {
+            // Connection failure — treat as not-present so the user at least sees a hint.
+            _exists = false;
+        }
+        finally
+        {
+            _checked = true;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private static bool IsSystemDatabase(string name) =>
+        name.Equals("master", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("tempdb", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("model", StringComparison.OrdinalIgnoreCase)
+        || name.Equals("msdb", StringComparison.OrdinalIgnoreCase);
+
+    public void Dispose() { _cts?.Cancel(); _cts?.Dispose(); }
+}

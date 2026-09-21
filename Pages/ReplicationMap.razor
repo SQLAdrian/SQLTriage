@@ -1,0 +1,395 @@
+@* /* In the name of God, the Merciful, the Compassionate */ *@
+@page "/replication-map"
+<PageTitle>SQLTriage — Replication Map</PageTitle>
+
+@using System.Globalization
+@using System.Linq
+@using System.Data
+@using Microsoft.Data.SqlClient
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@using SQLTriage.Data.Services.Replication
+@inject ServerConnectionManager ConnectionManager
+@inject AuditLogService AuditLog
+@inject SQLTriage.Data.Services.AppUserState UserState
+@inject NavigationManager Navigation
+
+@*
+    Replication Map (Phase 1 — READ ONLY) — a "live PCB" of transactional
+    replication: publications (left) wired to subscriptions (right), edges
+    coloured by distribution-agent health (green = flowing, amber = retry/lag,
+    red = failed, grey = unknown), with the current pulse travelling in the
+    replication direction.
+
+    Connects to the SELECTED server as the distributor and reads the distribution
+    database (MSdistribution_agents + latest MSdistribution_history). Degrades to
+    a clear empty state when the server is not a distributor or lacks permission.
+    The exact T-SQL is shown via "Show query" so it can be validated on-site.
+    "Sample data" renders a synthetic topology for preview without a live server.
+
+    No commands are sent here — remediation is Phase 2 (behind No-Pants + RBAC).
+*@
+
+<div class="rep-page">
+    <div class="rep-head">
+        <div>
+            <h2 class="rep-title"><i class="fa-solid fa-diagram-project"></i> Replication Map</h2>
+            <div class="rep-sub">
+                @if (_sample) { <span class="rep-badge rep-badge-sample">SAMPLE DATA</span> <text>@_scanSummary</text> }
+                else if (_scanned) { <text>@_scanSummary</text> }
+                else { <text>Transactional replication topology &amp; health (read-only).</text> }
+            </div>
+        </div>
+        <div class="rep-toolbar">
+            @* "All servers" scans every catalogued server as a candidate distributor; each
+               server's outcome is reported separately below, so an all-scope scan can never
+               present one server's silence as the whole estate's. *@
+            <ServerSelector Items="_items"
+                            SelectedId="@_selectedId"
+                            SelectedIdChanged="OnSelectionChanged"
+                            AllowAllScope="true" />
+            <button class="rep-btn rep-btn-primary" @onclick="ScanAsync" disabled="@(_scanning || _items.Count == 0)">
+                @if (_scanning) { <i class="fa-solid fa-spinner fa-spin"></i> <span>Scanning…</span> }
+                else { <i class="fa-solid fa-radar"></i> <span>Scan</span> }
+            </button>
+            <button class="rep-btn" @onclick="LoadSample" disabled="@_scanning" title="Render a synthetic topology to preview the map">
+                <i class="fa-solid fa-vial"></i> Sample
+            </button>
+            <button class="rep-btn" @onclick="() => _showSql = !_showSql">
+                <i class="fa-solid fa-code"></i> @(_showSql ? "Hide" : "Show") query
+            </button>
+            @if (_scanned || _sample)
+            {
+                <button class="rep-btn" @onclick="Clear"><i class="fa-solid fa-xmark"></i> Clear</button>
+            }
+        </div>
+    </div>
+
+    @if (_showSql)
+    {
+        <pre class="rep-sql">@ReplicationQuery</pre>
+    }
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="rep-alert"><i class="fa-solid fa-circle-exclamation"></i> @_error</div>
+    }
+
+    @* Per-server outcomes. Every server the scan touched gets a line of its own, so a
+       failure is never presented as "no replication configured" and an all-scope scan
+       never hides one server's silence behind another's data. *@
+    @if (_outcomes.Count > 0)
+    {
+        <div class="rep-outcomes">
+            @foreach (var o in _outcomes)
+            {
+                <div class="rep-outcome">
+                    <span class="rep-dot @(o.Kind == ScanOutcomeKind.LinksFound ? "s-ok" : o.Kind == ScanOutcomeKind.Failed ? "s-bad" : "s-unknown")"></span>
+                    <strong>@o.Server</strong>
+                    @if (o.Kind == ScanOutcomeKind.LinksFound)
+                    {
+                        <text>@o.Links link(s) read from its distribution database(s).</text>
+                    }
+                    else if (o.Kind == ScanOutcomeKind.NoReplicationMetadata)
+                    {
+                        <text>answered, and returned no rows from any distribution database on it.</text>
+                    }
+                    else
+                    {
+                        <text>could not be read: @o.Detail</text>
+                    }
+                </div>
+            }
+        </div>
+    }
+
+    @if (!string.IsNullOrEmpty(_unresolvedNotice))
+    {
+        <div class="rep-notice"><i class="fa-solid fa-circle-question"></i> @_unresolvedNotice</div>
+    }
+
+    <div class="rep-legend">
+        <span><span class="rep-key s-ok"></span> Healthy / flowing</span>
+        <span><span class="rep-key s-warn"></span> Retry / latency</span>
+        <span><span class="rep-key s-bad"></span> Failed / stopped</span>
+        <span><span class="rep-key s-unknown"></span> Unknown</span>
+        <span class="rep-hint">Click a link for detail.</span>
+    </div>
+
+    @if (_edges.Count == 0)
+    {
+        @if (_scanned)
+        {
+            var quiet = _outcomes.Where(o => o.Kind == ScanOutcomeKind.NoReplicationMetadata).Select(o => o.Server).ToList();
+            var broken = _outcomes.Count(o => o.Kind == ScanOutcomeKind.Failed);
+            <div class="rep-empty">
+                <i class="fa-solid fa-diagram-project"></i>
+                @if (quiet.Count > 0)
+                {
+                    <p>No replication metadata on <strong>@string.Join(", ", quiet)</strong>.</p>
+                    <p class="rep-empty-sub">Each of those answered and returned no rows. The server may not be a distributor, replication may not be configured, or the login may lack permission on the <code>distribution</code> database. Try the publisher/distributor instance, or use <strong>Sample</strong> to preview.</p>
+                }
+                @if (broken > 0)
+                {
+                    <p class="rep-empty-sub">@broken server(s) could not be read at all — the reason for each is listed above. Nothing is claimed about replication on those.</p>
+                }
+            </div>
+        }
+        else if (!_sample)
+        {
+            <div class="rep-empty">
+                <i class="fa-solid fa-diagram-project"></i>
+                <p>Pick a server (or <strong>All servers</strong>) and click <strong>Scan</strong>.</p>
+                <p class="rep-empty-sub">No live server? Click <strong>Sample</strong> to preview the map.</p>
+            </div>
+        }
+    }
+    else
+    {
+        <div class="rep-board">
+            <svg class="rep-svg @(_selEdge >= 0 ? "has-sel" : "")" viewBox="0 0 1400 @N(_vbH)"
+                 preserveAspectRatio="xMidYMin meet" role="img" aria-label="Replication topology map">
+                <rect x="0" y="0" width="1400" height="@N(_vbH)" fill="transparent" @onclick="() => _selEdge = -1"></rect>
+
+                @* ── edges (pub → sub), coloured by health ── *@
+                @for (int ei = 0; ei < _edges.Count; ei++)
+                {
+                    var e = _edges[ei];
+                    var idx = ei;
+                    var sel = _selEdge == idx ? " rep-sel" : (_selEdge >= 0 ? " rep-dim" : "");
+                    var traceCls = $"rep-trace s-{e.Status}{sel}";
+                    var curCls = $"rep-current s-{e.Status}{sel}";
+                    <path class="@traceCls" d="@e.D"></path>
+                    @if (e.Status != "bad")
+                    {
+                        <path class="@curCls" d="@e.D" pathLength="100"
+                              style="animation-delay:@N(e.Delay)s; animation-duration:@N(e.Dur)s"></path>
+                    }
+                    <path class="rep-hit" d="@e.D" @onclick="() => SelectEdge(idx)" @onclick:stopPropagation="true"></path>
+                }
+
+                @* ── publication nodes (left) ── *@
+                @foreach (var n in _pubNodes)
+                {
+                    <g class="rep-node">
+                        @((MarkupString)$"<rect class=\"rep-pub{(n.Unresolved ? " rep-unresolved" : "")}\" x=\"{N(PubX - 168)}\" y=\"{N(n.Y - 17)}\" width=\"168\" height=\"34\" rx=\"5\"></rect>")
+                        @((MarkupString)$"<text class=\"rep-n1\" x=\"{N(PubX - 156)}\" y=\"{N(n.Y - 2)}\">{Enc(n.Line1)}</text>")
+                        @((MarkupString)$"<text class=\"rep-n2{(n.Unresolved ? " rep-n2-unresolved" : "")}\" x=\"{N(PubX - 156)}\" y=\"{N(n.Y + 11)}\">{Enc(n.Line2)}</text>")
+                        @if (n.Unresolved && n.Detail != null)
+                        {
+                            <title>@n.Detail</title>
+                        }
+                        <circle class="rep-pin" cx="@N(PubX + 4)" cy="@N(n.Y)" r="4"></circle>
+                    </g>
+                }
+
+                @* ── subscription nodes (right) ── *@
+                @foreach (var n in _subNodes)
+                {
+                    <g class="rep-node">
+                        @((MarkupString)$"<rect class=\"rep-sub{(n.Unresolved ? " rep-unresolved" : "")}\" x=\"{N(SubX)}\" y=\"{N(n.Y - 17)}\" width=\"176\" height=\"34\" rx=\"5\"></rect>")
+                        @((MarkupString)$"<text class=\"rep-n1{(n.Unresolved ? " rep-n1-unresolved" : "")}\" x=\"{N(SubX + 12)}\" y=\"{N(n.Y - 2)}\">{Enc(n.Line1)}</text>")
+                        @((MarkupString)$"<text class=\"rep-n2\" x=\"{N(SubX + 12)}\" y=\"{N(n.Y + 11)}\">{Enc(n.Line2)}</text>")
+                        @if (n.Unresolved && n.Detail != null)
+                        {
+                            <title>@n.Detail</title>
+                        }
+                        <circle class="rep-pin" cx="@N(SubX - 4)" cy="@N(n.Y)" r="4"></circle>
+                    </g>
+                }
+            </svg>
+        </div>
+
+        @if (_selEdge >= 0 && _selEdge < _edges.Count)
+        {
+            var e = _edges[_selEdge];
+            <div class="rep-detail">
+                <div class="rep-detail-head">
+                    <span class="rep-dot s-@e.Status"></span>
+                    <strong>@e.PubLabel</strong> <i class="fa-solid fa-arrow-right-long"></i> <strong>@e.SubLabel</strong>
+                    <button class="rep-btn rep-btn-sm" @onclick="() => _selEdge = -1">✕</button>
+                </div>
+                <div class="rep-detail-grid">
+                    <div><span>Agent</span>@(string.IsNullOrEmpty(e.Agent) ? "—" : e.Agent)</div>
+                    <div><span>Status</span>@e.StatusText</div>
+                    <div><span>Latency</span>@(e.LatencyMs.HasValue ? $"{e.LatencyMs.Value / 1000.0:0.0}s" : "—")</div>
+                    <div><span>Last activity</span>@(e.LastActivity?.ToString("yyyy-MM-dd HH:mm:ss") ?? "—")</div>
+                    <div class="rep-detail-msg"><span>Last message</span>@(string.IsNullOrWhiteSpace(e.LastMessage) ? "—" : e.LastMessage)</div>
+                    @if (e.PubDetail != null)
+                    {
+                        <div class="rep-detail-msg"><span>Publisher name</span>@e.PubDetail</div>
+                    }
+                    @if (e.SubDetail != null)
+                    {
+                        <div class="rep-detail-msg"><span>Subscriber name</span>@e.SubDetail</div>
+                    }
+                </div>
+                <div class="rep-detail-foot">Phase 2 will add remediation here (restart / reinitialize), behind No-Pants Mode + confirmation + audit.</div>
+            </div>
+        }
+    }
+
+    @* ── A.2: the same topology grouped by SQL instance ─────────────────────────
+       The bipartite board above answers "what flows where". This answers "what does
+       THIS instance do", which is the question a DBA arrives with. Roles and items
+       are derived from the same links, never re-queried. *@
+    @if (_groups.Count > 0)
+    {
+        <div class="rep-groups">
+            <h3 class="rep-groups-title"><i class="fa-solid fa-server"></i> By SQL instance (@_groups.Count)</h3>
+            @foreach (var g in _groups)
+            {
+                <div class="rep-group @(g.NameResolved ? "" : "rep-group-unresolved")">
+                    <div class="rep-group-head">
+                        <strong>@g.Display</strong>
+                        <span class="rep-roles">@g.RoleSummary</span>
+                        @if (!g.NameResolved)
+                        {
+                            <span class="rep-badge rep-badge-unresolved">NO SERVER NAME</span>
+                        }
+                    </div>
+                    @if (!g.NameResolved && g.UnresolvedDetail != null)
+                    {
+                        <div class="rep-group-note">@g.UnresolvedDetail</div>
+                    }
+                    <ul class="rep-items">
+                        @foreach (var it in g.Items)
+                        {
+                            <li class="rep-item">
+                                <span class="rep-dot s-@it.Status"></span>
+                                <span class="rep-item-kind">
+                                    @(it.Kind == ReplicationItemKind.Publication ? "publication"
+                                      : it.Kind == ReplicationItemKind.Subscription ? "subscription" : "distributor")
+                                </span>
+                                <span class="rep-item-title">@it.Title</span>
+                                <span class="rep-item-detail">@it.Detail</span>
+                                @if (!string.IsNullOrEmpty(it.StatusText))
+                                {
+                                    <span class="rep-item-status">@it.StatusText</span>
+                                }
+                            </li>
+                        }
+                    </ul>
+                </div>
+            }
+        </div>
+    }
+
+    @* ── A.4: participants this install has no connection for ───────────────────
+       One explicit add at a time, through the existing dialog on /servers. This page
+       writes nothing to the server store: probing opens a connection and closes it,
+       and "Add" hands the discovered name to that dialog pre-filled.
+
+       In SAMPLE mode every name in this block was invented by LoadSample. The block and
+       each row say so, and both actions are refused — a fabricated name must never reach
+       the add dialog, where nothing would tell the operator it was fabricated. The gate is
+       ParticipantOffer, asked by the markup AND by the handlers. *@
+    @if ((_scanned || _sample) && (_participants.Addable.Count > 0 || _participants.NotNameable.Count > 0))
+    {
+        <div class="rep-participants">
+            <h3 class="rep-groups-title">
+                <i class="fa-solid fa-plus"></i> Discovered participants not in your server list
+                @if (_participants.Fabricated)
+                {
+                    <span class="rep-badge rep-badge-sample">SAMPLE DATA</span>
+                }
+            </h3>
+            @if (_participants.Fabricated)
+            {
+                <p class="rep-part-foot rep-part-sample">
+                    These names were generated to preview the map. Nothing here was read from a server,
+                    so nothing here can be probed or added: both actions are refused on sample rows.
+                    Scan a real distributor to get participants you can act on.
+                </p>
+            }
+            @if (_participants.Addable.Count > 0)
+            {
+                <table class="rep-part-table">
+                    <thead><tr><th>Server</th><th>Named by</th><th>Reachability</th><th></th></tr></thead>
+                    <tbody>
+                        @foreach (var c in _participants.Addable)
+                        {
+                            var p = ProbeOf(c.Key);
+                            <tr class="@(c.Fabricated ? "rep-part-row-sample" : "")">
+                                <td>
+                                    <strong>@c.Server</strong>
+                                    @if (c.Fabricated)
+                                    {
+                                        <span class="rep-badge rep-badge-sample">SAMPLE</span>
+                                    }
+                                </td>
+                                <td>@(string.IsNullOrEmpty(c.ViaDistributor) ? "—" : c.ViaDistributor)</td>
+                                <td>
+                                    @if (!ParticipantOffer.MayProbe(c))
+                                    {
+                                        <span class="rep-dot s-unknown"></span>@ParticipantOffer.ProbeRefusedLabel
+                                        <div class="rep-part-reason">@ParticipantOffer.DescribeUnprobeable(c, true)</div>
+                                    }
+                                    else
+                                    {
+                                        <span class="rep-dot @ProbeClass(p)"></span>@ProbeLabel(p)
+                                        @if (p.Probed && !string.IsNullOrEmpty(p.Reason))
+                                        {
+                                            <div class="rep-part-reason">@p.Reason</div>
+                                        }
+                                    }
+                                </td>
+                                <td class="rep-part-actions">
+                                    @if (ParticipantOffer.MayProbe(c))
+                                    {
+                                        <button class="rep-btn rep-btn-sm2" @onclick="() => ProbeParticipantAsync(c)" disabled="@p.Running">
+                                            @(p.Probed ? "Re-probe" : "Probe")
+                                        </button>
+                                    }
+                                    @if (MayManageServers && ParticipantOffer.MayHandOffToAddDialog(c))
+                                    {
+                                        <button class="rep-btn rep-btn-sm2" @onclick="() => AddParticipant(c)">Add…</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                <p class="rep-part-foot">
+                    @if (_participants.Fabricated)
+                    {
+                        <text>No connection is opened for these rows: the probe is refused before it runs, and <strong>Add…</strong> is not offered, because these names came from <strong>Sample</strong> rather than from a distributor.</text>
+                    }
+                    else
+                    {
+                        @* Conditioned on the row it describes, not on the happy path: a scanned
+                           row whose discovering connection was never recorded, or has since been
+                           removed, short-circuits before any connection is opened. Saying "probing
+                           opens a connection" flat would over-claim for those rows too. *@
+                        <text>Where the connection that discovered a server is still in your catalogue, probing borrows its credentials to open a connection and closes it.</text>
+                        <text> A row without that connection is not probed at all, and its Reachability cell says which of the two it was.</text>
+                        <text> <strong>Add…</strong> opens the normal add-connection dialog on the Servers page with the name filled in — one server, reviewed and saved by you.</text>
+                        @if (!MayManageServers)
+                        {
+                            <text> Adding is hidden because this account does not hold <code>manage_servers</code>.</text>
+                        }
+                    }
+                </p>
+            }
+            @if (_participants.NotNameable.Count > 0)
+            {
+                <p class="rep-part-foot">
+                    @_participants.NotNameable.Count participant(s) cannot be offered here — @string.Join(", ", _participants.NotNameable) —
+                    @if (_participants.Fabricated)
+                    {
+                        <text>because the sample topology carries no server name for them, only the id shown above.</text>
+                    }
+                    else
+                    {
+                        <text>because the scan read no server name for them, only what is shown above. There is nothing to connect to until that id resolves on the distributor.</text>
+                    }
+                </p>
+            }
+        </div>
+    }
+</div>
+
+
+
+
+<!-- Styles extracted to wwwroot/css/ReplicationMap.css 2026-08-30 (CLAUDE.md convention). -->

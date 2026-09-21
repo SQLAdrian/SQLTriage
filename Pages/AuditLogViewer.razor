@@ -1,0 +1,616 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/audit-log"
+@using SQLTriage.Components.Shared
+<PageTitle>SQLTriage - Audit Log</PageTitle>
+@using SQLTriage.Data
+@inject AuditLogService AuditLog
+@inject SQLTriage.Data.Services.AppUserState UserState
+
+@* ALIGNED 2026-08-15, ruled by Adrian — do not "fix" this back to the static call.
+   Until this date the gate read `RbacService.HasPermission(UserState.Role, "settings")`: the static
+   permission matrix, which is the one gate in the app that cannot see the unconfigured-install
+   bootstrap hatch. Every other settings-gated page — BuildProfile, EditAuditScripts, RemediationTuner,
+   ScheduledTasks, ServiceManagement — goes through AppUserState.IsAuthorized, which is the same matrix
+   plus this circuit's bootstrap eligibility (WPF desktop, or a loopback caller on an install with RBAC
+   not yet enforced). MEASURED on a fresh contained install at that base: this page answered its denial
+   panel to a loopback caller while the onboarding wizard on the same install passed its own gate — so
+   the chain banners and the Verify Chain button were unreachable on a fresh browser-hosted install. The
+   ruling is ALIGN, not tighten: READING audit records is strictly weaker than the settings WRITE the
+   bootstrap hatch already grants that same caller, so a page that only displays them has no business
+   being the single strictest surface in the app. The static call was drift from the 2026-08-01 sweep
+   that converted the other 21 call sites, not a deliberate hardening of this one. The plain
+   IsAuthorized is deliberate over IsAuthorizedWithBreakGlass: break-glass is scoped by round 3's ruling
+   to Settings and Onboarding, and this page is neither. Fails closed under enforced RBAC exactly as its
+   peers do. Guarded until 2026-08-17 by RbacServerModeLockoutTests.NoShippedUiCallsTheStaticHasPermissionDirectly,
+   a text ban whose allowlist had exempted this very file for a fortnight. That test is retired: the
+   static RbacService.HasPermission is now private, so the call this comment describes cannot be
+   written from any page at all — the compiler refuses it (CS0122) rather than a scan reporting it. *@
+@if (!UserState.IsAuthorized("settings"))
+{
+    <div class="audit-log-denied">
+        <AccessDenied RequiredRole="Admin" Message="Audit log viewing is restricted to Admin users." />
+    </div>
+}
+else
+{
+
+<div class="audit-log-page">
+    <h2>Audit Log</h2>
+    <p class="page-description">View security-relevant application events. Entries are stored with HMAC-SHA256 chain integrity.</p>
+
+    @if (AuditLog.ChainBroken)
+    {
+        @* ROUND 9 (2026-08-02): the OPENING is composed too. This one is chain-wide but POSITIVE —
+           it cannot be falsified by another finding — and it is composed anyway so that no
+           chain-wide sentence of any polarity is left in markup, where a test cannot reach it. *@
+        <div class="status-message error" role="alert" aria-live="assertive" style="margin-bottom: 16px;">
+            @{ var breakClaim = AuditLog.StartupBannerFor(AuditLogService.StartupChainFinding.Break); }
+            <i class="fa-solid fa-triangle-exclamation"></i> @(breakClaim?.Headline) First failing record: <code>@(AuditLog.ChainBreakFirstRecordId ?? "unknown")</code>. @if (!string.IsNullOrEmpty(AuditLog.ChainTruncationDetail)) { <text>Cause: @AuditLog.ChainTruncationDetail. </text> } See <code>docs/compliance/incident-response-runbook.md</code> § Audit Chain Break for next steps.
+        </div>
+    }
+    @if (AuditLog.ChainProvenanceIndeterminate)
+    {
+        @* NOT the amber "benign key gap" banner. In this state the service has no evidence in
+           either direction, so the banner must claim nothing in either direction — saying "no
+           entry was found to have been altered" here is the exculpation that let a tampered
+           record through two rounds of review. *@
+        @* ROUND 9 (2026-08-02). THE HEADLINE, not just the closing. Round 8 composed this banner's
+           closing and left its opening as the literal "Audit chain integrity cannot be determined"
+           — which is the SAME defect one sentence higher up, and the quotable half. On
+           ChainBroken=True + ChainProvenanceIndeterminate=True the launch's own scan DID determine
+           the integrity: it failed, and the red alert above says so. The opening is now chosen with
+           every finding in view, exactly like the closing: alone it keeps its wording; beside a
+           break it narrows to what this finding actually leaves open, which is provenance. *@
+        <div class="status-message error" role="alert" aria-live="assertive" style="margin-bottom: 16px;">
+            @{ var indeterminateClaim = AuditLog.StartupBannerFor(AuditLogService.StartupChainFinding.ProvenanceIndeterminate); }
+            <i class="fa-solid fa-circle-exclamation"></i> <strong>@(indeterminateClaim?.Headline)</strong>
+            @if (AuditLog.ChainIndeterminateKeyId is not null)
+            {
+                <text>Some entries name signing key <code>@AuditLog.ChainIndeterminateKeyId</code>, which is not available on this machine, and no key-provenance record survives to show whether that key is one this installation ever held. </text>
+            }
+            @if (!string.IsNullOrEmpty(AuditLog.ChainIndeterminateDetail))
+            {
+                @* The anchor cause names no key and no record — a service-account change orphans the
+                   out-of-band checkpoint exactly like deliberate corruption does, and the service
+                   cannot tell them apart. Until 2026-08-01 round 4 this shape raised the red BROKEN
+                   banner and handed the operator the tampering playbook for a benign identity change.
+                   ROUND 9: the ...Sentence form, because the stored text is authored lower-case for
+                   the mid-sentence splice in FoldWithAnchorFindings ("In addition, <detail>") and so
+                   began lower-case here, mid-banner, where it is a sentence of its own. *@
+                <text>@AuditLog.ChainIndeterminateDetailSentence. </text>
+            }
+            @* Round 5: the pointer is back OUT of the key-id branch. Round 4 nested it inside the
+               "names signing key X" sentence, so the one thing an operator needs in order to start
+               — which record to look at — disappeared on any path that sets the state without a key
+               id (the unreadable-anchor cause, and a run whose KeyId is absent rather than forged).
+               It is printed whenever it exists, whatever produced the state. *@
+            @if (!string.IsNullOrEmpty(AuditLog.ChainIndeterminateFirstRecordId))
+            {
+                <text>First affected record: <code>@AuditLog.ChainIndeterminateFirstRecordId</code>. </text>
+            }
+            @* ROUND 8 (2026-08-02). The closing CHAIN-WIDE claim is composed by AuditLogService
+               against every finding on this launch, not written here. Until this round it was a
+               literal, and the literal said "Whether the chain was altered can be neither confirmed
+               nor ruled out" — measured false on an unreadable anchor PLUS an ordinary tamper
+               (ChainBroken=True, ChainProvenanceIndeterminate=True), where the mismatch on the same
+               scan confirmed exactly what this sentence denied. Three independent @if blocks means
+               two banners render together, and no surface-by-surface review catches that. *@
+            <strong>@(indeterminateClaim?.ClosingLead)</strong>, @(indeterminateClaim?.ClosingDetail)
+            See <code>docs/compliance/incident-response-runbook.md</code> § Audit Chain Provenance Indeterminate.
+        </div>
+    }
+    @if (AuditLog.ChainUnverifiable)
+    {
+        @* A missing signing key is an evidence GAP, not a tamper finding. Surfacing it as the same
+           red "integrity check failed" alert is what made the tamper signal meaningless. *@
+        @* ROUND 9: this OPENING is deliberately NOT composed, unlike the other two. It is scoped by
+           construction - "Some audit entries are unverifiable ... THEIR integrity can be neither
+           confirmed nor denied" attaches the negative to the entries it names, not to the chain, so
+           a break beside it cannot make it false - and it interleaves the key id and record id it is
+           about, which round 8 ruled stay on the page as per-finding facts. It is held here by
+           AuditLogStartupBannerTests.ThePage_KeepsOnlyScopedOpenings, which asserts both the scoped
+           wording and the absence of any unscoped variant. *@
+        <div class="status-message warning" role="status" aria-live="polite" style="margin-bottom: 16px;">
+            <i class="fa-solid fa-circle-question"></i> Some audit entries are <strong>unverifiable</strong>: they were signed with key <code>@(AuditLog.ChainUnverifiableKeyId ?? "unknown")</code>, which is not available on this machine, so their integrity can be neither confirmed nor denied. First affected record: <code>@(AuditLog.ChainUnverifiableFirstRecordId ?? "unknown")</code>.
+            @* ROUND 8 (2026-08-02): composed, not literal — see the note on the INDETERMINATE banner
+               above. The literal here was "No entry with an available signing key was found to have
+               been altered", and it rendered directly beneath the red break alert on a benign
+               key-loss run PLUS an ordinary tamper (ChainBroken=True, ChainUnverifiable=True), where
+               the tampered entry's key resolved and its signature failed. *@
+            @{ var unverifiableClaim = AuditLog.StartupBannerFor(AuditLogService.StartupChainFinding.UnverifiableGap); }
+            <strong>@(unverifiableClaim?.ClosingLead)</strong>, @(unverifiableClaim?.ClosingDetail)
+            See <code>docs/compliance/incident-response-runbook.md</code> § Audit Chain Unverifiable.
+        </div>
+    }
+    @if (AuditLog.ChainRestarted)
+    {
+        @* 2026-08-11. A resumption point is not an integrity failure, and until this build it
+           raised the red "Audit chain integrity check failed" alert above: on the live service that
+           banner fired over three restarts the previous build had caused itself. Both the headline
+           and the closing come from AuditLogService, chosen against every other finding on the same
+           launch - no chain-wide sentence lives in this markup. *@
+        <div class="status-message warning" role="status" aria-live="polite" style="margin-bottom: 16px;">
+            @{ var restartClaim = AuditLog.StartupBannerFor(AuditLogService.StartupChainFinding.Restart); }
+            <i class="fa-solid fa-link-slash"></i> <strong>@(restartClaim?.Headline)</strong> First restart point: <code>@(AuditLog.ChainRestartFirstRecordId ?? "unknown")</code>.
+            <strong>@(restartClaim?.ClosingLead)</strong>, @(restartClaim?.ClosingDetail)
+            See <code>docs/compliance/incident-response-runbook.md</code> § Audit Chain Break.
+        </div>
+    }
+
+    <div class="audit-filters">
+        <div class="audit-filter-field">
+            <label>From</label>
+            <input type="datetime-local" @bind="_fromDate" class="audit-filter-input" />
+        </div>
+        <div class="audit-filter-field">
+            <label>To</label>
+            <input type="datetime-local" @bind="_toDate" class="audit-filter-input" />
+        </div>
+        <div class="audit-filter-field">
+            <label>Event Type</label>
+            <select @bind="_filterType" class="audit-filter-input">
+                <option value="">All Types</option>
+                @foreach (var type in Enum.GetValues<AuditEventType>())
+                {
+                    <option value="@type">@type</option>
+                }
+            </select>
+        </div>
+        <div class="audit-filter-field">
+            <label>Severity</label>
+            <select @bind="_filterSeverity" class="audit-filter-input">
+                <option value="">All Severities</option>
+                @foreach (var sev in Enum.GetValues<AuditSeverity>())
+                {
+                    <option value="@sev">@sev</option>
+                }
+            </select>
+        </div>
+        <div class="audit-filter-actions">
+            <button class="btn btn-primary audit-filter-btn" @onclick="LoadEntries">
+                <i class="fa-solid fa-magnifying-glass"></i> Search
+            </button>
+            <button class="btn btn-secondary audit-filter-btn-reset" @onclick="ResetFilters">Reset</button>
+        </div>
+    </div>
+
+    <div class="audit-action-bar" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+        <button class="btn btn-secondary" @onclick="RunVerifyChain" disabled="@_verifying">
+            <i class="fa-solid fa-link"></i> @(_verifying ? "Verifying…" : "Verify Chain")
+        </button>
+        <button class="btn btn-secondary" @onclick="ExportVerificationReport" disabled="@(_lastVerification == null)">
+            <i class="fa-solid fa-file-export"></i> Export Verification Report
+        </button>
+        <button class="btn btn-secondary" @onclick="ExportCsv">
+            <i class="fa-solid fa-file-csv"></i> Export CSV
+        </button>
+        <button class="btn btn-secondary" @onclick="ExportJson">
+            <i class="fa-solid fa-file-code"></i> Export JSON
+        </button>
+    </div>
+
+    @if (_verifyResult != null)
+    {
+        @* Driven by the typed status, not by substring-matching the message — "UNVERIFIABLE"
+           happens to contain neither "INTACT" nor "BROKEN" as a whole word, and a verdict this
+           consequential must never depend on string luck. *@
+        <div class="status-message @VerifyBannerClass" role="status" aria-live="polite" style="margin-bottom:12px;">
+            <i class="fa-solid @VerifyBannerIcon"></i>
+            @_verifyResult
+        </div>
+    }
+    @if (_exportMessage != null)
+    {
+        <div class="status-message success" role="status" aria-live="polite" style="margin-bottom:12px;">
+            <i class="fa-solid fa-check-circle"></i> @_exportMessage
+        </div>
+    }
+
+    <div class="audit-status-bar">
+        <span class="audit-status-text">
+            @if (_allEntries.Count > 0)
+            {
+                <text>Showing @((_currentPage * PageSize) + 1)–@Math.Min((_currentPage + 1) * PageSize, _filteredEntries.Count) of @_filteredEntries.Count entries</text>
+            }
+            else
+            {
+                <text>No entries found</text>
+            }
+        </span>
+        <span class="audit-status-total">
+            @_allEntries.Count total loaded
+        </span>
+    </div>
+
+    @if (_loading)
+    {
+        <LoadingSpinner Message="Loading audit entries..." />
+    }
+    else if (_pagedEntries.Count == 0)
+    {
+        <div class="audit-empty">
+            <i class="fa-solid fa-clipboard-list audit-empty-icon"></i>
+            <p>No audit log entries found for the selected filters.</p>
+        </div>
+    }
+    else
+    {
+        <div class="audit-table-wrapper">
+            <table class="audit-table">
+                <thead>
+                    <tr class="audit-table-header">
+                        <th class="audit-table-th">Timestamp</th>
+                        <th class="audit-table-th">Event Type</th>
+                        <th class="audit-table-th">Severity</th>
+                        <th class="audit-table-th">Message</th>
+                        <th class="audit-table-th">User</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var entry in _pagedEntries)
+                    {
+                        <tr class="audit-table-row" @onclick="() => ToggleDetails(entry)">
+                            <td class="audit-table-td audit-table-td-timestamp">
+                                @entry.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+                            </td>
+                            <td class="audit-table-td">
+                                <span class="audit-table-td-event-type">@entry.EventType</span>
+                            </td>
+                            <td class="audit-table-td">
+                                <span class="audit-severity @GetSeverityClass(entry.Severity)">@entry.Severity</span>
+                            </td>
+                            <td class="audit-table-td audit-table-td-message">@entry.Message</td>
+                            <td class="audit-table-td audit-table-td-user">@entry.User</td>
+                        </tr>
+                        @if (_expandedEntries.Contains(entry))
+                        {
+                            <tr class="audit-detail-row">
+                                <td colspan="5">
+                                    <div class="audit-detail-grid">
+                                        @foreach (var detail in entry.Details)
+                                        {
+                                            <div>
+                                                <span class="audit-detail-key">@detail.Key:</span>
+                                                <span class="audit-detail-value">@detail.Value</span>
+                                            </div>
+                                        }
+                                        <div>
+                                            <span class="audit-detail-key">Machine:</span>
+                                            <span class="audit-detail-value" style="font-family:inherit;">@entry.Machine</span>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        @if (TotalPages > 1)
+        {
+            <div class="audit-pagination">
+                <button class="btn btn-secondary audit-page-btn" @onclick="FirstPage" disabled="@(_currentPage == 0)">
+                    <i class="fa-solid fa-angles-left"></i>
+                </button>
+                <button class="btn btn-secondary audit-page-btn" @onclick="PrevPage" disabled="@(_currentPage == 0)">
+                    <i class="fa-solid fa-chevron-left"></i>
+                </button>
+                <span class="audit-page-info">
+                    @(_currentPage + 1) / @TotalPages
+                </span>
+                <button class="btn btn-secondary audit-page-btn" @onclick="NextPage" disabled="@(_currentPage >= TotalPages - 1)">
+                    <i class="fa-solid fa-chevron-right"></i>
+                </button>
+                <button class="btn btn-secondary audit-page-btn" @onclick="LastPage" disabled="@(_currentPage >= TotalPages - 1)">
+                    <i class="fa-solid fa-angles-right"></i>
+                </button>
+            </div>
+        }
+    }
+</div>
+
+}
+
+@code {
+    private const int PageSize = 50;
+
+    private List<AuditLogEntry> _allEntries = new();
+    private List<AuditLogEntry> _filteredEntries = new();
+    private List<AuditLogEntry> _pagedEntries = new();
+    private HashSet<AuditLogEntry> _expandedEntries = new();
+
+    private DateTime _fromDate = DateTime.Now.AddDays(-7);
+    private DateTime _toDate = DateTime.Now;
+    private string? _filterType;
+    private string? _filterSeverity;
+    private int _currentPage;
+    private bool _loading;
+    private bool _verifying;
+    private string? _verifyResult;
+    private string? _exportMessage;
+    // The FOLDED verdict, produced by AuditLogService.DescribeChainForCompliance — the same call
+    // the Audit Evidence bundle makes. Round 5: this used to be a raw ChainVerificationResult, and
+    // the raw result is blind to the out-of-band anchor findings. Measured on one launch over one
+    // set of bytes: a truncated chain with its anchor in place gave the bundle "Broken" while the
+    // sealed export printed "Chain status:     INTACT"; an unreadable anchor over a clean chain
+    // gave the bundle "INDETERMINATE" and the export "INTACT" again. Two
+    // client-facing documents from one build contradicting each other is the defect class this
+    // whole lane exists to kill, so there is exactly one verdict source now.
+    private AuditLogService.ComplianceChainStatement? _lastVerification;
+
+    private string VerifyBannerClass => _lastVerification?.Status switch
+    {
+        AuditLogService.ChainVerificationStatus.Intact => "success",
+        AuditLogService.ChainVerificationStatus.Unverifiable => "warning",
+        // Amber, beside the evidence gap and NOT with the tamper verdicts: every entry examined
+        // verified against its own signing key. Red here is the accusation this state exists to
+        // stop the product making over an accident it caused itself.
+        AuditLogService.ChainVerificationStatus.Restarted => "warning",
+        // Indeterminate is NOT amber. Amber is the "we know this is benign" colour, and the whole
+        // point of this state is that we do not know. It gets the attention of an error without
+        // the wording of an accusation.
+        _ => "error"
+    };
+
+    private string VerifyBannerIcon => _lastVerification?.Status switch
+    {
+        AuditLogService.ChainVerificationStatus.Intact => "fa-check-circle",
+        AuditLogService.ChainVerificationStatus.Unverifiable => "fa-circle-question",
+        AuditLogService.ChainVerificationStatus.Indeterminate => "fa-circle-exclamation",
+        AuditLogService.ChainVerificationStatus.Restarted => "fa-link-slash",
+        _ => "fa-triangle-exclamation"
+    };
+
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(_filteredEntries.Count / (double)PageSize));
+
+    protected override void OnInitialized()
+    {
+        LoadEntries();
+    }
+
+    private void LoadEntries()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            AuditEventType? eventType = null;
+            if (!string.IsNullOrEmpty(_filterType) && Enum.TryParse<AuditEventType>(_filterType, out var parsed))
+                eventType = parsed;
+
+            _allEntries = AuditLog.GetEntries(_fromDate, _toDate, eventType);
+            ApplySeverityFilter();
+            _currentPage = 0;
+            UpdatePagedEntries();
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void ApplySeverityFilter()
+    {
+        if (string.IsNullOrEmpty(_filterSeverity) || !Enum.TryParse<AuditSeverity>(_filterSeverity, out var severity))
+        {
+            _filteredEntries = _allEntries.ToList();
+        }
+        else
+        {
+            _filteredEntries = _allEntries.Where(e => e.Severity == severity).ToList();
+        }
+    }
+
+    private void UpdatePagedEntries()
+    {
+        _pagedEntries = _filteredEntries
+            .Skip(_currentPage * PageSize)
+            .Take(PageSize)
+            .ToList();
+    }
+
+    private void ResetFilters()
+    {
+        _fromDate = DateTime.Now.AddDays(-7);
+        _toDate = DateTime.Now;
+        _filterType = null;
+        _filterSeverity = null;
+        LoadEntries();
+    }
+
+    private void ToggleDetails(AuditLogEntry entry)
+    {
+        if (!_expandedEntries.Remove(entry))
+            _expandedEntries.Add(entry);
+    }
+
+    private void NextPage()
+    {
+        if (_currentPage < TotalPages - 1)
+        {
+            _currentPage++;
+            UpdatePagedEntries();
+            _expandedEntries.Clear();
+        }
+    }
+
+    private void PrevPage()
+    {
+        if (_currentPage > 0)
+        {
+            _currentPage--;
+            UpdatePagedEntries();
+            _expandedEntries.Clear();
+        }
+    }
+
+    private void FirstPage()
+    {
+        _currentPage = 0;
+        UpdatePagedEntries();
+        _expandedEntries.Clear();
+    }
+
+    private void LastPage()
+    {
+        _currentPage = TotalPages - 1;
+        UpdatePagedEntries();
+        _expandedEntries.Clear();
+    }
+
+    private string GetSeverityClass(AuditSeverity severity) => severity switch
+    {
+        AuditSeverity.Info     => "audit-severity-info",
+        AuditSeverity.Warning  => "audit-severity-warning",
+        AuditSeverity.Error    => "audit-severity-error",
+        AuditSeverity.Critical => "audit-severity-critical",
+        _ => ""
+    };
+
+    // ── MAJOR 1a: On-demand chain verification ──────────────────────────
+
+    private void RunVerifyChain()
+    {
+        _verifying = true;
+        _verifyResult = null;
+        _exportMessage = null;
+        StateHasChanged();
+        try
+        {
+            var actor = System.Environment.UserName;
+            // DescribeChainForCompliance runs the same full VerifyChain and then folds the
+            // out-of-band anchor findings (escalate-only). The banner the operator reads and the
+            // sealed document they hand over are now the same verdict from the same run.
+            _lastVerification = AuditLog.DescribeChainForCompliance(actor);
+            var v = _lastVerification.Result;
+            _verifyResult = $"Examined {v.EntryCount} entries. " +
+                            $"Chain {_lastVerification.StatusWord}. " +
+                            $"{_lastVerification.Detail} " +
+                            $"Verified at {v.VerifiedAt:yyyy-MM-dd HH:mm:ss} UTC.";
+        }
+        finally
+        {
+            _verifying = false;
+        }
+    }
+
+    // ── MAJOR 1c: Exportable verification artifact ──────────────────────
+
+    private void ExportVerificationReport()
+    {
+        if (_lastVerification == null) return;
+        _exportMessage = null;
+
+        try
+        {
+            var actor = System.Environment.UserName;
+            var statement = _lastVerification;
+            var v = statement.Result;
+
+            // The body is composed by AuditLogService (round 5). It used to be built here from a
+            // RAW VerifyChain result, which is blind to the anchor findings — so this SEALED
+            // document printed INTACT over a chain records had been removed from while the Audit
+            // Evidence bundle from the same build called the same chain Broken. One owner, one
+            // verdict, and the wording is now reachable by a test.
+            var body = new System.Text.StringBuilder(
+                AuditLog.ComposeChainVerificationReport(statement, actor));
+            // Compute SHA-256 of the report body to close the artifact loop
+            var bodyBytes = System.Text.Encoding.UTF8.GetBytes(body.ToString());
+            using var sha = System.Security.Cryptography.SHA256.Create();
+            var hash = sha.ComputeHash(bodyBytes);
+            var hashHex = Convert.ToHexString(hash).ToLowerInvariant();
+
+            body.AppendLine($"Report SHA-256:   {hashHex}");
+
+            var downloadsDir = System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile);
+            var exportDir = System.IO.Path.Combine(downloadsDir, "Downloads");
+            if (!System.IO.Directory.Exists(exportDir))
+                exportDir = AppDomain.CurrentDomain.BaseDirectory;
+
+            var fileName = $"AuditChainVerification_{v.VerifiedAt:yyyyMMdd_HHmmssZ}.txt";
+            var filePath = System.IO.Path.Combine(exportDir, fileName);
+            System.IO.File.WriteAllText(filePath, body.ToString(), System.Text.Encoding.UTF8);
+
+            AuditLog.LogChainVerificationExported(actor, filePath, statement);
+            _exportMessage = $"Verification report saved: {filePath}";
+        }
+        catch (Exception ex)
+        {
+            _exportMessage = $"Export failed: {ex.Message}";
+        }
+    }
+
+    // ── MAJOR 4: CSV / JSON export ──────────────────────────────────────
+
+    private static string CsvEscape(string? value)
+    {
+        if (value == null) return string.Empty;
+        if (value.Contains(',') || value.Contains('"') || value.Contains('\n'))
+            return "\"" + value.Replace("\"", "\"\"") + "\"";
+        return value;
+    }
+
+    private void ExportCsv()
+    {
+        _exportMessage = null;
+        try
+        {
+            var actor = System.Environment.UserName;
+            var entries = _filteredEntries; // respects current view filters
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("timestamp_utc,severity,event_type,actor,details,signature_hex,prev_signature_hex");
+            foreach (var e in entries)
+            {
+                var detailsFlat = string.Join("; ", e.Details.Select(kv => $"{kv.Key}={kv.Value}"));
+                var sigHex = string.IsNullOrEmpty(e.Signature)
+                    ? string.Empty : Convert.ToHexString(Convert.FromBase64String(e.Signature)).ToLowerInvariant();
+                var prevHex = string.IsNullOrEmpty(e.PreviousHash)
+                    ? string.Empty : Convert.ToHexString(Convert.FromBase64String(e.PreviousHash)).ToLowerInvariant();
+                sb.AppendLine($"{e.Timestamp:o},{e.Severity},{e.EventType},{CsvEscape(e.User)},{CsvEscape(detailsFlat)},{sigHex},{prevHex}");
+            }
+
+            var fileName = WriteExport(sb.ToString(), "AuditLog", "csv");
+            AuditLog.LogAuditLogExported(actor, "CSV", entries.Count, _fromDate, _toDate);
+            _exportMessage = $"CSV exported ({entries.Count} entries): {fileName}";
+        }
+        catch (Exception ex)
+        {
+            _exportMessage = $"Export failed: {ex.Message}";
+        }
+    }
+
+    private void ExportJson()
+    {
+        _exportMessage = null;
+        try
+        {
+            var actor = System.Environment.UserName;
+            var entries = _filteredEntries;
+            var json = System.Text.Json.JsonSerializer.Serialize(entries,
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+
+            var fileName = WriteExport(json, "AuditLog", "json");
+            AuditLog.LogAuditLogExported(actor, "JSON", entries.Count, _fromDate, _toDate);
+            _exportMessage = $"JSON exported ({entries.Count} entries): {fileName}";
+        }
+        catch (Exception ex)
+        {
+            _exportMessage = $"Export failed: {ex.Message}";
+        }
+    }
+
+    private static string WriteExport(string content, string prefix, string ext)
+    {
+        var downloadsDir = System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile);
+        var exportDir = System.IO.Path.Combine(downloadsDir, "Downloads");
+        if (!System.IO.Directory.Exists(exportDir))
+            exportDir = AppDomain.CurrentDomain.BaseDirectory;
+
+        var fileName = $"{prefix}_{DateTime.UtcNow:yyyyMMdd_HHmmssZ}.{ext}";
+        var filePath = System.IO.Path.Combine(exportDir, fileName);
+        System.IO.File.WriteAllText(filePath, content, System.Text.Encoding.UTF8);
+        return filePath;
+    }
+}

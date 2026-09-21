@@ -1,0 +1,277 @@
+/* In the name of God, the Merciful, the Compassionate */
+/* F2 — /disk-io page. Drive-lane layout, files as nodes, latency-driven heat.
+   Reuses --hot-cold..--hot-hot tokens defined in CodeHotspots.css (colour-blind-safe).
+   Database grouping is HUE-based (HSL with --db-hash) — no connector lines,
+   visual grouping happens because sibling files share a hue. */
+
+.dio-page {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - var(--topbar-h, 56px));
+    background: var(--bg-primary, #0d1117);
+    color: var(--text-primary, #e2e8f0);
+    overflow: hidden;
+}
+
+/* ── Toolbar ──────────────────────────────────────────────── */
+.dio-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border-color, rgba(100,116,139,0.25));
+    background: linear-gradient(180deg, rgba(15,23,42,0.55), rgba(15,23,42,0.35));
+    flex-shrink: 0;
+    gap: 12px;
+    min-height: 44px;
+}
+.dio-toolbar-left { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; min-width: 0; }
+.dio-title { font-size: 14px; font-weight: 600; color: var(--text-primary); letter-spacing: 0.01em; }
+.dio-toolbar-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+.dio-source-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(6,182,212,0.10);
+    border: 1px solid rgba(6,182,212,0.4);
+    color: #67e8f9;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+}
+.dio-source-pill-meta {
+    background: rgba(100,116,139,0.10);
+    border-color: rgba(100,116,139,0.4);
+    color: var(--text-muted, #94a3b8);
+}
+
+.dio-refresh {
+    background: rgba(15,23,42,0.7);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: background 0.15s, border-color 0.15s;
+}
+.dio-refresh:hover:not(:disabled) { background: rgba(99,102,241,0.15); border-color: rgba(99,102,241,0.5); }
+.dio-refresh:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Error banner ────────────────────────────────────────── */
+.dio-error {
+    background: rgba(239,68,68,0.10);
+    border-bottom: 1px solid rgba(239,68,68,0.3);
+    color: #fca5a5;
+    padding: 8px 14px;
+    font-size: 12px;
+    display: flex; align-items: center; gap: 8px;
+}
+.dio-error-close {
+    background: transparent; border: 0; color: #fca5a5;
+    cursor: pointer; font-size: 16px; margin-left: auto;
+}
+
+/* ── Body ─────────────────────────────────────────────────── */
+.dio-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.dio-empty {
+    flex: 1;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    color: var(--text-muted);
+    text-align: center;
+    padding: 32px;
+}
+.dio-empty i {
+    font-size: 32px;
+    color: #06b6d4;
+    margin-bottom: 16px;
+    opacity: 0.6;
+}
+.dio-empty p { margin: 4px 0; font-size: 14px; }
+.dio-empty p b { color: var(--text-primary); }
+.dio-empty-sub { font-size: 12px !important; opacity: 0.75; max-width: 540px; }
+.dio-empty code { background: rgba(15,23,42,0.6); padding: 1px 6px; border-radius: 3px; font-size: 11px; }
+
+/* ── Drive lanes ──────────────────────────────────────────── */
+.dio-lanes-wrap {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px 16px 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.dio-lane {
+    background: rgba(15,23,42,0.55);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 10px 14px;
+}
+.dio-lane-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+.dio-lane-letter {
+    font-size: 22px;
+    font-weight: 700;
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    color: #67e8f9;
+    background: rgba(6,182,212,0.10);
+    border: 1px solid rgba(6,182,212,0.4);
+    border-radius: 6px;
+    padding: 4px 10px;
+    min-width: 48px;
+    text-align: center;
+}
+.dio-lane-meta { flex: 1; min-width: 0; }
+.dio-lane-name { font-size: 13px; color: var(--text-primary); font-weight: 600; }
+.dio-lane-sub  { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.dio-lane-bar {
+    margin-top: 6px;
+    height: 4px;
+    background: rgba(100,116,139,0.18);
+    border-radius: 2px;
+    overflow: hidden;
+    width: 100%;
+    max-width: 460px;
+}
+.dio-lane-bar span {
+    display: block; height: 100%;
+    background: linear-gradient(90deg, var(--hot-cool, #06b6d4), var(--hot-warm, #f59e0b));
+    transition: width 0.3s ease;
+}
+.dio-lane-files {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.dio-lane-empty {
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 8px 0;
+    opacity: 0.7;
+}
+
+/* ── File node ────────────────────────────────────────────── */
+.dio-file {
+    position: relative;
+    width: var(--w, 50%);
+    min-width: 200px;
+    padding: 6px 12px;
+    border-radius: 4px;
+    background: rgba(15,23,42,0.7);
+    border: 1px solid var(--border-color);
+    border-left: 4px solid hsl(var(--db-hash, 0), 60%, 55%);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 12px;
+    transition: background 0.15s, transform 0.12s;
+    overflow: hidden;
+}
+.dio-file:hover {
+    background: rgba(99,102,241,0.10);
+    transform: translateX(2px);
+}
+.dio-file.is-log {
+    /* Log files get a striped left edge to read at a glance vs data files */
+    background-image: repeating-linear-gradient(
+        45deg,
+        transparent 0, transparent 6px,
+        rgba(255,255,255,0.04) 6px, rgba(255,255,255,0.04) 8px);
+}
+.dio-file.is-tempdb {
+    /* Tempdb gets a hairline dashed outline so it's never confused with user dbs */
+    border-style: dashed;
+}
+.dio-file::after {
+    /* Heat dot on the right — colour comes from --heat CSS var */
+    content: "";
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--heat, var(--hot-cold, #475569));
+    flex-shrink: 0;
+    margin-left: auto;
+    box-shadow: 0 0 0 2px rgba(0,0,0,0.4);
+}
+.dio-file.is-pulse::after {
+    animation: dio-pulse 1.4s ease-in-out infinite;
+}
+@keyframes dio-pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50%      { transform: scale(1.25); opacity: 0.75; }
+}
+.dio-file-db { color: hsl(var(--db-hash, 0), 60%, 75%); font-weight: 600; min-width: 0; }
+.dio-file-name {
+    color: var(--text-primary);
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    flex: 1;
+}
+.dio-file-stat { color: var(--text-muted); font-size: 11px; white-space: nowrap; }
+.dio-file-stat i { margin-right: 4px; opacity: 0.7; }
+
+/* ── Stats strip (mirrors /code-hotspots) ─────────────────── */
+.dio-stats-strip {
+    display: flex;
+    gap: 12px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--border-color);
+    background: linear-gradient(180deg, rgba(15,23,42,0.55), rgba(15,23,42,0.7));
+    flex: 0 0 auto;
+    min-height: 96px;
+    align-items: stretch;
+}
+.dio-stat-tile {
+    flex: 1 1 0;
+    display: flex; flex-direction: column; justify-content: center;
+    gap: 4px;
+    padding: 12px 16px;
+    background: rgba(15,23,42,0.6);
+    border: 1px solid var(--border-color);
+    border-left: 3px solid var(--cyan, #06b6d4);
+    border-radius: 6px;
+    min-width: 0;
+}
+.dio-stat-tile-wide { flex: 2 1 0; }
+.dio-stat-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+}
+.dio-stat-value {
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.dio-stat-value-name {
+    font-size: 14px;
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+.dio-stat-sep { color: var(--text-muted); font-weight: 400; margin: 0 4px; }
+.dio-stat-sub { font-size: 11px; color: var(--text-muted); }
+
+@media (max-width: 1180px) {
+    .dio-stats-strip { flex-wrap: wrap; min-height: 0; }
+    .dio-stat-tile { flex: 1 1 calc(50% - 6px); min-width: 220px; }
+    .dio-stat-tile-wide { flex: 1 1 100%; }
+}

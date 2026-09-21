@@ -1,0 +1,485 @@
+﻿<!-- In the name of God, the Merciful, the Compassionate -->
+<!--
+  buildprofile.targets - Community Edition build-time gating.
+
+  Imported by SQLTriage.csproj. Default profile is "full" (the private dev superset; no effect).
+  A community build is produced with:  dotnet build|publish -p:SQLTriageProfile=community
+
+  Module states come from buildprofile.json (repo root, checked in, authored via the
+  BuildProfile page in dev builds). FAIL-CLOSED rules:
+    - premium + dev-tools are ALWAYS excluded from community - hardcoded here, the json
+      documents but cannot re-enable them.
+    - toggle modules (operations, live-monitoring) ship only when the json explicitly
+      says "on". Missing or garbled json => excluded.
+
+  Mechanism: Content/Compile Remove means the gated pages are never compiled into
+  SQLTriage.dll - their types, routes and string literals do not exist in the community
+  assembly. (.razor files are Content items; the Razor SDK derives RazorComponent items
+  FROM Content inside the ResolveRazorComponentInputs target, so Content is the only
+  evaluation-time knob - a RazorComponent Remove here would be a no-op.) DefineConstants
+  drive Data/BuildModules.cs consts so nav surfaces render no dead links. See
+  .handoff/ADR-2026-06-11-community-build-gating.md for the trade-off against
+  #if-in-razor and an assembly split.
+
+  Page->module membership mirrors the internal page inventory.
+-->
+<Project>
+
+  <PropertyGroup>
+    <SQLTriageProfile Condition="'$(SQLTriageProfile)' == ''">full</SQLTriageProfile>
+  </PropertyGroup>
+
+  <!-- The profile file is build input, not app content - the Razor SDK would otherwise
+       auto-include it as Content and copy it into publish output (any profile). -->
+  <ItemGroup>
+    <Content Remove="buildprofile.json" />
+    <None Remove="buildprofile.json" />
+  </ItemGroup>
+
+  <PropertyGroup Condition="'$(SQLTriageProfile)' == 'community'">
+    <_BuildProfileJsonPath>$(MSBuildThisFileDirectory)buildprofile.json</_BuildProfileJsonPath>
+    <_BuildProfileJson Condition="Exists('$(_BuildProfileJsonPath)')">$([System.IO.File]::ReadAllText('$(_BuildProfileJsonPath)'))</_BuildProfileJson>
+    <_ModOperations Condition="'$(_BuildProfileJson)' != ''">$([System.Text.RegularExpressions.Regex]::Match($(_BuildProfileJson), '"operations"\s*:\s*"([^"]+)"').Groups[1].Value)</_ModOperations>
+    <_ModLiveMonitoring Condition="'$(_BuildProfileJson)' != ''">$([System.Text.RegularExpressions.Regex]::Match($(_BuildProfileJson), '"live-monitoring"\s*:\s*"([^"]+)"').Groups[1].Value)</_ModLiveMonitoring>
+
+    <!-- ── Per-report gating (Adrian's ruling 2026-07-21) ──────────────────────
+         Each generated report/PDF deliverable is one key under "reports" in buildprofile.json.
+         A report is compiled into the community binary ONLY when its key is EXACTLY "on".
+         FAIL-CLOSED: "off", a garbled value, or an ABSENT key all resolve to excluded — the
+         SQLTExcludeReport<X> flags below default true and are cleared only by a literal "on".
+         So a future report added without a community-profile "on" entry ships gated, never open.
+         The three compliance instruments Adrian named (Audit Evidence, Risk Register, Risk
+         Acknowledgement) are NEVER gated — no exclude flag, builders compiled in every profile.
+         The compliance-map Export Evidence report was initially a fourth keeper; Adrian ruled it
+         GATED on 2026-07-21 ("three keepers only"), so it is json-driven like the rest. -->
+    <_RptExecSummary Condition="'$(_BuildProfileJson)' != ''">$([System.Text.RegularExpressions.Regex]::Match($(_BuildProfileJson), '"executive-summary"\s*:\s*"([^"]+)"').Groups[1].Value)</_RptExecSummary>
+    <_RptDbaHandoff Condition="'$(_BuildProfileJson)' != ''">$([System.Text.RegularExpressions.Regex]::Match($(_BuildProfileJson), '"dba-handoff"\s*:\s*"([^"]+)"').Groups[1].Value)</_RptDbaHandoff>
+    <_RptHadrPosture Condition="'$(_BuildProfileJson)' != ''">$([System.Text.RegularExpressions.Regex]::Match($(_BuildProfileJson), '"hadr-posture"\s*:\s*"([^"]+)"').Groups[1].Value)</_RptHadrPosture>
+    <_RptFindingsPdf Condition="'$(_BuildProfileJson)' != ''">$([System.Text.RegularExpressions.Regex]::Match($(_BuildProfileJson), '"findings-pdf"\s*:\s*"([^"]+)"').Groups[1].Value)</_RptFindingsPdf>
+    <_RptExecBriefing Condition="'$(_BuildProfileJson)' != ''">$([System.Text.RegularExpressions.Regex]::Match($(_BuildProfileJson), '"executive-briefing"\s*:\s*"([^"]+)"').Groups[1].Value)</_RptExecBriefing>
+    <_RptCioExec Condition="'$(_BuildProfileJson)' != ''">$([System.Text.RegularExpressions.Regex]::Match($(_BuildProfileJson), '"cio-executive"\s*:\s*"([^"]+)"').Groups[1].Value)</_RptCioExec>
+    <_RptRoadmap Condition="'$(_BuildProfileJson)' != ''">$([System.Text.RegularExpressions.Regex]::Match($(_BuildProfileJson), '"diagnostics-roadmap"\s*:\s*"([^"]+)"').Groups[1].Value)</_RptRoadmap>
+    <_RptComplianceReport Condition="'$(_BuildProfileJson)' != ''">$([System.Text.RegularExpressions.Regex]::Match($(_BuildProfileJson), '"compliance-report"\s*:\s*"([^"]+)"').Groups[1].Value)</_RptComplianceReport>
+
+    <!-- Fail-closed: never json-driven. -->
+    <SQLTExcludePremium>true</SQLTExcludePremium>
+    <SQLTExcludeDevTools>true</SQLTExcludeDevTools>
+    <!-- Portal publish surface (Pages\Portal\, Data\Services\Portal\, Components\Portal\):
+         hosted/commercial feature — PHYSICALLY ABSENT from the community binary (Phase D0
+         scaffold). Fail-closed hardcoded like premium/dev-tools, NOT json-driven. -->
+    <SQLTExcludePortal>true</SQLTExcludePortal>
+    <!-- MCP read-only surface (Mcp/): internal-only per D2 (lives in the dev repo
+         alongside the sibling sqltriage-mcp/, never the community/public binary). -->
+    <SQLTExcludeMcp>true</SQLTExcludeMcp>
+    <!-- Toggle modules: included only on an explicit "on". -->
+    <SQLTExcludeOperations Condition="'$(_ModOperations)' != 'on'">true</SQLTExcludeOperations>
+    <SQLTExcludeLiveMonitoring Condition="'$(_ModLiveMonitoring)' != 'on'">true</SQLTExcludeLiveMonitoring>
+
+    <!-- Per-report fail-closed excludes: true unless the reports.<key> value is EXACTLY "on". -->
+    <SQLTExcludeReportExecSummary Condition="'$(_RptExecSummary)' != 'on'">true</SQLTExcludeReportExecSummary>
+    <SQLTExcludeReportDbaHandoff Condition="'$(_RptDbaHandoff)' != 'on'">true</SQLTExcludeReportDbaHandoff>
+    <SQLTExcludeReportHadrPosture Condition="'$(_RptHadrPosture)' != 'on'">true</SQLTExcludeReportHadrPosture>
+    <SQLTExcludeReportFindingsPdf Condition="'$(_RptFindingsPdf)' != 'on'">true</SQLTExcludeReportFindingsPdf>
+    <SQLTExcludeReportExecBriefing Condition="'$(_RptExecBriefing)' != 'on'">true</SQLTExcludeReportExecBriefing>
+    <SQLTExcludeReportCioExec Condition="'$(_RptCioExec)' != 'on'">true</SQLTExcludeReportCioExec>
+    <SQLTExcludeReportRoadmap Condition="'$(_RptRoadmap)' != 'on'">true</SQLTExcludeReportRoadmap>
+    <SQLTExcludeReportComplianceReport Condition="'$(_RptComplianceReport)' != 'on'">true</SQLTExcludeReportComplianceReport>
+
+    <DefineConstants>$(DefineConstants);SQLT_COMMUNITY</DefineConstants>
+    <!-- BuildModules consts are compile-time false in community: @if-guarded markup becomes
+         unreachable (CS0162) by design - that pruning is what keeps gated routes out of the
+         assembly. Suppress the noise for this profile only. -->
+    <NoWarn>$(NoWarn);CS0162</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(SQLTExcludePremium)' == 'true'">
+    <DefineConstants>$(DefineConstants);SQLT_NO_PREMIUM</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(SQLTExcludeDevTools)' == 'true'">
+    <DefineConstants>$(DefineConstants);SQLT_NO_DEVTOOLS</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(SQLTExcludePortal)' == 'true'">
+    <DefineConstants>$(DefineConstants);SQLT_NO_PORTAL</DefineConstants>
+  </PropertyGroup>
+  <!-- (MCP needs no DefineConstants: the DI callsite is fenced behind #if ENABLE_MCP
+       — an opt-in, off in all shipped profiles — and the Mcp/ sources are Compile-Removed
+       below when SQLTExcludeMcp is set, so no SQLT_NO_MCP symbol is required.) -->
+  <PropertyGroup Condition="'$(SQLTExcludeOperations)' == 'true'">
+    <DefineConstants>$(DefineConstants);SQLT_NO_OPERATIONS</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(SQLTExcludeLiveMonitoring)' == 'true'">
+    <DefineConstants>$(DefineConstants);SQLT_NO_LIVEMONITORING</DefineConstants>
+  </PropertyGroup>
+
+  <!-- Per-report DefineConstants. Each drives Data/BuildModules.cs (BuildModules.Reports.*) so
+       trigger buttons const-prune to nothing, AND #if-fences the matching builder method +
+       every call site so no report code, method name, or button literal reaches the community
+       assembly (byte-scan-provable via .handoff/gated-routes.txt). -->
+  <PropertyGroup Condition="'$(SQLTExcludeReportExecSummary)' == 'true'">
+    <DefineConstants>$(DefineConstants);SQLT_NO_REPORT_EXEC_SUMMARY</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(SQLTExcludeReportDbaHandoff)' == 'true'">
+    <DefineConstants>$(DefineConstants);SQLT_NO_REPORT_DBA_HANDOFF</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(SQLTExcludeReportHadrPosture)' == 'true'">
+    <DefineConstants>$(DefineConstants);SQLT_NO_REPORT_HADR_POSTURE</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(SQLTExcludeReportFindingsPdf)' == 'true'">
+    <DefineConstants>$(DefineConstants);SQLT_NO_REPORT_FINDINGS_PDF</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(SQLTExcludeReportExecBriefing)' == 'true'">
+    <DefineConstants>$(DefineConstants);SQLT_NO_REPORT_EXEC_BRIEFING</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(SQLTExcludeReportCioExec)' == 'true'">
+    <DefineConstants>$(DefineConstants);SQLT_NO_REPORT_CIO_EXEC</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(SQLTExcludeReportRoadmap)' == 'true'">
+    <DefineConstants>$(DefineConstants);SQLT_NO_REPORT_ROADMAP</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(SQLTExcludeReportComplianceReport)' == 'true'">
+    <DefineConstants>$(DefineConstants);SQLT_NO_REPORT_COMPLIANCE_REPORT</DefineConstants>
+  </PropertyGroup>
+
+  <!-- The Diagnostics Roadmap PDF renderer lives in its OWN file (RoadmapPdfBuilder.cs, with the
+       Roadmap* DTOs). Unlike the builders that share AssessmentPdf.cs (compile-pruned by #if in
+       place), this whole file is Compile-Removed when the report is gated, so the RoadmapPdfBuilder
+       type and its Build method are physically absent from the community assembly. Its only
+       reference (Pages/DiagnosticsRoadmap.razor ExportQuestPdf) is #if-compiled out in the same
+       profile, so the removal never breaks the community build. -->
+  <ItemGroup Condition="'$(SQLTExcludeReportRoadmap)' == 'true'">
+    <Compile Remove="Data\Services\RoadmapPdfBuilder.cs" />
+  </ItemGroup>
+
+  <!-- ROUTE GUARD: every routable page a module ItemGroup below must remove is enumerated from the
+       COMPILED assembly by Tests\SQLTriage.Tests\RouteProfileCensusTests.cs, against its approved
+       route-to-module table. That includes pages outside Pages\ (e.g. Components\Dashboards\).
+       A Content Remove added below also changes the community-removed set that ProfileGateModel
+       derives from this file, and EmbeddedSourceCensusTests and ProfileGatedTestSyncTests read that
+       set too: run all three classes in a FULL build as well as a community one. -->
+  <!-- ── module: premium (ABSENT from community) ─────────────────────────── -->
+  <ItemGroup Condition="'$(SQLTExcludePremium)' == 'true'">
+    <Content Remove="Pages\Premium.razor" />
+    <Content Remove="Pages\CapacityConsolidation.razor" />
+    <Content Remove="Pages\AdvancedReporting.razor" />
+    <!-- Deploy Best Practice Scripts (writes/deploys scripts to servers) — full-edition only. -->
+    <Content Remove="Pages\BestPractice.razor" />
+    <!-- …and its payload: the BPScripts/ deploy scripts (proprietary; never community/public).
+         ⚠ THESE TWO GLOBS ARE SOURCE PATHS AND MUST STAY "BPScripts\**". From 2026-09-11 (lane
+         bpscripts-operator-edits-are-lost) the same files PUBLISH to BPScripts.default\ - the csproj
+         gives each one a TargetPath, so that the update routes have no BPScripts\ to copy over the
+         operator's saved scripts. Only the payload path moved; the files still live in BPScripts\ in
+         the tree. Renaming these Removes to BPScripts.default\** would match nothing and the
+         COMMUNITY build would start shipping the gated scripts, silently.
+         Pinned by RuntimeWriteFolderCensusTests, test
+         The_community_profile_still_excludes_the_script_payload_under_its_new_name, which derives
+         the source folder from the csproj TargetPath rules rather than from a hand-typed glob. -->
+    <None Remove="BPScripts\**" />
+    <Content Remove="BPScripts\**" />
+    <!-- Server Configuration & Hardening: server-modifying "Apply" runner — full-edition only.
+         The runner page AND its T-SQL payload are excluded from the community build. -->
+    <Content Remove="Pages\ServerConfiguration.razor" />
+    <None Remove="ConfigScripts\**" />
+    <Content Remove="ConfigScripts\**" />
+    <!-- The rest of the SERVER CONFIGURATION feature set (Adrian's ruling 2026-08-05): the set is
+         licence-bound to the full profile, so the free build stops shipping the live Apply path
+         and not just its write claim. All three pages drive RemediationRunner.ApplyAsync against
+         a connected production server — the same act ServerConfiguration.razor above was already
+         excluded for. Their route consts are #if-fenced in Data\RouteConstants.cs and their nav
+         entries in NavMenu.razor, so no route literal reaches the community assembly (see
+         .handoff\gated-routes.txt). The runtime layer for a FULL build is ServerConfigSuiteGate
+         (Full tier AND the bundle remediation claim), enforced at the RemediationRunner
+         chokepoint, not only in the markup. -->
+    <Content Remove="Pages\Remediation.razor" />
+    <Content Remove="Pages\AgentJobGuard.razor" />
+    <Content Remove="Pages\AgentJobSync.razor" />
+    <!-- Never-ship COMPONENTS (commercial/upsell UI; references in shipping files
+         are BuildModules.Premium const-pruned, so absence cannot break the build). -->
+    <Content Remove="Components\Shared\ActivateFullAuditCard.razor" />
+    <Content Remove="Components\Shared\PremiumLockCard.razor" />
+    <Content Remove="Components\Shared\FullAuditUpsellPill.razor" />
+  </ItemGroup>
+
+  <!-- ── module: dev-tools (NEVER ships) ─────────────────────────────────── -->
+  <ItemGroup Condition="'$(SQLTExcludeDevTools)' == 'true'">
+    <Content Remove="Pages\BuildProfile.razor" />
+    <!-- Pages\CorpusEditor.razor and Pages\CorpusCsvEditor.razor were removed from this list on
+         2026-08-05: both source files were deleted by 89568b4 (2026-06-13), so the entries had
+         been no-ops for seven weeks. MSBuild does not complain about a Remove that matches
+         nothing, which is exactly why a stale line survives — and a gating list that names files
+         which do not exist reads like coverage it does not have. -->
+    <Content Remove="Pages\RiskReport.razor" />
+    <Content Remove="Pages\CheckValidator.razor" />
+    <Content Remove="Pages\RemediationTuner.razor" />
+    <Content Remove="Pages\RemediationLab.razor" />
+    <Content Remove="Pages\TestPlan.razor" />
+    <!-- Perf-load waterfall (extracted from the retired PerfInspector page, 2026-07-10):
+         the never-ship dev component rendered by the ships-everywhere AppMetrics page. -->
+    <Content Remove="Components\DevTools\PerfLoadWaterfall.razor" />
+    <!-- DevBridge (demo/automation HTTP bridge): depends on the PRIVATE sibling
+         repo's BlazorHybridBridge ProjectReference (conditioned off for community
+         in SQLTriage.csproj). Callsites are fenced with !SQLT_NO_DEVTOOLS. -->
+    <Compile Remove="Data\Services\DevBridgeService.cs" />
+    <Compile Remove="Data\Services\DevBridge\**\*.cs" />
+    <!-- Risk Assessment report (consultant SSRS replacement, reads SQLDBA.ORG
+         repo views). NEVER ships to community/public; whole folder Compile-Removed.
+         DI registration is fenced the same way (ServiceCollectionExtensions). -->
+    <Compile Remove="Data\Services\RiskReport\**\*.cs" />
+    <!-- Access Surface (paid-only privilege-graph page + net-new multi-row
+         collector). HARD community-exclusion (Rulings 2026-07-10): the page is
+         Content-Removed and the whole engine folder is Compile-Removed, so no types,
+         routes or string literals reach the community DLL. DI registration is fenced
+         the same way (ServiceCollectionExtensions) via a name-neutral partial-method
+         hook (AddGatedEngineServices) — without the implementing partial compiled, the
+         C# compiler elides the hook's declaration AND its callsite, so the Compile-Remove
+         does not break the community build (no removed type is ever named there). -->
+    <Content Remove="Pages\AccessSurface.razor" />
+    <Compile Remove="Data\Services\AccessSurface\**\*.cs" />
+    <!-- SoD Permissions Matrix (paid-only, reads the same gated privilege catalog). The page is
+         Content-Removed here; its service/model/PDF .cs live UNDER Data\Services\AccessSurface\**,
+         so they are already Compile-Removed by the glob above (no extra Compile Remove needed). DI
+         registration is fenced the same way (AccessSurfaceRegistration.AddGatedEngineServices). -->
+    <Content Remove="Pages\SodMatrix.razor" />
+    <!-- Offboarding permission trace (paid-only, reads the same gated privilege catalog in its
+         wide-trace mode). The page is Content-Removed here; its service/pivot/model/PDF .cs live
+         UNDER Data\Services\AccessSurface\**, so the glob above already Compile-Removes them. DI
+         registration is fenced the same way (AccessSurfaceRegistration.AddGatedEngineServices). -->
+    <Content Remove="Pages\OffboardingTrace.razor" />
+    <!-- Results Import round-trip (#84): full/dev-build-only. The community/redacted edition
+         is the capture tool (exports a results JSON via QuickCheckResultStore.WriteRun); the
+         full build imports it back in to generate reports, no live connection required. The
+         page is Content-Removed here; the backing ImportResultsService.cs ships in every build
+         (no proprietary data of its own — mirrors BuildProfileStore.cs). The optional import
+         CLI entry point is its own pair of files, removed the same way DevBridge's are. -->
+    <Content Remove="Pages\ImportResults.razor" />
+    <Compile Remove="Cli\ImportCliArgs.cs" />
+    <Compile Remove="Cli\CliImportHost.cs" />
+  </ItemGroup>
+
+  <!-- ── module: portal (hosted publish surface; ABSENT from community) ──────
+       Phase D0 fail-closed scaffold. The portal is a hosted/commercial feature;
+       its pages, services and components are compiled OUT of the community binary
+       so the surface is physically absent from the community DLL (no types, no
+       routes, no string literals). Globs cover the FUTURE prefixes too (not just
+       the one stub page), so a feature file dropped anywhere under these trees is
+       excluded by default. .razor are Content items (the Razor SDK derives
+       RazorComponents from Content); code-behind / service .cs are Compile items. -->
+  <ItemGroup Condition="'$(SQLTExcludePortal)' == 'true'">
+    <!-- Explicit literals for the stub pages: the load-bearing exclusion today AND the
+         paths the selftest-gating $neverShipFiles list looks for verbatim in this file. -->
+    <Content Remove="Pages\Portal\PublishToPortal.razor" />
+    <Content Remove="Pages\Portal\PortalStatus.razor" />
+    <Content Remove="Pages\Portal\ExportPack.razor" />
+    <!-- Globs cover the whole tree + future prefixes (a Remove of a non-existent path is a no-op). -->
+    <Content Remove="Pages\Portal\**\*.razor" />
+    <Compile Remove="Pages\Portal\**\*.cs" />
+    <Compile Remove="Data\Services\Portal\**\*.cs" />
+    <Content Remove="Components\Portal\**\*.razor" />
+    <!-- Code-behind / service .cs under Components\Portal must be Compile-Removed too
+         (Phase D review R3): a component's .razor.cs is an ordinary Compile item, so removing
+         only its .razor would still compile the code-behind — and its strings/types — into the
+         community DLL. Symmetric with the two prefixes above. -->
+    <Compile Remove="Components\Portal\**\*.cs" />
+  </ItemGroup>
+
+  <!-- ── module: mcp (read-only MCP surface; NEVER ships community/public) ──
+       D2: the MCP shim is internal-only (dev repo + sibling sqltriage-mcp/). The
+       Mcp/ sources are Compile-Removed, the ModelContextProtocol PackageReference is
+       conditioned off for community (SQLTriage.csproj), and the DI callsite in
+       ServiceCollectionExtensions was removed entirely 2026-08-20 (it previously sat
+       behind #if ENABLE_MCP, a symbol no build ever defined — same zero-effect result,
+       now expressed by absence instead of an always-off flag). The .razor-free service
+       has no page, so no canary/nav pruning is needed. -->
+  <ItemGroup Condition="'$(SQLTExcludeMcp)' == 'true'">
+    <Compile Remove="Mcp\**\*.cs" />
+  </ItemGroup>
+
+  <!-- ── module: operations (toggle, default on) ─────────────────────────── -->
+  <ItemGroup Condition="'$(SQLTExcludeOperations)' == 'true'">
+    <Content Remove="Pages\EnvironmentView.razor" />
+    <Content Remove="Pages\AlertsNoc.razor" />
+    <Content Remove="Pages\Alerts.razor" />
+    <Content Remove="Pages\AlertingConfig.razor" />
+    <Content Remove="Pages\AgentJobTimeline.razor" />
+    <Content Remove="Pages\ReplicationMap.razor" />
+    <Content Remove="Pages\GlobalCommand.razor" />
+    <Content Remove="Pages\QueryExecutor.razor" />
+    <Content Remove="Pages\EditAuditScripts.razor" />
+    <Content Remove="Pages\ServiceManagement.razor" />
+    <Content Remove="Pages\Services.razor" />
+    <Content Remove="Pages\ScheduledTasks.razor" />
+    <Content Remove="Pages\DatabaseDeploy.razor" />
+    <Content Remove="Pages\DeployDarlingPM.razor" />
+    <Compile Remove="Pages\ReplicationMap.razor.cs" />
+    <None Remove="Pages\GlobalCommand.razor.css" />
+    <Content Remove="Pages\GlobalCommand.razor.css" />
+  </ItemGroup>
+
+  <!-- ── module: live-monitoring (toggle, default off) ───────────────────── -->
+  <ItemGroup Condition="'$(SQLTExcludeLiveMonitoring)' == 'true'">
+    <Content Remove="Pages\Dashboard.razor" />
+    <Content Remove="Components\Dashboards\LiveDashboard.razor" />
+    <Content Remove="Pages\DashboardEditor.razor" />
+    <Content Remove="Pages\InstanceOverview.razor" />
+    <Content Remove="Pages\Sessions.razor" />
+    <Content Remove="Pages\WaitEvents.razor" />
+    <Content Remove="Pages\XEvents.razor" />
+    <Content Remove="Pages\Pevents.razor" />
+    <Content Remove="Pages\LongQueries.razor" />
+    <Content Remove="Pages\Pquery.razor" />
+    <Content Remove="Pages\QueryStore.razor" />
+    <Content Remove="Pages\Pmemory.razor" />
+    <Content Remove="Pages\PmemoryAnalysis.razor" />
+    <Content Remove="Pages\SchedulerHealth.razor" />
+    <Content Remove="Pages\PerformanceTrends.razor" />
+    <Compile Remove="Pages\DashboardEditor.razor.cs" />
+  </ItemGroup>
+
+  <!-- ── module: performance-report (FULL-PRIVATE-BUILD-ONLY) ────────────────
+       The Performance Analysis Report (SPEC 2026-07-16) is Adrian's client-deliverable
+       consulting tool. It ships in Adrian's private build ONLY: compiled OUT of the
+       community build AND out of any paid/client build — one tier STRICTER than the
+       dev-tools exclusion (dev-tools still ship in the default `full` build; this does not).
+
+       Mechanism = fail-closed OPT-IN, deliberately NOT the SQLT_NO_* default-on toggle the
+       other modules use: the page, composer, builder, index-synthesis and snapshot writer
+       are physically ABSENT from every build UNLESS the private flag is explicitly passed,
+       so no page, route, type or string literal can leak into a binary handed to a client —
+       regardless of HOW that client build happens to be packaged (a plain `full` build does
+       NOT carry it either). Present ONLY when built with:
+           dotnet build|publish -p:SQLTriagePrivate=true
+       Community can never re-enable it — the AND below refuses the symbol under that profile.
+       A positive SQLT_PERFREPORT symbol drives BuildModules.PerfReport so the nav renders
+       no dead link when the module is absent. -->
+  <PropertyGroup>
+    <SQLTPerfReport Condition="'$(SQLTriagePrivate)' == 'true' AND '$(SQLTriageProfile)' != 'community'">true</SQLTPerfReport>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(SQLTPerfReport)' == 'true'">
+    <DefineConstants>$(DefineConstants);SQLT_PERFREPORT</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(SQLTPerfReport)' != 'true'">
+    <Content Remove="Pages\PerformanceReport.razor" />
+    <Compile Remove="Data\Services\PerformanceReport\**\*.cs" />
+  </ItemGroup>
+
+  <Target Name="SQLTriageProfileBanner" BeforeTargets="BeforeBuild" Condition="'$(SQLTriageProfile)' == 'community' AND !$(MSBuildProjectFile.Contains('_wpftmp'))">
+    <Error Condition="!Exists('$(_BuildProfileJsonPath)')" Text="[SQLTriage] buildprofile.json missing at repo root - community build refuses to proceed (fail-closed)." />
+    <Message Importance="high" Text="[SQLTriage] COMMUNITY build profile: premium=excluded dev-tools=excluded operations=$(_ModOperations) live-monitoring=$(_ModLiveMonitoring)" />
+  </Target>
+
+  <!-- ══ PRIMARY GATE: compile-time source/route census ═══════════════════════
+       Adrian's ruling 2026-09-11 18:40 (option C is the PRIMARY control; the
+       output byte-scan below is corroboration).
+
+       THE INVARIANT: the profile boundary is verified by something that measures
+       the artefact that SHIPS, and an artefact that cannot be measured FAILS.
+
+       This target emits the item list and DefineConstants THIS build evaluated -
+       not a look-alike evaluation, not a file that merely happens to sit in obj\ -
+       stamps it with a per-invocation token, and hands both to the census. The
+       census then answers, from the code: is any source carrying the never-ship
+       marker being compiled into the community profile, and does any never-ship
+       route literal survive into live community code?
+
+       It runs BeforeTargets="CoreCompile", so it fires on every community BUILD
+       and every community PUBLISH, BEFORE the compiler emits a byte. Compression,
+       single-file bundling and the shared obj\ intermediate cannot blind it -
+       they are all downstream of here. No ContinueOnError: a violation fails the
+       build. Deleting this target turns
+       CommunitySurfaceCensusTests.The_census_is_wired_into_the_community_build RED.
+
+       ⚠ The surface file lives under $(IntermediateOutputPath), which IS shared
+       between profiles - that is precisely why the census checks the token and the
+       declared profile rather than trusting the path. -->
+  <Target Name="SQLTriageCommunitySurfaceCensus" BeforeTargets="CoreCompile" Condition="'$(SQLTriageProfile)' == 'community' AND !$(MSBuildProjectFile.Contains('_wpftmp'))">
+    <PropertyGroup>
+      <_SQLTCensusToken>$([System.Guid]::NewGuid().ToString('N'))</_SQLTCensusToken>
+      <_SQLTCensusSurface>$(MSBuildThisFileDirectory)$(IntermediateOutputPath)sqltriage-community-surface.txt</_SQLTCensusSurface>
+    </PropertyGroup>
+    <ItemGroup>
+      <_SQLTCensusLine Include="# sqltriage-build-surface v1" />
+      <_SQLTCensusLine Include="P|Producer=buildprofile.targets/SQLTriageCommunitySurfaceCensus" />
+      <_SQLTCensusLine Include="P|BuildToken=$(_SQLTCensusToken)" />
+      <_SQLTCensusLine Include="P|ProjectFullPath=$(MSBuildProjectFullPath)" />
+      <_SQLTCensusLine Include="P|SQLTriageProfile=$(SQLTriageProfile)" />
+      <_SQLTCensusLine Include="P|Configuration=$(Configuration)" />
+      <_SQLTCensusLine Include="P|RuntimeIdentifier=$(RuntimeIdentifier)" />
+      <_SQLTCensusLine Include="P|DefineConstants=$(DefineConstants.Replace(';',','))" />
+      <_SQLTCensusLine Include="@(Content->WithMetadataValue('Extension','.razor')->'C|%(Identity)')" />
+      <_SQLTCensusLine Include="@(RazorComponent->'R|%(Identity)')" />
+      <_SQLTCensusLine Include="@(Compile->'S|%(Identity)')" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(_SQLTCensusSurface)" Lines="@(_SQLTCensusLine)" Overwrite="true" WriteOnlyWhenDifferent="false" Encoding="ASCII" />
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\census-community-surface.ps1&quot; -SurfaceFile &quot;$(_SQLTCensusSurface)&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory.TrimEnd('\'))&quot; -ExpectToken $(_SQLTCensusToken)" />
+  </Target>
+
+  <!-- FAILS-WHEN-VIOLATED gate: after every community publish, scan the compiled
+       assembly for the gated-page canary token (see GatedCanary const in the
+       premium/dev-tools pages; literal deliberately not written here) and the publish
+       tree for gated assets. Any hit ERRORS the publish - no ContinueOnError. -->
+  <Target Name="SQLTriageVerifyCommunityPublish" AfterTargets="Publish" Condition="'$(SQLTriageProfile)' == 'community' AND '$(PublishDir)' != '' AND !$(MSBuildProjectFile.Contains('_wpftmp'))">
+    <!-- ══ THE SHIP MANIFEST - the binding, which IS the whole control ═════════
+         This target used to hand the guard a PATH:
+             obj\<Configuration>\<tfm>\<rid>\SQLTriage.dll
+         Nothing in this tree gives that intermediate a profile-specific path, so
+         it is shared mutable state between the community and full profiles. A
+         full-profile build landing mid-check rewrote those bytes underneath the
+         guard (measured 2026-09-11: 61 gated-route hits with ZERO canary hits -
+         two reads of one path, two files, one verdict). And in the RELEASE shape
+         that actually ships there is no loose SQLTriage.dll at all, so the guard
+         silently degraded to that intermediate and passed a genuine 174 MB
+         FULL-profile build as community, exit 0.
+
+         What is emitted instead is what MSBUILD ITSELF resolved:
+           @(FilesToBundle)          - the exact list handed to the bundler task
+           @(ResolvedFileToPublish)  - the exact list copied into PublishDir
+         each hashed by the GetFileHash task IN THIS BUILD. The guard must then
+         find every file this build produced INSIDE the artefact that ships, by
+         SHA-256, or it fails. Three different SQLTriage.dll of three different
+         sizes exist on this box at any time; "the DLL nearby" is not a binding.
+
+         %(NuGetPackageId) rides along because it is MSBuild's own answer to
+         "did we produce this file, or did a package": every runtime-pack and
+         NuGet file carries one, our compiled output does not. The guard uses
+         that, never a filename, to decide what is ours.
+
+         The manifest is written BESIDE the publish directory, never inside it,
+         so it cannot ship; it carries a per-invocation token so a stale or
+         foreign manifest is REFUSED rather than believed.
+
+         Deleting or weakening this emission turns
+         ShipArtifactTests.The_ship_manifest_is_emitted_by_the_community_publish_target
+         RED. No ContinueOnError: a violation fails the publish. -->
+    <PropertyGroup>
+      <_SQLTShipToken>$([System.Guid]::NewGuid().ToString('N'))</_SQLTShipToken>
+      <!-- TrimEnd on PublishDir: a trailing backslash before the closing quote would
+           escape it on the powershell command line and corrupt the argument. -->
+      <_SQLTShipDir>$(PublishDir.TrimEnd('\'))</_SQLTShipDir>
+      <_SQLTShipManifest>$(_SQLTShipDir).sqltriage-ship-manifest.txt</_SQLTShipManifest>
+    </PropertyGroup>
+    <GetFileHash Files="@(FilesToBundle)" Algorithm="SHA256" HashEncoding="hex" Condition="'@(FilesToBundle)' != ''">
+      <Output TaskParameter="Items" ItemName="_SQLTShipBundled" />
+    </GetFileHash>
+    <GetFileHash Files="@(ResolvedFileToPublish)" Algorithm="SHA256" HashEncoding="hex" Condition="'@(ResolvedFileToPublish)' != ''">
+      <Output TaskParameter="Items" ItemName="_SQLTShipPublished" />
+    </GetFileHash>
+    <ItemGroup>
+      <_SQLTShipLine Include="# sqltriage-ship-manifest v1" />
+      <_SQLTShipLine Include="P|ShipToken=$(_SQLTShipToken)" />
+      <_SQLTShipLine Include="P|Producer=buildprofile.targets/SQLTriageVerifyCommunityPublish" />
+      <_SQLTShipLine Include="P|ProjectFullPath=$(MSBuildProjectFullPath)" />
+      <_SQLTShipLine Include="P|SQLTriageProfile=$(SQLTriageProfile)" />
+      <_SQLTShipLine Include="P|Configuration=$(Configuration)" />
+      <_SQLTShipLine Include="P|RuntimeIdentifier=$(RuntimeIdentifier)" />
+      <_SQLTShipLine Include="P|PublishDir=$(_SQLTShipDir)" />
+      <_SQLTShipLine Include="P|PublishSingleFile=$(PublishSingleFile)" />
+      <_SQLTShipLine Include="P|EnableCompressionInSingleFile=$(EnableCompressionInSingleFile)" />
+      <_SQLTShipLine Include="P|PublishedSingleFileName=$(PublishedSingleFileName)" />
+      <_SQLTShipLine Include="P|AssemblyName=$(AssemblyName)" />
+      <_SQLTShipLine Include="@(_SQLTShipBundled->'B|%(RelativePath)|%(NuGetPackageId)|%(FileHash)|%(FullPath)')" />
+      <_SQLTShipLine Include="@(_SQLTShipPublished->'R|%(RelativePath)|%(NuGetPackageId)|%(FileHash)|%(FullPath)')" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(_SQLTShipManifest)" Lines="@(_SQLTShipLine)" Overwrite="true" WriteOnlyWhenDifferent="false" Encoding="ASCII" />
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\verify-community-build.ps1&quot; -PublishDir &quot;$(_SQLTShipDir)&quot; -ShipManifest &quot;$(_SQLTShipManifest)&quot; -ExpectShipToken $(_SQLTShipToken)" />
+  </Target>
+
+</Project>

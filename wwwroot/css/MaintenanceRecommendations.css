@@ -1,0 +1,79 @@
+/* In the name of God, the Merciful, the Compassionate */
+/* MaintenanceRecommendations.css — styles for /maintenance-recommendations */
+
+.maint-script-block {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 14px 16px;
+    font-family: 'Cascadia Code', 'Consolas', 'Courier New', monospace;
+    font-size: 12px;
+    line-height: 1.55;
+    color: var(--text-primary);
+    overflow-x: auto;
+    white-space: pre;
+    max-height: 420px;
+    overflow-y: auto;
+    margin: 6px 0 10px;
+}
+
+.maint-advisory {
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    margin: 8px 0 4px;
+    background: var(--bg-tertiary, var(--bg-secondary));
+}
+
+.maint-advisory summary {
+    cursor: pointer;
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--orange);
+    user-select: none;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.maint-advisory summary::-webkit-details-marker {
+    display: none;
+}
+
+.maint-advisory[open] summary {
+    border-bottom: 1px solid var(--border-color);
+}
+
+.maint-advisory-body {
+    padding: 10px 14px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+}
+
+.maint-advisory-body p {
+    margin: 0 0 6px;
+}
+
+.maint-advisory-body p:last-child {
+    margin-bottom: 0;
+}
+
+.maint-alert {
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-size: 13px;
+    margin: 8px 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.maint-alert-danger {
+    background: color-mix(in srgb, var(--red) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--red) 40%, transparent);
+    color: var(--red);
+}
+
+/* Colour-blind mode overrides are inherited from Accessibility.css via --red and --orange vars */

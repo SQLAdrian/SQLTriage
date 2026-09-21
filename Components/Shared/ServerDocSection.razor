@@ -1,0 +1,121 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using SQLTriage.Data.Models
+
+<div class="srvdoc-section srvdoc-section-@SeverityClass" id="@DomId">
+    <button type="button" class="srvdoc-section-header" @onclick="Toggle"
+            aria-expanded="@(_open ? "true" : "false")">
+        <span class="srvdoc-section-icon"><i class="@Section.Icon"></i></span>
+        <span class="srvdoc-section-title">@Section.Title</span>
+        @if (ChangedFields > 0)
+        {
+            <span class="srvdoc-section-changed" title="Fields that changed vs prior snapshot">
+                <i class="fa-solid fa-circle"></i> @ChangedFields changed
+            </span>
+        }
+        @if (Section.Severity == DocSeverity.Attention)
+        {
+            <span class="srvdoc-section-attention" title="@string.Join(" · ", Section.AttentionReasons)">
+                <i class="fa-solid fa-triangle-exclamation"></i> attention
+            </span>
+        }
+        <span class="srvdoc-section-summary">@Section.SummaryLine</span>
+        <span class="srvdoc-section-chevron">
+            <i class="fa-solid @(_open ? "fa-chevron-down" : "fa-chevron-right")"></i>
+        </span>
+    </button>
+
+    @if (_open)
+    {
+        <div class="srvdoc-section-body">
+            @if (Section.Severity == DocSeverity.Attention && Section.AttentionReasons.Count > 0)
+            {
+                <div class="srvdoc-attention-panel">
+                    @foreach (var reason in Section.AttentionReasons)
+                    {
+                        <div class="srvdoc-attention-row"><i class="fa-solid fa-triangle-exclamation"></i> @reason</div>
+                    }
+                </div>
+            }
+
+            @if (Section.Rows.Count > 0)
+            {
+                <div class="srvdoc-rows">
+                    @foreach (var row in Section.Rows)
+                    {
+                        var isChanged = ChangedFieldSet.Contains(row.Label);
+                        <div class="srvdoc-row @(isChanged ? "srvdoc-row-changed" : "")">
+                            <div class="srvdoc-row-label">@row.Label</div>
+                            <div class="srvdoc-row-value">
+                                @row.Value
+                                @if (!string.IsNullOrEmpty(row.Hint))
+                                {
+                                    <div class="srvdoc-row-hint">@row.Hint</div>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+
+            @foreach (var coll in Section.Collections)
+            {
+                <div class="srvdoc-collection">
+                    <div class="srvdoc-collection-title">@coll.Title <span class="srvdoc-collection-count">@coll.Rows.Count</span></div>
+                    @if (coll.Rows.Count == 0)
+                    {
+                        <div class="srvdoc-collection-empty">none</div>
+                    }
+                    else
+                    {
+                        <div class="srvdoc-collection-scroll">
+                            <table class="srvdoc-collection-table">
+                                <thead>
+                                    <tr>
+                                        @foreach (var col in coll.Columns) { <th>@col</th> }
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var row in coll.Rows.Take(MaxRowsShown))
+                                    {
+                                        <tr>
+                                            @foreach (var cell in row) { <td>@cell</td> }
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                            @if (coll.Rows.Count > MaxRowsShown)
+                            {
+                                <div class="srvdoc-collection-truncated">
+                                    showing first @MaxRowsShown of @coll.Rows.Count rows
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public DocSection Section { get; set; } = new();
+    [Parameter] public HashSet<string> ChangedFieldSet { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    [Parameter] public bool InitiallyOpen { get; set; } = false;
+    [Parameter] public int MaxRowsShown { get; set; } = 50;
+
+    private bool _open;
+    private string DomId => $"srvdoc-section-{Section.Id}";
+    private int ChangedFields => ChangedFieldSet.Count;
+
+    private string SeverityClass => Section.Severity switch
+    {
+        DocSeverity.Attention => "attention",
+        DocSeverity.Changed   => "changed",
+        DocSeverity.Pending   => "pending",
+        _                     => "captured",
+    };
+
+    protected override void OnInitialized() => _open = InitiallyOpen;
+
+    private void Toggle() => _open = !_open;
+}

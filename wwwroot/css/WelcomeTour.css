@@ -1,0 +1,185 @@
+/* In the name of God, the Merciful, the Compassionate */
+/* WelcomeTourOverlay — first-launch guided tour card.
+   Bottom-centered, fixed position, above page content but below modals. */
+
+.welcome-tour-card {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 35;                /* below modals (z-index: 40+) */
+    width: min(560px, calc(100vw - 48px));
+    background: var(--bg-panel);
+    border: 1px solid var(--accent);
+    border-radius: 10px;
+    box-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.55),
+                0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+    padding: 16px 18px;
+    color: var(--text-primary);
+    animation: welcomeTourSlideIn 0.22s ease-out;
+}
+
+@keyframes welcomeTourSlideIn {
+    from { transform: translate(-50%, 20px); opacity: 0; }
+    to   { transform: translate(-50%, 0);    opacity: 1; }
+}
+
+.welcome-tour-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.welcome-tour-progress {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    flex: 1 1 auto;
+}
+
+.welcome-tour-progress-sep {
+    color: var(--text-muted);
+    opacity: 0.6;
+    margin: 0 4px;
+}
+
+.welcome-tour-progress-bar {
+    margin-top: 6px;
+    height: 3px;
+    background: var(--bg-secondary);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.welcome-tour-progress-fill {
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.3s ease;
+}
+
+.welcome-tour-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 16px;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 4px;
+    line-height: 1;
+}
+
+.welcome-tour-close:hover {
+    color: var(--text-primary);
+    background: var(--hover-bg);
+}
+
+.welcome-tour-title {
+    margin: 0 0 6px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.welcome-tour-narration {
+    margin: 0 0 14px;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--text-secondary);
+}
+
+.welcome-tour-controls {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    align-items: center;
+}
+
+.welcome-tour-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.12s ease;
+    border: 1px solid transparent;
+}
+
+.welcome-tour-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.welcome-tour-btn-ghost {
+    background: transparent;
+    color: var(--text-secondary);
+    border-color: var(--border);
+}
+
+.welcome-tour-btn-ghost:hover:not(:disabled) {
+    background: var(--hover-bg);
+    color: var(--text-primary);
+}
+
+.welcome-tour-btn-primary {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+}
+
+.welcome-tour-btn-primary:hover:not(:disabled) {
+    filter: brightness(1.1);
+}
+
+/* First-launch CTA toast — small floating card top-right corner that
+   appears once if HasSeenWelcomeTour is false. Click "Start" to launch
+   the tour; click "Dismiss" to flip the flag and never see this again. */
+.welcome-tour-cta {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 34;
+    max-width: 340px;
+    background: var(--bg-panel);
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.5);
+    padding: 14px 16px;
+    color: var(--text-primary);
+    animation: welcomeTourCtaSlideIn 0.3s ease-out;
+}
+
+@keyframes welcomeTourCtaSlideIn {
+    from { transform: translateX(20px); opacity: 0; }
+    to   { transform: translateX(0);    opacity: 1; }
+}
+
+.welcome-tour-cta-title {
+    margin: 0 0 4px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+}
+
+.welcome-tour-cta-body {
+    margin: 0 0 10px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+
+.welcome-tour-cta-controls {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+}
+
+.welcome-tour-cta .welcome-tour-btn {
+    padding: 4px 12px;
+    font-size: 12px;
+}

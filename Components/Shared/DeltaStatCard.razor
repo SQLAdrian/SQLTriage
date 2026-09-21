@@ -1,0 +1,155 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@using SQLTriage.Data
+@implements IDisposable
+
+<div class="stat-card @(!string.IsNullOrEmpty(Description) ? "has-tooltip" : "")"
+     style="background-color: @(ResolvedColor + "22"); border-left: 3px solid @ResolvedColor; position: relative;"
+     @onmouseenter="ShowTooltip" @onmouseleave="HideTooltip">
+    <div class="stat-label">@Label</div>
+    @* The headline is the RATE, because every panel wired to this card selects a CUMULATIVE
+       counter (perf-counter cntr_value, @@TOTAL_READ/WRITE, wait_time_ms) while the panel title
+       and description promise "per second". Printing the cumulative total large under a per-second
+       label was the arithmetic error; the rate is the number the label describes. Until two samples
+       have been taken there is no measured rate, so nothing numeric is printed — a first-render 0/sec
+       is a fabricated reading, not a slow server. *@
+    @if (HasMeasuredRate)
+    {
+        <div class="stat-value" style="color: @ResolvedColor;">
+            @FormatValue(DeltaValue)
+        </div>
+        <div class="stat-unit">@RateUnit</div>
+        <div class="stat-delta">
+            @FormatValue(Value)@UnitSuffix total since start
+        </div>
+    }
+    else
+    {
+        <div class="stat-value" style="color: @UnmeasuredColor;">
+            &ndash;
+        </div>
+        <div class="stat-unit">@RateUnit</div>
+        <div class="stat-delta">
+            @FormatValue(Value)@UnitSuffix total since start; rate needs a second reading
+        </div>
+    }
+    @if (!string.IsNullOrEmpty(Description) && _showTooltip)
+    {
+        <div class="stat-tooltip">@Description</div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public double Value { get; set; }
+    [Parameter] public string Unit { get; set; } = "";
+    [Parameter] public string? Color { get; set; }
+    [Parameter] public string Description { get; set; } = "";
+    [Parameter] public string ValueFormat { get; set; } = "";
+
+    /// <summary>
+    /// Identifies the sample series this card's rate is computed from. Two cards sharing a series
+    /// key share history, so this must distinguish the connection AND the panel: keying on Label
+    /// alone made two servers' identically-titled tiles subtract each other's counters, which
+    /// produces a plausible-looking rate off two unrelated readings. Falls back to Label when the
+    /// caller supplies nothing, preserving the previous behaviour rather than losing history.
+    /// </summary>
+    [Parameter] public string? SeriesKey { get; set; }
+
+    // Description is displayed as a tooltip via _showTooltip — no layout impact
+
+    private bool _showTooltip;
+
+    // KNOWN, NOT FIXED HERE: this dictionary is static, so sample history is shared across every
+    // Blazor circuit in the process, not scoped to one user's session. SeriesKey stops the
+    // cross-SERVER mixing; it does not scope per circuit. Two operators watching the same panel on
+    // the same connection interleave samples into one queue. Left as-is deliberately — moving this
+    // to a scoped service is a DI change, not a labelling fix.
+    //
+    // ⚠ TWO CONSEQUENCES OF THAT SHARING, DISCLOSED 2026-08-06 AND NOT FIXED HERE. Neither is
+    // "history is shared", which the paragraph above already says; both are what the sharing does.
+    //
+    //   1. It is a plain Dictionary, not a ConcurrentDictionary, and it is mutated from
+    //      OnParametersSet and from Dispose. Those run on each circuit's own renderer, so two
+    //      circuits rendering the same series can add and remove keys at the same time — the
+    //      unsynchronised-resize failure mode (a lost entry, or an InvalidOperationException out
+    //      of an unrelated card's enumeration). Never observed here; stated because the type is
+    //      the evidence, not a measurement.
+    //
+    //   2. Dispose REMOVES the shared key. One operator closing a tab therefore deletes the
+    //      sample history of every other circuit watching the same series, and each of those cards
+    //      falls back to "rate needs a second reading" on its next render. The card stays honest
+    //      when that happens — it prints the dash rather than a fabricated rate — so this costs a
+    //      reading, not a false one.
+    //
+    // The fix for both is the same scoped-service change named above, and it is not a labelling
+    // change, so it is recorded rather than half-done.
+    private static Dictionary<string, Queue<(DateTime Time, double Value)>> _valueHistory = new();
+    private const int MaxHistoryCount = 5;
+    private double DeltaValue;
+
+    /// <summary>False until two samples exist, i.e. until a rate has actually been measured.</summary>
+    private bool HasMeasuredRate;
+
+    private string HistoryKey => string.IsNullOrEmpty(SeriesKey) ? Label : SeriesKey!;
+    private string RateUnit => string.IsNullOrEmpty(Unit) ? "/sec" : Unit + "/sec";
+
+    // The sub-line prints the CUMULATIVE reading, so it carries the panel's unit too. Without it
+    // the three wait-time panels read "1.0M total since start" for a number that is MILLISECONDS
+    // of accumulated wait - a quantity with no unit beside it is read as whatever the label
+    // suggests, and the label says waits.
+    private string UnitSuffix => string.IsNullOrEmpty(Unit) ? "" : " " + Unit;
+    private string ResolvedColor => !string.IsNullOrEmpty(Color) ? Color : ThresholdConfig.GetColor(Label, DeltaValue);
+
+    // Neutral. A threshold colour is a verdict on a reading, and there is no reading yet.
+    private const string UnmeasuredColor = "#9e9e9e";
+
+    protected override void OnParametersSet()
+    {
+        var key = HistoryKey;
+        if (!_valueHistory.ContainsKey(key))
+            _valueHistory[key] = new Queue<(DateTime, double)>();
+
+        var history = _valueHistory[key];
+        var now = DateTime.Now;
+
+        // Only enqueue a sample when this is a genuinely NEW reading. OnParametersSet also fires on
+        // pure re-renders (a tooltip toggle, a sibling panel's StateHasChanged) that carry the SAME
+        // cumulative Value the last load delivered. Enqueuing one of those manufactures a second
+        // sample at a fresh timestamp from a stale value, and TryCompute then reports a "measured
+        // 0/sec" that no second reading ever produced, the fabricated rate the comment above says
+        // must never appear. A cumulative counter that genuinely did not move returns the identical
+        // Value too, so we honestly hold at "rate needs a second reading" rather than claim a zero
+        // we cannot distinguish from a re-render.
+        var isNewReading = history.Count == 0 || history.Last().Value != Value;
+        if (isNewReading)
+        {
+            history.Enqueue((now, Value));
+            while (history.Count > MaxHistoryCount)
+                history.Dequeue();
+        }
+
+        HasMeasuredRate = DeltaRate.TryCompute(history.ToList(), out var rate);
+        DeltaValue = rate;
+    }
+
+    private void ShowTooltip() { if (!string.IsNullOrEmpty(Description)) _showTooltip = true; }
+    private void HideTooltip() { _showTooltip = false; }
+
+    private string FormatValue(double value)
+    {
+        if (!string.IsNullOrEmpty(ValueFormat))
+        {
+            try { return value.ToString(ValueFormat); }
+            catch (FormatException) { /* invalid ValueFormat — fall through to default */ }
+        }
+        
+        if (value >= 1_000_000) return $"{value / 1_000_000:F1}M";
+        if (value >= 1_000) return $"{value / 1_000:F1}K";
+        return value.ToString("F0");
+    }
+
+    public void Dispose()
+    {
+        _valueHistory.Remove(HistoryKey);
+    }
+}

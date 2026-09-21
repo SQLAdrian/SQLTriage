@@ -1,0 +1,248 @@
+/* Styles extracted to wwwroot/css/EditAuditScripts.css 2026-05-11 (CLAUDE.md convention). */
+.bulk-edit-page {
+    padding: 20px;
+}
+
+.bulk-edit-page .filter-section {
+    background: var(--bg-panel);
+    padding: 15px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+}
+
+.bulk-edit-page .filter-row {
+    display: flex;
+    gap: 15px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+}
+
+.bulk-edit-page .filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.bulk-edit-page .filter-group label {
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.bulk-edit-page .form-input {
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 14px;
+}
+
+.bulk-edit-page .form-input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.bulk-edit-page .form-input.small {
+    width: 80px;
+    padding: 6px 8px;
+    text-align: center;
+}
+
+.bulk-edit-page .selection-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    padding: 10px;
+    background: var(--bg-panel);
+    border-radius: 8px;
+}
+
+.bulk-edit-page .selection-info {
+    color: var(--text-secondary);
+}
+
+.bulk-edit-page .selection-buttons {
+    display: flex;
+    gap: 10px;
+}
+
+.bulk-edit-page .table-container {
+    overflow-x: auto;
+    background: var(--bg-panel);
+    border-radius: 8px;
+}
+
+.bulk-edit-page .data-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.bulk-edit-page .data-table th,
+.bulk-edit-page .data-table td {
+    padding: 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+
+.bulk-edit-page .data-table th {
+    background: var(--bg-secondary);
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.bulk-edit-page .data-table tr:hover {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.enabled-row {
+    border-left: 3px solid var(--green);
+}
+
+.disabled-row {
+    border-left: 3px solid var(--red);
+    opacity: 0.7;
+}
+
+.bulk-edit-page .btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s;
+}
+
+.bulk-edit-page .btn-sm {
+    padding: 6px 12px;
+    font-size: 13px;
+}
+
+.bulk-edit-page .btn-primary {
+    background: var(--accent);
+    color: white;
+}
+
+.bulk-edit-page .btn-primary:hover {
+    opacity: 0.9;
+}
+
+.bulk-edit-page .btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.bulk-edit-page .btn-secondary {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+}
+
+.bulk-edit-page .status-message {
+    padding: 12px;
+    border-radius: 4px;
+    margin-bottom: 15px;
+}
+
+.bulk-edit-page .status-message.success {
+    background: rgba(33, 201, 122, 0.2);
+    border: 1px solid var(--green);
+    color: var(--green);
+}
+
+.bulk-edit-page .status-message.error {
+    background: rgba(239, 68, 68, 0.2);
+    border: 1px solid var(--red);
+    color: var(--red);
+}
+
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: var(--bg-panel);
+    border-radius: 8px;
+    width: 90%;
+    max-width: 600px;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    border-bottom: 1px solid var(--border);
+}
+
+.modal-header h3 {
+    margin: 0;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: var(--text-secondary);
+}
+
+.modal-body {
+    padding: 20px;
+}
+
+.modal-footer {
+    padding: 15px 20px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.bulk-edit-page .form-group {
+    margin-bottom: 15px;
+}
+
+.bulk-edit-page .form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.bulk-edit-page .form-group textarea {
+    width: 100%;
+    resize: vertical;
+}
+
+.bulk-edit-page .form-row {
+    display: flex;
+    gap: 15px;
+}
+
+.bulk-edit-page .form-row .form-group {
+    flex: 1;
+}
+
+.bulk-edit-page .checkbox-group label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+}
+
+.bulk-edit-page .checkbox-group input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+}

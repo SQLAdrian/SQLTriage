@@ -1,0 +1,7 @@
+.bp-switch { position:relative; display:inline-block; width:42px; height:24px; flex-shrink:0; cursor:pointer; margin-top:2px; }
+.bp-switch input { opacity:0; width:0; height:0; }
+.bp-track { position:absolute; inset:0; border-radius:999px; background:rgba(148,163,184,0.25); transition:background .15s; }
+.bp-track::before { content:""; position:absolute; left:3px; top:3px; width:18px; height:18px; border-radius:50%; background:#fff; transition:transform .15s; }
+.bp-switch input:checked + .bp-track { background:var(--accent); }
+.bp-switch input:checked + .bp-track::before { transform:translateX(18px); }
+

@@ -1,0 +1,56 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+
+@page "/live"
+@using SQLTriage.Data
+@using SQLTriage.Data.Models
+@inject DashboardDataService DataService
+@inject GlobalInstanceSelector InstanceSelector
+@inject ServerConnectionManager ConnectionManager
+@implements IDisposable
+
+<div class="dashboard-container">
+    <DynamicDashboard DashboardId="live" />
+    
+    @if (!string.IsNullOrEmpty(_connectionString))
+    {
+        @* <div class="chart-panel" style="margin: 8px;">
+            <div class="chart-title">Blocking Chains</div>
+            <BlockingChainDiagram ConnectionString="@_connectionString" RefreshIntervalSeconds="5" />
+        </div> *@
+    }
+</div>
+
+@code {
+    private string? _connectionString;
+    
+    protected override async Task OnInitializedAsync()
+    {
+        await base.OnInitializedAsync();
+        UpdateConnectionString();
+        ConnectionManager.OnConnectionChanged += HandleConnectionChanged;
+    }
+    
+    private void UpdateConnectionString()
+    {
+        var currentServer = ConnectionManager.CurrentServer;
+        if (currentServer != null)
+        {
+            var serverList = currentServer.GetServerList();
+            if (serverList.Any())
+            {
+                _connectionString = currentServer.GetConnectionString(serverList.First());
+            }
+        }
+    }
+    
+    private void HandleConnectionChanged()
+    {
+        UpdateConnectionString();
+        InvokeAsync(StateHasChanged);
+    }
+    
+    public void Dispose()
+    {
+        ConnectionManager.OnConnectionChanged -= HandleConnectionChanged;
+    }
+}

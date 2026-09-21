@@ -1,0 +1,25 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+<div class="collapsible-section">
+
+    <div class="collapsible-header" @onclick="Toggle">
+        <span class="collapsible-icon">@(IsExpanded ? "▼" : "▶")</span>
+        <span class="collapsible-title">@Title</span>
+    </div>
+    @if (IsExpanded)
+    {
+        <div class="collapsible-content">
+            @ChildContent
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public bool IsExpanded { get; set; } = false;
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private void Toggle()
+    {
+        IsExpanded = !IsExpanded;
+    }
+}

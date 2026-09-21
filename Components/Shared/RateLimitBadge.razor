@@ -1,0 +1,70 @@
+@*
+   In the name of God, the Merciful, the Compassionate
+   Visible only when RateLimiter is currently throttling. Polls every 5s
+   so the badge appears within seconds of throttling kicking in and clears
+   itself when the sliding window drains.
+*@
+@inject SQLTriage.Data.RateLimiter RateLimiter
+@implements IDisposable
+
+@if (_throttled)
+{
+    <div class="ratelimit-badge" title="@_tooltip">
+        <i class="fa-solid fa-gauge-high"></i>
+        <span>@_label</span>
+    </div>
+}
+
+@code {
+    private bool _throttled;
+    private string _label = "";
+    private string _tooltip = "";
+    private System.Threading.Timer? _timer;
+
+    protected override void OnInitialized()
+    {
+        Refresh();
+        _timer = new System.Threading.Timer(_ =>
+        {
+            _ = InvokeAsync(() =>
+            {
+                Refresh();
+                StateHasChanged();
+            });
+        }, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5));
+    }
+
+    private void Refresh()
+    {
+        var queryThrottled = RateLimiter.IsRateLimited;
+        var connThrottled  = RateLimiter.IsConnectionRateLimited;
+        _throttled = queryThrottled || connThrottled;
+
+        if (!_throttled) return;
+
+        // Compose a compact label + a fuller tooltip. Show the *closer*
+        // reset window so the user knows roughly when they'll be unblocked.
+        var parts = new List<string>();
+        if (queryThrottled)
+            parts.Add($"Queries {RateLimiter.CurrentQueryCount}/{RateLimiter.MaxQueriesPerMinute}/min");
+        if (connThrottled)
+            parts.Add($"Conns {RateLimiter.CurrentConnectionAttemptCount}/{RateLimiter.MaxConnectionAttemptsPerMinute}/min");
+        _label = "Throttled";
+
+        var resetQ = RateLimiter.GetTimeToReset();
+        var resetC = RateLimiter.GetConnectionTimeToReset();
+        var nextReset = (queryThrottled, connThrottled) switch
+        {
+            (true, true)  => resetQ < resetC ? resetQ : resetC,
+            (true, false) => resetQ,
+            (false, true) => resetC,
+            _ => TimeSpan.Zero
+        };
+        _tooltip = string.Join("\n", parts) + $"\nResets in ~{(int)nextReset.TotalSeconds}s";
+    }
+
+    public void Dispose()
+    {
+        _timer?.Dispose();
+    }
+}

@@ -1,0 +1,11 @@
+.svc-badge { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; padding:2px 9px; border-radius:999px; white-space:nowrap; }
+.svc-running, .svc-healthy { background:rgba(34,197,94,0.14); color:var(--green); }
+.svc-stopped { background:rgba(148,163,184,0.16); color:var(--text-muted); }
+.svc-degraded { background:rgba(245,158,11,0.16); color:var(--orange); }
+.svc-notinstalled { background:rgba(239,68,68,0.12); color:var(--red); }
+/* pages-r1-02/r1-06: UNKNOWN shared the red of NOT INSTALLED, so an unmeasured state was painted
+   as a measured failure. Unknown is neutral - nobody established anything. */
+.svc-unknown { background:rgba(148,163,184,0.16); color:var(--text-muted); }
+.svc-available { background:rgba(59,130,246,0.16); color:#60a5fa; }
+.svc-planned { background:rgba(168,85,247,0.16); color:#c084fc; }
+

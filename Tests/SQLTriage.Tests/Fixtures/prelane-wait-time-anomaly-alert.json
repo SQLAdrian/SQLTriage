@@ -1,0 +1,39 @@
+{
+  "capturedUtc": "2026-08-24T00:00:00Z",
+  "sourceSha": "a4c3a1c0ac71a6c164aae97985ca3b0ce537b772",
+  "sourceFile": "Config/alert-definitions.json",
+  "note": "The wait_time_anomaly alert EXACTLY as it shipped before ruling D2(b), extracted from git at the lane's base commit - not hand-written. An install upgraded from any build at or before this SHA has this object in its Config/alert-definitions.json, because the installer ships that file onlyifdoesntexist. The migrator tests splice this into a copy of the CURRENT shipped catalogue to make a realistic upgraded-install file.",
+  "alert": {
+    "id": "wait_time_anomaly",
+    "name": "Wait Time Anomaly",
+    "description": "Wait time accrued per second across all sessions, measured as the change in cumulative total wait time between two samples, is abnormally high compared to typical workload",
+    "category": "performance",
+    "enabled": true,
+    "severity": "Medium",
+    "thresholds": {
+      "warning": 5000,
+      "critical": 15000
+    },
+    "unit": "milliseconds",
+    "operator": "greater_than",
+    "durationSeconds": 0,
+    "frequencySeconds": 300,
+    "query": "SELECT SUM(wait_time_ms) AS value FROM sys.dm_os_wait_stats WHERE wait_type NOT IN ('SLEEP_TASK','LAZYWRITER_SLEEP','SQLTRACE_BUFFER_FLUSH','CLR_AUTO_EVENT','CLR_SEMAPHORE','BROKER_EVENTHANDLER','BROKER_RECEIVE_WAITFOR','BROKER_TASK_STOP','BROKER_TO_FLUSH','CHECKPOINT_QUEUE','DBMIRROR_DBM_EVENT','DBMIRRORING_CMD','DIRTY_PAGE_POLL','DISPATCHER_QUEUE_SEMAPHORE','FT_IFTS_SCHEDULER_IDLE_WAIT','HADR_FILESTREAM_IOMGR_IOCOMPLETION','HADR_WORK_QUEUE','LOGMGR_QUEUE','ONDEMAND_TASK_QUEUE','REQUEST_FOR_DEADLOCK_SEARCH','RESOURCE_QUEUE','SERVER_IDLE_CHECK','SP_SERVER_DIAGNOSTICS_SLEEP','SQLTRACE_INCREMENTAL_FLUSH_SLEEP','TRACEWRITE','WAIT_XTP_HOST_WAIT','WAITFOR','XE_DISPATCHER_WAIT','XE_TIMER_EVENT')",
+    "alwaysAlert": false,
+    "primaryChannel": null,
+    "sendEmail": false,
+    "includeInDailySummary": false,
+    "escalate": false,
+    "escalationThresholdEvents": 0,
+    "escalationWindowMinutes": 0,
+    "escalationAfterMinutes": 0,
+    "escalationChannel": null,
+    "nextAlertDelayMinutes": 0,
+    "baselineDeviationPercent": 0,
+    "baselineQueryId": null,
+    "baselineSeries": null,
+    "canBaseline": true,
+    "valueKind": "cumulative_counter",
+    "requiresOnPrem": true
+  }
+}

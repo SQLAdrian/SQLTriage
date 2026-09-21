@@ -1,0 +1,342 @@
+<!--/* In the name of God, the Merciful, the Compassionate */-->
+@page "/checks/trend/{CheckId}"
+@using SQLTriage.Components.Shared
+@using SQLTriage.Data.Services
+@inject GovernanceHistoryService HistoryService
+@inject NavigationManager Navigation
+
+<PageTitle>Check Trend - @CheckId - SQLTriage</PageTitle>
+
+<div class="check-trend-page">
+    <div class="check-trend-header">
+        <button class="btn btn-secondary" @onclick="GoBack" title="Back">
+            <i class="fa-solid fa-arrow-left"></i> Back
+        </button>
+        <h2><i class="fa-solid fa-chart-line"></i> Check Trend &mdash; <code>@CheckId</code></h2>
+    </div>
+
+    @if (_loading)
+    {
+        <PageLoadingSpinner Message="Loading check history..." />
+    }
+    else if (_points.Count == 0)
+    {
+        <div class="check-trend-empty">
+            <p>No history recorded for <code>@CheckId</code> in the last 90 days.</p>
+            <p style="color: var(--text-muted); font-size: 13px;">
+                History is captured every time the check runs (Quick Assessment, Governance scoring, etc).
+                If this check has never run on a connected server, no rows will appear.
+            </p>
+        </div>
+    }
+    else
+    {
+        <div class="check-trend-meta">
+            @if (!string.IsNullOrEmpty(_checkName))
+            {
+                <div class="check-trend-meta-row">
+                    <span class="check-trend-meta-label">Name:</span>
+                    <span>@_checkName</span>
+                </div>
+            }
+            @if (!string.IsNullOrEmpty(_category))
+            {
+                <div class="check-trend-meta-row">
+                    <span class="check-trend-meta-label">Category:</span>
+                    <span>@_category</span>
+                </div>
+            }
+        </div>
+
+        <div class="check-trend-summary">
+            <div class="check-trend-stat">
+                <div class="check-trend-stat-value">@_points.Count</div>
+                <div class="check-trend-stat-label">Total runs (90 days)</div>
+            </div>
+            <div class="check-trend-stat">
+                <div class="check-trend-stat-value">@_serverCount</div>
+                <div class="check-trend-stat-label">Servers</div>
+            </div>
+            <div class="check-trend-stat">
+                @* A1b: no assessable run means no pass rate. Rendering 0% here painted a check
+                   nobody could assess as one that failed every run. *@
+                <div class="check-trend-stat-value" style="color: @RateColour(OverallPassRate);">
+                    @(OverallPassRate is { } r ? r.ToString("F0") + "%" : "—")
+                </div>
+                <div class="check-trend-stat-label">
+                    @(OverallPassRate is null ? "Pass rate — nothing assessable" : "Pass rate")
+                </div>
+            </div>
+            @* Ruling #4 (2026-07-20): only rendered when non-zero, but when it IS non-zero the
+               reader must see that the pass rate beside it was computed over fewer runs than the
+               "Runs" tile shows — otherwise the two tiles silently disagree. *@
+            @if (UnassessedCount > 0)
+            {
+                <div class="check-trend-stat">
+                    <div class="check-trend-stat-value" style="color: var(--orange);">@UnassessedCount</div>
+                    <div class="check-trend-stat-label">Not fully assessed</div>
+                </div>
+            }
+            <div class="check-trend-stat">
+                <div class="check-trend-stat-value">@(_lastRun?.ToString("yyyy-MM-dd HH:mm") ?? "—")</div>
+                <div class="check-trend-stat-label">Last run</div>
+            </div>
+        </div>
+
+        <div class="check-trend-section">
+            <h3>By server</h3>
+            <table class="check-trend-table">
+                <thead>
+                    <tr>
+                        <th>Server</th>
+                        <th>Runs</th>
+                        <th>Pass rate</th>
+                        <th>Sparkline (last @MaxFlagsPerServer)</th>
+                        <th>Last result</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var grp in _byServer)
+                    {
+                        @* A1b: Total counts only the SCORABLE runs, so a server whose every run was
+                           unassessable has Total=0 — and the old `: 0` fallback rendered that as a
+                           red 0%, i.e. total failure, for a server nothing was ever measured on. *@
+                        var rate = grp.Total > 0 ? (double?)(grp.Passed * 100.0 / grp.Total) : null;
+                        <tr>
+                            <td><strong>@grp.Server</strong></td>
+                            <td>@grp.Total</td>
+                            <td style="color: @RateColour(rate);">
+                                @(rate is { } sr ? sr.ToString("F0") + "%" : "—")
+                            </td>
+                            <td>
+                                <Sparkline States="grp.States"
+                                           Width="120" Height="20"
+                                           AriaLabel="@SparkLabel(grp)" />
+                            </td>
+                            <td>
+                                @* Ruling #4: warn arm FIRST — a WARN carries LastPassed=true, so
+                                   the pass arm would claim the last run verified the control. *@
+                                @if (grp.LastWasWarn)
+                                {
+                                    <span class="check-trend-badge warn" title="The check ran but could not fully assess the target."><i class="fa-solid fa-triangle-exclamation"></i> partial</span>
+                                }
+                                else if (grp.LastPassed)
+                                {
+                                    <span class="check-trend-badge pass"><i class="fa-solid fa-check"></i> pass</span>
+                                }
+                                else
+                                {
+                                    <span class="check-trend-badge fail"><i class="fa-solid fa-xmark"></i> fail</span>
+                                }
+                                <span style="color: var(--text-muted); margin-left: 6px; font-size: 12px;">
+                                    @grp.LastRun.ToString("yyyy-MM-dd HH:mm")
+                                </span>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @* A1: three dot states need a key. An unlabelled grey dot beside green and red is a
+               question, not an answer — and the whole point of the third state is that the reader
+               must NOT read it as either of the other two. *@
+            <p class="check-trend-spark-legend">
+                Sparkline:
+                <span class="check-trend-spark-key"><span class="check-trend-spark-dot pass"></span> passed</span>
+                <span class="check-trend-spark-key"><span class="check-trend-spark-dot fail"></span> failed</span>
+                <span class="check-trend-spark-key"><span class="check-trend-spark-dot unassessed"></span> ran, but could not fully assess &mdash; neither a pass nor a failure</span>
+            </p>
+        </div>
+
+        @if (_dailyRates.Count > 1 && _ratedDays > 0)
+        {
+            <div class="check-trend-section">
+                <h3>Daily aggregate pass rate</h3>
+                <Sparkline Values="_dailyRates" Width="640" Height="80"
+                           AriaLabel="@($"Daily pass rate trend — {_ratedDays} of {_dailyRates.Count} days had a rate to plot")" />
+                <p style="color: var(--text-muted); font-size: 12px; margin-top: 6px;">
+                    @_ratedDays of @_dailyRates.Count daily samples · range
+                    @_ratedMin.ToString("F0")% &ndash; @_ratedMax.ToString("F0")%
+                </p>
+                @* A1b: the gap is only honest if the reader is told it IS a gap. An unexplained
+                   break in a line reads as a rendering glitch, which is its own kind of lie. *@
+                @if (_unratedDays > 0)
+                {
+                    <p style="color: var(--orange); font-size: 12px; margin-top: 2px;">
+                        <i class="fa-solid fa-triangle-exclamation"></i>
+                        @_unratedDays of these days have <strong>no pass rate</strong> &mdash; every run that
+                        day could run the check but not fully assess the target, so nothing was measured.
+                        The line breaks across them rather than plotting a number nobody observed.
+                    </p>
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public string CheckId { get; set; } = "";
+
+    private const int MaxFlagsPerServer = 30;
+    private bool _loading = true;
+    private List<CheckHistoryPoint> _points = new();
+    private List<ServerGroup> _byServer = new();
+
+    /// <summary>A1b: null entry = that day had no assessable run, so it has no rate. Not zero.</summary>
+    private List<double?> _dailyRates = new();
+    private int _ratedDays;
+    private int _unratedDays;
+    private double _ratedMin;
+    private double _ratedMax;
+
+    private int _serverCount;
+    private DateTime? _lastRun;
+    private string _checkName = "";
+    private string _category = "";
+
+    // Ruling #4 (2026-07-20): WARN points are out of the numerator AND the denominator, matching
+    // CheckClassification.IsScorable on the live side. Before check_results.verdict was persisted a
+    // WARN rehydrated as Passed=true and this rate counted it as a clean pass — a check that lost
+    // visibility on half the estate trended UP. Rate is now "of the runs that could actually assess
+    // this check, how many passed"; _scorable is the shared denominator for every figure below.
+    private static bool IsWarnPoint(CheckHistoryPoint p) =>
+        SQLTriage.Data.Services.CheckClassification.IsWarnVerdict(p.Verdict);
+
+    private List<CheckHistoryPoint> Scorable(IEnumerable<CheckHistoryPoint> pts) =>
+        pts.Where(p => !IsWarnPoint(p)).ToList();
+
+    /// <summary>
+    /// A1b, extended (2026-07-20): NULLABLE. If nothing could be assessed there is no pass rate,
+    /// and the hero tile must say so rather than print a number.
+    ///
+    /// <para>This returned 0 when the scorable set was empty, which rendered "0%" in RED on the
+    /// page's most prominent tile — a check nobody could assess was displayed as a check that
+    /// failed every single run. Exactly the defect A1b names on the daily line, on a louder
+    /// surface. Found by the A1b test, not by the sweep.</para>
+    /// </summary>
+    private double? OverallPassRate
+    {
+        get
+        {
+            var scorable = Scorable(_points);
+            return scorable.Count == 0 ? null : scorable.Count(p => p.Passed) * 100.0 / scorable.Count;
+        }
+    }
+
+    /// <summary>Runs that could not fully assess this check — surfaced, never silently dropped.</summary>
+    private int UnassessedCount => _points.Count(IsWarnPoint);
+
+    /// <summary>
+    /// A1b: the banding colour for a pass rate. A NULL rate is not a bad rate — it is the absence
+    /// of one, so it takes the muted token rather than falling through to red. The old expression
+    /// had no null case at all because the rate could not be null; that was the defect.
+    /// </summary>
+    private static string RateColour(double? rate) =>
+        rate is null   ? "var(--text-muted)"
+        : rate >= 90   ? "var(--green)"
+        : rate >= 70   ? "var(--orange)"
+                       : "var(--red)";
+
+    protected override void OnInitialized()
+    {
+        try
+        {
+            _points = HistoryService.GetCheckHistory(CheckId, 90);
+
+            if (_points.Count > 0)
+            {
+                _checkName = _points.Last().CheckName;
+                _category = _points.Last().Category;
+
+                _byServer = _points
+                    .GroupBy(p => p.Server, StringComparer.OrdinalIgnoreCase)
+                    .Select(g => {
+                        var ordered = g.OrderBy(p => p.RecordedAt).ToList();
+                        var last = ordered.Last();
+                        // Ruling #4: Total/Passed count the scorable subset so the per-server
+                        // "P of T" reconciles with OverallPassRate above instead of quietly using
+                        // a bigger denominator that includes runs which asserted nothing.
+                        var scorable = Scorable(ordered);
+                        return new ServerGroup
+                        {
+                            Server      = g.Key,
+                            Total       = scorable.Count,
+                            Passed      = scorable.Count(p => p.Passed),
+                            Unassessed  = ordered.Count(IsWarnPoint),
+                            // A1 (2026-07-20): was `.Select(p => p.Passed)` — a raw read into a
+                            // two-state bool list, so a WARN plotted a GREEN dot on the one page a
+                            // DBA opens to say "green for 30 runs". SparkStates.For puts the WARN
+                            // arm ahead of the Passed arm; the dot chart now has a third state.
+                            States      = ordered.TakeLast(MaxFlagsPerServer).Select(SparkStates.For).ToList(),
+                            LastPassed  = last.Passed,
+                            LastWasWarn = IsWarnPoint(last),
+                            LastRun     = ParseDate(last.RecordedAt),
+                        };
+                    })
+                    .OrderByDescending(s => s.LastRun)
+                    .ToList();
+
+                _serverCount = _byServer.Count;
+                _lastRun = _byServer.Max(s => (DateTime?)s.LastRun);
+
+                // A1b (2026-07-20): same scorable basis as OverallPassRate. A day whose runs were
+                // ALL unassessable has NO rate — and the honest shape for "no value" is a GAP in
+                // the line, not a point on it. This charted 0, defending itself with "charts as 0
+                // rather than inventing 100"; but 0% draws a cliff to the floor and reads as a
+                // total-failure day. Inventing a cliff is not more honest than inventing a peak —
+                // both assert a rate nobody measured. null means null; Sparkline breaks the line.
+                _dailyRates = _points
+                    .GroupBy(p => ParseDate(p.RecordedAt).Date)
+                    .OrderBy(g => g.Key)
+                    .Select(g =>
+                    {
+                        var scorable = Scorable(g);
+                        return scorable.Count == 0
+                            ? (double?)null
+                            : scorable.Count(p => p.Passed) * 100.0 / scorable.Count;
+                    })
+                    .ToList();
+
+                var rated = _dailyRates.Where(r => r.HasValue).Select(r => r!.Value).ToList();
+                _ratedDays   = rated.Count;
+                _unratedDays = _dailyRates.Count - rated.Count;
+                _ratedMin    = rated.Count == 0 ? 0 : rated.Min();
+                _ratedMax    = rated.Count == 0 ? 0 : rated.Max();
+            }
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    /// <summary>
+    /// A1: the sparkline's accessible label. It used to read "N of T passes", counting the WARN
+    /// dots into neither number while the chart drew them green — so a screen-reader user and a
+    /// sighted user were given two different stories. The unassessed runs are named.
+    /// </summary>
+    private static string SparkLabel(ServerGroup g) =>
+        g.Unassessed == 0
+            ? $"{g.Server}: {g.Passed} of {g.Total} passes"
+            : $"{g.Server}: {g.Passed} of {g.Total} passes, and {g.Unassessed} runs that could not fully assess";
+
+    private static DateTime ParseDate(string s) =>
+        DateTime.TryParse(s, out var d) ? d : DateTime.MinValue;
+
+    private void GoBack() => Navigation.NavigateTo("/checks");
+
+    private class ServerGroup
+    {
+        public string Server { get; set; } = "";
+        /// <summary>Scorable runs only (ruling #4) — excludes runs that could not fully assess.</summary>
+        public int Total { get; set; }
+        public int Passed { get; set; }
+        /// <summary>Runs excluded from Total/Passed because the check could not fully assess.</summary>
+        public int Unassessed { get; set; }
+        /// <summary>A1: the sparkline series. Three states — a WARN run is neither dot colour.</summary>
+        public List<SparkState> States { get; set; } = new();
+        public bool LastPassed { get; set; }
+        /// <summary>The most recent run was a WARN — so LastPassed=true means "not a failure", not "pass".</summary>
+        public bool LastWasWarn { get; set; }
+        public DateTime LastRun { get; set; }
+    }
+}
