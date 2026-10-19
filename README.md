@@ -9,7 +9,7 @@
 
 The open alternative to Microsoft SQL Vulnerability Assessment, with deeper coverage. Every check names where its rule comes from. Every control is traceable.
 
-**[Download for Windows →](https://github.com/SQLAdrian/SQLTriage/releases)** · **[Live docs →](https://sqladrian.github.io/SQLTriage/)** · **[Security whitepaper →](https://sqladrian.github.io/SQLTriage/security)**
+**[Request the Windows build →](https://github.com/SQLAdrian/SQLTriage/issues/new?title=Download%20request)** · **[Live docs →](https://sqladrian.github.io/SQLTriage/)** · **[Security whitepaper →](https://sqladrian.github.io/SQLTriage/security)**
 
 ---
 
@@ -82,7 +82,7 @@ Audit Assessment · Compliance Roadmap · CIO Dashboard · Compliance Map · Cod
 
 ## Quick start (60 seconds)
 
-1. **[Download the latest release](https://github.com/SQLAdrian/SQLTriage/releases/latest)** — `Setup.exe` (installer, no admin needed for per-user install) or the portable `win-x64.zip` (unzip anywhere, run `SQLTriage.exe`)
+1. **Request the Windows build.** The public download is paused while the next release is prepared. Ask through [GitHub Issues](https://github.com/SQLAdrian/SQLTriage/issues/new?title=Download%20request) or [sqldba.org](https://sqldba.org) and we send you the installer or the portable zip.
 2. Launch — Free tier active immediately
 3. **Settings → Add Server** — pick a SQL instance, Windows auth or SQL login
 4. **Audit Assessment → Run Audit** — 60-second run on a typical instance

@@ -16,7 +16,7 @@ description: 500+ audit checks for SQL Server, most mapped to NIST, CIS, STIG, I
       Assessment, with deeper coverage. Every check names where its rule comes from. Every control is traceable.
     </p>
     <div class="cta-row">
-      <a class="btn btn-primary" href="https://github.com/SQLAdrian/SQLTriage/releases">Download for Windows</a>
+      <a class="btn btn-primary" href="https://github.com/SQLAdrian/SQLTriage/issues/new?title=Download%20request">Request the Windows build</a>
       <a class="btn btn-ghost" href="https://github.com/SQLAdrian/SQLTriage">View on GitHub</a>
     </div>
     <div class="hero-meta">
@@ -388,7 +388,7 @@ description: 500+ audit checks for SQL Server, most mapped to NIST, CIS, STIG, I
       <h2 style="margin-bottom:0.85rem;">Ready to audit your SQL Server estate?</h2>
       <p class="muted" style="margin-bottom:1.5rem;font-size:var(--step-1);">Single download. No agent. No licensing. Your auditor will have nothing to argue with.</p>
       <div class="cta-row" style="justify-content:center;">
-        <a class="btn btn-primary" href="https://github.com/SQLAdrian/SQLTriage/releases">Download for Windows</a>
+        <a class="btn btn-primary" href="https://github.com/SQLAdrian/SQLTriage/issues/new?title=Download%20request">Request the Windows build</a>
         <a class="btn btn-ghost" href="https://github.com/SQLAdrian/SQLTriage">Source on GitHub</a>
       </div>
     </div>

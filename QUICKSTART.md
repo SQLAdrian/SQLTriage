@@ -5,7 +5,7 @@
 
 ## First Time Setup
 
-1. Download SQLTriage from [GitHub Releases](https://github.com/SQLAdrian/SQLTriage/releases)
+1. Request SQLTriage through [GitHub Issues](https://github.com/SQLAdrian/SQLTriage/issues/new?title=Download%20request). The public download is paused while the next release is prepared.
 2. Run the installer or extract the ZIP
 3. Launch SQLTriage
 4. Complete the onboarding wizard
