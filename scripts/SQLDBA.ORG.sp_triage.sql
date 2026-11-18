@@ -101,7 +101,7 @@ BEGIN
 	SET LOCK_TIMEOUT 5000;
 	SET DEADLOCK_PRIORITY LOW;
 
-	SELECT @Version = '2026.11.02', @VersionDate = '20261102';
+	SELECT @Version = '2026.11.19', @VersionDate = '20261119';
 	IF @VersionCheckMode = 1 RETURN;
 	/* The run's start (lane bundle-sp-triage-5, M3a): read by the one total-time line at the end of the run (IF @Debug = 1). */
 	DECLARE @starttime DATETIME;
@@ -5131,6 +5131,316 @@ END CATCH
 		SET @DebugTime = GETDATE();
 		IF @ShowDebugTime = 1 RAISERROR (N'%s', 0, 1, @DebugTimeMSG) WITH NOWAIT; 
 		RAISERROR (N'Checked for failed agent jobs',0,1) WITH NOWAIT;
+	END
+
+			/*----------------------------------------
+			--SQL Agent job history limiter
+			----------------------------------------*/
+/* Invariant (lane bundle-agent-job-history-limiter-checks, 2026-11-19): a verdict about SQL Agent job history reads
+   four things TOGETHER: the limiter settings (JobHistoryMaxRows, JobHistoryMaxRowsPerJob), the row count of
+   msdb.dbo.sysjobhistory, the age of its oldest row and the number of scheduled purge jobs. The rule, its thresholds
+   (100,000 rows; 10,000 rows over the cap; 90 days: a SQLTriage choice, not a vendor limit) and its words are the
+   corpus check SQLT-CUSTOM-AGENT-JOB-HISTORY-LIMITER-COST.
+   - One unread gives ONE skip row and no output row: never a clean row and never a finding on an unread. A read after
+     the first unread one is not run.
+   - The row count comes from partition statistics, never a COUNT of the table (that count is the cost this block
+     reports). The oldest row is read WITH (NOLOCK): the limiter holds an exclusive lock on the table for its whole
+     transaction, and a check must not queue behind the lock it reports.
+   - The settings: a sysadmin reads the SQL Agent registry key (inside IF @CanReadRegistry = 1, guarded by
+     SpTriageRegistryReadGuardCensusTests; a NULL output is an absent value, and an absent JobHistoryMaxRows is the
+     limiter off). Any other login reads sys.dm_server_registry (VIEW SERVER STATE), where a value counts as read only
+     when its row came back: an absent value and a hidden row look the same there.
+   - Runs on EngineEdition 2 and 3 only. Express (4) and Azure SQL Database (5) have no SQL Server Agent: no row and no
+     skip. Managed Instance, Linux, Amazon RDS and any other edition: one skip row (not proved there).
+   - Every CATCH starts with its skip row (SpTriageSkipRowCensusTests). No statement returns a result set.
+   Placement: procedure top level (inside no IF and no TRY), after the failed-agent-jobs block. The report is ORDER BY
+   ID, so this position is its place in the report. Section 7 (FAILED AGENT JOBS) reads the same table for failures only.
+   The "limiter read" marks bound the text an injection harness replaces to prove each shape: keep them in pairs. */
+DECLARE @jhl_big BIGINT;
+DECLARE @jhl_backlog BIGINT;
+DECLARE @jhl_old_days INT;
+SET @jhl_big = 100000;
+SET @jhl_backlog = 10000;
+SET @jhl_old_days = 90;
+DECLARE @jhl_edition INT;
+DECLARE @jhl_platform NVARCHAR(100);
+DECLARE @jhl_ok BIT;
+DECLARE @jhl_via NVARCHAR(40);
+DECLARE @jhl_max INT;
+DECLARE @jhl_per INT;
+DECLARE @jhl_reg TABLE (value_name NVARCHAR(128) NULL, value_text NVARCHAR(100) NULL);
+DECLARE @jhl_txt NVARCHAR(100);
+DECLARE @jhl_rows BIGINT;
+DECLARE @jhl_old_found INT;
+DECLARE @jhl_run_date INT;
+DECLARE @jhl_oldest DATETIME;
+DECLARE @jhl_age INT;
+DECLARE @jhl_empty BIT;
+DECLARE @jhl_purge INT;
+DECLARE @jhl_on BIT;
+DECLARE @jhl_cap BIGINT;
+DECLARE @jhl_per_job BIGINT;
+DECLARE @jhl_w1 INT;
+DECLARE @jhl_w2 INT;
+DECLARE @jhl_w3 INT;
+DECLARE @jhl_w4 INT;
+DECLARE @jhl_findings INT;
+DECLARE @jhl_facts NVARCHAR(2000);
+DECLARE @jhl_fix NVARCHAR(1000);
+DECLARE @jhl_out TABLE (rn INT IDENTITY(1,1) NOT NULL, Summary NVARCHAR(4000) NULL, Severity NVARCHAR(5) NULL);
+SET @jhl_ok = 0;
+SET @jhl_old_found = 0;
+SET @jhl_edition = CONVERT(INT, SERVERPROPERTY('EngineEdition'));
+/* Each platform name carries its own full stop: the skip text below ends with the variable, because a variable
+   followed by a literal that starts with a full stop reads as a database name to SpTriageDatabaseStateGuardCensusTests. */
+SET @jhl_platform = CASE
+	WHEN @jhl_edition IN (4, 5) OR @IsSQLAzure = 1 THEN NULL
+	WHEN @jhl_edition = 8 OR @IsSQLMI = 1 THEN N'Azure SQL Managed Instance.'
+	WHEN @IsLinux = 1 THEN N'SQL Server on Linux.'
+	WHEN @IsRDS = 1 THEN N'Amazon RDS for SQL Server.'
+	WHEN ISNULL(@jhl_edition, -1) NOT IN (2, 3) THEN N'this engine edition (EngineEdition ' + ISNULL(CONVERT(NVARCHAR(12), @jhl_edition), N'NULL') + N').'
+	ELSE NULL END;
+IF @jhl_platform IS NOT NULL
+	INSERT #sp_triage_skipped (Step, ErrorNumber, ErrorMessage) VALUES (N'SQL Agent job history limiter', 0, N'SQL Agent job history limiter: not evaluated. This check has not been proved on ' + @jhl_platform);
+ELSE IF @jhl_edition IN (2, 3) AND @IsSQLAzure = 0
+	SET @jhl_ok = 1;
+
+/* Read 1, the settings. */
+IF @jhl_ok = 1 AND @CanReadRegistry = 1
+BEGIN
+	/* limiter read 1a */
+	EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\SQLServerAgent', N'JobHistoryMaxRows', @jhl_max OUTPUT, N'no_output';
+	EXEC master.dbo.xp_instance_regread N'HKEY_LOCAL_MACHINE', N'SOFTWARE\Microsoft\MSSQLServer\SQLServerAgent', N'JobHistoryMaxRowsPerJob', @jhl_per OUTPUT, N'no_output';
+	/* limiter read 1a end */
+	SET @jhl_via = N'the registry';
+END
+ELSE IF @jhl_ok = 1
+BEGIN
+	IF OBJECT_ID(N'sys.dm_server_registry') IS NOT NULL /*census: RawDiagnosticsFootprintTests.Shipped_sp_triage_guards_every_post_2008_object*/
+	BEGIN
+		BEGIN TRY
+			/* limiter read 1b */
+			INSERT @jhl_reg (value_name, value_text)
+			SELECT UPPER(r.value_name), CONVERT(NVARCHAR(100), r.value_data)
+			FROM sys.dm_server_registry AS r
+			WHERE r.registry_key LIKE N'%\SQLServerAgent'
+				AND r.value_name IN (N'JobHistoryMaxRows', N'JobHistoryMaxRowsPerJob');
+			/* limiter read 1b end */
+			/* A value that is not a whole number in INT range stays NULL, and NULL is "not read" on this path. */
+			SET @jhl_txt = NULL;
+			SELECT TOP (1) @jhl_txt = g.value_text FROM @jhl_reg AS g WHERE g.value_name = N'JOBHISTORYMAXROWS';
+			SET @jhl_max = CASE
+				WHEN @jhl_txt LIKE N'-[0-9]%' AND LEN(@jhl_txt) <= 10 AND SUBSTRING(@jhl_txt, 2, 100) NOT LIKE N'%[^0-9]%' THEN CONVERT(INT, @jhl_txt)
+				WHEN @jhl_txt LIKE N'[0-9]%' AND LEN(@jhl_txt) <= 9 AND @jhl_txt NOT LIKE N'%[^0-9]%' THEN CONVERT(INT, @jhl_txt)
+				END;
+			SET @jhl_txt = NULL;
+			SELECT TOP (1) @jhl_txt = g.value_text FROM @jhl_reg AS g WHERE g.value_name = N'JOBHISTORYMAXROWSPERJOB';
+			SET @jhl_per = CASE
+				WHEN @jhl_txt LIKE N'-[0-9]%' AND LEN(@jhl_txt) <= 10 AND SUBSTRING(@jhl_txt, 2, 100) NOT LIKE N'%[^0-9]%' THEN CONVERT(INT, @jhl_txt)
+				WHEN @jhl_txt LIKE N'[0-9]%' AND LEN(@jhl_txt) <= 9 AND @jhl_txt NOT LIKE N'%[^0-9]%' THEN CONVERT(INT, @jhl_txt)
+				END;
+			SET @jhl_via = N'sys.dm_server_registry';
+		END TRY
+		BEGIN CATCH
+			INSERT #sp_triage_skipped (Step, ErrorNumber, ErrorMessage) VALUES (N'SQL Agent job history limiter', ISNULL(ERROR_NUMBER(), 0), LEFT(N'SQL Agent job history limiter: not evaluated. The limiter settings were not read (Msg ' + CONVERT(NVARCHAR(12), ISNULL(ERROR_NUMBER(), 0)) + N' - ' + ISNULL(ERROR_MESSAGE(), N'') + N'). This login needs sysadmin, or VIEW SERVER STATE to read sys.dm_server_registry.', 4000));
+			SET @jhl_ok = 0;
+		END CATCH
+		IF @jhl_ok = 1 AND (@jhl_max IS NULL OR @jhl_per IS NULL)
+		BEGIN
+			INSERT #sp_triage_skipped (Step, ErrorNumber, ErrorMessage) VALUES (N'SQL Agent job history limiter', 0, N'SQL Agent job history limiter: not evaluated. The limiter settings were not read. This login needs sysadmin, or VIEW SERVER STATE to read sys.dm_server_registry.');
+			SET @jhl_ok = 0;
+		END
+	END
+	ELSE
+	BEGIN
+		INSERT #sp_triage_skipped (Step, ErrorNumber, ErrorMessage) VALUES (N'SQL Agent job history limiter', 0, N'SQL Agent job history limiter: not evaluated. The limiter settings were not read. This login needs sysadmin, or VIEW SERVER STATE to read sys.dm_server_registry.');
+		SET @jhl_ok = 0;
+	END
+END
+
+/* Read 2, the row count, from partition statistics. A login that cannot see msdb's objects gets a silent NULL from
+   both (OBJECT_ID is NULL to it), so NULL from both is "not read". The first is read only with VIEW DATABASE STATE in
+   msdb: without it the read is an error, and the second read would never run. */
+IF @jhl_ok = 1
+BEGIN
+	BEGIN TRY
+		/* limiter read 2 */
+		IF ISNULL(HAS_PERMS_BY_NAME(N'msdb', N'DATABASE', N'VIEW DATABASE STATE'), 0) = 1
+			SELECT @jhl_rows = SUM(ps.row_count)
+			FROM msdb.sys.dm_db_partition_stats AS ps
+			WHERE ps.object_id = OBJECT_ID(N'msdb.dbo.sysjobhistory') AND ps.index_id IN (0, 1);
+		IF @jhl_rows IS NULL
+			SELECT @jhl_rows = SUM(p.rows)
+			FROM msdb.sys.partitions AS p
+			WHERE p.object_id = OBJECT_ID(N'msdb.dbo.sysjobhistory') AND p.index_id IN (0, 1);
+		/* limiter read 2 end */
+	END TRY
+	BEGIN CATCH
+		INSERT #sp_triage_skipped (Step, ErrorNumber, ErrorMessage) VALUES (N'SQL Agent job history limiter', ISNULL(ERROR_NUMBER(), 0), LEFT(N'SQL Agent job history limiter: not evaluated. The row count of msdb.dbo.sysjobhistory was not read (Msg ' + CONVERT(NVARCHAR(12), ISNULL(ERROR_NUMBER(), 0)) + N' - ' + ISNULL(ERROR_MESSAGE(), N'') + N'). This login needs VIEW DATABASE STATE in msdb, or SELECT on msdb.dbo.sysjobhistory.', 4000));
+		SET @jhl_ok = 0;
+	END CATCH
+	IF @jhl_ok = 1 AND @jhl_rows IS NULL
+	BEGIN
+		INSERT #sp_triage_skipped (Step, ErrorNumber, ErrorMessage) VALUES (N'SQL Agent job history limiter', 0, N'SQL Agent job history limiter: not evaluated. The row count of msdb.dbo.sysjobhistory was not read (returned NULL). This login needs VIEW DATABASE STATE in msdb, or SELECT on msdb.dbo.sysjobhistory.');
+		SET @jhl_ok = 0;
+	END
+END
+
+/* Read 3, the oldest row: a seek on the clustered index (instance_id), WITH (NOLOCK). run_date is an INT yyyymmdd. */
+IF @jhl_ok = 1
+BEGIN
+	BEGIN TRY
+		/* limiter read 3 */
+		SELECT TOP (1) @jhl_run_date = h.run_date
+		FROM msdb.dbo.sysjobhistory AS h WITH (NOLOCK)
+		ORDER BY h.instance_id;
+		SET @jhl_old_found = @@ROWCOUNT;
+		/* limiter read 3 end */
+	END TRY
+	BEGIN CATCH
+		INSERT #sp_triage_skipped (Step, ErrorNumber, ErrorMessage) VALUES (N'SQL Agent job history limiter', ISNULL(ERROR_NUMBER(), 0), LEFT(N'SQL Agent job history limiter: not evaluated. The oldest row of msdb.dbo.sysjobhistory was not read (Msg ' + CONVERT(NVARCHAR(12), ISNULL(ERROR_NUMBER(), 0)) + N' - ' + ISNULL(ERROR_MESSAGE(), N'') + N'). This login needs SELECT on msdb.dbo.sysjobhistory, sysjobs, sysjobsteps, sysjobschedules and sysschedules.', 4000));
+		SET @jhl_ok = 0;
+	END CATCH
+	IF @jhl_ok = 1
+	BEGIN
+		SET @jhl_empty = CASE WHEN @jhl_old_found = 0 AND @jhl_rows = 0 THEN 1 ELSE 0 END;
+		SET @jhl_oldest = CASE WHEN @jhl_old_found > 0 AND @jhl_run_date BETWEEN 19000101 AND 99991231 AND ISDATE(CONVERT(CHAR(8), @jhl_run_date)) = 1
+			THEN CONVERT(DATETIME, CONVERT(CHAR(8), @jhl_run_date), 112) END;
+		SET @jhl_age = DATEDIFF(DAY, @jhl_oldest, GETDATE());
+		IF @jhl_empty = 0 AND @jhl_oldest IS NULL
+		BEGIN
+			INSERT #sp_triage_skipped (Step, ErrorNumber, ErrorMessage) VALUES (N'SQL Agent job history limiter', 0, N'SQL Agent job history limiter: not evaluated. The oldest row of msdb.dbo.sysjobhistory was not read ('
+				+ CASE WHEN @jhl_old_found = 0 THEN N'no row came back while the table holds ' + CONVERT(NVARCHAR(20), @jhl_rows) + N' row(s)'
+					ELSE N'run_date ' + ISNULL(CONVERT(NVARCHAR(12), @jhl_run_date), N'NULL') + N' is not a yyyymmdd date' END
+				+ N'). This login needs SELECT on msdb.dbo.sysjobhistory, sysjobs, sysjobsteps, sysjobschedules and sysschedules.');
+			SET @jhl_ok = 0;
+		END
+	END
+END
+
+/* Read 4, purge jobs: enabled jobs with an enabled schedule and a step whose command names sp_purge_jobhistory.
+   A TEXT MATCH: it does not prove that the job runs. */
+IF @jhl_ok = 1
+BEGIN
+	BEGIN TRY
+		/* limiter read 4 */
+		SELECT @jhl_purge = COUNT(DISTINCT j.job_id)
+		FROM msdb.dbo.sysjobs AS j
+		JOIN msdb.dbo.sysjobsteps AS s ON s.job_id = j.job_id
+		JOIN msdb.dbo.sysjobschedules AS js ON js.job_id = j.job_id
+		JOIN msdb.dbo.sysschedules AS sc ON sc.schedule_id = js.schedule_id
+		WHERE j.enabled = 1 AND sc.enabled = 1
+			AND s.command LIKE N'%sp[_]purge[_]jobhistory%';
+		/* limiter read 4 end */
+	END TRY
+	BEGIN CATCH
+		INSERT #sp_triage_skipped (Step, ErrorNumber, ErrorMessage) VALUES (N'SQL Agent job history limiter', ISNULL(ERROR_NUMBER(), 0), LEFT(N'SQL Agent job history limiter: not evaluated. The purge jobs were not read (Msg ' + CONVERT(NVARCHAR(12), ISNULL(ERROR_NUMBER(), 0)) + N' - ' + ISNULL(ERROR_MESSAGE(), N'') + N'). This login needs SELECT on msdb.dbo.sysjobhistory, sysjobs, sysjobsteps, sysjobschedules and sysschedules.', 4000));
+		SET @jhl_ok = 0;
+	END CATCH
+	IF @jhl_ok = 1 AND @jhl_purge IS NULL
+	BEGIN
+		INSERT #sp_triage_skipped (Step, ErrorNumber, ErrorMessage) VALUES (N'SQL Agent job history limiter', 0, N'SQL Agent job history limiter: not evaluated. The purge jobs were not read (returned NULL). This login needs SELECT on msdb.dbo.sysjobhistory, sysjobs, sysjobsteps, sysjobschedules and sysschedules.');
+		SET @jhl_ok = 0;
+	END
+END
+
+/* Everything below is derived from the four values read above; nothing below reads the server. */
+IF @jhl_ok = 1
+BEGIN
+	BEGIN TRY
+		/* The limiter as it will behave: -1 or an absent JobHistoryMaxRows is off; 0, 1 or below -1 is judged as 1000,
+		   and a per-job value that is absent, under 1 or over the total cap as the total cap (the limiter itself
+		   rewrites them at the next job run). */
+		SET @jhl_on = CASE WHEN @jhl_max IS NULL OR @jhl_max = -1 THEN 0 ELSE 1 END;
+		SET @jhl_cap = CASE WHEN @jhl_max < 2 THEN 1000 ELSE @jhl_max END;
+		SET @jhl_per_job = CASE WHEN @jhl_per IS NULL OR @jhl_per < 1 OR @jhl_per > @jhl_cap THEN @jhl_cap ELSE @jhl_per END;
+		SET @jhl_w1 = CASE WHEN @jhl_on = 1 AND @jhl_rows >= @jhl_big THEN 1 ELSE 0 END;
+		SET @jhl_w2 = CASE WHEN @jhl_on = 1 AND @jhl_rows - @jhl_cap >= @jhl_backlog THEN 1 ELSE 0 END;
+		SET @jhl_w3 = CASE WHEN @jhl_on = 1 AND @jhl_per_job = @jhl_cap THEN 1 ELSE 0 END;
+		SET @jhl_w4 = CASE WHEN @jhl_on = 0 AND @jhl_rows >= @jhl_big AND @jhl_age > @jhl_old_days THEN 1 ELSE 0 END;
+		SET @jhl_findings = @jhl_w1 + @jhl_w2 + @jhl_w3 + @jhl_w4;
+
+		SET @jhl_facts = CASE WHEN @jhl_max IS NULL THEN N'JobHistoryMaxRows is not set' ELSE N'JobHistoryMaxRows ' + CONVERT(NVARCHAR(12), @jhl_max) END
+			+ CASE WHEN @jhl_max <> -1 AND @jhl_max < 2 THEN N' (the limiter resets it to 1000 at the next job run)' ELSE N'' END
+			+ N', '
+			+ CASE WHEN @jhl_per IS NULL THEN N'JobHistoryMaxRowsPerJob is not set' ELSE N'JobHistoryMaxRowsPerJob ' + CONVERT(NVARCHAR(12), @jhl_per) END
+			+ CASE WHEN @jhl_on = 1 AND (@jhl_per < 1 OR @jhl_per > @jhl_cap) THEN N' (the limiter resets it to the total cap at the next job run)' ELSE N'' END
+			+ N' (read from ' + @jhl_via + N'); msdb.dbo.sysjobhistory holds ' + CONVERT(NVARCHAR(20), @jhl_rows) + N' row(s)'
+			+ CASE WHEN @jhl_empty = 1 THEN N': the table is empty' ELSE N', the oldest ' + CONVERT(NVARCHAR(12), @jhl_age) + N' day(s) old' END
+			+ N'; ' + CONVERT(NVARCHAR(12), @jhl_purge) + N' enabled job(s) with an enabled schedule have a step that names sp_purge_jobhistory (a text match).';
+
+		/* A purge job that was found is never told "schedule a daily purge job". */
+		SET @jhl_fix = CASE
+			WHEN @jhl_on = 1 AND @jhl_purge = 0 THEN N'Fix: turn the limiter off with msdb.dbo.sp_set_sqlagent_properties @jobhistory_max_rows = -1, @jobhistory_max_rows_per_job = -1 (not the SSMS dialog; the per-job value then reads 0). Before any KILL, look for a limiter run still in flight (sys.dm_exec_requests) and read the msdb log space: its deletes are one open transaction. Then purge old history in date steps with msdb.dbo.sp_purge_jobhistory @oldest_date (90, 60, then 28 days), then schedule a daily purge job.'
+			WHEN @jhl_on = 1 THEN N'Fix: turn the limiter off with msdb.dbo.sp_set_sqlagent_properties @jobhistory_max_rows = -1, @jobhistory_max_rows_per_job = -1 (not the SSMS dialog; the per-job value then reads 0). Before any KILL, look for a limiter run still in flight (sys.dm_exec_requests) and read the msdb log space: its deletes are one open transaction. Then purge old history in date steps with msdb.dbo.sp_purge_jobhistory @oldest_date (90, 60, then 28 days).'
+			WHEN @jhl_purge = 0 THEN N'Fix: purge old history in date steps with msdb.dbo.sp_purge_jobhistory @oldest_date (90, 60, then 28 days), then schedule a daily purge job.'
+			ELSE N'Fix: purge old history in date steps with msdb.dbo.sp_purge_jobhistory @oldest_date (90, 60, then 28 days), then check that the purge job found runs and how many days it keeps.'
+			END;
+
+		IF @jhl_w1 = 1
+			INSERT @jhl_out (Summary, Severity) VALUES (N'The limiter counts ' + CONVERT(NVARCHAR(20), @jhl_rows) + N' rows under an exclusive table lock after every job run.', @Result_Warning);
+		IF @jhl_w2 = 1
+			INSERT @jhl_out (Summary, Severity) VALUES (N'The cap is ' + CONVERT(NVARCHAR(20), @jhl_rows - @jhl_cap) + N' rows below the table: the next job run deletes about ' + CONVERT(NVARCHAR(20), @jhl_rows - @jhl_cap) + N' rows in one transaction under the table lock.', @Result_Warning);
+		IF @jhl_w3 = 1
+			INSERT @jhl_out (Summary, Severity) VALUES (N'The per-job cap equals the total cap of ' + CONVERT(NVARCHAR(20), @jhl_cap) + N' rows, so one job can fill the whole cap and push out every other job''s history.', @Result_Warning);
+		IF @jhl_w4 = 1 AND @jhl_purge = 0
+			INSERT @jhl_out (Summary, Severity) VALUES (N'Job history is not being kept down: the limiter is off and no scheduled job step names sp_purge_jobhistory; ' + CONVERT(NVARCHAR(20), @jhl_rows) + N' rows, oldest ' + CONVERT(NVARCHAR(12), @jhl_age) + N' days.', @Result_Warning);
+		IF @jhl_w4 = 1 AND @jhl_purge > 0
+			INSERT @jhl_out (Summary, Severity) VALUES (N'Job history is not being kept down: ' + CONVERT(NVARCHAR(12), @jhl_purge) + N' enabled job(s) have a step that names sp_purge_jobhistory (a text match), yet the table holds ' + CONVERT(NVARCHAR(20), @jhl_rows) + N' rows, oldest ' + CONVERT(NVARCHAR(12), @jhl_age) + N' days: the purge is not running or keeps more than ' + CONVERT(NVARCHAR(12), @jhl_old_days) + N' days.', @Result_Warning);
+		IF @jhl_findings = 0 AND @jhl_on = 1 AND @jhl_cap >= @jhl_big
+			INSERT @jhl_out (Summary, Severity) VALUES (N'The SQL Agent job history limiter is on and counts the whole table on each job run, so its cost grows with the table, and this cap lets the table reach ' + CONVERT(NVARCHAR(20), @jhl_cap) + N' rows.', @Result_NA);
+		IF @jhl_findings = 0 AND @jhl_on = 1 AND @jhl_cap < @jhl_big
+			INSERT @jhl_out (Summary, Severity) VALUES (N'The SQL Agent job history limiter is on with a cap under ' + CONVERT(NVARCHAR(20), @jhl_big) + N' rows: the limiter keeps the table at or under ' + CONVERT(NVARCHAR(20), @jhl_cap) + N' rows, with a per-job cap of ' + CONVERT(NVARCHAR(20), @jhl_per_job) + N'.', @Result_Good);
+		IF @jhl_findings = 0 AND @jhl_on = 0 AND @jhl_purge > 0
+			INSERT @jhl_out (Summary, Severity) VALUES (N'SQL Agent job history: the limiter is off and ' + CONVERT(NVARCHAR(12), @jhl_purge) + N' enabled job(s) with an enabled schedule have a step that names sp_purge_jobhistory (a text match; the check does not prove the job runs).', @Result_Good);
+		IF @jhl_findings = 0 AND @jhl_on = 0 AND @jhl_purge = 0
+			INSERT @jhl_out (Summary, Severity) VALUES (N'SQL Agent job history: the limiter is off and no scheduled job step names sp_purge_jobhistory (enabled jobs with an enabled schedule, a text match), so nothing this check can see keeps the table down.', @Result_NA);
+
+		INSERT #output_sqldba_org_sp_triage
+		(
+			[SectionID]
+			, [Section]
+			, [Summary]
+			, [Details]
+		)
+		SELECT
+		111
+		, N'SQL AGENT JOB HISTORY LIMITER'
+		, '------'
+		, '------';
+
+		/* One row per finding, or the one pass or advisory row. Details holds the facts; the fix is written once, on the
+		   last finding's row. */
+		INSERT #output_sqldba_org_sp_triage
+		(
+			SectionID
+			, Section
+			, Summary
+			, Severity
+			, Details
+		)
+		SELECT
+			111
+			, N'SQL Agent job history limiter'
+			, o.Summary
+			, o.Severity
+			, LEFT(@jhl_facts + CASE WHEN @jhl_findings > 0 AND o.rn = (SELECT MAX(x.rn) FROM @jhl_out AS x) THEN N' ' + @jhl_fix ELSE N'' END, 4000)
+		FROM @jhl_out AS o
+		ORDER BY o.rn;
+	END TRY
+	BEGIN CATCH
+		INSERT #sp_triage_skipped (Step, ErrorNumber, ErrorMessage) VALUES (LEFT(ISNULL(N'SQL Agent job history limiter', N'?'), 400), ISNULL(ERROR_NUMBER(), 0), LEFT(ISNULL(ERROR_MESSAGE(), N''), 4000));
+		SELECT @errMessage = ERROR_MESSAGE();
+		RAISERROR (N'%s', 0, 1, @errMessage) WITH NOWAIT;
+	END CATCH
+END
+
+	IF @Debug = 1
+	BEGIN
+		SET @DebugTimeMSG = CONVERT([VARCHAR],GETDATE(),120) +' previous step took: ' + CONVERT([VARCHAR](20),DATEDIFF(MILLISECOND,@DebugTime,GETDATE() )) + ' milliseconds'
+		SET @DebugTime = GETDATE();
+		IF @ShowDebugTime = 1 RAISERROR (N'%s', 0, 1, @DebugTimeMSG) WITH NOWAIT;
+		RAISERROR (N'Checked the SQL Agent job history limiter',0,1) WITH NOWAIT;
 	END
 
 			/*----------------------------------------
